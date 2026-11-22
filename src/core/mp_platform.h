@@ -47,6 +47,12 @@ void mp_sleep_ms(unsigned ms);
 // de códigos ANSI y pierde caracteres como ñ o emoji). En el resto no hace nada.
 void mp_args_utf8(int *argc, char ***argv);
 
+// Ruta absoluta en UTF-8 de un archivo o carpeta, exista o no (malloc). NULL si no se puede.
+char *mp_full_path(const char *utf8_path);
+// 1 si las dos rutas existen y son el mismo archivo o carpeta (misma identidad en el disco,
+// no el mismo texto: no la engañan mayúsculas, "..", barras distintas ni enlaces).
+int mp_same_file(const char *a, const char *b);
+
 // Copia de una cadena con malloc (strdup no es C11).
 char *mp_strdup(const char *s);
 

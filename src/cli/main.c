@@ -37,6 +37,47 @@ static int bad_usage(const char *msg, const char *arg) {
     return 2;
 }
 
+static int is_sep(char c) { return c == '/' || c == '\\'; }
+
+// Deja p en su carpeta padre (C:\a\b -> C:\a, C:\a -> C:\, /a -> /).
+// Devuelve 0 si p ya es una raíz.
+static int to_parent(char *p) {
+    size_t n = strlen(p);
+    while (n > 0 && is_sep(p[n - 1])) n--;
+    size_t end = n;
+    while (n > 0 && !is_sep(p[n - 1])) n--;
+    if (n == 0 || n == end) return 0;
+    size_t sep = n - 1;
+    if (sep == 0 || (sep == 2 && p[1] == ':'))
+        p[n] = 0;   // raíz: se queda con su separador
+    else
+        p[sep] = 0;
+    return 1;
+}
+
+// Comprueba --json antes de analizar: su carpeta existe y no pisa el juego ni cae dentro de él.
+static int check_json_target(const char *src, const char *json) {
+    char *dir = mp_full_path(json);
+    if (!dir) return bad_usage("ruta de --json no válida", json);
+    int rc = 0;
+    if (mp_path_kind(json) == 2) {
+        rc = bad_usage("--json apunta a una carpeta", json);
+    } else if (mp_same_file(json, src)) {
+        rc = bad_usage("--json no puede sobrescribir el juego que se analiza", json);
+    } else if (!to_parent(dir) || mp_path_kind(dir) != 2) {
+        rc = bad_usage("no existe la carpeta donde guardar --json", json);
+    } else if (mp_path_kind(src) == 2) {
+        do {
+            if (mp_same_file(dir, src)) {
+                rc = bad_usage("--json no puede escribir dentro de la carpeta que se analiza", json);
+                break;
+            }
+        } while (to_parent(dir));
+    }
+    free(dir);
+    return rc;
+}
+
 static int list_files(const char *src_path, const char *const *keep, size_t nkeep) {
     mp_err e = {{0}};
     mp_source *s = NULL;
@@ -112,6 +153,10 @@ static int cmd_analyze(int argc, char **argv) {
     if (!src) return bad_usage("falta la carpeta o la imagen .exfat", NULL);
     o.keep_loose = keep;
     if (list) return list_files(src, keep, o.nkeep);
+    if (json) {
+        int jrc = check_json_target(src, json);
+        if (jrc) return jrc;
+    }
 
     mp_report r;
     mp_err e = {{0}};

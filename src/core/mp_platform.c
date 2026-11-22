@@ -391,6 +391,37 @@ void mp_sleep_ms(unsigned ms) { Sleep(ms); }
 
 #include <shellapi.h>
 
+char *mp_full_path(const char *utf8) {
+    wchar_t *w = utf8_to_w(utf8);
+    if (!w) return NULL;
+    DWORD n = GetFullPathNameW(w, 0, NULL, NULL);
+    wchar_t *full = n ? malloc((size_t)n * sizeof(wchar_t)) : NULL;
+    char *out = NULL;
+    if (full && GetFullPathNameW(w, n, full, NULL) > 0) out = w_to_utf8(full);
+    free(full);
+    free(w);
+    return out;
+}
+
+static int file_id(const char *path, BY_HANDLE_FILE_INFORMATION *info) {
+    wchar_t *w = long_path(path);
+    if (!w) return 0;
+    HANDLE h = CreateFileW(w, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+                           OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    free(w);
+    if (h == INVALID_HANDLE_VALUE) return 0;
+    BOOL ok = GetFileInformationByHandle(h, info);
+    CloseHandle(h);
+    return ok != 0;
+}
+
+int mp_same_file(const char *a, const char *b) {
+    BY_HANDLE_FILE_INFORMATION x, y;
+    if (!file_id(a, &x) || !file_id(b, &y)) return 0;
+    return x.dwVolumeSerialNumber == y.dwVolumeSerialNumber && x.nFileIndexHigh == y.nFileIndexHigh &&
+           x.nFileIndexLow == y.nFileIndexLow;
+}
+
 void mp_args_utf8(int *argc, char ***argv) {
     int n = 0;
     wchar_t **w = CommandLineToArgvW(GetCommandLineW(), &n);
@@ -624,6 +655,34 @@ unsigned mp_cpu_count(void) {
 void mp_args_utf8(int *argc, char ***argv) {
     (void)argc;
     (void)argv;
+}
+
+char *mp_full_path(const char *path) {
+    char *r = realpath(path, NULL);
+    if (r) return r;
+    // No existe: carpeta padre resuelta + nombre.
+    const char *slash = strrchr(path, '/');
+    char *dir = slash ? malloc((size_t)(slash - path) + 2) : mp_strdup(".");
+    if (!dir) return NULL;
+    if (slash) {
+        size_t k = (size_t)(slash - path);
+        memcpy(dir, path, k ? k : 1);
+        dir[k ? k : 1] = 0;
+    }
+    char *rd = realpath(dir, NULL);
+    free(dir);
+    if (!rd) return NULL;
+    const char *base = slash ? slash + 1 : path;
+    char *out = malloc(strlen(rd) + strlen(base) + 2);
+    if (out) sprintf(out, "%s/%s", strcmp(rd, "/") ? rd : "", base);
+    free(rd);
+    return out;
+}
+
+int mp_same_file(const char *a, const char *b) {
+    struct stat x, y;
+    if (stat(a, &x) != 0 || stat(b, &y) != 0) return 0;
+    return x.st_dev == y.st_dev && x.st_ino == y.st_ino;
 }
 
 void mp_sleep_ms(unsigned ms) {

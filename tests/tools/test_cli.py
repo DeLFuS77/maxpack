@@ -97,5 +97,25 @@ shutil.copyfile(BASIC, uni)
 rc, out, err = run("analyze", uni, "--list")
 check("ruta_no_ascii", rc == 0 and len(out.splitlines()) == manifest_count(), err)
 
+# --json nunca debe pisar el origen ni escribir dentro de la carpeta que se analiza.
+import hashlib
+victim = os.path.join(TMP, "victima.exfat")
+shutil.copyfile(BASIC, victim)
+before = hashlib.sha256(open(victim, "rb").read()).hexdigest()
+rc, _, err = run("analyze", victim, "--json", victim)
+after = hashlib.sha256(open(victim, "rb").read()).hexdigest()
+check("json_no_pisa_la_imagen", rc == 2 and before == after, "rc=%d %s" % (rc, err[:200]))
+dsrc = os.path.join(TMP, "carpeta_origen")
+os.makedirs(os.path.join(dsrc, "sce_sys"), exist_ok=True)
+with open(os.path.join(dsrc, "datos.bin"), "wb") as f:
+    f.write(b"x" * 1000)
+inside = os.path.join(dsrc, "sce_sys", "informe.json")
+if os.path.exists(inside):
+    os.remove(inside)
+rc, _, err = run("analyze", dsrc, "--json", inside)
+check("json_no_escribe_en_el_origen", rc == 2 and not os.path.exists(inside), "rc=%d %s" % (rc, err[:200]))
+rc, _, err = run("analyze", BASIC, "--json", os.path.join(TMP, "no", "existe", "x.json"))
+check("json_carpeta_inexistente_sale_2", rc == 2, "rc=%d %s" % (rc, err[:200]))
+
 print("test_cli: %d fallos" % len(failures))
 sys.exit(1 if failures else 0)

@@ -203,6 +203,22 @@ const char *mp_zpk_path(const mp_zpk *z, size_t i) { return i < z->n ? z->f[i].p
 uint64_t mp_zpk_size(const mp_zpk *z, size_t i) { return i < z->n ? z->f[i].size : 0; }
 uint32_t mp_zpk_volume_count(const mp_zpk *z) { return z->nvol; }
 
+long mp_zpk_find(const mp_zpk *z, const char *path) {
+    uint64_t h = mp_zpk_path_hash(path);
+    size_t lo = 0, hi = z->n;
+    while (lo < hi) {
+        size_t mid = lo + (hi - lo) / 2;
+        const zfile *f = &z->f[mid];
+        int c = f->hash != h ? (f->hash < h ? -1 : 1) : strcmp(f->path, path);
+        if (c == 0) return (long)mid;
+        if (c < 0)
+            lo = mid + 1;
+        else
+            hi = mid;
+    }
+    return -1;
+}
+
 int mp_zpk_chunk(const mp_zpk *z, size_t i, uint32_t k, uint32_t *vol, uint64_t *off, uint32_t *stored,
                  int *codec) {
     if (i >= z->n || (uint64_t)k * MP_BLOCK_V1 >= z->f[i].size) return -1;

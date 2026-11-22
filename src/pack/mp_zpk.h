@@ -63,6 +63,8 @@ size_t mp_zpk_count(const mp_zpk *z);
 const char *mp_zpk_path(const mp_zpk *z, size_t i);
 uint64_t mp_zpk_size(const mp_zpk *z, size_t i);
 uint32_t mp_zpk_volume_count(const mp_zpk *z);
+// Índice del archivo con esa ruta (los registros van ordenados por hash y ruta), o -1.
+long mp_zpk_find(const mp_zpk *z, const char *path);
 // Datos del bloque k del archivo i (cualquier puntero puede ser NULL). 0 si existe.
 int mp_zpk_chunk(const mp_zpk *z, size_t i, uint32_t k, uint32_t *vol, uint64_t *off, uint32_t *stored,
                  int *codec);

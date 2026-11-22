@@ -307,8 +307,24 @@ MP_TEST(zpk_rejects_corruption) {
     free(index);
 }
 
+MP_TEST(zpk_find_all) {
+    mp_err e = {{0}};
+    mp_zpk_volsrc vs;
+    uint8_t *index = NULL;
+    mp_zpk *z = open_dir_zpk(TMP "/roundtrip", &vs, &index, &e);
+    MP_CHECK(z != NULL);
+    size_t bad = 0;
+    for (size_t i = 0; z && i < mp_zpk_count(z); i++) bad += mp_zpk_find(z, mp_zpk_path(z, i)) != (long)i;
+    MP_CHECK_EQ_U64(bad, 0);
+    MP_CHECK(z && mp_zpk_find(z, "no/existe.bin") == -1);
+    if (z) mp_zpk_close(z);
+    mp_zpk_volsrc_free(&vs);
+    free(index);
+}
+
 int main(void) {
     MP_RUN(zpk_roundtrip);
+    MP_RUN(zpk_find_all);
     MP_RUN(zpk_multi_volume);
     MP_RUN(zpk_random_raw_zeros_small);
     MP_RUN(zpk_threads_identical);

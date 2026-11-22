@@ -102,8 +102,8 @@ static int check_work(void *vc, size_t i, unsigned tid) {
         rc = p5z_read_file(v->p, c->a, null_sink, v->prog, &e);   // ya comprueba el SHA-256
     } else if (!rc && c->kind == CHK_PACKED_P5Z) {
         const mp_manifest_entry *m = &v->p->man.v[c->a];
-        size_t zi = 0;
-        while (zi < mp_zpk_count(v->z) && strcmp(mp_zpk_path(v->z, zi), m->path)) zi++;
+        long found = mp_zpk_find(v->z, m->path);
+        size_t zi = found < 0 ? mp_zpk_count(v->z) : (size_t)found;
         if (zi == mp_zpk_count(v->z)) {
             mp_err_set(&e, "no está en los packs");
             rc = -1;
@@ -286,15 +286,16 @@ int mp_verify_folder(const char *dir, const char *against, unsigned threads, int
         c->src = SIZE_MAX;
         c->path = mp_zpk_path(v.z, i);
         total += mp_zpk_size(v.z, i);
-        int in_idx3 = 0;
-        for (size_t k = 0; k < nrows && !in_idx3; k++)
-            in_idx3 = ieq(rows[k].app0_path + 6, c->path) && rows[k].size == mp_zpk_size(v.z, i);
+        long row = mp_idx3_find(rows, nrows, c->path);   // filas ordenadas: búsqueda binaria
+        int in_idx3 = row >= 0 && rows[row].size == mp_zpk_size(v.z, i);
         if (!in_idx3) {
             c->bad = 1;
             snprintf(c->why, sizeof c->why, "no está en ampr_emu.index con el mismo tamaño");
         }
-        for (size_t s = 0; s < nsrc; s++)
-            if (!strcmp(mp_source_entry(v.src, s)->path, c->path)) c->src = s;
+        if (v.src) {
+            long si = mp_source_find(v.src, c->path);
+            if (si >= 0) c->src = (size_t)si;
+        }
         if (v.src && c->src == SIZE_MAX && !c->bad) {
             c->bad = 1;
             snprintf(c->why, sizeof c->why, "no está en el origen");
@@ -303,9 +304,7 @@ int mp_verify_folder(const char *dir, const char *against, unsigned threads, int
     // Con --against, cada archivo del origen que no esté empaquetado tiene que estar suelto igual.
     for (size_t s = 0; s < nsrc; s++) {
         const char *p = mp_source_entry(v.src, s)->path;
-        int packed = 0;
-        for (size_t i = 0; i < mp_zpk_count(v.z) && !packed; i++) packed = !strcmp(mp_zpk_path(v.z, i), p);
-        if (packed) continue;
+        if (mp_zpk_find(v.z, p) >= 0) continue;   // empaquetado: ya se comprueba arriba
         if (ieq(p, "ampr_emu.index")) continue;   // se regenera siempre
         size_t pl = strlen(p);
         char *full = malloc(a + pl + 2);

@@ -25,6 +25,8 @@ size_t mp_source_count(const mp_source *s);
 // Ordenadas por strcmp de los bytes de la ruta.
 const mp_entry *mp_source_entry(const mp_source *s, size_t i);
 size_t mp_source_dir_count(const mp_source *s);
+// Índice de la entrada con esa ruta exacta (búsqueda binaria; las entradas van ordenadas), o -1.
+long mp_source_find(const mp_source *s, const char *path);
 // Lee exactamente len bytes; off + len debe ser <= size. Segura entre hilos.
 int mp_source_read(mp_source *s, size_t i, uint64_t off, void *buf, size_t len, mp_err *e);
 void mp_source_close(mp_source *s);

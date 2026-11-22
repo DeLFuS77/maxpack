@@ -46,6 +46,20 @@ size_t mp_source_count(const mp_source *s) { return s->n; }
 const mp_entry *mp_source_entry(const mp_source *s, size_t i) { return i < s->n ? &s->entries[i] : NULL; }
 size_t mp_source_dir_count(const mp_source *s) { return s->ndirs; }
 
+long mp_source_find(const mp_source *s, const char *path) {
+    size_t lo = 0, hi = s->n;
+    while (lo < hi) {
+        size_t mid = lo + (hi - lo) / 2;
+        int c = strcmp(s->entries[mid].path, path);
+        if (c == 0) return (long)mid;
+        if (c < 0)
+            lo = mid + 1;
+        else
+            hi = mid;
+    }
+    return -1;
+}
+
 int mp_source_read(mp_source *s, size_t i, uint64_t off, void *buf, size_t len, mp_err *e) {
     if (i >= s->n) {
         mp_err_set(e, "índice de archivo fuera de rango: %zu", i);

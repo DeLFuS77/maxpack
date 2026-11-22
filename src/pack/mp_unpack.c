@@ -100,8 +100,8 @@ int mp_unpack_original(mp_p5z *p, const char *out_dir, unsigned threads, int pro
             rc = write_stored(p, p->man_file[i], out_dir, m->path, m->mtime, &prog, e);
             continue;
         }
-        for (zi = 0; zi < mp_zpk_count(z) && strcmp(mp_zpk_path(z, zi), m->path); zi++) {
-        }
+        long found = mp_zpk_find(z, m->path);   // búsqueda binaria: O(log n) por archivo
+        zi = found < 0 ? mp_zpk_count(z) : (size_t)found;
         if (zi == mp_zpk_count(z) || mp_zpk_size(z, zi) != m->size) {
             mp_err_set(e, "%s no está en los packs del .p5z", m->path);
             rc = -1;

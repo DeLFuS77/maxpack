@@ -27,6 +27,9 @@ typedef struct {
 // Comprueba el archivo como Index::check de ampr-emu-ng y devuelve sus filas.
 int mp_idx3_parse(const uint8_t *d, size_t n, mp_idx3_entry **out, size_t *count, mp_err *e);
 void mp_idx3_entries_free(mp_idx3_entry *v, size_t n);
+// Fila de la ruta relativa rel ("/app0/" + rel, sin distinguir mayúsculas), o -1. Las filas de un
+// índice válido van ordenadas por esa clave (mp_idx3_parse lo comprueba).
+long mp_idx3_find(const mp_idx3_entry *v, size_t n, const char *rel);
 
 // Valida una ruta relativa para los dos índices (AMPRZPK1 y AMPRIDX3). 0 si vale.
 int mp_pack_path_check(const char *rel, mp_err *e);

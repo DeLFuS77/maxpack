@@ -133,7 +133,34 @@ MP_TEST(idx3_writes_fixture) {
     mp_source_close(s);
 }
 
+MP_TEST(idx3_find_case_insensitive) {
+    mp_source *s = NULL;
+    mp_idx3_row *rows = NULL;
+    size_t n = basic_rows(&s, &rows);
+    if (!n) return;
+    uint8_t *d = NULL;
+    size_t len = 0;
+    mp_err e = {{0}};
+    MP_CHECK(mp_idx3_build(rows, n, &d, &len, &e) == 0);
+    mp_idx3_entry *v = NULL;
+    size_t m = 0;
+    MP_CHECK(d && mp_idx3_parse(d, len, &v, &m, &e) == 0);
+    size_t bad = 0;
+    for (size_t i = 0; i < n; i++) {
+        long k = mp_idx3_find(v, m, rows[i].path);
+        bad += k < 0 || strcmp(v[k].app0_path + 6, rows[i].path) != 0;
+    }
+    MP_CHECK_EQ_U64(bad, 0);
+    MP_CHECK(mp_idx3_find(v, m, "EBOOT.BIN") >= 0);   // sin distinguir mayúsculas
+    MP_CHECK(mp_idx3_find(v, m, "no/existe") == -1);
+    mp_idx3_entries_free(v, m);
+    free(d);
+    free(rows);
+    mp_source_close(s);
+}
+
 int main(void) {
+    MP_RUN(idx3_find_case_insensitive);
     MP_RUN(idx3_two_rows);
     MP_RUN(idx3_rejects_case_dup);
     MP_RUN(idx3_parse_roundtrip);

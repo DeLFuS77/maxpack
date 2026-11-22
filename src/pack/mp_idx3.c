@@ -185,6 +185,21 @@ static int bad(mp_err *e, const char *why) {
     return -1;
 }
 
+long mp_idx3_find(const mp_idx3_entry *v, size_t n, const char *rel) {
+    size_t lo = 0, hi = n;
+    while (lo < hi) {
+        size_t mid = lo + (hi - lo) / 2;
+        const char *p = v[mid].app0_path;
+        int c = strncmp(p, APP0, APP0_LEN) ? strcmp(p, APP0) : fold_cmp(p + APP0_LEN, rel);
+        if (c == 0) return (long)mid;
+        if (c < 0)
+            lo = mid + 1;
+        else
+            hi = mid;
+    }
+    return -1;
+}
+
 void mp_idx3_entries_free(mp_idx3_entry *v, size_t n) {
     if (!v) return;
     for (size_t i = 0; i < n; i++) free(v[i].app0_path);

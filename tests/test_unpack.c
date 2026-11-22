@@ -11,11 +11,24 @@
 #define TMP MP_TEST_TMP "/unpack"
 #define BASIC MP_FIXTURES_DIR "/basic.exfat"
 
+// Borrado para limpiar las salidas de las pruebas. En Windows con las funciones anchas: el dump
+// reconstruido tiene un nombre con emoji que remove() (ANSI) no puede borrar.
 #ifdef _WIN32
-#include <direct.h>
-#define rmdir_ _rmdir
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+static void wide_op(const char *p, int dir) {
+    wchar_t w[2048];
+    if (MultiByteToWideChar(CP_UTF8, 0, p, -1, w, 2048) <= 0) return;
+    if (dir)
+        RemoveDirectoryW(w);
+    else
+        DeleteFileW(w);
+}
+#define remove_(p) wide_op((p), 0)
+#define rmdir_(p) wide_op((p), 1)
 #else
 #include <unistd.h>
+#define remove_(p) remove(p)
 #define rmdir_ rmdir
 #endif
 
@@ -64,7 +77,7 @@ static int rm_cb(void *ctx, const char *rel, int is_dir, uint64_t size, int64_t 
     if (is_dir)
         list_cb(&c->dirs, p, 0, 0, 0);
     else
-        remove(p);
+        remove_(p);
     return 0;
 }
 

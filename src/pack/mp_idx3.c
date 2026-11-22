@@ -201,7 +201,7 @@ int mp_idx3_parse(const uint8_t *d, size_t n, mp_idx3_entry **out, size_t *count
     if (rows == 0 || rows > 0xFFFFFFFEu || rows > n / IDX3_RECORD) return bad(e, "número de filas");
     uint64_t path_end = IDX3_HEADER + IDX3_RECORD * rows + blob;
     if (blob > n || path_end > hash_off || hash_off % IDX3_SLOT || slots < 2 || (slots & (slots - 1)) ||
-        slots < 2 * rows || hash_off + IDX3_SLOT * slots != n)
+        slots < 2 * rows || hash_off > n || n - hash_off != IDX3_SLOT * slots)   // sin dar la vuelta
         return bad(e, "posición o tamaño de las tablas");
     const uint8_t *bp = d + IDX3_HEADER + IDX3_RECORD * rows;
     mp_idx3_entry *v = calloc((size_t)rows, sizeof *v);

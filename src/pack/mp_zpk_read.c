@@ -89,9 +89,10 @@ int mp_zpk_open(const uint8_t *d, size_t len, const mp_zpk_volsrc *vs, mp_zpk **
     uint32_t nvol = rd32(d + 20);
     uint64_t nf = rd64(d + 40), nc = rd64(d + 48), foff = rd64(d + 56), coff = rd64(d + 64), voff = rd64(d + 72),
              soff = rd64(d + 80), slen = rd64(d + 88), logical = rd64(d + 96);
+    // Sin sumas que puedan dar la vuelta: cada parte se compara con lo que queda del archivo.
     if (nvol > MP_ZPK_MAX_VOLUMES || nc >= 0xFFFFFFFFull || nf > len / 32 || nc > len / 8 ||
         foff != MP_ZPK_HEADER || coff != foff + 32 * nf || voff != coff + 8 * nc ||
-        soff != voff + 8ull * nvol || soff + slen != len || (nc == 0) != (nvol == 0))
+        soff != voff + 8ull * nvol || soff > len || slen != len - soff || (nc == 0) != (nvol == 0))
         return bad(e, "posición o tamaño de las tablas");
     mp_zpk *z = calloc(1, sizeof *z);
     if (!z) {
@@ -122,6 +123,10 @@ int mp_zpk_open(const uint8_t *d, size_t len, const mp_zpk_volsrc *vs, mp_zpk **
         f->first = rd32(r + 16);
         uint32_t po = rd32(r + 20), pl = rd16(r + 24);
         f->flags = rd16(r + 26);
+        if (f->size > 0xFFFFFFFEull * MP_BLOCK_V1) {   // más bloques de los que caben en el índice
+            rc = bad(e, "tamaño de archivo imposible");
+            break;
+        }
         if (rd32(r + 28) != 0 || (f->flags & ~1u) || pl == 0 || pl >= 1024 || po != want_off ||
             (uint64_t)po + pl > slen || f->first != want_first) {
             rc = bad(e, "registro de archivo");
@@ -163,6 +168,10 @@ int mp_zpk_open(const uint8_t *d, size_t len, const mp_zpk_volsrc *vs, mp_zpk **
         for (uint64_t k = 0; k < cnt && !rc; k++) {
             uint64_t c = z->chunks[f->first + k];
             uint64_t want = f->size - k * MP_BLOCK_V1 < MP_BLOCK_V1 ? f->size - k * MP_BLOCK_V1 : MP_BLOCK_V1;
+            if (C_VOL(c) >= z->nvol) {
+                rc = bad(e, "bloque en un volumen inexistente");
+                break;
+            }
             if (C_VOL(c) != cv) {
                 if (C_VOL(c) != cv + 1 || coff_v != z->vols[cv]) {
                     rc = bad(e, "bloques que no van seguidos entre volúmenes");

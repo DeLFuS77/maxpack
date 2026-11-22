@@ -67,8 +67,9 @@ static void copy_meta(char *dst, size_t cap, const char *src) {
 static int parse_index(mp_p5z *p, const uint8_t *ix, size_t n, mp_err *e) {
     if (n < P5Z_INDEX_HEADER || memcmp(ix, "P5ZIDX01", 8) != 0 || rd32(ix + 8) != 1) return bad(e, "índice");
     uint64_t nf = rd32(ix + 12), nfr = rd32(ix + 16), nm = rd32(ix + 20), slen = rd64(ix + 24);
-    uint64_t need = P5Z_INDEX_HEADER + P5Z_FILE_REC * nf + P5Z_FRAME_REC * nfr + P5Z_MANIFEST_REC * nm + slen;
-    if (need != n) return bad(e, "tamaño del índice");
+    // Los contadores son u32, así que la parte fija no puede dar la vuelta; las cadenas, sí.
+    uint64_t fixed = P5Z_INDEX_HEADER + P5Z_FILE_REC * nf + P5Z_FRAME_REC * nfr + P5Z_MANIFEST_REC * nm;
+    if (fixed > n || slen != n - fixed) return bad(e, "tamaño del índice");
     const uint8_t *strings = ix + n - slen;
     p->nfiles = (size_t)nf;
     p->nframes = (size_t)nfr;

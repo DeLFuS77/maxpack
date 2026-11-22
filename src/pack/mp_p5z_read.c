@@ -408,3 +408,8 @@ int mp_p5z_info(const mp_p5z *p, FILE *out) {
     fprintf(out, ".p5z:       %s\n", d);
     return ferror(out) ? -1 : 0;
 }
+
+uint64_t mp_p5z_volume_offset(const mp_p5z *p, uint32_t vol) {
+    const p5z_file *f = volume_file(p, vol);
+    return f ? f->data_off : 0;
+}

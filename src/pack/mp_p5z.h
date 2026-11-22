@@ -29,6 +29,7 @@ int mp_p5z_open(const char *path, mp_p5z **out, mp_err *e);
 const mp_pack_manifest *mp_p5z_manifest(const mp_p5z *p);
 int mp_p5z_info(const mp_p5z *p, FILE *out);
 int mp_p5z_zpk(mp_p5z *p, mp_zpk **out, mp_err *e);
+uint64_t mp_p5z_volume_offset(const mp_p5z *p, uint32_t vol);   // dónde empieza el volumen en el .p5z
 int mp_unpack_folder(mp_p5z *p, const char *out_dir, unsigned threads, int progress, mp_err *e);
 int mp_unpack_original(mp_p5z *p, const char *out_dir, unsigned threads, int progress, mp_err *e);
 void mp_p5z_close(mp_p5z *p);

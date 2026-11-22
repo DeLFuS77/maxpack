@@ -170,5 +170,17 @@ check("unpack_original_sale_0", rc == 0 and n_orig == manifest_count(), "rc=%d n
 rc, _, err = run("unpack", p5z, "--original", "-o", orig)
 check("unpack_salida_no_vacia_sale_2", rc == 2, "rc=%d" % rc)
 
+# verify.
+rc, so, err = run("verify", p5z)
+check("verify_p5z_sale_0", rc == 0, (so + err)[-300:])
+rc, so, err = run("verify", out, "--against", BASIC)
+check("verify_carpeta_against_sale_0", rc == 0, (so + err)[-300:])
+bad = os.path.join(TMP, "danado.p5z")
+data = bytearray(open(p5z, "rb").read())
+data[len(data) // 2] ^= 0x55
+open(bad, "wb").write(bytes(data))
+rc, so, err = run("verify", bad)
+check("verify_danado_sale_1", rc == 1 and ("FALLO" in err or "error" in err), (so + err)[-300:])
+
 print("test_cli: %d fallos" % len(failures))
 sys.exit(1 if failures else 0)

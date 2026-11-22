@@ -24,6 +24,7 @@ static void usage(FILE *out) {
             "  maxpack pack <carpeta|imagen.exfat> -o <salida> [opciones]\n"
             "  maxpack unpack <juego.p5z> --folder|--original -o <carpeta> [--threads N]\n"
             "  maxpack info <juego.p5z>\n"
+            "  maxpack verify <juego.p5z | carpeta> [--against <origen>] [--threads N]\n"
             "  maxpack --version\n"
             "\n"
             "Opciones de pack:\n"
@@ -383,6 +384,51 @@ static int cmd_unpack(int argc, char **argv) {
     return 0;
 }
 
+static int cmd_verify(int argc, char **argv) {
+    const char *target = NULL, *against = NULL;
+    unsigned threads = mp_cpu_count();
+    for (int i = 0; i < argc; i++) {
+        const char *a = argv[i];
+        if (!strcmp(a, "--against") || !strcmp(a, "--threads")) {
+            if (i + 1 >= argc) return bad_usage("falta el valor de", a);
+            const char *v = argv[++i];
+            if (!strcmp(a, "--against")) {
+                against = v;
+            } else {
+                char *end = NULL;
+                long t = strtol(v, &end, 10);
+                if (end == v || *end || t < 1 || t > 1024) return bad_usage("--threads debe estar entre 1 y 1024", v);
+                threads = (unsigned)t;
+            }
+        } else if (a[0] == '-') {
+            return bad_usage("opción desconocida", a);
+        } else if (!target) {
+            target = a;
+        } else {
+            return bad_usage("sobra un argumento", a);
+        }
+    }
+    if (!target) return bad_usage("falta el .p5z o la carpeta que verificar", NULL);
+    int kind = mp_path_kind(target);
+    if (kind == 0) {
+        fprintf(stderr, "error: no existe: %s\n", target);
+        return 1;
+    }
+    if (kind == 1 && against) return bad_usage("--against solo sirve para carpetas (el .p5z ya lleva sus SHA-256)", NULL);
+    mp_err e = {{0}};
+    mp_verify_result r;
+    uint64_t t0 = mp_now_ns();
+    int rc = kind == 2 ? mp_verify_folder(target, against, threads, 1, &r, &e)
+                       : mp_verify_p5z(target, threads, 1, &r, &e);
+    if (rc != 0) {
+        fprintf(stderr, "error: %s\n", e.msg);
+        return 1;
+    }
+    printf("verify: %llu correctos, %llu con fallos (%.0f s)\n", (unsigned long long)r.files_ok,
+           (unsigned long long)r.files_bad, (double)(mp_now_ns() - t0) / 1e9);
+    return r.files_bad ? 1 : 0;
+}
+
 int main(int argc, char **argv) {
     mp_args_utf8(&argc, &argv);
 #ifdef _WIN32
@@ -401,6 +447,7 @@ int main(int argc, char **argv) {
     if (argc >= 2 && strcmp(argv[1], "pack") == 0) return cmd_pack(argc - 2, argv + 2);
     if (argc >= 2 && strcmp(argv[1], "unpack") == 0) return cmd_unpack(argc - 2, argv + 2);
     if (argc >= 2 && strcmp(argv[1], "info") == 0) return cmd_info(argc - 2, argv + 2);
+    if (argc >= 2 && strcmp(argv[1], "verify") == 0) return cmd_verify(argc - 2, argv + 2);
     if (argc >= 2) return bad_usage("orden desconocida", argv[1]);
     usage(stderr);
     return 2;

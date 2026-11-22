@@ -72,4 +72,18 @@ int mp_pack_run(const char *src_path, mp_pack_out *out, const mp_pack_opts *o, m
 // Carpeta lista para la consola. La carpeta no debe existir o debe estar vacía.
 int mp_pack_out_dir(const char *out_dir, mp_pack_out *out, mp_err *e);
 
+// ---- verify -------------------------------------------------------------------------------
+
+typedef struct {
+    uint64_t files_ok, files_bad, bytes_checked;
+} mp_verify_result;
+
+// Comprueba todo el .p5z: cada archivo guardado y cada archivo empaquetado contra el SHA-256 del
+// manifiesto. Devuelve 0 si pudo comprobar (los fallos van en files_bad y se listan en stderr).
+int mp_verify_p5z(const char *path, unsigned threads, int progress, mp_verify_result *r, mp_err *e);
+// Comprueba una carpeta empaquetada (packs, bloques y ampr_emu.index). Con against (el origen),
+// compara además cada archivo del juego original por SHA-256.
+int mp_verify_folder(const char *dir, const char *against, unsigned threads, int progress,
+                     mp_verify_result *r, mp_err *e);
+
 #endif

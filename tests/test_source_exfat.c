@@ -165,6 +165,22 @@ MP_TEST(exfat_fatloop_fails) {
     MP_CHECK_CONTAINS(e.msg, "FAT");
 }
 
+MP_TEST(exfat_huge_length_rejected) {
+    mp_err e = {{0}};
+    mp_source *s = NULL;
+    MP_CHECK(mp_source_open(FX "/huge_len.exfat", &s, &e) == -1);
+    MP_CHECK_CONTAINS(e.msg, "más grande que el volumen");
+    mp_source_close(s);
+}
+
+MP_TEST(exfat_huge_dir_rejected) {
+    mp_err e = {{0}};
+    mp_source *s = NULL;
+    MP_CHECK(mp_source_open(FX "/bigdir.exfat", &s, &e) == -1);
+    MP_CHECK_CONTAINS(e.msg, "demasiado grande");
+    mp_source_close(s);
+}
+
 int main(void) {
     MP_RUN(exfat_lists_like_manifest);
     MP_RUN(exfat_contents_match);
@@ -173,5 +189,7 @@ int main(void) {
     MP_RUN(exfat_truncated_head_fails);
     MP_RUN(exfat_truncated_read_fails);
     MP_RUN(exfat_fatloop_fails);
+    MP_RUN(exfat_huge_length_rejected);
+    MP_RUN(exfat_huge_dir_rejected);
     MP_TEST_MAIN_END();
 }

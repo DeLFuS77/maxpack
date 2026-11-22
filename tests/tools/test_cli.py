@@ -63,6 +63,8 @@ rc, _, err = run("analyze", os.path.join(FX, "truncated_head.exfat"))
 check("truncada_sale_1", rc == 1 and "error:" in err, err)
 rc, _, err = run("analyze", os.path.join(FX, "fatloop.exfat"))
 check("fatloop_sale_1", rc == 1 and "FAT" in err, err)
+rc, _, err = run("analyze", os.path.join(FX, "huge_len.exfat"))
+check("tamano_imposible_sale_1", rc == 1 and "error:" in err, err)
 rc, _, err = run("analyze", os.path.join(FX, "fake.pkg"))
 check("pkg_sale_1", rc == 1 and "PKG" in err, err)
 

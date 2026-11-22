@@ -10,6 +10,7 @@
 #include "mp_source_impl.h"
 
 #define EXFAT_MAX_DEPTH 64
+#define EXFAT_MAX_DIR (256ull << 20)   // límite de exFAT para el tamaño de una carpeta
 
 typedef struct {
     mp_extent *ex;
@@ -119,6 +120,8 @@ static int build_extents(exfat *x, uint32_t first, int nofat, int has_len, uint6
                          const char *path, mp_extent **out, size_t *nout, mp_err *e) {
     *out = NULL;
     *nout = 0;
+    // Antes de redondear: con un DataLength cercano a 2^64 el redondeo daría la vuelta a 0.
+    if (has_len && len > (uint64_t)x->count * x->cs) return bad_chain(e, path, "más grande que el volumen");
     uint64_t need = has_len ? (len + x->cs - 1) / x->cs : 0;
     if (has_len && need == 0) return 0;
     if (has_len && need > x->count) return bad_chain(e, path, "más grande que el volumen");
@@ -150,6 +153,10 @@ static int build_extents(exfat *x, uint32_t first, int nofat, int has_len, uint6
         }
         got++;
         if (has_len && got == need) break;
+        if (!has_len && got * x->cs >= EXFAT_MAX_DIR) {
+            mp_err_set(e, "carpeta raíz demasiado grande (cadena de más de 256 MiB)");
+            goto fail;
+        }
         if (nofat) {
             c++;
             continue;
@@ -274,6 +281,11 @@ static int parse_dir(exfat *x, const uint8_t *d, uint64_t len, const char *prefi
         uint64_t vdl = rd64(st + 8), dl = rd64(st + 24);
         uint32_t first = rd32(st + 20);
         int64_t mtime = exfat_time(rd32(d + i + 12), d[i + 21], d[i + 23]);
+        if ((attr & 0x10) && dl > EXFAT_MAX_DIR) {
+            mp_err_set(e, "carpeta demasiado grande: %s (más de 256 MiB)", path);
+            free(path);
+            return -1;
+        }
         mp_extent *ex = NULL;
         size_t nex = 0;
         if (build_extents(x, first, nofat, 1, dl, path, &ex, &nex, e) != 0) {

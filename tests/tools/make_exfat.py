@@ -154,13 +154,19 @@ def file_set(node):
     f[22] = f[23] = f[24] = UTC_OFS
     s = bytearray(32)
     s[0] = 0xC0
-    s[1] = 0x01 | (0x02 if node.nofat else 0)
+    s[1] = 0x01 | (0x02 if (node.nofat or getattr(node, "dl_override", None) is not None) else 0)
     s[3] = nchars
     upper = "".join(ch.upper() if "a" <= ch <= "z" else ch for ch in node.name).encode("utf-16-le")
     struct.pack_into("<H", s, 4, rot16(upper))
     vdl = node.dl if node.vdl is None else node.vdl
+    dl = node.dl
+    if getattr(node, "dl_override", None) is not None:   # imágenes trampa: tamaño falso
+        dl = vdl = node.dl_override
     struct.pack_into("<Q", s, 8, vdl)
-    struct.pack_into("<IQ", s, 20, node.clusters[0] if node.clusters else 0, node.dl)
+    first = node.clusters[0] if node.clusters else 0
+    if getattr(node, "first_override", None) is not None:
+        first = node.first_override
+    struct.pack_into("<IQ", s, 20, first, dl)
     names = bytearray()
     for k in range(nname):
         e = bytearray(32)
@@ -173,10 +179,16 @@ def file_set(node):
     return bytes(entry_set)
 
 
-def build(files):
+def build(files, overrides=None, extra_clusters=0):
+    """overrides: {ruta: DataLength falso}; extra_clusters: clústeres que el volumen declara de
+    más sin escribirlos (la imagen queda más corta que el volumen)."""
     root = build_tree(files)
     nodes = list(walk(root))
     by_path = {p: n for p, n in nodes}
+    for path, dl in (overrides or {}).items():
+        by_path[path].dl_override = dl
+        if extra_clusters:   # que apunte a los clústeres extra, sin chocar con otros archivos
+            by_path[path].first_override = "extra"
 
     # Tamaños.
     root.dl = dir_bytes(root, True)
@@ -188,7 +200,7 @@ def build(files):
     data_clusters = 1 + ceil_div(root.dl, CLUSTER) + sum(ceil_div(n.dl, CLUSTER) for _, n in nodes)
     bitmap_c = 1
     while True:
-        count = data_clusters + bitmap_c + 16
+        count = data_clusters + bitmap_c + 16 + extra_clusters
         need = ceil_div(ceil_div(count, 8), CLUSTER)
         if need == bitmap_c:
             break
@@ -225,6 +237,9 @@ def build(files):
 
     used = nxt[0] - 2
     assert used <= count
+    for _, n in nodes:
+        if getattr(n, "first_override", None) == "extra":
+            n.first_override = count - extra_clusters + 2
 
     # FAT.
     fat = [0] * (count + 2)
@@ -244,7 +259,7 @@ def build(files):
             chain(n.clusters)
 
     # Heap.
-    heap = bytearray(count * CLUSTER)
+    heap = bytearray((count - extra_clusters) * CLUSTER)   # los clústeres extra no se escriben
 
     def put(cl, data):
         for i, c in enumerate(cl):
@@ -313,7 +328,7 @@ def build(files):
     img += struct.pack("<%dI" % len(fat), *fat)
     img += bytes(heap_off * SECTOR - len(img))
     img += heap
-    assert len(img) == vol_len * SECTOR
+    assert len(img) == (vol_len - extra_clusters * spc) * SECTOR
 
     def coff(c):
         return heap_off * SECTOR + (c - 2) * CLUSTER
@@ -352,6 +367,10 @@ def main():
     struct.pack_into("<I", loop, info["frag_fat_entry"], info["frag_first"])
     w("fatloop.exfat", bytes(loop))
     w("fake.pkg", b"\x7FFIH" + bytes(60))
+    # Imágenes trampa: un archivo con DataLength = 2^64 - 1 y una carpeta que dice ocupar 300 MiB
+    # en un volumen que declara clústeres de sobra (la imagen real es mucho más corta).
+    w("huge_len.exfat", build(basic_files(), overrides={"zeros.bin": 2**64 - 1})[0])
+    w("bigdir.exfat", build(basic_files(), overrides={"deep": 300 << 20}, extra_clusters=80000)[0])
     print("fixtures: %d archivos, %d carpetas, imagen de %d bytes en %s"
           % (len(files), len(dirs), len(img), args.out))
 

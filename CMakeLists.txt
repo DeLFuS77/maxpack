@@ -28,6 +28,9 @@ file(GLOB MP_ANALYZE_SRC CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/analy
 add_library(maxpack_analyze STATIC ${MP_ANALYZE_SRC})
 target_include_directories(maxpack_analyze PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/analyze)
 target_link_libraries(maxpack_analyze PUBLIC maxpack_core)
+if(NOT MSVC)
+  target_link_libraries(maxpack_analyze PUBLIC m)
+endif()
 mp_warnings(maxpack_analyze)
 
 add_executable(maxpack src/cli/main.c)
@@ -72,6 +75,7 @@ if(MAXPACK_BUILD_TESTS)
   mp_add_test(test_source_exfat FIXTURES)
   set_tests_properties(test_source_exfat PROPERTIES TIMEOUT 10)
   mp_add_test(test_rules)
+  mp_add_test(test_sample)
 
   # Herramienta de prueba: vuelca un rango de un archivo de un origen a stdout.
   add_executable(mp_cat tests/tools/mp_cat.c)

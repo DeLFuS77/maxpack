@@ -98,6 +98,16 @@ if(MAXPACK_BUILD_TESTS)
   add_test(NAME check_idx3 COMMAND ${Python3_EXECUTABLE} -I
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/tools/check_idx3.py ${MP_TEST_TMP}/idx3)
   set_tests_properties(check_idx3 PROPERTIES FIXTURES_REQUIRED idx3)
+  mp_add_test(test_zpk FIXTURES)
+  set_tests_properties(test_zpk PROPERTIES FIXTURES_SETUP zpk)
+  add_test(NAME check_zpk COMMAND ${Python3_EXECUTABLE} -I
+    ${CMAKE_CURRENT_SOURCE_DIR}/tools/ampr_ref.py zpk-check ${MP_TEST_TMP}/zpk/roundtrip
+    ${MP_FIXTURES_DIR}/basic.exfat)
+  set_tests_properties(check_zpk PROPERTIES FIXTURES_REQUIRED "exfat;zpk")
+  add_test(NAME check_zpk_multi COMMAND ${Python3_EXECUTABLE} -I
+    ${CMAKE_CURRENT_SOURCE_DIR}/tools/ampr_ref.py zpk-check ${MP_TEST_TMP}/zpk/multi
+    ${MP_FIXTURES_DIR}/basic.exfat)
+  set_tests_properties(check_zpk_multi PROPERTIES FIXTURES_REQUIRED "exfat;zpk")
   add_test(NAME test_cli COMMAND ${Python3_EXECUTABLE} -I
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/tools/test_cli.py $<TARGET_FILE:maxpack> ${MP_FIXTURES_DIR}
     ${MP_TEST_TMP}/cli)

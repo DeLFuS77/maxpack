@@ -453,6 +453,34 @@ int mp_wfile_create(const char *path, mp_wfile **out, mp_err *e) {
     return 0;
 }
 
+int mp_wfile_reopen(const char *path, mp_wfile **out, mp_err *e) {
+    *out = NULL;
+    wchar_t *w = long_path(path);
+    if (!w) {
+        mp_err_set(e, "ruta no válida: %s", path);
+        return -1;
+    }
+    HANDLE h = CreateFileW(w, GENERIC_WRITE, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    free(w);
+    if (h == INVALID_HANDLE_VALUE) {
+        win_err(e, "no se puede abrir para escribir", path, GetLastError());
+        return -1;
+    }
+    LARGE_INTEGER li;
+    mp_wfile *f = calloc(1, sizeof *f);
+    if (!f || !(f->path = mp_strdup(path)) || !GetFileSizeEx(h, &li)) {
+        if (f) free(f->path);
+        free(f);
+        CloseHandle(h);
+        mp_err_set(e, "no se puede abrir %s", path);
+        return -1;
+    }
+    f->h = h;
+    f->size = (uint64_t)li.QuadPart;
+    *out = f;
+    return 0;
+}
+
 int mp_wfile_pwrite(mp_wfile *f, const void *p, size_t n, uint64_t off, mp_err *e) {
     size_t done = 0;
     while (done < n) {
@@ -809,6 +837,28 @@ int mp_wfile_create(const char *path, mp_wfile **out, mp_err *e) {
         return -1;
     }
     f->fd = fd;
+    *out = f;
+    return 0;
+}
+
+int mp_wfile_reopen(const char *path, mp_wfile **out, mp_err *e) {
+    *out = NULL;
+    int fd = open(path, O_WRONLY | O_CLOEXEC);
+    struct stat st;
+    if (fd < 0 || fstat(fd, &st) != 0) {
+        mp_err_set(e, "no se puede abrir para escribir %s: %s", path, strerror(errno));
+        if (fd >= 0) close(fd);
+        return -1;
+    }
+    mp_wfile *f = calloc(1, sizeof *f);
+    if (!f || !(f->path = mp_strdup(path))) {
+        free(f);
+        close(fd);
+        mp_err_set(e, "sin memoria");
+        return -1;
+    }
+    f->fd = fd;
+    f->size = (uint64_t)st.st_size;
     *out = f;
     return 0;
 }

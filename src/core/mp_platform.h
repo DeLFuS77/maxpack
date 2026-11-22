@@ -23,6 +23,7 @@ int mp_write_file(const char *utf8_path, const void *data, size_t len, mp_err *e
 // ya escritos (p. ej. cabeceras que solo se conocen al acabar). Un solo hilo por archivo.
 typedef struct mp_wfile mp_wfile;
 int mp_wfile_create(const char *utf8_path, mp_wfile **out, mp_err *e);
+int mp_wfile_reopen(const char *utf8_path, mp_wfile **out, mp_err *e);   // existente, sin truncar
 int mp_wfile_write(mp_wfile *f, const void *p, size_t n, mp_err *e);
 int mp_wfile_pwrite(mp_wfile *f, const void *p, size_t n, uint64_t off, mp_err *e);
 uint64_t mp_wfile_size(const mp_wfile *f);

@@ -89,7 +89,30 @@ MP_TEST(dir_is_empty) {
     MP_CHECK(mp_dir_is_empty(TMP "/no-existe") == -1);
 }
 
+MP_TEST(wfile_reopen_patches) {
+    mp_err e = {{0}};
+    MP_CHECK(mp_make_dirs(TMP, &e) == 0);
+    const char *p = TMP "/reopen.bin";
+    remove_if_exists(p);
+    MP_CHECK(mp_write_file(p, "0123456789", 10, &e) == 0);
+    mp_wfile *f = NULL;
+    MP_CHECK(mp_wfile_reopen(p, &f, &e) == 0);
+    if (!f) return;
+    MP_CHECK_EQ_U64(mp_wfile_size(f), 10);
+    MP_CHECK(mp_wfile_pwrite(f, "AB", 2, 3, &e) == 0);
+    MP_CHECK(mp_wfile_close(f, &e) == 0);
+    mp_file *r = NULL;
+    char back[11] = {0};
+    size_t got = 0;
+    MP_CHECK(mp_file_open_read(p, &r, &e) == 0);
+    MP_CHECK(r && mp_file_pread(r, back, 10, 0, &got, &e) == 0);
+    mp_file_close(r);
+    MP_CHECK_STR(back, "012AB56789");
+    MP_CHECK(mp_wfile_reopen(TMP "/no-existe.bin", &f, &e) == -1);
+}
+
 int main(void) {
+    MP_RUN(wfile_reopen_patches);
     MP_RUN(wfile_write_patch_read);
     MP_RUN(wfile_create_refuses_existing);
     MP_RUN(set_mtime_roundtrip);

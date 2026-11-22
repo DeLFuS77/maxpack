@@ -539,6 +539,18 @@ int mp_set_mtime(const char *path, int64_t t, mp_err *e) {
     return 0;
 }
 
+int mp_stat(const char *path, uint64_t *size, int64_t *mtime) {
+    wchar_t *w = long_path(path);
+    if (!w) return -1;
+    WIN32_FILE_ATTRIBUTE_DATA a;
+    BOOL ok = GetFileAttributesExW(w, GetFileExInfoStandard, &a);
+    free(w);
+    if (!ok) return -1;
+    if (size) *size = ((uint64_t)a.nFileSizeHigh << 32) | a.nFileSizeLow;
+    if (mtime) *mtime = filetime_to_unix(a.ftLastWriteTime);
+    return 0;
+}
+
 static int has_entry_cb(void *ctx, const char *rel, int is_dir, uint64_t size, int64_t mtime) {
     (void)ctx;
     (void)rel;
@@ -903,6 +915,14 @@ int mp_set_mtime(const char *path, int64_t t, mp_err *e) {
     return 0;
 }
 
+int mp_stat(const char *path, uint64_t *size, int64_t *mtime) {
+    struct stat st;
+    if (stat(path, &st) != 0) return -1;
+    if (size) *size = (uint64_t)st.st_size;
+    if (mtime) *mtime = (int64_t)st.st_mtime;
+    return 0;
+}
+
 int mp_dir_is_empty(const char *path) {
     DIR *d = opendir(path);
     if (!d) return -1;
@@ -951,3 +971,32 @@ int mp_wfile_write(mp_wfile *f, const void *p, size_t n, mp_err *e) {
 }
 
 uint64_t mp_wfile_size(const mp_wfile *f) { return f->size; }
+
+// Deja p en su carpeta padre (C:\a\b -> C:\a, C:\a -> C:\, /a -> /). 0 si ya es una raíz.
+static int to_parent_path(char *p) {
+    size_t n = strlen(p);
+    while (n > 0 && is_sep(p[n - 1])) n--;
+    size_t end = n;
+    while (n > 0 && !is_sep(p[n - 1])) n--;
+    if (n == 0 || n == end) return 0;
+    size_t sep = n - 1;
+    if (sep == 0 || (sep == 2 && p[1] == ':'))
+        p[n] = 0;
+    else
+        p[sep] = 0;
+    return 1;
+}
+
+int mp_path_is_inside(const char *path, const char *dir) {
+    char *p = mp_full_path(path);
+    if (!p) return 0;
+    int inside = 0;
+    do {
+        if (mp_same_file(p, dir)) {
+            inside = 1;
+            break;
+        }
+    } while (to_parent_path(p));
+    free(p);
+    return inside;
+}

@@ -176,7 +176,10 @@ int mp_zpk_write(mp_source *src, const uint32_t *files, size_t n, const mp_zpk_o
             cur_off += it->out_len;
             stored_total += it->out_len;
         }
-        mp_progress_add(o->prog, (uint64_t)nb * MP_BLOCK_V1);
+        uint64_t batch_bytes = 0;
+        for (size_t b = 0; b < nb; b++) batch_bytes += items[b].len;
+        mp_progress_add(o->prog, batch_bytes);
+        mp_progress_maybe_print(o->prog);
     }
     uint32_t nvol = (uint32_t)(cur_vol + 1);
     if (cur_vol >= 0) {

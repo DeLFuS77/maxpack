@@ -10,6 +10,7 @@
 #endif
 
 #include "mp_analyze.h"
+#include "mp_pack.h"
 #include "mp_platform.h"
 #include "mp_report_out.h"
 #include "mp_rules.h"
@@ -19,7 +20,16 @@ static void usage(FILE *out) {
     fprintf(out,
             "Uso:\n"
             "  maxpack analyze <carpeta|imagen.exfat> [opciones]\n"
+            "  maxpack pack <carpeta|imagen.exfat> -o <salida> [opciones]\n"
             "  maxpack --version\n"
+            "\n"
+            "Opciones de pack:\n"
+            "  -o SALIDA          carpeta nueva o vacía (--folder) para copiar a la consola\n"
+            "  --folder           salida en carpeta (por defecto)\n"
+            "  --level N          nivel de zstd, 1 a 22 (por defecto 19)\n"
+            "  --threads N        hilos (por defecto, todos los de la CPU)\n"
+            "  --runtime ARCHIVO  libSceAmpr.sprx de ampr-emu-ng para fakelib/\n"
+            "  --keep-loose GLOB  dejar suelto también lo que case (se puede repetir)\n"
             "\n"
             "Opciones de analyze:\n"
             "  --sample N%%        porcentaje de la muestra (por defecto 2%%, mínimo 1 GiB)\n"
@@ -178,6 +188,116 @@ static int cmd_analyze(int argc, char **argv) {
     return rc;
 }
 
+static void print_size(FILE *out, uint64_t b) {
+    double v = (double)b;
+    const char *u = "B";
+    if (v >= 1e9) {
+        v /= 1e9;
+        u = "GB";
+    } else if (v >= 1e6) {
+        v /= 1e6;
+        u = "MB";
+    } else if (v >= 1e3) {
+        v /= 1e3;
+        u = "KB";
+    }
+    char s[32];
+    snprintf(s, sizeof s, "%.2f %s", v, u);
+    for (char *p = s; *p; p++)
+        if (*p == '.') *p = ',';
+    fputs(s, out);
+}
+
+static int cmd_pack(int argc, char **argv) {
+    mp_pack_opts o;
+    mp_pack_opts_default(&o);
+    const char *src = NULL, *dst = NULL;
+    const char **keep = calloc((size_t)argc + 1, sizeof *keep);
+    if (!keep) return 1;
+    for (int i = 0; i < argc; i++) {
+        const char *a = argv[i];
+        int has_value = i + 1 < argc;
+        if (!strcmp(a, "--folder")) {
+            continue;
+        } else if (!strcmp(a, "--p5z")) {
+            return bad_usage("--p5z todavía no está disponible en esta versión", NULL);
+        } else if (!strcmp(a, "-o") || !strcmp(a, "--level") || !strcmp(a, "--threads") ||
+                   !strcmp(a, "--runtime") || !strcmp(a, "--keep-loose")) {
+            if (!has_value) return bad_usage("falta el valor de", a);
+            const char *v = argv[++i];
+            char *end = NULL;
+            if (!strcmp(a, "-o")) {
+                dst = v;
+            } else if (!strcmp(a, "--runtime")) {
+                o.runtime = v;
+            } else if (!strcmp(a, "--keep-loose")) {
+                keep[o.nkeep++] = v;
+            } else if (!strcmp(a, "--level")) {
+                long l = strtol(v, &end, 10);
+                if (end == v || *end || l < 1 || l > 22) return bad_usage("--level debe estar entre 1 y 22", v);
+                o.level = (int)l;
+            } else {
+                long t = strtol(v, &end, 10);
+                if (end == v || *end || t < 1 || t > 1024) return bad_usage("--threads debe estar entre 1 y 1024", v);
+                o.threads = (unsigned)t;
+            }
+        } else if (a[0] == '-') {
+            return bad_usage("opción desconocida", a);
+        } else if (!src) {
+            src = a;
+        } else {
+            return bad_usage("sobra un argumento", a);
+        }
+    }
+    if (!src) return bad_usage("falta la carpeta o la imagen .exfat del juego", NULL);
+    if (!dst) return bad_usage("falta la salida (-o)", NULL);
+    o.keep_loose = keep;
+    if (mp_path_kind(src) == 0) {
+        fprintf(stderr, "error: no existe: %s\n", src);
+        return 1;
+    }
+    if (mp_same_file(dst, src) || (mp_path_kind(src) == 2 && mp_path_is_inside(dst, src)))
+        return bad_usage("la salida no puede ser el juego ni estar dentro de él", dst);
+    if (mp_path_kind(dst) == 1) return bad_usage("la salida ya existe y es un archivo", dst);
+    if (mp_path_kind(dst) == 2 && mp_dir_is_empty(dst) != 1) return bad_usage("la carpeta de salida no está vacía", dst);
+
+    mp_err e = {{0}};
+    mp_pack_out out;
+    if (mp_pack_out_dir(dst, &out, &e) != 0) {
+        fprintf(stderr, "error: %s\n", e.msg);
+        return 1;
+    }
+    mp_pack_result r;
+    uint64_t t0 = mp_now_ns();
+    int rc = mp_pack_run(src, &out, &o, &r, &e);
+    out.destroy(out.ctx);
+    free(keep);
+    if (rc != 0) {
+        fprintf(stderr, "\nerror: %s\n(la carpeta %s queda incompleta: bórrala antes de repetir)\n", e.msg, dst);
+        return 1;
+    }
+    printf("Empaquetado en %s (%.0f s)\n", dst, (double)(mp_now_ns() - t0) / 1e9);
+    printf("  sueltos:      %llu archivos, ", (unsigned long long)r.loose_files);
+    print_size(stdout, r.loose_bytes);
+    printf("\n  empaquetados: %llu archivos, ", (unsigned long long)r.packed_files);
+    print_size(stdout, r.packed_bytes);
+    printf(" -> ");
+    print_size(stdout, r.stored_bytes);
+    printf(" en %llu volúmenes", (unsigned long long)r.volumes);
+    if (r.packed_bytes) {
+        char pct[32];
+        snprintf(pct, sizeof pct, "%.1f", 100.0 * (1.0 - (double)r.stored_bytes / (double)r.packed_bytes));
+        for (char *p = pct; *p; p++)
+            if (*p == '.') *p = ',';
+        printf(" (%s %% menos)", pct);
+    }
+    printf("\n");
+    if (r.runtime_without_zstd)
+        fprintf(stderr, "aviso: el runtime de fakelib/libSceAmpr.sprx no parece leer packs zstd: usa el "
+                        "libSceAmpr.sprx de ampr-emu-ng (--runtime)\n");
+    return 0;
+}
+
 int main(int argc, char **argv) {
     mp_args_utf8(&argc, &argv);
 #ifdef _WIN32
@@ -193,6 +313,7 @@ int main(int argc, char **argv) {
         return 0;
     }
     if (argc >= 2 && strcmp(argv[1], "analyze") == 0) return cmd_analyze(argc - 2, argv + 2);
+    if (argc >= 2 && strcmp(argv[1], "pack") == 0) return cmd_pack(argc - 2, argv + 2);
     if (argc >= 2) return bad_usage("orden desconocida", argv[1]);
     usage(stderr);
     return 2;

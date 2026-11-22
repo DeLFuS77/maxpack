@@ -128,5 +128,26 @@ check("json_no_escribe_en_el_origen", rc == 2 and not os.path.exists(inside), "r
 rc, _, err = run("analyze", BASIC, "--json", os.path.join(TMP, "no", "existe", "x.json"))
 check("json_carpeta_inexistente_sale_2", rc == 2, "rc=%d %s" % (rc, err[:200]))
 
+# pack a carpeta.
+def rmtree(p):
+    if os.path.isdir(p):
+        shutil.rmtree(p)
+
+
+out = os.path.join(TMP, "pack_out")
+rmtree(out)
+rc, so, err = run("pack", BASIC, "-o", out, "--threads", "2")
+check("pack_sale_0", rc == 0 and os.path.isfile(os.path.join(out, "ampr_zstd.index")), err[-300:])
+check("pack_avisa_runtime", "runtime" in (so + err), (so + err)[-300:])
+rc, _, err = run("pack", BASIC, "-o", out)
+check("pack_salida_no_vacia_sale_2", rc == 2, "rc=%d %s" % (rc, err[:200]))
+rc, _, err = run("pack", dsrc, "-o", os.path.join(dsrc, "dentro"))
+check("pack_dentro_del_origen_sale_2", rc == 2 and not os.path.exists(os.path.join(dsrc, "dentro")),
+      "rc=%d %s" % (rc, err[:200]))
+rc, _, err = run("pack", BASIC, "-o", os.path.join(TMP, "nivel23"), "--level", "23")
+check("pack_nivel_23_sale_2", rc == 2, "rc=%d %s" % (rc, err[:200]))
+rc, _, err = run("pack", BASIC)
+check("pack_sin_salida_sale_2", rc == 2, "rc=%d" % rc)
+
 print("test_cli: %d fallos" % len(failures))
 sys.exit(1 if failures else 0)

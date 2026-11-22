@@ -108,6 +108,8 @@ if(MAXPACK_BUILD_TESTS)
     ${CMAKE_CURRENT_SOURCE_DIR}/tools/ampr_ref.py zpk-check ${MP_TEST_TMP}/zpk/multi
     ${MP_FIXTURES_DIR}/basic.exfat)
   set_tests_properties(check_zpk_multi PROPERTIES FIXTURES_REQUIRED "exfat;zpk")
+  mp_add_test(test_pack FIXTURES)
+  set_tests_properties(test_pack PROPERTIES TIMEOUT 600)
   add_test(NAME test_cli COMMAND ${Python3_EXECUTABLE} -I
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/tools/test_cli.py $<TARGET_FILE:maxpack> ${MP_FIXTURES_DIR}
     ${MP_TEST_TMP}/cli)

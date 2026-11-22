@@ -29,6 +29,10 @@ int mp_wfile_pwrite(mp_wfile *f, const void *p, size_t n, uint64_t off, mp_err *
 uint64_t mp_wfile_size(const mp_wfile *f);
 int mp_wfile_close(mp_wfile *f, mp_err *e);   // también libera f si falla
 int mp_set_mtime(const char *utf8_path, int64_t unix_seconds, mp_err *e);
+int mp_stat(const char *utf8_path, uint64_t *size, int64_t *mtime);   // 0 si existe
+// 1 si path es dir o está dentro de dir (por identidad en el disco, recorriendo sus carpetas
+// padre aunque path todavía no exista).
+int mp_path_is_inside(const char *path, const char *dir);
 int mp_dir_is_empty(const char *utf8_path);    // 1 vacía, 0 con contenido, -1 no existe
 int mp_make_dirs(const char *utf8_path, mp_err *e);
 // 0 = no existe, 1 = archivo, 2 = carpeta.

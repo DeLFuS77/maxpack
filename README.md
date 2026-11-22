@@ -94,7 +94,7 @@ con un aviso: los PKG llegarán en la fase 4.
 - **Configuraciones**:
   - *v1 nivel 5 / 9 / 19 / 22*: packs compatibles con ampr-emu-ng (`AMPRZPK1`), bloques de 256 KiB.
     El nivel 5 es el que usa Dump Forge por defecto. Se aplica la regla de Forge: un bloque que no
-    mejora va en bruto, y un archivo que ahorra menos del 1 % va entero en bruto.
+    mejora va en bruto (como Forge, ya no se guarda en bruto el archivo entero si ahorra poco).
   - *v2 bloque de 1 MiB* y *v2 diccionario*: mejoras que necesitarían un runtime nuevo (M7 y M6 del
     diseño). El diccionario se entrena con una mitad de los datos y se mide con la otra. Con
     cualquier diccionario, zstd renuncia a la doble pasada del primer bloque que hace en el nivel 19

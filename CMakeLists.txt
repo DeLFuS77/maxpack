@@ -68,4 +68,12 @@ if(MAXPACK_BUILD_TESTS)
   mp_add_test(test_smoke)
   mp_add_test(test_platform)
   mp_add_test(test_source_dir)
+  mp_add_test(test_extent)
+  mp_add_test(test_source_exfat FIXTURES)
+  set_tests_properties(test_source_exfat PROPERTIES TIMEOUT 10)
+
+  # Herramienta de prueba: vuelca un rango de un archivo de un origen a stdout.
+  add_executable(mp_cat tests/tools/mp_cat.c)
+  target_link_libraries(mp_cat PRIVATE maxpack_core)
+  mp_warnings(mp_cat)
 endif()

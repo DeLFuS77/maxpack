@@ -148,6 +148,14 @@ rc, _, err = run("pack", BASIC, "-o", os.path.join(TMP, "nivel23"), "--level", "
 check("pack_nivel_23_sale_2", rc == 2, "rc=%d %s" % (rc, err[:200]))
 rc, _, err = run("pack", BASIC)
 check("pack_sin_salida_sale_2", rc == 2, "rc=%d" % rc)
+p5z = os.path.join(TMP, "basic.p5z")
+if os.path.exists(p5z):
+    os.remove(p5z)
+rc, so, err = run("pack", BASIC, "-o", p5z, "--p5z", "--threads", "2")
+ok = rc == 0 and os.path.isfile(p5z) and open(p5z, "rb").read(8) == b"MAXPKP5Z"
+check("pack_p5z_sale_0", ok and ".p5z" in so, (so + err)[-300:])
+rc, _, err = run("pack", BASIC, "-o", p5z, "--p5z")
+check("pack_p5z_existente_sale_2", rc == 2, "rc=%d %s" % (rc, err[:200]))
 
 print("test_cli: %d fallos" % len(failures))
 sys.exit(1 if failures else 0)

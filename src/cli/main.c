@@ -10,6 +10,7 @@
 #endif
 
 #include "mp_analyze.h"
+#include "mp_p5z.h"
 #include "mp_pack.h"
 #include "mp_platform.h"
 #include "mp_report_out.h"
@@ -26,6 +27,7 @@ static void usage(FILE *out) {
             "Opciones de pack:\n"
             "  -o SALIDA          carpeta nueva o vacía (--folder) para copiar a la consola\n"
             "  --folder           salida en carpeta (por defecto)\n"
+            "  --p5z              salida en un solo archivo .p5z para guardar en el PC\n"
             "  --level N          nivel de zstd, 1 a 22 (por defecto 19)\n"
             "  --threads N        hilos (por defecto, todos los de la CPU)\n"
             "  --runtime ARCHIVO  libSceAmpr.sprx de ampr-emu-ng para fakelib/\n"
@@ -212,15 +214,16 @@ static int cmd_pack(int argc, char **argv) {
     mp_pack_opts o;
     mp_pack_opts_default(&o);
     const char *src = NULL, *dst = NULL;
+    int p5z = 0;
     const char **keep = calloc((size_t)argc + 1, sizeof *keep);
     if (!keep) return 1;
     for (int i = 0; i < argc; i++) {
         const char *a = argv[i];
         int has_value = i + 1 < argc;
         if (!strcmp(a, "--folder")) {
-            continue;
+            p5z = 0;
         } else if (!strcmp(a, "--p5z")) {
-            return bad_usage("--p5z todavía no está disponible en esta versión", NULL);
+            p5z = 1;
         } else if (!strcmp(a, "-o") || !strcmp(a, "--level") || !strcmp(a, "--threads") ||
                    !strcmp(a, "--runtime") || !strcmp(a, "--keep-loose")) {
             if (!has_value) return bad_usage("falta el valor de", a);
@@ -258,12 +261,21 @@ static int cmd_pack(int argc, char **argv) {
     }
     if (mp_same_file(dst, src) || (mp_path_kind(src) == 2 && mp_path_is_inside(dst, src)))
         return bad_usage("la salida no puede ser el juego ni estar dentro de él", dst);
-    if (mp_path_kind(dst) == 1) return bad_usage("la salida ya existe y es un archivo", dst);
-    if (mp_path_kind(dst) == 2 && mp_dir_is_empty(dst) != 1) return bad_usage("la carpeta de salida no está vacía", dst);
+    if (p5z) {
+        if (mp_path_kind(dst) != 0) return bad_usage("el .p5z de salida ya existe", dst);
+        char *dir = mp_full_path(dst);
+        int parent_ok = dir && to_parent(dir) && mp_path_kind(dir) == 2;
+        free(dir);
+        if (!parent_ok) return bad_usage("no existe la carpeta donde guardar el .p5z", dst);
+    } else {
+        if (mp_path_kind(dst) == 1) return bad_usage("la salida ya existe y es un archivo", dst);
+        if (mp_path_kind(dst) == 2 && mp_dir_is_empty(dst) != 1)
+            return bad_usage("la carpeta de salida no está vacía", dst);
+    }
 
     mp_err e = {{0}};
     mp_pack_out out;
-    if (mp_pack_out_dir(dst, &out, &e) != 0) {
+    if ((p5z ? mp_pack_out_p5z(dst, o.threads, &out, &e) : mp_pack_out_dir(dst, &out, &e)) != 0) {
         fprintf(stderr, "error: %s\n", e.msg);
         return 1;
     }
@@ -273,7 +285,7 @@ static int cmd_pack(int argc, char **argv) {
     out.destroy(out.ctx);
     free(keep);
     if (rc != 0) {
-        fprintf(stderr, "\nerror: %s\n(la carpeta %s queda incompleta: bórrala antes de repetir)\n", e.msg, dst);
+        fprintf(stderr, "\nerror: %s\n(%s queda incompleto: bórralo antes de repetir)\n", e.msg, dst);
         return 1;
     }
     printf("Empaquetado en %s (%.0f s)\n", dst, (double)(mp_now_ns() - t0) / 1e9);
@@ -292,6 +304,12 @@ static int cmd_pack(int argc, char **argv) {
         printf(" (%s %% menos)", pct);
     }
     printf("\n");
+    uint64_t psize = 0;
+    if (p5z && mp_stat(dst, &psize, NULL) == 0) {
+        printf("  .p5z: ");
+        print_size(stdout, psize);
+        printf("\n");
+    }
     if (r.runtime_without_zstd)
         fprintf(stderr, "aviso: el runtime de fakelib/libSceAmpr.sprx no parece leer packs zstd: usa el "
                         "libSceAmpr.sprx de ampr-emu-ng (--runtime)\n");

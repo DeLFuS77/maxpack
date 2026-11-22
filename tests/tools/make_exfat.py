@@ -371,6 +371,10 @@ def main():
     # en un volumen que declara clústeres de sobra (la imagen real es mucho más corta).
     w("huge_len.exfat", build(basic_files(), overrides={"zeros.bin": 2**64 - 1})[0])
     w("bigdir.exfat", build(basic_files(), overrides={"deep": 300 << 20}, extra_clusters=80000)[0])
+    # Dos rutas que solo se diferencian en mayúsculas (exFAT real no lo permite; un origen
+    # copiado desde Linux sí podría tenerlas): pack debe negarse antes de escribir nada.
+    w("casedup.exfat", build(basic_files() + [("x/A.bin", b"A" * 5000, None),
+                                              ("x/a.bin", b"a" * 5000, None)])[0])
     print("fixtures: %d archivos, %d carpetas, imagen de %d bytes en %s"
           % (len(files), len(dirs), len(img), args.out))
 

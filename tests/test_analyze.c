@@ -47,7 +47,8 @@ static uint64_t direct_v1_l19(void) {
             stored += f && f < n ? f : n;
             raw += n;
         }
-        total += stored * 100 > raw * 99 ? raw : stored;   // ahorro < 1 % -> todo en bruto
+        (void)raw;
+        total += stored;   // sin regla del 1 %: cada bloque, comprimido solo si mejora (como Forge)
     }
     free(buf);
     free(out);
@@ -182,6 +183,30 @@ MP_TEST(sampled_path_estimates) {
     mp_report_free(&f);
 }
 
+// Un archivo que ahorra menos del 1 % ya no va entero en bruto: su bloque comprimible se comprime.
+MP_TEST(no_store_only_rule) {
+    mp_err e = {{0}};
+    const char *dir = MP_TEST_TMP "/analyze/casi";
+    MP_CHECK(mp_make_dirs(dir, &e) == 0);
+    size_t n = 121u * MP_BLOCK_V1;
+    uint8_t *d = malloc(n);
+    for (size_t i = 0; i < 120u * MP_BLOCK_V1; i += 8) {
+        uint64_t v = mp_splitmix64(i);
+        memcpy(d + i, &v, 8);
+    }
+    memset(d + 120u * MP_BLOCK_V1, 0, MP_BLOCK_V1);
+    MP_CHECK(mp_write_file(MP_TEST_TMP "/analyze/casi/casi.bin", d, n, &e) == 0);
+    free(d);
+    mp_analyze_opts o = quiet(8, 1);
+    o.dedup = 0;
+    o.transport = 0;
+    mp_report r;
+    memset(&r, 0, sizeof r);
+    MP_CHECK(mp_analyze(dir, &o, &r, &e) == 0);
+    MP_CHECK(r.est_packed[MP_CFG_V1_L19] < n - MP_BLOCK_V1 / 2);
+    mp_report_free(&r);
+}
+
 // Transporte calculado aquí: cada archivo empaquetable en frames de 32 MiB con zstd 19 y
 // ventana larga; un frame que no mejora va en bruto.
 static uint64_t direct_transport(void) {
@@ -251,6 +276,7 @@ int main(void) {
     MP_RUN(keep_loose_moves_files);
     MP_RUN(small_game_full_sample);
     MP_RUN(sampled_path_estimates);
+    MP_RUN(no_store_only_rule);
     MP_RUN(transport_in_report);
     MP_RUN(transport_threads_independent);
     MP_TEST_MAIN_END();

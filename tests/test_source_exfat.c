@@ -181,7 +181,18 @@ MP_TEST(exfat_huge_dir_rejected) {
     mp_source_close(s);
 }
 
+MP_TEST(source_find_all) {
+    mp_source *s = open_basic();
+    if (!s) return;
+    size_t bad = 0;
+    for (size_t i = 0; i < mp_source_count(s); i++) bad += mp_source_find(s, mp_source_entry(s, i)->path) != (long)i;
+    MP_CHECK_EQ_U64(bad, 0);
+    MP_CHECK(mp_source_find(s, "no/existe") == -1);
+    mp_source_close(s);
+}
+
 int main(void) {
+    MP_RUN(source_find_all);
     MP_RUN(exfat_lists_like_manifest);
     MP_RUN(exfat_contents_match);
     MP_RUN(exfat_vdl_zero_fill);

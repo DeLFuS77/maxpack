@@ -10,6 +10,19 @@ void mp_progress_init(mp_progress *p, const char *phase, uint64_t total, int pri
     p->total = total;
     p->phase = phase;
     p->print = print;
+    p->last_ns = 0;
+}
+
+void mp_progress_maybe_print(mp_progress *p) {
+    if (!p || !p->print || !p->mu) return;
+    uint64_t now = mp_now_ns();
+    if (now - p->last_ns < 1000000000ull) return;
+    p->last_ns = now;
+    mp_mutex_lock(p->mu);
+    double pct = p->total ? 100.0 * (double)p->done / (double)p->total : 100.0;
+    mp_mutex_unlock(p->mu);
+    fprintf(stderr, "\r%s: %5.1f %%", p->phase, pct);
+    fflush(stderr);
 }
 
 void mp_progress_add(mp_progress *p, uint64_t n) {

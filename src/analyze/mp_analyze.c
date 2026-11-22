@@ -193,11 +193,10 @@ static int extrapolate(mp_source *src, const uint32_t *packable, size_t npack,
     if (rc) mp_err_set(e, "sin memoria");
     for (int c = 0; !rc && c < MP_CFG_COUNT; c++) {
         for (size_t f = 0; f < npack; f++) {
-            uint64_t r = fst[f][c].raw, s = fst[f][c].stored;
-            // Regla de v1: si el archivo ahorra menos de un 1 %, va entero en bruto.
-            if (r && c != MP_CFG_ZLIB64K && s * 100 > r * 99) s = r;
-            raw[f] = r;
-            stored[f] = s;
+            // Sin regla del 1 % (archivo entero en bruto): Forge la quitó y el pack tampoco la
+            // aplica; cada bloque ya va en bruto cuando zstd no lo reduce.
+            raw[f] = fst[f][c].raw;
+            stored[f] = fst[f][c].stored;
         }
         rc = strata_estimate(src, packable, npack, raw, stored, &est[c], e);
     }

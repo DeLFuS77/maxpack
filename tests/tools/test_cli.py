@@ -128,5 +128,62 @@ check("json_no_escribe_en_el_origen", rc == 2 and not os.path.exists(inside), "r
 rc, _, err = run("analyze", BASIC, "--json", os.path.join(TMP, "no", "existe", "x.json"))
 check("json_carpeta_inexistente_sale_2", rc == 2, "rc=%d %s" % (rc, err[:200]))
 
+# pack a carpeta.
+def rmtree(p):
+    if os.path.isdir(p):
+        shutil.rmtree(p)
+
+
+out = os.path.join(TMP, "pack_out")
+rmtree(out)
+rc, so, err = run("pack", BASIC, "-o", out, "--threads", "2")
+check("pack_sale_0", rc == 0 and os.path.isfile(os.path.join(out, "ampr_zstd.index")), err[-300:])
+check("pack_avisa_runtime", "runtime" in (so + err), (so + err)[-300:])
+rc, _, err = run("pack", BASIC, "-o", out)
+check("pack_salida_no_vacia_sale_2", rc == 2, "rc=%d %s" % (rc, err[:200]))
+rc, _, err = run("pack", dsrc, "-o", os.path.join(dsrc, "dentro"))
+check("pack_dentro_del_origen_sale_2", rc == 2 and not os.path.exists(os.path.join(dsrc, "dentro")),
+      "rc=%d %s" % (rc, err[:200]))
+rc, _, err = run("pack", BASIC, "-o", os.path.join(TMP, "nivel23"), "--level", "23")
+check("pack_nivel_23_sale_2", rc == 2, "rc=%d %s" % (rc, err[:200]))
+rc, _, err = run("pack", BASIC)
+check("pack_sin_salida_sale_2", rc == 2, "rc=%d" % rc)
+p5z = os.path.join(TMP, "basic.p5z")
+if os.path.exists(p5z):
+    os.remove(p5z)
+rc, so, err = run("pack", BASIC, "-o", p5z, "--p5z", "--threads", "2")
+ok = rc == 0 and os.path.isfile(p5z) and open(p5z, "rb").read(8) == b"MAXPKP5Z"
+check("pack_p5z_sale_0", ok and ".p5z" in so, (so + err)[-300:])
+rc, _, err = run("pack", BASIC, "-o", p5z, "--p5z")
+check("pack_p5z_existente_sale_2", rc == 2, "rc=%d %s" % (rc, err[:200]))
+
+# info y unpack del .p5z.
+rc, so, err = run("info", p5z)
+check("info_sale_0", rc == 0 and "TEST00001" in so, (so + err)[-300:])
+rc, _, err = run("unpack", p5z, "-o", os.path.join(TMP, "unp_x"))
+check("unpack_sin_modo_sale_2", rc == 2, "rc=%d" % rc)
+orig = os.path.join(TMP, "unp_original")
+rmtree(orig)
+rc, so, err = run("unpack", p5z, "--original", "-o", orig)
+n_orig = sum(len(f) for _, _, f in os.walk(orig)) if os.path.isdir(orig) else 0
+check("unpack_original_sale_0", rc == 0 and n_orig == manifest_count(), "rc=%d n=%d %s" % (rc, n_orig, err[-200:]))
+rc, _, err = run("unpack", p5z, "--original", "-o", orig)
+check("unpack_salida_no_vacia_sale_2", rc == 2, "rc=%d" % rc)
+
+# verify.
+rc, so, err = run("verify", p5z)
+check("verify_p5z_sale_0", rc == 0, (so + err)[-300:])
+rc, so, err = run("verify", out, "--against", BASIC)
+check("verify_carpeta_against_sale_0", rc == 0, (so + err)[-300:])
+bad = os.path.join(TMP, "danado.p5z")
+data = bytearray(open(p5z, "rb").read())
+data[len(data) // 2] ^= 0x55
+open(bad, "wb").write(bytes(data))
+rc, so, err = run("verify", bad)
+check("verify_danado_sale_1", rc == 1 and ("FALLO" in err or "error" in err), (so + err)[-300:])
+
+rc, so, _ = run("--help")
+check("help_tiene_todas_las_ordenes", rc == 0 and all(w in so for w in ("analyze", "pack", "unpack", "verify", "info")), so[:300])
+
 print("test_cli: %d fallos" % len(failures))
 sys.exit(1 if failures else 0)

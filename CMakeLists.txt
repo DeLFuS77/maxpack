@@ -66,4 +66,5 @@ if(MAXPACK_BUILD_TESTS)
   set_tests_properties(check_ref PROPERTIES FIXTURES_REQUIRED exfat)
 
   mp_add_test(test_smoke)
+  mp_add_test(test_platform)
 endif()

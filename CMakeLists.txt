@@ -79,6 +79,7 @@ if(MAXPACK_BUILD_TESTS)
   mp_add_test(test_measure)
   mp_add_test(test_parallel)
   mp_add_test(test_dedup FIXTURES)
+  mp_add_test(test_v2exp FIXTURES)
 
   # Herramienta de prueba: vuelca un rango de un archivo de un origen a stdout.
   add_executable(mp_cat tests/tools/mp_cat.c)

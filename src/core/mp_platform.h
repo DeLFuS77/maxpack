@@ -29,6 +29,7 @@ int mp_wfile_pwrite(mp_wfile *f, const void *p, size_t n, uint64_t off, mp_err *
 uint64_t mp_wfile_size(const mp_wfile *f);
 int mp_wfile_close(mp_wfile *f, mp_err *e);   // también libera f si falla
 int mp_set_mtime(const char *utf8_path, int64_t unix_seconds, mp_err *e);
+int mp_remove_file(const char *utf8_path);   // 0 si se borró
 int mp_stat(const char *utf8_path, uint64_t *size, int64_t *mtime);   // 0 si existe
 // 1 si path es dir o está dentro de dir (por identidad en el disco, recorriendo sus carpetas
 // padre aunque path todavía no exista).

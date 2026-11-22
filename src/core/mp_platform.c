@@ -539,6 +539,14 @@ int mp_set_mtime(const char *path, int64_t t, mp_err *e) {
     return 0;
 }
 
+int mp_remove_file(const char *path) {
+    wchar_t *w = long_path(path);
+    if (!w) return -1;
+    BOOL ok = DeleteFileW(w);
+    free(w);
+    return ok ? 0 : -1;
+}
+
 int mp_stat(const char *path, uint64_t *size, int64_t *mtime) {
     wchar_t *w = long_path(path);
     if (!w) return -1;
@@ -914,6 +922,8 @@ int mp_set_mtime(const char *path, int64_t t, mp_err *e) {
     }
     return 0;
 }
+
+int mp_remove_file(const char *path) { return unlink(path) == 0 ? 0 : -1; }
 
 int mp_stat(const char *path, uint64_t *size, int64_t *mtime) {
     struct stat st;

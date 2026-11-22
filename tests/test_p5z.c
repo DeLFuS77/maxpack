@@ -156,7 +156,42 @@ MP_TEST(p5z_packs_stored_raw) {
     free(p);
 }
 
+// Un origen que se rechaza no deja ni rastro: el .p5z no llega a crearse.
+MP_TEST(p5z_not_created_on_refusal) {
+    mp_err e = {{0}};
+    const char *path = TMP "/rechazado.p5z";
+    remove(path);
+    mp_make_dirs(TMP, &e);
+    mp_pack_opts o;
+    mp_pack_opts_default(&o);
+    o.progress = 0;
+    mp_pack_out out;
+    mp_pack_result r;
+    MP_CHECK(mp_pack_out_p5z(path, 2, &out, &e) == 0);
+    MP_CHECK(mp_pack_run(MP_FIXTURES_DIR "/casedup.exfat", &out, &o, &r, &e) == -1);
+    out.destroy(out.ctx);
+    MP_CHECK(mp_path_kind(path) == 0);
+}
+
+// Un fallo a mitad (imagen truncada) borra el .p5z incompleto, que no serviría para nada.
+MP_TEST(p5z_partial_removed_on_failure) {
+    mp_err e = {{0}};
+    const char *path = TMP "/incompleto.p5z";
+    remove(path);
+    mp_pack_opts o;
+    mp_pack_opts_default(&o);
+    o.progress = 0;
+    mp_pack_out out;
+    mp_pack_result r;
+    MP_CHECK(mp_pack_out_p5z(path, 2, &out, &e) == 0);
+    MP_CHECK(mp_pack_run(MP_FIXTURES_DIR "/truncated_tail.exfat", &out, &o, &r, &e) == -1);
+    out.destroy(out.ctx);
+    MP_CHECK(mp_path_kind(path) == 0);
+}
+
 int main(void) {
+    MP_RUN(p5z_not_created_on_refusal);
+    MP_RUN(p5z_partial_removed_on_failure);
     MP_RUN(p5z_structure);
     MP_RUN(p5z_threads_identical);
     MP_RUN(p5z_packs_stored_raw);

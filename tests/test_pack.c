@@ -238,6 +238,26 @@ MP_TEST(pack_refuses_case_dups) {
     MP_CHECK(mp_dir_is_empty(TMP "/casedup") == 1);   // no se ha escrito nada
 }
 
+// Con una carpeta de salida que no existía, un origen rechazado no la crea.
+MP_TEST(pack_dir_not_created_on_refusal) {
+    mp_pack_opts o = quiet(2);
+    mp_pack_result r;
+    mp_err e = {{0}};
+    const char *dir = TMP "/nueva_no_creada";
+    clear_dir(dir);
+#ifdef _WIN32
+    _rmdir(dir);
+#else
+    rmdir(dir);
+#endif
+    MP_CHECK(mp_path_kind(dir) == 0);
+    mp_pack_out out;
+    MP_CHECK(mp_pack_out_dir(dir, &out, &e) == 0);
+    MP_CHECK(mp_pack_run(MP_FIXTURES_DIR "/casedup.exfat", &out, &o, &r, &e) == -1);
+    out.destroy(out.ctx);
+    MP_CHECK(mp_path_kind(dir) == 0);
+}
+
 MP_TEST(pack_refuses_packed_source) {
     mp_pack_opts o = quiet(2);
     mp_pack_result r;
@@ -347,6 +367,7 @@ int main(void) {
     MP_RUN(pack_threads_identical);
     MP_RUN(pack_matches_analyzer);
     MP_RUN(pack_refuses_case_dups);
+    MP_RUN(pack_dir_not_created_on_refusal);
     MP_RUN(pack_refuses_packed_source);
     MP_RUN(pack_replaces_ampr_files);
     MP_RUN(pack_many_small_files);

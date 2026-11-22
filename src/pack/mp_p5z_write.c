@@ -45,6 +45,10 @@ typedef struct {
     // Volumen en curso.
     mp_sha256 vsha;
     int64_t vol_file;          // índice en files del volumen abierto
+    // El archivo se crea con la primera escritura (un origen rechazado no deja nada) y se borra
+    // si no se llega a terminar (un .p5z sin pie no sirve).
+    char *path;
+    int created, finished;
 } p5out;
 
 static void wr32(uint8_t *p, uint32_t v) {
@@ -54,8 +58,17 @@ static void wr64(uint8_t *p, uint64_t v) {
     for (int i = 0; i < 8; i++) p[i] = (uint8_t)(v >> (8 * i));
 }
 
+static int ensure_open(p5out *o, mp_err *e) {
+    if (o->f) return 0;
+    static const uint8_t zero[P5Z_HEADER] = {0};
+    if (mp_wfile_create(o->path, &o->f, e) != 0) return -1;
+    o->created = 1;   // CREATE_NEW: lo hemos creado nosotros, así que podemos borrarlo si falla
+    return mp_wfile_write(o->f, zero, sizeof zero, e);
+}
+
 static p5file *new_file(p5out *o, const char *rel, int role, int storage, uint64_t size, int64_t mtime,
                         mp_err *e) {
+    if (ensure_open(o, e) != 0) return NULL;
     if (o->nfiles == o->cap) {
         size_t cap = o->cap ? o->cap * 2 : 256;
         p5file *v = realloc(o->files, cap * sizeof *v);
@@ -318,7 +331,8 @@ static int f_finish(void *ctx, const mp_pack_manifest *m, mp_err *e) {
         rc = -1;
     }
     if (rc && !e->msg[0]) mp_err_set(e, "no se pudo comprimir el índice del .p5z");
-    uint64_t ioff = mp_wfile_size(o->f);
+    if (!rc) rc = ensure_open(o, e);
+    uint64_t ioff = rc ? 0 : mp_wfile_size(o->f);
     if (!rc) rc = mp_wfile_write(o->f, cz, clen, e);
     if (!rc) {
         uint8_t ft[P5Z_FOOTER] = {0};
@@ -344,6 +358,7 @@ static int f_finish(void *ctx, const mp_pack_manifest *m, mp_err *e) {
     if (!rc) {
         rc = mp_wfile_close(o->f, e);
         o->f = NULL;
+        o->finished = rc == 0;
     }
     return rc;
 }
@@ -352,6 +367,8 @@ static void f_destroy(void *ctx) {
     p5out *o = ctx;
     if (!o) return;
     if (o->f) mp_wfile_close(o->f, NULL);
+    if (o->created && !o->finished) mp_remove_file(o->path);   // .p5z a medias: no sirve
+    free(o->path);
     for (size_t i = 0; i < o->nfiles; i++) free(o->files[i].path);
     free(o->files);
     free(o->frames);
@@ -387,9 +404,14 @@ int mp_pack_out_p5z(const char *path, unsigned threads, mp_pack_out *out, mp_err
         mp_err_set(e, "sin memoria");
         return -1;
     }
-    static const uint8_t zero[P5Z_HEADER] = {0};
-    if (mp_wfile_create(path, &o->f, e) != 0 || mp_wfile_write(o->f, zero, sizeof zero, e) != 0) {
+    if (mp_path_kind(path) != 0) {
+        mp_err_set(e, "el .p5z de salida ya existe: %s", path);
         f_destroy(o);
+        return -1;
+    }
+    if (!(o->path = mp_strdup(path))) {
+        f_destroy(o);
+        mp_err_set(e, "sin memoria");
         return -1;
     }
     out->zpk.vol_begin = v_begin;

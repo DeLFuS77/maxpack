@@ -43,6 +43,10 @@ uint64_t mp_now_ns(void);
 unsigned mp_cpu_count(void);
 void mp_sleep_ms(unsigned ms);
 
+// En Windows sustituye argc/argv por los argumentos reales en UTF-8 (argv llega en la página
+// de códigos ANSI y pierde caracteres como ñ o emoji). En el resto no hace nada.
+void mp_args_utf8(int *argc, char ***argv);
+
 // Copia de una cadena con malloc (strdup no es C11).
 char *mp_strdup(const char *s);
 

@@ -8,9 +8,11 @@
 #include <io.h>
 #endif
 
+#include "mp_platform.h"
 #include "mp_source.h"
 
 int main(int argc, char **argv) {
+    mp_args_utf8(&argc, &argv);
     if (argc < 3) {
         fprintf(stderr, "uso: mp_cat <origen> <ruta> [off] [len]\n");
         return 2;

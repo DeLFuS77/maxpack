@@ -22,6 +22,9 @@ file(GLOB MP_CORE_SRC CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/core/*.c
 add_library(maxpack_core STATIC ${MP_CORE_SRC})
 target_include_directories(maxpack_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/core)
 target_link_libraries(maxpack_core PUBLIC mp_zstd mp_zlib Threads::Threads)
+if(WIN32)
+  target_link_libraries(maxpack_core PUBLIC shell32)
+endif()
 mp_warnings(maxpack_core)
 
 file(GLOB MP_ANALYZE_SRC CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/analyze/*.c)
@@ -81,6 +84,11 @@ if(MAXPACK_BUILD_TESTS)
   mp_add_test(test_dedup FIXTURES)
   mp_add_test(test_v2exp FIXTURES)
   mp_add_test(test_analyze FIXTURES)
+  mp_add_test(test_report)
+  add_test(NAME test_cli COMMAND ${Python3_EXECUTABLE} -I
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/tools/test_cli.py $<TARGET_FILE:maxpack> ${MP_FIXTURES_DIR}
+    ${MP_TEST_TMP}/cli)
+  set_tests_properties(test_cli PROPERTIES FIXTURES_REQUIRED exfat TIMEOUT 300)
 
   # Herramienta de prueba: vuelca un rango de un archivo de un origen a stdout.
   add_executable(mp_cat tests/tools/mp_cat.c)

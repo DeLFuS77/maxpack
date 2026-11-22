@@ -389,6 +389,27 @@ unsigned mp_cpu_count(void) {
 
 void mp_sleep_ms(unsigned ms) { Sleep(ms); }
 
+#include <shellapi.h>
+
+void mp_args_utf8(int *argc, char ***argv) {
+    int n = 0;
+    wchar_t **w = CommandLineToArgvW(GetCommandLineW(), &n);
+    if (!w) return;
+    char **v = calloc((size_t)n + 1, sizeof *v);
+    if (!v) {
+        LocalFree(w);
+        return;
+    }
+    for (int i = 0; i < n; i++)
+        if (!(v[i] = w_to_utf8(w[i]))) {
+            LocalFree(w);
+            return;   // se queda con los argumentos originales (v se pierde: solo al arrancar)
+        }
+    LocalFree(w);
+    *argc = n;
+    *argv = v;
+}
+
 #else /* POSIX */
 
 #include <dirent.h>
@@ -598,6 +619,11 @@ unsigned mp_cpu_count(void) {
     if (n > 0) return (unsigned)n;
 #endif
     return 1;
+}
+
+void mp_args_utf8(int *argc, char ***argv) {
+    (void)argc;
+    (void)argv;
 }
 
 void mp_sleep_ms(unsigned ms) {

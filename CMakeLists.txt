@@ -57,6 +57,13 @@ if(MAXPACK_BUILD_TESTS)
     endif()
   endfunction()
 
+  # Fixtures exFAT sintéticas (Python) y contraste del lector de referencia.
+  add_test(NAME gen_fixtures COMMAND ${Python3_EXECUTABLE} -I
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/tools/make_exfat.py --out ${MP_FIXTURES_DIR})
+  set_tests_properties(gen_fixtures PROPERTIES FIXTURES_SETUP exfat)
+  add_test(NAME check_ref COMMAND ${Python3_EXECUTABLE} -I
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/tools/check_ref.py ${MP_FIXTURES_DIR})
+  set_tests_properties(check_ref PROPERTIES FIXTURES_REQUIRED exfat)
 
   mp_add_test(test_smoke)
 endif()

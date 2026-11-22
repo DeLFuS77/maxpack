@@ -18,6 +18,17 @@ int mp_file_pread(mp_file *f, void *buf, size_t len, uint64_t off, size_t *got, 
 void mp_file_close(mp_file *f);
 
 int mp_write_file(const char *utf8_path, const void *data, size_t len, mp_err *e);
+
+// Archivo de salida nuevo (error si ya existe): se escribe al final y se pueden corregir bytes
+// ya escritos (p. ej. cabeceras que solo se conocen al acabar). Un solo hilo por archivo.
+typedef struct mp_wfile mp_wfile;
+int mp_wfile_create(const char *utf8_path, mp_wfile **out, mp_err *e);
+int mp_wfile_write(mp_wfile *f, const void *p, size_t n, mp_err *e);
+int mp_wfile_pwrite(mp_wfile *f, const void *p, size_t n, uint64_t off, mp_err *e);
+uint64_t mp_wfile_size(const mp_wfile *f);
+int mp_wfile_close(mp_wfile *f, mp_err *e);   // también libera f si falla
+int mp_set_mtime(const char *utf8_path, int64_t unix_seconds, mp_err *e);
+int mp_dir_is_empty(const char *utf8_path);    // 1 vacía, 0 con contenido, -1 no existe
 int mp_make_dirs(const char *utf8_path, mp_err *e);
 // 0 = no existe, 1 = archivo, 2 = carpeta.
 int mp_path_kind(const char *utf8_path);

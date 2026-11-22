@@ -422,6 +422,109 @@ int mp_same_file(const char *a, const char *b) {
            x.nFileIndexLow == y.nFileIndexLow;
 }
 
+struct mp_wfile {
+    HANDLE h;
+    uint64_t size;
+    char *path;
+};
+
+int mp_wfile_create(const char *path, mp_wfile **out, mp_err *e) {
+    *out = NULL;
+    wchar_t *w = long_path(path);
+    if (!w) {
+        mp_err_set(e, "ruta no válida: %s", path);
+        return -1;
+    }
+    HANDLE h = CreateFileW(w, GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL);
+    free(w);
+    if (h == INVALID_HANDLE_VALUE) {
+        win_err(e, "no se puede crear", path, GetLastError());
+        return -1;
+    }
+    mp_wfile *f = calloc(1, sizeof *f);
+    if (!f || !(f->path = mp_strdup(path))) {
+        free(f);
+        CloseHandle(h);
+        mp_err_set(e, "sin memoria");
+        return -1;
+    }
+    f->h = h;
+    *out = f;
+    return 0;
+}
+
+int mp_wfile_pwrite(mp_wfile *f, const void *p, size_t n, uint64_t off, mp_err *e) {
+    size_t done = 0;
+    while (done < n) {
+        DWORD want = (DWORD)((n - done) > (1u << 30) ? (1u << 30) : (n - done)), got = 0;
+        OVERLAPPED ov;
+        memset(&ov, 0, sizeof ov);
+        uint64_t pos = off + done;
+        ov.Offset = (DWORD)pos;
+        ov.OffsetHigh = (DWORD)(pos >> 32);
+        if (!WriteFile(f->h, (const char *)p + done, want, &got, &ov) || got == 0) {
+            win_err(e, "error al escribir", f->path, GetLastError());
+            return -1;
+        }
+        done += got;
+    }
+    if (off + n > f->size) f->size = off + n;
+    return 0;
+}
+
+int mp_wfile_close(mp_wfile *f, mp_err *e) {
+    if (!f) return 0;
+    int rc = 0;
+    if (!CloseHandle(f->h)) {
+        win_err(e, "error al cerrar", f->path, GetLastError());
+        rc = -1;
+    }
+    free(f->path);
+    free(f);
+    return rc;
+}
+
+int mp_set_mtime(const char *path, int64_t t, mp_err *e) {
+    wchar_t *w = long_path(path);
+    if (!w) {
+        mp_err_set(e, "ruta no válida: %s", path);
+        return -1;
+    }
+    HANDLE h = CreateFileW(w, FILE_WRITE_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                           NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    free(w);
+    if (h == INVALID_HANDLE_VALUE) {
+        win_err(e, "no se puede cambiar la fecha de", path, GetLastError());
+        return -1;
+    }
+    uint64_t v = (uint64_t)(t * 10000000LL) + 116444736000000000ULL;
+    FILETIME ft;
+    ft.dwLowDateTime = (DWORD)v;
+    ft.dwHighDateTime = (DWORD)(v >> 32);
+    BOOL ok = SetFileTime(h, NULL, NULL, &ft);
+    DWORD err = ok ? 0 : GetLastError();
+    CloseHandle(h);
+    if (!ok) {
+        win_err(e, "no se puede cambiar la fecha de", path, err);
+        return -1;
+    }
+    return 0;
+}
+
+static int has_entry_cb(void *ctx, const char *rel, int is_dir, uint64_t size, int64_t mtime) {
+    (void)ctx;
+    (void)rel;
+    (void)is_dir;
+    (void)size;
+    (void)mtime;
+    return 1;   // basta con la primera entrada
+}
+
+int mp_dir_is_empty(const char *path) {
+    if (mp_path_kind(path) != 2) return -1;
+    return mp_dir_walk(path, has_entry_cb, NULL, NULL) == 0 ? 1 : 0;
+}
+
 void mp_args_utf8(int *argc, char ***argv) {
     int n = 0;
     wchar_t **w = CommandLineToArgvW(GetCommandLineW(), &n);
@@ -685,6 +788,85 @@ int mp_same_file(const char *a, const char *b) {
     return x.st_dev == y.st_dev && x.st_ino == y.st_ino;
 }
 
+struct mp_wfile {
+    int fd;
+    uint64_t size;
+    char *path;
+};
+
+int mp_wfile_create(const char *path, mp_wfile **out, mp_err *e) {
+    *out = NULL;
+    int fd = open(path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0644);
+    if (fd < 0) {
+        mp_err_set(e, "no se puede crear %s: %s", path, strerror(errno));
+        return -1;
+    }
+    mp_wfile *f = calloc(1, sizeof *f);
+    if (!f || !(f->path = mp_strdup(path))) {
+        free(f);
+        close(fd);
+        mp_err_set(e, "sin memoria");
+        return -1;
+    }
+    f->fd = fd;
+    *out = f;
+    return 0;
+}
+
+int mp_wfile_pwrite(mp_wfile *f, const void *p, size_t n, uint64_t off, mp_err *e) {
+    size_t done = 0;
+    while (done < n) {
+        ssize_t k = pwrite(f->fd, (const char *)p + done, n - done, (off_t)(off + done));
+        if (k < 0 && errno == EINTR) continue;
+        if (k <= 0) {
+            mp_err_set(e, "error al escribir %s: %s", f->path, strerror(errno));
+            return -1;
+        }
+        done += (size_t)k;
+    }
+    if (off + n > f->size) f->size = off + n;
+    return 0;
+}
+
+int mp_wfile_close(mp_wfile *f, mp_err *e) {
+    if (!f) return 0;
+    int rc = 0;
+    if (close(f->fd) != 0) {
+        mp_err_set(e, "error al cerrar %s: %s", f->path, strerror(errno));
+        rc = -1;
+    }
+    free(f->path);
+    free(f);
+    return rc;
+}
+
+int mp_set_mtime(const char *path, int64_t t, mp_err *e) {
+    struct timespec ts[2];
+    ts[0].tv_sec = 0;
+    ts[0].tv_nsec = UTIME_OMIT;   // no se toca la fecha de acceso
+    ts[1].tv_sec = (time_t)t;
+    ts[1].tv_nsec = 0;
+    if (utimensat(AT_FDCWD, path, ts, 0) != 0) {
+        mp_err_set(e, "no se puede cambiar la fecha de %s: %s", path, strerror(errno));
+        return -1;
+    }
+    return 0;
+}
+
+int mp_dir_is_empty(const char *path) {
+    DIR *d = opendir(path);
+    if (!d) return -1;
+    struct dirent *de;
+    int empty = 1;
+    while ((de = readdir(d)) != NULL)
+        if (strcmp(de->d_name, ".") && strcmp(de->d_name, "..")) {
+            empty = 0;
+            break;
+        }
+    closedir(d);
+    return empty;
+}
+
 void mp_sleep_ms(unsigned ms) {
     struct timespec ts = {(time_t)(ms / 1000), (long)(ms % 1000) * 1000000L};
     while (nanosleep(&ts, &ts) != 0 && errno == EINTR) {
@@ -713,3 +895,9 @@ int mp_make_dirs(const char *path, mp_err *e) {
     free(p);
     return rc;
 }
+
+int mp_wfile_write(mp_wfile *f, const void *p, size_t n, mp_err *e) {
+    return mp_wfile_pwrite(f, p, n, f->size, e);
+}
+
+uint64_t mp_wfile_size(const mp_wfile *f) { return f->size; }

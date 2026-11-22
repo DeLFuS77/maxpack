@@ -76,6 +76,7 @@ if(MAXPACK_BUILD_TESTS)
   set_tests_properties(test_source_exfat PROPERTIES TIMEOUT 10)
   mp_add_test(test_rules)
   mp_add_test(test_sample)
+  mp_add_test(test_measure)
 
   # Herramienta de prueba: vuelca un rango de un archivo de un origen a stdout.
   add_executable(mp_cat tests/tools/mp_cat.c)

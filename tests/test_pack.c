@@ -258,6 +258,19 @@ MP_TEST(pack_dir_not_created_on_refusal) {
     MP_CHECK(mp_path_kind(dir) == 0);
 }
 
+// Un volumen de packs suelto sin su índice chocaría con los volúmenes nuevos: se rechaza antes.
+MP_TEST(pack_refuses_stale_volume) {
+    mp_err e = {{0}};
+    MP_CHECK(mp_make_dirs(TMP "/stale_src", &e) == 0);
+    MP_CHECK(mp_write_file(TMP "/stale_src/eboot.bin", "EBOOT", 5, &e) == 0);
+    MP_CHECK(mp_write_file(TMP "/stale_src/datos.bin", "datos datos datos datos", 23, &e) == 0);
+    MP_CHECK(mp_write_file(TMP "/stale_src/ampr_zstd-000.pak", "volumen viejo", 13, &e) == 0);
+    mp_pack_opts o = quiet(2);
+    mp_pack_result r;
+    MP_CHECK(pack_to(TMP "/stale_src", TMP "/stale_out", &o, &r, &e) == -1);
+    MP_CHECK_CONTAINS(e.msg, "ya está empaquetado");
+}
+
 MP_TEST(pack_refuses_packed_source) {
     mp_pack_opts o = quiet(2);
     mp_pack_result r;
@@ -368,6 +381,7 @@ int main(void) {
     MP_RUN(pack_matches_analyzer);
     MP_RUN(pack_refuses_case_dups);
     MP_RUN(pack_dir_not_created_on_refusal);
+    MP_RUN(pack_refuses_stale_volume);
     MP_RUN(pack_refuses_packed_source);
     MP_RUN(pack_replaces_ampr_files);
     MP_RUN(pack_many_small_files);

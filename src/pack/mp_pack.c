@@ -194,9 +194,9 @@ int mp_pack_run(const char *src_path, mp_pack_out *out, const mp_pack_opts *o, m
     size_t orig_idx3 = SIZE_MAX, orig_rt = SIZE_MAX, param = SIZE_MAX;
     for (size_t i = 0; i < n; i++) {
         const char *p = mp_source_entry(src, i)->path;
-        if (ieq(p, "ampr_zstd.index")) {
-            mp_err_set(e, "%s ya está empaquetado (tiene ampr_zstd.index); reempaquetar llegará más adelante",
-                       src_path);
+        if (ieq(p, "ampr_zstd.index") || mp_glob_match("ampr_zstd-*.pak", p)) {
+            // Un volumen suelto sin su índice también: chocaría con los volúmenes nuevos.
+            mp_err_set(e, "%s ya está empaquetado (tiene %s); reempaquetar llegará más adelante", src_path, p);
             goto done;
         }
         if (ieq(p, "ampr_emu.index")) orig_idx3 = i;

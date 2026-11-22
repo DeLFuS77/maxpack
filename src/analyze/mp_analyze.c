@@ -9,8 +9,6 @@
 #include "mp_rules.h"
 #include "mp_sample.h"
 
-#define LOOSE_FRAME (32u << 20)        // frames de los sueltos en el .p5z
-#define LOOSE_MAX_THREADS 8u           // cada contexto de ventana larga ocupa ~120 MB
 #define AMPR_VOLUME_MAX 4294901760ull  // tamaño máximo de un ampr_zstd-NNN.pak, cabecera incluida
 
 void mp_analyze_opts_default(mp_analyze_opts *o) {
@@ -19,6 +17,7 @@ void mp_analyze_opts_default(mp_analyze_opts *o) {
     o->sample_min = 1ull << 30;
     o->threads = mp_cpu_count();
     o->dedup = 1;
+    o->transport = 1;
     o->progress = 1;
 }
 
@@ -125,8 +124,7 @@ done:
 
 typedef struct {
     char ext[32];
-    uint64_t total;
-    uint64_t raw[MP_CFG_COUNT], stored[MP_CFG_COUNT];
+    uint64_t total, raw, stored;
 } stratum;
 
 static void ext_of(const char *path, char out[32]) {
@@ -146,11 +144,13 @@ static uint64_t scale(uint64_t total, uint64_t stored, uint64_t raw) {
     return (uint64_t)llround((double)stored / (double)raw * (double)total);
 }
 
-static int extrapolate(mp_source *src, const uint32_t *packable, size_t npack,
-                       mp_cfg_stat (*fst)[MP_CFG_COUNT], uint64_t est[MP_CFG_COUNT], mp_err *e) {
+// Estimación por estratos (extensión en minúsculas) de una medida: raw[f]/stored[f] es lo medido
+// del empaquetable f. Estrato con datos: total · guardado / medido; sin datos: proporción global.
+static int strata_estimate(mp_source *src, const uint32_t *packable, size_t npack,
+                           const uint64_t *raw, const uint64_t *stored, uint64_t *out, mp_err *e) {
     stratum *g = NULL;
     size_t ng = 0, cap = 0;
-    uint64_t R[MP_CFG_COUNT] = {0}, S[MP_CFG_COUNT] = {0};
+    uint64_t R = 0, S = 0;
     for (size_t f = 0; f < npack; f++) {
         const mp_entry *en = mp_source_entry(src, packable[f]);
         char ext[32];
@@ -173,49 +173,62 @@ static int extrapolate(mp_source *src, const uint32_t *packable, size_t npack,
             ng++;
         }
         g[k].total += en->size;
-        for (int c = 0; c < MP_CFG_COUNT; c++) {
-            uint64_t r = fst[f][c].raw, s = fst[f][c].stored;
-            if (!r) continue;
-            // Regla de v1: si el archivo ahorra menos de un 1 %, va entero en bruto.
-            if (c != MP_CFG_ZLIB64K && s * 100 > r * 99) s = r;
-            g[k].raw[c] += r;
-            g[k].stored[c] += s;
-            R[c] += r;
-            S[c] += s;
-        }
+        g[k].raw += raw[f];
+        g[k].stored += stored[f];
+        R += raw[f];
+        S += stored[f];
     }
-    for (int c = 0; c < MP_CFG_COUNT; c++) {
-        est[c] = 0;
-        for (size_t k = 0; k < ng; k++)
-            est[c] += g[k].raw[c] ? scale(g[k].total, g[k].stored[c], g[k].raw[c])
-                                  : scale(g[k].total, S[c], R[c]);
-    }
+    *out = 0;
+    for (size_t k = 0; k < ng; k++)
+        *out += g[k].raw ? scale(g[k].total, g[k].stored, g[k].raw) : scale(g[k].total, S, R);
     free(g);
     return 0;
 }
 
-// ---- Sueltos comprimidos (como irían en el .p5z) ----------------------------------------
+static int extrapolate(mp_source *src, const uint32_t *packable, size_t npack,
+                       mp_cfg_stat (*fst)[MP_CFG_COUNT], uint64_t est[MP_CFG_COUNT], mp_err *e) {
+    uint64_t *raw = malloc((npack ? npack : 1) * sizeof *raw);
+    uint64_t *stored = malloc((npack ? npack : 1) * sizeof *stored);
+    int rc = raw && stored ? 0 : -1;
+    if (rc) mp_err_set(e, "sin memoria");
+    for (int c = 0; !rc && c < MP_CFG_COUNT; c++) {
+        for (size_t f = 0; f < npack; f++) {
+            uint64_t r = fst[f][c].raw, s = fst[f][c].stored;
+            // Regla de v1: si el archivo ahorra menos de un 1 %, va entero en bruto.
+            if (r && c != MP_CFG_ZLIB64K && s * 100 > r * 99) s = r;
+            raw[f] = r;
+            stored[f] = s;
+        }
+        rc = strata_estimate(src, packable, npack, raw, stored, &est[c], e);
+    }
+    free(raw);
+    free(stored);
+    return rc;
+}
+
+// ---- Ventana larga, como en el .p5z: sueltos y transporte --------------------------------
 
 typedef struct {
-    uint32_t file;
+    uint32_t file;   // índice de origen
     uint64_t off;
     uint32_t len;
 } lframe;
 
 typedef struct {
     mp_source *src;
-    lframe *items;
+    const lframe *items;
     ZSTD_CCtx **c;
     uint8_t **in, **out;
     size_t out_cap;
-    uint64_t *sum;   // por hilo
+    uint64_t *stored;   // por tramo
+    uint64_t *ns;       // por hilo
     mp_progress *prog;
     mp_mutex *mu;
     int failed;
     mp_err err;
 } lctx;
 
-static int loose_work(void *vc, size_t i, unsigned tid) {
+static int long_work(void *vc, size_t i, unsigned tid) {
     lctx *c = vc;
     const lframe *it = &c->items[i];
     mp_err e = {{0}};
@@ -226,61 +239,54 @@ static int loose_work(void *vc, size_t i, unsigned tid) {
         mp_mutex_unlock(c->mu);
         return 1;
     }
+    uint64_t t0 = mp_now_ns();
     size_t r = ZSTD_compress2(c->c[tid], c->out[tid], c->out_cap, c->in[tid], it->len);
-    c->sum[tid] += !ZSTD_isError(r) && r < it->len ? r : it->len;
+    c->ns[tid] += mp_now_ns() - t0;
+    c->stored[i] = !ZSTD_isError(r) && r < it->len ? r : it->len;
     mp_progress_add(c->prog, it->len);
     return 0;
 }
 
-static int run_loose(mp_source *src, const uint32_t *loose, size_t nloose, unsigned threads,
-                     int progress, uint64_t *out, mp_err *e) {
-    *out = 0;
-    size_t n = 0;
-    uint64_t bytes = 0;
-    for (size_t i = 0; i < nloose; i++) {
-        uint64_t size = mp_source_entry(src, loose[i])->size;
-        n += (size_t)((size + LOOSE_FRAME - 1) / LOOSE_FRAME);
-        bytes += size;
-    }
+// Comprime cada tramo (<= 32 MiB) con zstd 19 y ventana larga. stored[i] = lo que ocupa el tramo i;
+// *ns = tiempo de compresión sumado de todos los hilos; *used = hilos usados.
+static int run_long(mp_source *src, const lframe *items, size_t n, unsigned threads,
+                    const char *phase, int progress, uint64_t *stored, uint64_t *ns,
+                    unsigned *used, mp_err *e) {
+    *ns = 0;
+    *used = 0;
     if (n == 0) return 0;
-    if (threads > LOOSE_MAX_THREADS) threads = LOOSE_MAX_THREADS;
+    if (threads > MP_LONG_MAX_THREADS) threads = MP_LONG_MAX_THREADS;
     if (threads > n) threads = (unsigned)n;
+    if (threads == 0) threads = 1;
+    *used = threads;
+    uint64_t bytes = 0;
+    for (size_t i = 0; i < n; i++) bytes += items[i].len;
     lctx c = {0};
     c.src = src;
-    c.items = malloc(n * sizeof *c.items);
+    c.items = items;
+    c.stored = stored;
     c.c = calloc(threads, sizeof *c.c);
     c.in = calloc(threads, sizeof *c.in);
     c.out = calloc(threads, sizeof *c.out);
-    c.sum = calloc(threads, sizeof *c.sum);
+    c.ns = calloc(threads, sizeof *c.ns);
     c.mu = mp_mutex_new();
-    c.out_cap = ZSTD_compressBound(LOOSE_FRAME);
+    c.out_cap = ZSTD_compressBound(MP_LONG_FRAME);
     mp_progress prog;
-    mp_progress_init(&prog, "Comprimiendo los sueltos", bytes, progress);
+    mp_progress_init(&prog, phase, bytes, progress);
     c.prog = &prog;
     int rc = -1;
-    if (!c.items || !c.c || !c.in || !c.out || !c.sum || !c.mu) goto oom;
-    size_t k = 0;
-    for (size_t i = 0; i < nloose; i++) {
-        uint64_t size = mp_source_entry(src, loose[i])->size;
-        for (uint64_t off = 0; off < size; off += LOOSE_FRAME) {
-            lframe f = {loose[i], off, (uint32_t)(size - off < LOOSE_FRAME ? size - off : LOOSE_FRAME)};
-            c.items[k++] = f;
-        }
-    }
+    if (!c.c || !c.in || !c.out || !c.ns || !c.mu) goto oom;
     for (unsigned t = 0; t < threads; t++) {
-        if (!(c.c[t] = ZSTD_createCCtx()) || !(c.in[t] = malloc(LOOSE_FRAME)) ||
+        if (!(c.c[t] = ZSTD_createCCtx()) || !(c.in[t] = malloc(MP_LONG_FRAME)) ||
             !(c.out[t] = malloc(c.out_cap)))
             goto oom;
-        ZSTD_CCtx_setParameter(c.c[t], ZSTD_c_compressionLevel, 19);
-        ZSTD_CCtx_setParameter(c.c[t], ZSTD_c_windowLog, 25);
-        ZSTD_CCtx_setParameter(c.c[t], ZSTD_c_enableLongDistanceMatching, 1);
-        ZSTD_CCtx_setParameter(c.c[t], ZSTD_c_checksumFlag, 1);
+        mp_zstd_set_long(c.c[t]);
     }
-    if (mp_parallel_run(threads, n, loose_work, &c, &prog) != 0) {
+    if (mp_parallel_run(threads, n, long_work, &c, &prog) != 0) {
         if (e) *e = c.err;
         goto done;
     }
-    for (unsigned t = 0; t < threads; t++) *out += c.sum[t];
+    for (unsigned t = 0; t < threads; t++) *ns += c.ns[t];
     rc = 0;
     goto done;
 oom:
@@ -294,10 +300,90 @@ done:
     free(c.c);
     free(c.in);
     free(c.out);
-    free(c.sum);
-    free(c.items);
+    free(c.ns);
     mp_mutex_free(c.mu);
     mp_progress_free(&prog);
+    return rc;
+}
+
+static int run_loose(mp_source *src, const uint32_t *loose, size_t nloose, unsigned threads,
+                     int progress, uint64_t *out, mp_err *e) {
+    *out = 0;
+    size_t n = 0;
+    for (size_t i = 0; i < nloose; i++)
+        n += (size_t)((mp_source_entry(src, loose[i])->size + MP_LONG_FRAME - 1) / MP_LONG_FRAME);
+    if (n == 0) return 0;
+    lframe *items = malloc(n * sizeof *items);
+    uint64_t *stored = calloc(n, sizeof *stored), ns = 0;
+    unsigned used = 0;
+    int rc = -1;
+    if (items && stored) {
+        size_t k = 0;
+        for (size_t i = 0; i < nloose; i++) {
+            uint64_t size = mp_source_entry(src, loose[i])->size;
+            for (uint64_t off = 0; off < size; off += MP_LONG_FRAME) {
+                lframe f = {loose[i], off,
+                            (uint32_t)(size - off < MP_LONG_FRAME ? size - off : MP_LONG_FRAME)};
+                items[k++] = f;
+            }
+        }
+        rc = run_long(src, items, n, threads, "Comprimiendo los sueltos", progress, stored, &ns,
+                      &used, e);
+        for (size_t i = 0; rc == 0 && i < n; i++) *out += stored[i];
+    } else {
+        mp_err_set(e, "sin memoria");
+    }
+    free(items);
+    free(stored);
+    return rc;
+}
+
+// Transporte: lo empaquetable como iría en un .p5z pensado solo para el PC (zstd 19, ventana
+// larga, frames de 32 MiB), sobre una muestra de tramos de 32 MiB y extrapolado por estratos.
+static int run_transport(mp_source *src, const uint32_t *packable, const uint64_t *sizes,
+                         size_t npack, uint64_t packable_bytes, const mp_analyze_opts *o,
+                         unsigned threads, mp_xport_stat *x, mp_err *e) {
+    memset(x, 0, sizeof *x);
+    mp_sample s = {0};
+    if (mp_sample_select_ex(sizes, npack, MP_LONG_FRAME, o->sample_fraction, o->sample_min, o->full,
+                            &s, e) != 0)
+        return -1;
+    lframe *items = malloc((s.n ? s.n : 1) * sizeof *items);
+    uint64_t *stored = calloc(s.n ? s.n : 1, sizeof *stored);
+    uint64_t *raw_f = calloc(npack ? npack : 1, sizeof *raw_f);
+    uint64_t *st_f = calloc(npack ? npack : 1, sizeof *st_f);
+    int rc = -1;
+    if (!items || !stored || !raw_f || !st_f) {
+        mp_err_set(e, "sin memoria");
+        goto done;
+    }
+    for (size_t i = 0; i < s.n; i++) {
+        lframe f = {packable[s.w[i].file], s.w[i].off, s.w[i].len};
+        items[i] = f;
+    }
+    if (run_long(src, items, s.n, threads, "Transporte (.p5z)", o->progress, stored, &x->ns,
+                 &x->threads, e) != 0)
+        goto done;
+    for (size_t i = 0; i < s.n; i++) {
+        raw_f[s.w[i].file] += s.w[i].len;
+        st_f[s.w[i].file] += stored[i];
+        x->sample_raw += s.w[i].len;
+        x->sample_stored += stored[i];
+    }
+    x->frames = s.n;
+    x->sample_bytes = s.sample_bytes;
+    x->rate = s.rate;
+    if (strata_estimate(src, packable, npack, raw_f, st_f, &x->est_packed, e) != 0) goto done;
+    if (x->sample_raw && x->threads)
+        x->est_seconds = (uint64_t)llround((double)x->ns * (double)packable_bytes /
+                                           (double)x->sample_raw / x->threads / 1e9);
+    rc = 0;
+done:
+    free(items);
+    free(stored);
+    free(raw_f);
+    free(st_f);
+    mp_sample_free(&s);
     return rc;
 }
 
@@ -426,6 +512,12 @@ int mp_analyze(const char *src_path, const mp_analyze_opts *o, mp_report *r, mp_
     }
 
     if (run_loose(src, loose, nloose, threads, o->progress, &r->loose_compressed, e) != 0) goto done;
+    if (o->transport && npack) {
+        if (run_transport(src, packable, sizes, npack, r->packable_bytes, o, threads, &r->xport, e) != 0)
+            goto done;
+        r->xport_done = 1;
+        r->p5z_transport = r->xport.est_packed + r->loose_compressed;
+    }
     r->v1_index_bytes = v1_index_bytes(src, packable, npack, r->est_packed[MP_CFG_V1_L19]);
     r->p5z_estimate = r->est_packed[MP_CFG_V1_L19] + r->v1_index_bytes + r->loose_compressed;
     rc = 0;

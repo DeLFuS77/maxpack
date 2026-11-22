@@ -29,6 +29,10 @@ uint64_t mp_splitmix64(uint64_t x);
 // min(P, max(ceil(fraction·P), min_bytes)).
 int mp_sample_select(const uint64_t *sizes, size_t nfiles, double fraction, uint64_t min_bytes,
                      int full, mp_sample *out, mp_err *e);
+// Igual, con ventanas de `window` bytes (p. ej. 32 MiB para medir el transporte). Las ventanas
+// salen en mp_window.len como uint32_t, así que window <= 2^31.
+int mp_sample_select_ex(const uint64_t *sizes, size_t nfiles, uint32_t window, double fraction,
+                        uint64_t min_bytes, int full, mp_sample *out, mp_err *e);
 void mp_sample_free(mp_sample *s);
 
 #endif

@@ -24,6 +24,7 @@ MP_TEST(json_values_finite) {
     MP_CHECK(j != NULL);
     MP_CHECK(j && !strstr(j, "nan") && !strstr(j, "inf"));
     MP_CHECK_CONTAINS(j, "\"dedup\": null");
+    MP_CHECK_CONTAINS(j, "\"transport\": null");
     MP_CHECK_CONTAINS(j, "\"v1-l5\"");
     MP_CHECK_CONTAINS(j, "\"zlib-64k\"");
     free(j);

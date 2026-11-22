@@ -34,6 +34,13 @@ size_t mp_zstd_block(ZSTD_CCtx *c, int level, int window_log, const void *src, s
     return ZSTD_isError(r) ? 0 : r;
 }
 
+void mp_zstd_set_long(ZSTD_CCtx *c) {
+    ZSTD_CCtx_setParameter(c, ZSTD_c_compressionLevel, 19);
+    ZSTD_CCtx_setParameter(c, ZSTD_c_windowLog, 25);
+    ZSTD_CCtx_setParameter(c, ZSTD_c_enableLongDistanceMatching, 1);
+    ZSTD_CCtx_setParameter(c, ZSTD_c_checksumFlag, 1);
+}
+
 mp_measurer *mp_measurer_new(const mp_dict_pair *dicts) {
     mp_measurer *m = calloc(1, sizeof *m);
     if (!m) return NULL;

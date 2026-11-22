@@ -182,6 +182,68 @@ MP_TEST(sampled_path_estimates) {
     mp_report_free(&f);
 }
 
+// Transporte calculado aquí: cada archivo empaquetable en frames de 32 MiB con zstd 19 y
+// ventana larga; un frame que no mejora va en bruto.
+static uint64_t direct_transport(void) {
+    mp_source *s = NULL;
+    mp_err e = {{0}};
+    if (mp_source_open(BASIC, &s, &e) != 0) return 0;
+    mp_rules *rules = mp_rules_new();
+    ZSTD_CCtx *c = ZSTD_createCCtx();
+    mp_zstd_set_long(c);
+    size_t cap = ZSTD_compressBound(MP_LONG_FRAME);
+    uint8_t *buf = malloc(MP_LONG_FRAME), *out = malloc(cap);
+    uint64_t total = 0;
+    for (size_t i = 0; i < mp_source_count(s); i++) {
+        const mp_entry *en = mp_source_entry(s, i);
+        if (mp_rules_classify(rules, en->path, en->size) != MP_PACKABLE) continue;
+        for (uint64_t off = 0; off < en->size; off += MP_LONG_FRAME) {
+            size_t n = en->size - off < MP_LONG_FRAME ? (size_t)(en->size - off) : MP_LONG_FRAME;
+            mp_source_read(s, i, off, buf, n, &e);
+            size_t f = ZSTD_compress2(c, out, cap, buf, n);
+            total += !ZSTD_isError(f) && f < n ? f : n;
+        }
+    }
+    free(buf);
+    free(out);
+    ZSTD_freeCCtx(c);
+    mp_rules_free(rules);
+    mp_source_close(s);
+    return total;
+}
+
+MP_TEST(transport_in_report) {
+    mp_analyze_opts o = quiet(2, 1);
+    o.dedup = 0;
+    mp_report r;
+    if (run(&o, &r) != 0) return;
+    MP_CHECK(r.xport_done);
+    MP_CHECK_EQ_U64(r.xport.est_packed, direct_transport());
+    // dupblocks.bin repite 3 veces el mismo bloque aleatorio: v1 no lo ve, la ventana larga sí.
+    MP_CHECK(r.xport.est_packed < r.est_packed[MP_CFG_V1_L19]);
+    MP_CHECK_EQ_U64(r.p5z_transport, r.xport.est_packed + r.loose_compressed);
+    mp_report_free(&r);
+    o.transport = 0;
+    if (run(&o, &r) != 0) return;
+    MP_CHECK(!r.xport_done);
+    MP_CHECK_EQ_U64(r.p5z_transport, 0);
+    mp_report_free(&r);
+}
+
+MP_TEST(transport_threads_independent) {
+    mp_analyze_opts o1 = quiet(1, 0), o4 = quiet(4, 0);
+    o1.sample_min = o4.sample_min = 0;
+    o1.sample_fraction = o4.sample_fraction = 0.3;
+    o1.dedup = o4.dedup = 0;
+    mp_report a, b;
+    if (run(&o1, &a) != 0 || run(&o4, &b) != 0) return;
+    MP_CHECK(a.xport.rate < 1.0);
+    MP_CHECK_EQ_U64(a.xport.est_packed, b.xport.est_packed);
+    MP_CHECK_EQ_U64(a.xport.sample_stored, b.xport.sample_stored);
+    mp_report_free(&a);
+    mp_report_free(&b);
+}
+
 int main(void) {
     MP_RUN(full_is_exact);
     MP_RUN(threads_independent);
@@ -189,5 +251,7 @@ int main(void) {
     MP_RUN(keep_loose_moves_files);
     MP_RUN(small_game_full_sample);
     MP_RUN(sampled_path_estimates);
+    MP_RUN(transport_in_report);
+    MP_RUN(transport_threads_independent);
     MP_TEST_MAIN_END();
 }

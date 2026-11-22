@@ -83,8 +83,19 @@ try:
     check("json_finitos", all_finite(rep))
     check("json_nombre_sin_ruta", rep["source"]["name"] == "basic.exfat", rep["source"]["name"])
     check("texto_tiene_tabla", "(Forge)" in out and "basic.exfat" in out, out[:300])
+    t = rep.get("transport")
+    check("json_transporte", isinstance(t, dict) and t["est_packed"] > 0 and t["p5z_estimate"] > t["est_packed"], str(t))
+    check("texto_transporte", "Transporte" in out, out[-600:])
 except Exception as ex:  # noqa: BLE001
     check("json_legible", False, repr(ex))
+
+js2 = os.path.join(TMP, "sin_transporte.json")
+rc, _, err = run("analyze", BASIC, "--no-transport", "--no-dedup", "--json", js2)
+try:
+    with open(js2, encoding="utf-8") as f:
+        check("no_transport", rc == 0 and json.load(f)["transport"] is None, err[:200])
+except Exception as ex:  # noqa: BLE001
+    check("no_transport", False, repr(ex))
 
 rc, out, _ = run("analyze", BASIC, "--list")
 lines = out.splitlines()

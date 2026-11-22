@@ -17,6 +17,7 @@ typedef struct {
     int full;                 // medir todo, sin muestra
     unsigned threads;
     int dedup;                // pase completo de deduplicación
+    int transport;            // medir el .p5z de transporte (zstd 19, ventana larga)
     int progress;             // progreso en stderr
     const char *const *keep_loose;
     size_t nkeep;
@@ -27,6 +28,14 @@ void mp_analyze_opts_default(mp_analyze_opts *o);
 typedef struct {
     uint64_t lo, hi, files, bytes;
 } mp_size_bin;
+
+// Transporte: lo empaquetable comprimido como en un .p5z solo para el PC (zstd 19, ventana larga,
+// frames de 32 MiB). La PS5 tendría que recomprimirlo a v1 al instalar.
+typedef struct {
+    uint64_t frames, sample_bytes, sample_raw, sample_stored, est_packed, ns, est_seconds;
+    double rate;
+    unsigned threads;
+} mp_xport_stat;
 
 #define MP_SIZE_BINS 8   // [0] [1,4K] [4K+1,64K] [64K+1,256K] [256K+1,1M] [1M+1,64M] [64M+1,4G] [4G+1,∞)
 
@@ -50,6 +59,9 @@ typedef struct {
     mp_small_result small;
     int dedup_done;
     mp_dedup_result dedup;
+    int xport_done;
+    mp_xport_stat xport;
+    uint64_t p5z_transport;               // transporte + sueltos comprimidos
     uint64_t elapsed_ns;
 } mp_report;
 

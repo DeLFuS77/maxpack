@@ -28,7 +28,8 @@ static void usage(FILE *out) {
             "  --threads N        hilos (por defecto, todos los de la CPU)\n"
             "  --keep-loose GLOB  dejar suelto también lo que case (se puede repetir)\n"
             "  --no-dedup         no hacer el pase de deduplicación (lee todo el juego)\n"
-            "  --list             solo listar los archivos y su clase, sin medir\n");
+            "  --no-transport     no medir el .p5z de transporte (zstd 19, ventana larga)\n"
+            "  --list            solo listar los archivos y su clase, sin medir\n");
 }
 
 static int bad_usage(const char *msg, const char *arg) {
@@ -118,6 +119,8 @@ static int cmd_analyze(int argc, char **argv) {
             o.full = 1;
         } else if (!strcmp(a, "--no-dedup")) {
             o.dedup = 0;
+        } else if (!strcmp(a, "--no-transport")) {
+            o.transport = 0;
         } else if (!strcmp(a, "--list")) {
             list = 1;
         } else if (!strcmp(a, "--sample") || !strcmp(a, "--json") || !strcmp(a, "--threads") ||

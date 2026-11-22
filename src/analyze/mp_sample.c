@@ -15,6 +15,11 @@ uint64_t mp_splitmix64(uint64_t x) {
 
 int mp_sample_select(const uint64_t *sizes, size_t nfiles, double fraction, uint64_t min_bytes,
                      int full, mp_sample *out, mp_err *e) {
+    return mp_sample_select_ex(sizes, nfiles, MP_WINDOW, fraction, min_bytes, full, out, e);
+}
+
+int mp_sample_select_ex(const uint64_t *sizes, size_t nfiles, uint32_t window, double fraction,
+                        uint64_t min_bytes, int full, mp_sample *out, mp_err *e) {
     out->w = NULL;
     out->n = 0;
     out->sample_bytes = 0;
@@ -33,7 +38,7 @@ int mp_sample_select(const uint64_t *sizes, size_t nfiles, double fraction, uint
     size_t cap = 0;
     uint64_t ordinal = 0;
     for (size_t f = 0; f < nfiles; f++) {
-        for (uint64_t off = 0; off < sizes[f]; off += MP_WINDOW, ordinal++) {
+        for (uint64_t off = 0; off < sizes[f]; off += window, ordinal++) {
             if (rate < 1.0 && (mp_splitmix64(ordinal ^ MP_SAMPLE_SEED) >> 11) >= thr) continue;
             if (out->n == cap) {
                 cap = cap ? cap * 2 : 1024;
@@ -49,7 +54,7 @@ int mp_sample_select(const uint64_t *sizes, size_t nfiles, double fraction, uint
             mp_window *w = &out->w[out->n++];
             w->file = (uint32_t)f;
             w->off = off;
-            w->len = left < MP_WINDOW ? (uint32_t)left : MP_WINDOW;
+            w->len = left < window ? (uint32_t)left : window;
             w->ordinal = ordinal;
             out->sample_bytes += w->len;
         }

@@ -44,7 +44,13 @@ MP_TEST(rate_and_determinism) {
     MP_CHECK(a.n >= 1843 && a.n <= 2253);
     MP_CHECK(a.rate > 0.0199 && a.rate < 0.0201);
     MP_CHECK_EQ_U64(a.n, b.n);
-    MP_CHECK(a.n == b.n && memcmp(a.w, b.w, a.n * sizeof *a.w) == 0);
+    // Campo a campo: memcmp también compararía los bytes de relleno de mp_window, que no se
+    // inicializan y pueden diferir entre dos llamadas.
+    int same = a.n == b.n;
+    for (size_t i = 0; same && i < a.n; i++)
+        same = a.w[i].file == b.w[i].file && a.w[i].off == b.w[i].off && a.w[i].len == b.w[i].len &&
+               a.w[i].ordinal == b.w[i].ordinal;
+    MP_CHECK(same);
     mp_sample_free(&a);
     mp_sample_free(&b);
 }
@@ -57,7 +63,21 @@ MP_TEST(empty) {
     mp_sample_free(&s);
 }
 
+MP_TEST(custom_window) {
+    uint64_t sizes[2] = {70 * MiB, 5};
+    mp_sample s = {0};
+    MP_CHECK(mp_sample_select_ex(sizes, 2, 32 * MiB, 0.02, GiB, 1, &s, NULL) == 0);
+    MP_CHECK_EQ_U64(s.n, 4);
+    if (s.n == 4) {
+        MP_CHECK(s.w[1].off == 32 * MiB && s.w[1].len == 32 * MiB);
+        MP_CHECK(s.w[2].off == 64 * MiB && s.w[2].len == 6 * MiB);
+        MP_CHECK(s.w[3].file == 1 && s.w[3].len == 5 && s.w[3].ordinal == 3);
+    }
+    mp_sample_free(&s);
+}
+
 int main(void) {
+    MP_RUN(custom_window);
     MP_RUN(splitmix_vector);
     MP_RUN(full_selects_all);
     MP_RUN(small_game_sampled_fully);

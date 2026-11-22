@@ -151,7 +151,25 @@ int mp_report_write_text(const mp_report *r, FILE *out) {
             r->small.dicts);
     fprintf(out, "Sueltos para el .p5z (zstd 19, ventana larga): %s -> %s\n",
             human(r->loose_bytes, a), human(r->loose_compressed, b));
-    fprintf(out, ".p5z estimado (v1 nivel 19): %s\n\n", human(r->p5z_estimate, a));
+    fprintf(out, ".p5z estimado (v1 nivel 19): %s\n", human(r->p5z_estimate, a));
+    if (r->xport_done) {
+        const mp_xport_stat *xs = &r->xport;
+        double vs = r->p5z_estimate ? 100.0 * (1.0 - (double)r->p5z_transport / (double)r->p5z_estimate)
+                                    : 0.0;
+        char sp[16];
+        snprintf(sp, sizeof sp, "%.1f",
+                 xs->ns ? (double)xs->sample_raw / ((double)xs->ns / 1e9) / 1e6 : 0.0);
+        for (char *p = sp; *p; p++)
+            if (*p == '.') *p = ',';
+        fprintf(out, "Transporte (.p5z solo para el PC; la PS5 recomprimiría a v1 al instalar):\n");
+        fprintf(out, "  empaquetable con zstd 19, ventana larga, frames de 32 MiB: %s -> %s (v1 nivel 19: %s)\n",
+                human(r->packable_bytes, a), human(xs->est_packed, b), human(r->est_packed[MP_CFG_V1_L19], c));
+        fprintf(out, "  muestra %s en %" PRIu64 " tramos · %s MB/s/hilo · tiempo est. %s con %u hilos\n",
+                human(xs->sample_bytes, a), xs->frames, sp, duration(xs->est_seconds, b), xs->threads);
+        fprintf(out, "  .p5z de transporte estimado: %s (%s menos que el .p5z normal)\n",
+                human(r->p5z_transport, a), pct(vs, d));
+    }
+    fputc('\n', out);
 
     fprintf(out, "Distribución de tamaños\n");
     for (int k = 0; k < MP_SIZE_BINS; k++) {
@@ -254,6 +272,20 @@ char *mp_report_json(const mp_report *r) {
                r->dedup.dup_file_bytes);
     else
         sb_add(&s, "null,\n");
+    sb_add(&s, "  \"transport\": ");
+    if (r->xport_done) {
+        const mp_xport_stat *x = &r->xport;
+        sb_add(&s, "{\"frame_bytes\": %u, \"frames\": %" PRIu64 ", \"sample_bytes\": %" PRIu64
+                   ", \"sample_raw\": %" PRIu64 ", \"sample_stored\": %" PRIu64
+                   ", \"est_packed\": %" PRIu64 ", \"est_seconds\": %" PRIu64 ", \"threads\": %u"
+                   ", \"p5z_estimate\": %" PRIu64 ", \"rate\": ",
+               MP_LONG_FRAME, x->frames, x->sample_bytes, x->sample_raw, x->sample_stored,
+               x->est_packed, x->est_seconds, x->threads, r->p5z_transport);
+        sb_num(&s, x->rate);
+        sb_add(&s, "},\n");
+    } else {
+        sb_add(&s, "null,\n");
+    }
     sb_add(&s,
            "  \"small_files\": {\"files\": %" PRIu64 ", \"raw\": %" PRIu64 ", \"individual\": %" PRIu64
            ", \"grouped\": %" PRIu64 ", \"individual_dict\": %" PRIu64 ", \"dicts\": %d},\n",

@@ -10,6 +10,8 @@
 #define MP_BLOCK_V1 262144u   // bloque de AMPRZPK1 (2^18)
 #define MP_BLOCK_ZLIB 65536u  // bloque de .ffpfsc
 #define MP_WINDOW_MAX (1u << 20)   // ventana máxima que se mide de una vez
+#define MP_LONG_FRAME (32u << 20)  // frames del .p5z (diseño 6.4: hasta 32 MiB)
+#define MP_LONG_MAX_THREADS 8u     // cada contexto de ventana larga ocupa ~120 MB
 
 typedef enum {
     MP_CFG_V1_L5,     // 256 KiB, windowLog 18 (lo que usa Dump Forge por defecto)
@@ -45,6 +47,9 @@ void mp_measurer_free(mp_measurer *m);
 // el frame solo si es estrictamente menor que el bloque en bruto.
 void mp_measure_window(mp_measurer *m, const uint8_t *data, size_t len, unsigned parity,
                        mp_cfg_stat st[MP_CFG_COUNT]);
+
+// zstd 19 con ventana larga (2^25) y LDM, como el .p5z (diseño 6.4).
+void mp_zstd_set_long(ZSTD_CCtx *c);
 
 // Un frame zstd con checksum y tamaño de contenido. Reinicia sesión y parámetros.
 // Devuelve el tamaño del frame o 0 si falla.

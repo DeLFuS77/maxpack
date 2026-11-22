@@ -157,5 +157,18 @@ check("pack_p5z_sale_0", ok and ".p5z" in so, (so + err)[-300:])
 rc, _, err = run("pack", BASIC, "-o", p5z, "--p5z")
 check("pack_p5z_existente_sale_2", rc == 2, "rc=%d %s" % (rc, err[:200]))
 
+# info y unpack del .p5z.
+rc, so, err = run("info", p5z)
+check("info_sale_0", rc == 0 and "TEST00001" in so, (so + err)[-300:])
+rc, _, err = run("unpack", p5z, "-o", os.path.join(TMP, "unp_x"))
+check("unpack_sin_modo_sale_2", rc == 2, "rc=%d" % rc)
+orig = os.path.join(TMP, "unp_original")
+rmtree(orig)
+rc, so, err = run("unpack", p5z, "--original", "-o", orig)
+n_orig = sum(len(f) for _, _, f in os.walk(orig)) if os.path.isdir(orig) else 0
+check("unpack_original_sale_0", rc == 0 and n_orig == manifest_count(), "rc=%d n=%d %s" % (rc, n_orig, err[-200:]))
+rc, _, err = run("unpack", p5z, "--original", "-o", orig)
+check("unpack_salida_no_vacia_sale_2", rc == 2, "rc=%d" % rc)
+
 print("test_cli: %d fallos" % len(failures))
 sys.exit(1 if failures else 0)

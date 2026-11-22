@@ -22,6 +22,8 @@ static void usage(FILE *out) {
             "Uso:\n"
             "  maxpack analyze <carpeta|imagen.exfat> [opciones]\n"
             "  maxpack pack <carpeta|imagen.exfat> -o <salida> [opciones]\n"
+            "  maxpack unpack <juego.p5z> --folder|--original -o <carpeta> [--threads N]\n"
+            "  maxpack info <juego.p5z>\n"
             "  maxpack --version\n"
             "\n"
             "Opciones de pack:\n"
@@ -316,6 +318,71 @@ static int cmd_pack(int argc, char **argv) {
     return 0;
 }
 
+static int cmd_info(int argc, char **argv) {
+    if (argc != 1) return bad_usage("info necesita un archivo .p5z", NULL);
+    mp_err e = {{0}};
+    mp_p5z *p = NULL;
+    if (mp_p5z_open(argv[0], &p, &e) != 0) {
+        fprintf(stderr, "error: %s\n", e.msg);
+        return 1;
+    }
+    int rc = mp_p5z_info(p, stdout) == 0 ? 0 : 1;
+    mp_p5z_close(p);
+    return rc;
+}
+
+static int cmd_unpack(int argc, char **argv) {
+    const char *src = NULL, *dst = NULL;
+    int mode = 0;   // 1 carpeta, 2 original
+    unsigned threads = mp_cpu_count();
+    for (int i = 0; i < argc; i++) {
+        const char *a = argv[i];
+        if (!strcmp(a, "--folder")) {
+            mode = 1;
+        } else if (!strcmp(a, "--original")) {
+            mode = 2;
+        } else if (!strcmp(a, "-o") || !strcmp(a, "--threads")) {
+            if (i + 1 >= argc) return bad_usage("falta el valor de", a);
+            const char *v = argv[++i];
+            if (!strcmp(a, "-o")) {
+                dst = v;
+            } else {
+                char *end = NULL;
+                long t = strtol(v, &end, 10);
+                if (end == v || *end || t < 1 || t > 1024) return bad_usage("--threads debe estar entre 1 y 1024", v);
+                threads = (unsigned)t;
+            }
+        } else if (a[0] == '-') {
+            return bad_usage("opción desconocida", a);
+        } else if (!src) {
+            src = a;
+        } else {
+            return bad_usage("sobra un argumento", a);
+        }
+    }
+    if (!src) return bad_usage("falta el archivo .p5z", NULL);
+    if (!mode) return bad_usage("indica --folder (carpeta para la consola) o --original (dump original)", NULL);
+    if (!dst) return bad_usage("falta la carpeta de salida (-o)", NULL);
+    if (mp_path_kind(dst) == 1) return bad_usage("la salida ya existe y es un archivo", dst);
+    if (mp_path_kind(dst) == 2 && mp_dir_is_empty(dst) != 1) return bad_usage("la carpeta de salida no está vacía", dst);
+    mp_err e = {{0}};
+    mp_p5z *p = NULL;
+    if (mp_p5z_open(src, &p, &e) != 0) {
+        fprintf(stderr, "error: %s\n", e.msg);
+        return 1;
+    }
+    uint64_t t0 = mp_now_ns();
+    int rc = mode == 1 ? mp_unpack_folder(p, dst, threads, 1, &e) : mp_unpack_original(p, dst, threads, 1, &e);
+    mp_p5z_close(p);
+    if (rc != 0) {
+        fprintf(stderr, "\nerror: %s\n(%s queda incompleta: bórrala antes de repetir)\n", e.msg, dst);
+        return 1;
+    }
+    printf("%s en %s (%.0f s)%s\n", mode == 1 ? "Carpeta para la consola" : "Dump original reconstruido", dst,
+           (double)(mp_now_ns() - t0) / 1e9, mode == 2 ? "; todos los SHA-256 coinciden" : "");
+    return 0;
+}
+
 int main(int argc, char **argv) {
     mp_args_utf8(&argc, &argv);
 #ifdef _WIN32
@@ -332,6 +399,8 @@ int main(int argc, char **argv) {
     }
     if (argc >= 2 && strcmp(argv[1], "analyze") == 0) return cmd_analyze(argc - 2, argv + 2);
     if (argc >= 2 && strcmp(argv[1], "pack") == 0) return cmd_pack(argc - 2, argv + 2);
+    if (argc >= 2 && strcmp(argv[1], "unpack") == 0) return cmd_unpack(argc - 2, argv + 2);
+    if (argc >= 2 && strcmp(argv[1], "info") == 0) return cmd_info(argc - 2, argv + 2);
     if (argc >= 2) return bad_usage("orden desconocida", argv[1]);
     usage(stderr);
     return 2;

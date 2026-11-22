@@ -111,6 +111,7 @@ if(MAXPACK_BUILD_TESTS)
   mp_add_test(test_pack FIXTURES)
   set_tests_properties(test_pack PROPERTIES TIMEOUT 600)
   mp_add_test(test_p5z FIXTURES)
+  mp_add_test(test_unpack FIXTURES)
   add_test(NAME test_cli COMMAND ${Python3_EXECUTABLE} -I
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/tools/test_cli.py $<TARGET_FILE:maxpack> ${MP_FIXTURES_DIR}
     ${MP_TEST_TMP}/cli)

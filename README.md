@@ -67,8 +67,12 @@ maxpack analyze <carpeta|imagen.exfat> [opciones]
   --keep-loose GLOB  dejar suelto también lo que case (se puede repetir); '*' y '?' dentro de una
                      carpeta, '**' cualquier número de carpetas. Ej.: --keep-loose "**/*.bnk"
   --no-dedup         no hacer el pase de deduplicación (que lee todo el juego)
+  --no-transport     no medir el .p5z de transporte (zstd 19 con ventana larga)
   --list             solo listar los archivos y si irían sueltos o empaquetados
 ```
+
+`--json` nunca sobrescribe el juego que se analiza ni escribe dentro de su carpeta: si apunta ahí, o
+a una carpeta que no existe, `maxpack` se niega antes de empezar.
 
 Ejemplo:
 
@@ -92,7 +96,9 @@ con un aviso: los PKG llegarán en la fase 4.
     El nivel 5 es el que usa Dump Forge por defecto. Se aplica la regla de Forge: un bloque que no
     mejora va en bruto, y un archivo que ahorra menos del 1 % va entero en bruto.
   - *v2 bloque de 1 MiB* y *v2 diccionario*: mejoras que necesitarían un runtime nuevo (M7 y M6 del
-    diseño). El diccionario se entrena con una mitad de los datos y se mide con la otra.
+    diseño). El diccionario se entrena con una mitad de los datos y se mide con la otra. Con
+    cualquier diccionario, zstd renuncia a la doble pasada del primer bloque que hace en el nivel 19
+    (cuesta un 0,75–0,9 %); es un coste real de usar diccionario y por eso está incluido.
   - *zlib 64 KiB*: referencia aproximada de `.ffpfsc` (no cuenta su tabla de bloques).
 - **Total en consola** = sueltos + empaquetado (+ índices `AMPRZPK1`/`AMPRIDX3` en v1).
   **Ahorro** = 1 − total en consola / tamaño original.
@@ -102,7 +108,11 @@ con un aviso: los PKG llegarán en la fase 4.
 - **Archivos < 64 KiB** (M5): comprimidos uno a uno (como v1), agrupados en bloques sólidos de
   256 KiB, o uno a uno con diccionario.
 - **.p5z estimado**: lo que ocuparía el archivo único para el PC con v1 nivel 19 y los sueltos
-  comprimidos con zstd 19 y ventana larga.
+  comprimidos con zstd 19 y ventana larga. Se instala copiando los packs tal cual.
+- **Transporte**: lo que ocuparía un `.p5z` pensado solo para guardar en el PC, con todo lo
+  empaquetable comprimido como los sueltos (zstd 19, ventana larga, frames de 32 MiB). Ocupa menos,
+  pero al instalar la PS5 tendría que descomprimirlo y volver a comprimirlo en v1, lo que alarga
+  mucho la instalación. Se mide sobre una muestra de tramos de 32 MiB.
 
 Los informes de los juegos analizados están en [docs/informes/](docs/informes/).
 

@@ -4,6 +4,7 @@
 #include "mp_analyze.h"
 #include "mp_platform.h"
 #include "mp_rules.h"
+#include "mp_sample.h"
 #include "mp_test.h"
 
 #define BASIC MP_FIXTURES_DIR "/basic.exfat"
@@ -134,11 +135,59 @@ MP_TEST(small_game_full_sample) {
     mp_report_free(&r);
 }
 
+// El camino que usan todos los juegos reales: muestra < 100 %, escalado por estratos y, para
+// estratos sin ninguna ventana muestreada, la proporción global.
+MP_TEST(sampled_path_estimates) {
+    mp_analyze_opts o = quiet(1, 0), o4 = quiet(4, 0), of = quiet(4, 1);
+    o.sample_min = o4.sample_min = 0;
+    o.sample_fraction = o4.sample_fraction = 0.3;
+    o.dedup = o4.dedup = of.dedup = 0;
+    mp_report a, b, f;
+    if (run(&o, &a) != 0 || run(&o4, &b) != 0 || run(&of, &f) != 0) return;
+    MP_CHECK(a.sample_rate < 1.0);
+    MP_CHECK(a.sample_bytes < a.packable_bytes);
+    for (int c = 0; c < MP_CFG_COUNT; c++) MP_CHECK_EQ_U64(a.est_packed[c], b.est_packed[c]);
+    double est = (double)a.est_packed[MP_CFG_V1_L19], exact = (double)f.est_packed[MP_CFG_V1_L19];
+    fprintf(stderr, "  muestra %.1f %%: estimado %.0f, exacto %.0f (%+.1f %%)\n",
+            100.0 * a.sample_rate, est, exact, 100.0 * (est - exact) / exact);
+    // Con un fixture tan pequeño y variado el error es grande; en juegos reales hay miles de
+    // ventanas por estrato. Lo que se fija aquí es que el camino funciona y no se desboca.
+    MP_CHECK(est > 0.75 * exact && est < 1.25 * exact);
+
+    // El estrato ".dat" (un solo archivo de 1 byte) debe quedar sin muestrear, para que se use la
+    // proporción global. La selección es determinista, así que esto no cambia entre ejecuciones.
+    mp_source *s = NULL;
+    mp_err e = {{0}};
+    MP_CHECK(mp_source_open(BASIC, &s, &e) == 0);
+    if (!s) return;
+    mp_rules *rules = mp_rules_new();
+    uint64_t sizes[512];
+    size_t np = 0, dat = (size_t)-1;
+    for (size_t i = 0; i < mp_source_count(s); i++) {
+        const mp_entry *en = mp_source_entry(s, i);
+        if (mp_rules_classify(rules, en->path, en->size) != MP_PACKABLE) continue;
+        if (strstr(en->path, ".dat")) dat = np;
+        sizes[np++] = en->size;
+    }
+    mp_sample smp = {0};
+    MP_CHECK(mp_sample_select(sizes, np, 0.3, 0, 0, &smp, NULL) == 0);
+    int dat_sampled = 0;
+    for (size_t k = 0; k < smp.n; k++) dat_sampled |= smp.w[k].file == dat;
+    MP_CHECK(dat != (size_t)-1 && !dat_sampled);
+    mp_sample_free(&smp);
+    mp_rules_free(rules);
+    mp_source_close(s);
+    mp_report_free(&a);
+    mp_report_free(&b);
+    mp_report_free(&f);
+}
+
 int main(void) {
     MP_RUN(full_is_exact);
     MP_RUN(threads_independent);
     MP_RUN(only_loose_game);
     MP_RUN(keep_loose_moves_files);
     MP_RUN(small_game_full_sample);
+    MP_RUN(sampled_path_estimates);
     MP_TEST_MAIN_END();
 }

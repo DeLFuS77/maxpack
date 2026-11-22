@@ -36,8 +36,14 @@ if(NOT MSVC)
 endif()
 mp_warnings(maxpack_analyze)
 
+file(GLOB MP_PACK_SRC CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/pack/*.c)
+add_library(maxpack_pack STATIC ${MP_PACK_SRC})
+target_include_directories(maxpack_pack PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/pack)
+target_link_libraries(maxpack_pack PUBLIC maxpack_analyze)
+mp_warnings(maxpack_pack)
+
 add_executable(maxpack src/cli/main.c)
-target_link_libraries(maxpack PRIVATE maxpack_analyze)
+target_link_libraries(maxpack PRIVATE maxpack_pack)
 mp_warnings(maxpack)
 
 option(MAXPACK_BUILD_TESTS "Compilar las pruebas" ON)
@@ -51,7 +57,7 @@ if(MAXPACK_BUILD_TESTS)
   function(mp_add_test name)
     cmake_parse_arguments(T "FIXTURES" "" "" ${ARGN})
     add_executable(${name} tests/${name}.c)
-    target_link_libraries(${name} PRIVATE maxpack_analyze)
+    target_link_libraries(${name} PRIVATE maxpack_pack)
     target_include_directories(${name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests)
     target_compile_definitions(${name} PRIVATE
       MP_TEST_TMP="${MP_TEST_TMP}" MP_FIXTURES_DIR="${MP_FIXTURES_DIR}")
@@ -87,6 +93,11 @@ if(MAXPACK_BUILD_TESTS)
   mp_add_test(test_report)
   mp_add_test(test_hash)
   mp_add_test(test_wfile)
+  mp_add_test(test_idx3 FIXTURES)
+  set_tests_properties(test_idx3 PROPERTIES FIXTURES_SETUP idx3)
+  add_test(NAME check_idx3 COMMAND ${Python3_EXECUTABLE} -I
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/tools/check_idx3.py ${MP_TEST_TMP}/idx3)
+  set_tests_properties(check_idx3 PROPERTIES FIXTURES_REQUIRED idx3)
   add_test(NAME test_cli COMMAND ${Python3_EXECUTABLE} -I
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/tools/test_cli.py $<TARGET_FILE:maxpack> ${MP_FIXTURES_DIR}
     ${MP_TEST_TMP}/cli)

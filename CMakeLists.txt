@@ -67,4 +67,5 @@ if(MAXPACK_BUILD_TESTS)
 
   mp_add_test(test_smoke)
   mp_add_test(test_platform)
+  mp_add_test(test_source_dir)
 endif()

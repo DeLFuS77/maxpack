@@ -4,9 +4,13 @@ Herramienta para que un juego de PS5 (dump propio o homebrew) ocupe lo mínimo p
 jugable. El diseño completo está en
 [docs/diseno/maxpack.md](docs/diseno/maxpack.md).
 
-**Estado: fase 0.** De momento solo existe `maxpack analyze`, que mide cuánto gana cada técnica de
-compresión en un juego concreto **antes** de implementarla. Abre el juego en solo lectura y nunca
-escribe en él. No toca claves, cifrado ni DRM.
+**Estado: fases 0 y 1.**
+- `maxpack analyze` mide cuánto gana cada técnica de compresión en un juego concreto.
+- `maxpack pack` lo empaquetará en packs zstd que ampr-emu-ng sirve en la consola: en una carpeta
+  lista para copiar a la PS5 o en un único `.p5z` para guardar en el PC.
+- `unpack`, `verify` e `info` completan el ciclo: el `.p5z` devuelve el dump original bit a bit.
+
+`maxpack` nunca escribe en el juego de origen y no toca claves, cifrado ni DRM.
 
 ## Compilar
 
@@ -82,6 +86,46 @@ maxpack analyze "D:\juegos\MiJuego-PPSA00000.exfat" --json informe.json
 
 El progreso sale por stderr y el informe por stdout. Si el origen es un PKG, de momento lo rechaza
 con un aviso: los PKG llegarán en la fase 4.
+
+## Empaquetar, guardar y verificar
+
+```
+maxpack pack <carpeta|imagen.exfat> -o <carpeta> [--level N] [--runtime libSceAmpr.sprx] [--threads N]
+maxpack pack <carpeta|imagen.exfat> -o <juego.p5z> --p5z [--level N] [--runtime ...]
+maxpack unpack <juego.p5z> --folder -o <carpeta>      # la carpeta para la consola
+maxpack unpack <juego.p5z> --original -o <carpeta>    # el dump original, bit a bit
+maxpack info <juego.p5z>
+maxpack verify <juego.p5z | carpeta> [--against <origen>]
+```
+
+- **`pack --folder`** (por defecto) produce la carpeta que se copia a la consola:
+  - los sueltos tal cual;
+  - los packs `ampr_zstd-NNN.pak` y `ampr_zstd.index` (formato `AMPRZPK1` de ampr-emu-ng, bloques de
+    256 KiB, nivel 19 por defecto);
+  - un `ampr_emu.index` nuevo.
+- **`pack --p5z`** guarda lo mismo en un solo archivo:
+  - los packs, tal cual;
+  - lo suelto, comprimido con zstd 19 y ventana larga;
+  - el SHA-256 de cada archivo original.
+
+  Formato en [docs/formato-p5z.md](docs/formato-p5z.md).
+- **El runtime de la consola** tiene que ser el `libSceAmpr.sprx` de **ampr-emu-ng**: el ampr_emu
+  antiguo no lee packs zstd. Con `--runtime` se coloca en `fakelib/`. Si el runtime final no parece
+  leer zstd, `pack` lo avisa.
+- **Garantías de seguridad:**
+  - nunca escribe en el origen;
+  - no acepta una salida que no esté vacía;
+  - se niega con juegos ya empaquetados o con rutas que solo se diferencian en mayúsculas;
+  - `ampr_zstd.index` se escribe el último, así que un empaquetado cortado no se monta;
+  - un `.p5z` cortado o dañado se detecta al abrirlo.
+- **Misma entrada, mismos bytes:** con las mismas opciones, el resultado es idéntico byte a byte
+  con cualquier número de hilos.
+- **Comprobaciones:**
+  - `verify` comprueba cada archivo por SHA-256 (`.p5z`), o los packs y los índices (carpeta);
+  - con `--against <origen>` compara además la carpeta con el juego original;
+  - `unpack --original` vuelve a comprobar cada SHA-256 al reconstruir.
+
+Para probar un juego empaquetado en la consola: [docs/probar-en-ps5.md](docs/probar-en-ps5.md).
 
 ## Cómo leer el informe
 

@@ -182,5 +182,8 @@ open(bad, "wb").write(bytes(data))
 rc, so, err = run("verify", bad)
 check("verify_danado_sale_1", rc == 1 and ("FALLO" in err or "error" in err), (so + err)[-300:])
 
+rc, so, _ = run("--help")
+check("help_tiene_todas_las_ordenes", rc == 0 and all(w in so for w in ("analyze", "pack", "unpack", "verify", "info")), so[:300])
+
 print("test_cli: %d fallos" % len(failures))
 sys.exit(1 if failures else 0)

@@ -14,6 +14,7 @@
 #endif
 
 #include "mp_analyze.h"
+#include "mp_describe.h"
 #include "mp_p5z.h"
 #include "mp_parallel.h"
 #include "mp_pack.h"
@@ -528,8 +529,70 @@ static int run_pack(int argc, char **argv) {
     return 0;
 }
 
+// Escribe s como cadena JSON: comillas, barras y controles escapados; UTF-8 no válido pasa a U+FFFD.
+static void print_json_string(const char *s) {
+    const unsigned char *p = (const unsigned char *)s;
+    putchar('"');
+    while (*p) {
+        unsigned c = *p;
+        if (c == '"' || c == '\\') {
+            printf("\\%c", (char)c);
+            p++;
+        } else if (c < 0x20 || c == 0x7f) {
+            printf("\\u%04x", c);
+            p++;
+        } else if (c < 0x80) {
+            putchar((int)c);
+            p++;
+        } else {
+            int n = c >= 0xf0 && c < 0xf5 ? 4 : c >= 0xe0 ? 3 : c >= 0xc2 && c < 0xe0 ? 2 : 0;
+            int ok = n > 0 && c < 0xf5;
+            for (int i = 1; ok && i < n; i++) ok = (p[i] & 0xc0) == 0x80;   // un NUL también falla aquí
+            if (ok && n == 3) {
+                unsigned cp = (c & 0x0f) << 12 | (p[1] & 0x3f) << 6 | (p[2] & 0x3f);
+                ok = cp >= 0x800 && !(cp >= 0xd800 && cp < 0xe000);
+            } else if (ok && n == 4) {
+                unsigned cp = (c & 0x07) << 18 | (p[1] & 0x3f) << 12 | (p[2] & 0x3f) << 6 | (p[3] & 0x3f);
+                ok = cp >= 0x10000 && cp <= 0x10ffff;
+            }
+            if (ok) {
+                fwrite(p, 1, (size_t)n, stdout);
+                p += n;
+            } else {
+                fputs("\xef\xbf\xbd", stdout);
+                p++;
+            }
+        }
+    }
+    putchar('"');
+}
+
+static int cmd_info_json(const char *path) {
+    mp_err e = {{0}};
+    mp_describe d;
+    if (mp_describe_path(path, &d, &e) != 0) {
+        fprintf(stderr, "error: %s\n", e.msg);
+        return 1;
+    }
+    printf("{\"kind\":\"%s\",\"title_id\":", d.kind);
+    print_json_string(d.title_id);
+    printf(",\"version\":");
+    print_json_string(d.version);
+    printf(",\"name\":");
+    print_json_string(d.name);
+    printf(",\"original_size\":%llu,\"install_size\":%llu,\"p5z_size\":%llu,\"files\":%llu",
+           (unsigned long long)d.original_size, (unsigned long long)d.install_size,
+           (unsigned long long)d.p5z_size, (unsigned long long)d.files);
+    printf(",\"has_runtime\":%s,\"has_zstd_runtime\":%s,\"packed\":%s}\n", d.has_runtime ? "true" : "false",
+           d.has_zstd_runtime ? "true" : "false", d.packed ? "true" : "false");
+    fflush(stdout);
+    return 0;
+}
+
 static int cmd_info(int argc, char **argv) {
-    if (argc != 1) return bad_usage("info necesita un archivo .p5z", NULL);
+    if (argc == 2 && !strcmp(argv[0], "--json")) return cmd_info_json(argv[1]);
+    if (argc == 2 && !strcmp(argv[1], "--json")) return cmd_info_json(argv[0]);
+    if (argc != 1 || !strcmp(argv[0], "--json")) return bad_usage("info necesita un archivo .p5z (o --json y una ruta)", NULL);
     mp_err e = {{0}};
     mp_p5z *p = NULL;
     if (mp_p5z_open(argv[0], &p, &e) != 0) {
@@ -539,6 +602,38 @@ static int cmd_info(int argc, char **argv) {
     int rc = mp_p5z_info(p, stdout) == 0 ? 0 : 1;
     mp_p5z_close(p);
     return rc;
+}
+
+// icon <ruta> -o <png>: 0 con el PNG escrito, 1 si el juego no tiene icono (o no se pudo escribir).
+static int cmd_icon(int argc, char **argv) {
+    const char *src = NULL, *out = NULL;
+    for (int i = 0; i < argc; i++) {
+        if (!strcmp(argv[i], "-o")) {
+            if (i + 1 >= argc || out) return bad_usage("-o necesita un valor", NULL);
+            out = argv[++i];
+        } else if (argv[i][0] == '-' && argv[i][1]) {
+            return bad_usage("opción desconocida", argv[i]);
+        } else if (!src) {
+            src = argv[i];
+        } else {
+            return bad_usage("icon admite un solo origen", argv[i]);
+        }
+    }
+    if (!src || !out) return bad_usage("icon necesita un origen y -o <icono.png>", NULL);
+    mp_err e = {{0}};
+    uint8_t *png = NULL;
+    size_t len = 0;
+    if (mp_describe_icon(src, &png, &len, &e) != 0) {
+        fprintf(stderr, "error: %s\n", e.msg);
+        return 1;
+    }
+    int rc = mp_write_file(out, png, len, &e);
+    free(png);
+    if (rc != 0) {
+        fprintf(stderr, "error: %s\n", e.msg);
+        return 1;
+    }
+    return 0;
 }
 
 static int cmd_unpack(int argc, char **argv) {
@@ -699,6 +794,7 @@ int main(int argc, char **argv) {
     if (argc >= 2 && strcmp(argv[1], "pack") == 0) return cmd_pack(argc - 2, argv + 2);
     if (argc >= 2 && strcmp(argv[1], "unpack") == 0) return cmd_unpack(argc - 2, argv + 2);
     if (argc >= 2 && strcmp(argv[1], "info") == 0) return cmd_info(argc - 2, argv + 2);
+    if (argc >= 2 && strcmp(argv[1], "icon") == 0) return cmd_icon(argc - 2, argv + 2);
     if (argc >= 2 && strcmp(argv[1], "verify") == 0) return cmd_verify(argc - 2, argv + 2);
     if (argc >= 2) return bad_usage("orden desconocida", argv[1]);
     usage(stderr);

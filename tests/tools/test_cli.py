@@ -318,5 +318,55 @@ check("human_output_unchanged", rc == 0 and so.startswith("verify:") and '"event
 rc, so, _ = run("--help")
 check("help_tiene_todas_las_ordenes", rc == 0 and all(w in so for w in ("analyze", "pack", "unpack", "verify", "info")), so[:300])
 
+# info --json e icon.
+rc, so, err = run("info", "--json", BASIC)
+try:
+    d = json.loads(so)
+    check("info_json", rc == 0 and d["kind"] == "exfat" and d["title_id"] == "TEST00001"
+          and d["version"] == "01.000.000" and d["files"] > 0 and d["packed"] is False
+          and d["has_runtime"] is False and d["has_zstd_runtime"] is False
+          and d["install_size"] == d["original_size"] and d["p5z_size"] == 0, so[-300:] + err[-200:])
+except Exception as ex:
+    check("info_json", False, repr(ex) + so[-200:])
+rc, so, err = run("info", "--json", pj)
+try:
+    d = json.loads(so)
+    check("info_json_p5z", rc == 0 and d["kind"] == "p5z" and d["packed"] is True
+          and d["p5z_size"] == os.path.getsize(pj), so[-300:] + err[-200:])
+except Exception as ex:
+    check("info_json_p5z", False, repr(ex) + so[-200:])
+# Nombre con comillas, barras, acentos y control: JSON válido y bytes intactos.
+nm = os.path.join(TMP, "nm_game")
+rmtree(nm)
+os.makedirs(os.path.join(nm, "sce_sys"))
+title = 'A "B" \ café ™'
+with open(os.path.join(nm, "sce_sys", "param.json"), "w", encoding="utf-8") as f:
+    json.dump({"titleId": "NAME00001", "contentVersion": "01.000.000", "titleName": title}, f, ensure_ascii=False)
+rc, so, err = run("info", "--json", nm)
+try:
+    d = json.loads(so)
+    check("info_json_name", rc == 0 and d["kind"] == "folder" and d["name"] == title, repr(so))
+except Exception as ex:
+    check("info_json_name", False, repr(ex) + so[-200:])
+rc, so, err = run("info", "--json", os.path.join(TMP, "no_existe_nunca"))
+check("info_json_no_existe", rc == 1 and "error:" in err, "rc=%d %s" % (rc, err))
+rc, _, _ = run("info", "--json")
+check("info_json_sin_ruta_sale_2", rc == 2, str(rc))
+
+png = bytes(range(64))
+open(os.path.join(nm, "sce_sys", "icon0.png"), "wb").write(png)
+outpng = os.path.join(TMP, "icon_out.png")
+if os.path.exists(outpng):
+    os.remove(outpng)
+rc, so, err = run("icon", nm, "-o", outpng)
+check("icon_cli", rc == 0 and os.path.exists(outpng) and open(outpng, "rb").read() == png, "rc=%d %s" % (rc, err))
+outpng2 = os.path.join(TMP, "icon_none.png")
+if os.path.exists(outpng2):
+    os.remove(outpng2)
+rc, _, err = run("icon", BASIC, "-o", outpng2)
+check("icon_cli_sin_icono_sale_1", rc == 1 and not os.path.exists(outpng2), "rc=%d %s" % (rc, err))
+rc, _, _ = run("icon", nm)
+check("icon_sin_salida_sale_2", rc == 2, str(rc))
+
 print("test_cli: %d fallos" % len(failures))
 sys.exit(1 if failures else 0)

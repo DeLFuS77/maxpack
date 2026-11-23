@@ -3,6 +3,7 @@
 // manda los archivos a la salida en este orden: sueltos, packs, ampr_emu.index, runtime,
 // originales reemplazados y, el último, ampr_zstd.index (sin él el runtime no monta nada).
 #include "mp_pack.h"
+#include "mp_param.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -40,35 +41,6 @@ static int ieq(const char *a, const char *b) {
         if (y >= 'A' && y <= 'Z') y += 32;
         if (x != y) return 0;
         if (!x) return 1;
-    }
-}
-
-// Valor de una clave de texto en un JSON pequeño (param.json): la primera aparición de "clave".
-static void json_str(const char *j, size_t n, const char *key, char *out, size_t cap) {
-    out[0] = 0;
-    char pat[64];
-    size_t kl = strlen(key);
-    if (kl + 3 > sizeof pat) return;
-    pat[0] = '"';
-    memcpy(pat + 1, key, kl);
-    pat[kl + 1] = '"';
-    pat[kl + 2] = 0;
-    for (size_t i = 0; i + kl + 2 <= n; i++) {
-        if (memcmp(j + i, pat, kl + 2) != 0) continue;
-        size_t p = i + kl + 2;
-        while (p < n && (j[p] == ' ' || j[p] == '\t' || j[p] == '\r' || j[p] == '\n')) p++;
-        if (p >= n || j[p] != ':') continue;
-        p++;
-        while (p < n && (j[p] == ' ' || j[p] == '\t' || j[p] == '\r' || j[p] == '\n')) p++;
-        if (p >= n || j[p] != '"') continue;
-        p++;
-        size_t k = 0;
-        while (p < n && j[p] != '"' && k + 1 < cap) {
-            if (j[p] == '\\' && p + 1 < n) p++;
-            out[k++] = j[p++];
-        }
-        out[k] = 0;
-        return;
     }
 }
 
@@ -256,9 +228,9 @@ int mp_pack_run(const char *src_path, mp_pack_out *out, const mp_pack_opts *o, m
         uint8_t *pj = NULL;
         size_t pl = 0;
         if (read_whole(src, param, 1u << 20, &pj, &pl, e) == 0) {
-            json_str((const char *)pj, pl, "titleId", man.title_id, sizeof man.title_id);
-            json_str((const char *)pj, pl, "contentVersion", man.content_version, sizeof man.content_version);
-            json_str((const char *)pj, pl, "titleName", man.title_name, sizeof man.title_name);
+            mp_param_str((const char *)pj, pl, "titleId", man.title_id, sizeof man.title_id);
+            mp_param_str((const char *)pj, pl, "contentVersion", man.content_version, sizeof man.content_version);
+            mp_param_str((const char *)pj, pl, "titleName", man.title_name, sizeof man.title_name);
             free(pj);
         }
         if (e) e->msg[0] = 0;   // un param.json ilegible no impide empaquetar

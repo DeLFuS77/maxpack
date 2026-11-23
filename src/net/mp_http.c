@@ -145,7 +145,7 @@ static long read_head(sock_t s, char *buf, size_t cap, size_t *hend) {
     return -1;
 }
 
-static void serve_one(mp_http_server *srv, sock_t c);
+static void serve_one(mp_http_server *srv, sock_t c, int loopback);
 
 struct mp_http_server {
     sock_t ls;

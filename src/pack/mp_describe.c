@@ -93,9 +93,7 @@ static int describe_source(const char *path, mp_describe *d, mp_err *e) {
         uint8_t *b = NULL;
         size_t len = 0;
         if (read_entry(s, (size_t)pj, PARAM_MAX, &b, &len, NULL) == 0) {   // ilegible: sin nombre
-            mp_param_str((const char *)b, len, "titleId", d->title_id, sizeof d->title_id);
-            mp_param_str((const char *)b, len, "contentVersion", d->version, sizeof d->version);
-            mp_param_str((const char *)b, len, "titleName", d->name, sizeof d->name);
+            mp_param_read((const char *)b, len, d->title_id, d->version, d->name);
             free(b);
         }
     }

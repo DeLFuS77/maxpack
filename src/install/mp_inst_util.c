@@ -6,6 +6,7 @@
 #include "mp_hash.h"
 #include "mp_inst_internal.h"
 #include "mp_json.h"
+#include "mp_param.h"
 #include "mp_platform.h"
 
 char *mpi_join(const char *a, const char *b) {
@@ -100,21 +101,8 @@ int mpi_unhex(const char *s, uint8_t *b, size_t n) {
     return 0;
 }
 
-static void copy_str(char *dst, size_t cap, const char *s) { snprintf(dst, cap, "%s", s ? s : ""); }
-
 int mpi_param_parse(const char *json, size_t n, char id[16], char ver[16], char name[128]) {
-    id[0] = ver[0] = name[0] = 0;
-    mp_json *j = mp_json_parse(json, n, NULL);
-    if (!j) return -1;
-    copy_str(id, 16, mp_json_str(mp_json_get(j, "titleId")));
-    copy_str(ver, 16, mp_json_str(mp_json_get(j, "contentVersion")));
-    const mp_json *loc = mp_json_get(j, "localizedParameters");
-    const char *def = mp_json_str(mp_json_get(loc, "defaultLanguage"));
-    const char *t = def ? mp_json_str(mp_json_get(mp_json_get(loc, def), "titleName")) : NULL;
-    if (!t) t = mp_json_str(mp_json_get(j, "titleName"));
-    copy_str(name, 128, t);
-    mp_json_free(j);
-    return 0;
+    return mp_param_read(json, n, id, ver, name);
 }
 
 void mpi_dir_title(const char *dir, char id[16]) {

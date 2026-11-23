@@ -126,9 +126,51 @@ MP_TEST(describe_name_chars) {
     mp_err e = {{0}};
     mp_describe d;
     mpt_clear(TMP "/nm");
-    mpt_put_text(TMP "/nm/sce_sys/param.json", "{\"titleId\":\"NAME00001\",\"titleName\":\"A \\\"B\\\" caf\xc3\xa9\"}");
+    mpt_put_text(TMP "/nm/sce_sys/param.json",
+                 "{\"titleId\":\"NAME00001\",\"titleName\":\"A \\\"B\\\" \\\\ caf\xc3\xa9 Game\\u2122 \\ud83c\\udfae\\n\"}");
     MP_CHECK(mp_describe_path(TMP "/nm", &d, &e) == 0);
-    MP_CHECK_STR(d.name, "A \"B\" caf\xc3\xa9");
+    MP_CHECK_STR(d.name, "A \"B\" \\ caf\xc3\xa9 Game\xe2\x84\xa2 \xf0\x9f\x8e\xae\n");
+}
+
+MP_TEST(describe_default_language) {
+    mp_err e = {{0}};
+    mp_describe d;
+    mpt_clear(TMP "/lang");
+    mpt_put_text(TMP "/lang/sce_sys/param.json",
+                 "{\"titleId\":\"LANG00001\",\"contentVersion\":\"01.000.000\",\"titleName\":\"Top\","
+                 "\"localizedParameters\":{\"en-US\":{\"titleName\":\"English\"},"
+                 "\"es-ES\":{\"titleName\":\"Espa\\u00f1ol\"},\"defaultLanguage\":\"es-ES\"}}");
+    MP_CHECK(mp_describe_path(TMP "/lang", &d, &e) == 0);
+    MP_CHECK_STR(d.name, "Espa\xc3\xb1ol");
+    MP_CHECK_STR(d.title_id, "LANG00001");
+    // pack guarda el mismo nombre en el manifiesto del .p5z.
+    mpt_pack(TMP "/lang", TMP "/lang.p5z", 1, NULL);
+    mp_p5z *p = open_p5z(TMP "/lang.p5z");
+    if (!p) return;
+    MP_CHECK_STR(mp_p5z_manifest(p)->title_name, "Espa\xc3\xb1ol");
+    mp_p5z_close(p);
+    mp_describe z;
+    MP_CHECK(mp_describe_path(TMP "/lang.p5z", &z, &e) == 0);
+    MP_CHECK_STR(z.name, d.name);
+    // Sin idioma por defecto: el de primer nivel.
+    mpt_put_text(TMP "/lang/sce_sys/param.json",
+                 "{\"titleId\":\"LANG00001\",\"titleName\":\"Top\",\"localizedParameters\":{\"en-US\":{\"titleName\":\"English\"}}}");
+    MP_CHECK(mp_describe_path(TMP "/lang", &d, &e) == 0);
+    MP_CHECK_STR(d.name, "Top");
+}
+
+MP_TEST(describe_name_truncated_on_boundary) {
+    mp_err e = {{0}};
+    mp_describe d;
+    char json[1024] = "{\"titleId\":\"LONG00001\",\"titleName\":\"";
+    for (int i = 0; i < 100; i++) strcat(json, "\xc3\xa9");   // 200 bytes; caben 127
+    strcat(json, "\"}");
+    mpt_clear(TMP "/long");
+    mpt_put_text(TMP "/long/sce_sys/param.json", json);
+    MP_CHECK(mp_describe_path(TMP "/long", &d, &e) == 0);
+    size_t n = strlen(d.name);
+    MP_CHECK_EQ_U64(n, 126);   // 63 caracteres de 2 bytes: no parte el 64.º
+    MP_CHECK((unsigned char)d.name[n - 1] == 0xa9 && (unsigned char)d.name[n - 2] == 0xc3);
 }
 
 int main(void) {
@@ -136,5 +178,7 @@ int main(void) {
     MP_RUN(describe_runtime_old);
     MP_RUN(describe_icon);
     MP_RUN(describe_name_chars);
+    MP_RUN(describe_default_language);
+    MP_RUN(describe_name_truncated_on_boundary);
     MP_TEST_MAIN_END();
 }

@@ -228,9 +228,7 @@ int mp_pack_run(const char *src_path, mp_pack_out *out, const mp_pack_opts *o, m
         uint8_t *pj = NULL;
         size_t pl = 0;
         if (read_whole(src, param, 1u << 20, &pj, &pl, e) == 0) {
-            mp_param_str((const char *)pj, pl, "titleId", man.title_id, sizeof man.title_id);
-            mp_param_str((const char *)pj, pl, "contentVersion", man.content_version, sizeof man.content_version);
-            mp_param_str((const char *)pj, pl, "titleName", man.title_name, sizeof man.title_name);
+            mp_param_read((const char *)pj, pl, man.title_id, man.content_version, man.title_name);
             free(pj);
         }
         if (e) e->msg[0] = 0;   // un param.json ilegible no impide empaquetar

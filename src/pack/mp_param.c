@@ -1,32 +1,32 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+#include <stdio.h>
 #include <string.h>
 
+#include "mp_json.h"
 #include "mp_param.h"
 
-void mp_param_str(const char *j, size_t n, const char *key, char *out, size_t cap) {
-    out[0] = 0;
-    char pat[64];
-    size_t kl = strlen(key);
-    if (kl + 3 > sizeof pat) return;
-    pat[0] = '"';
-    memcpy(pat + 1, key, kl);
-    pat[kl + 1] = '"';
-    pat[kl + 2] = 0;
-    for (size_t i = 0; i + kl + 2 <= n; i++) {
-        if (memcmp(j + i, pat, kl + 2) != 0) continue;
-        size_t p = i + kl + 2;
-        while (p < n && (j[p] == ' ' || j[p] == '\t' || j[p] == '\r' || j[p] == '\n')) p++;
-        if (p >= n || j[p] != ':') continue;
-        p++;
-        while (p < n && (j[p] == ' ' || j[p] == '\t' || j[p] == '\r' || j[p] == '\n')) p++;
-        if (p >= n || j[p] != '"') continue;
-        p++;
-        size_t k = 0;
-        while (p < n && j[p] != '"' && k + 1 < cap) {
-            if (j[p] == '\\' && p + 1 < n) p++;
-            out[k++] = j[p++];
-        }
-        out[k] = 0;
-        return;
+// Copia s en dst (de cap bytes) sin partir un carácter UTF-8 multibyte.
+static void copy_str(char *dst, size_t cap, const char *s) {
+    size_t n = s ? strlen(s) : 0;
+    if (n > cap - 1) {
+        n = cap - 1;
+        while (n > 0 && ((unsigned char)s[n] & 0xc0) == 0x80) n--;   // s[n] es continuación: retrocede
     }
+    if (n) memcpy(dst, s, n);
+    dst[n] = 0;
+}
+
+int mp_param_read(const char *json, size_t n, char id[16], char ver[16], char name[128]) {
+    id[0] = ver[0] = name[0] = 0;
+    mp_json *j = mp_json_parse(json, n, NULL);
+    if (!j) return -1;
+    copy_str(id, 16, mp_json_str(mp_json_get(j, "titleId")));
+    copy_str(ver, 16, mp_json_str(mp_json_get(j, "contentVersion")));
+    const mp_json *loc = mp_json_get(j, "localizedParameters");
+    const char *def = mp_json_str(mp_json_get(loc, "defaultLanguage"));
+    const char *t = def ? mp_json_str(mp_json_get(mp_json_get(loc, def), "titleName")) : NULL;
+    if (!t) t = mp_json_str(mp_json_get(j, "titleName"));
+    copy_str(name, 128, t);
+    mp_json_free(j);
+    return 0;
 }

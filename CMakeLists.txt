@@ -6,6 +6,8 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 
+option(MAXPACK_PS5 "Compilar maxpack.elf para la PS5 (con el SDK ps5-payload-dev: prospero-cmake)" OFF)
+
 include(cmake/ThirdParty.cmake)
 find_package(Threads REQUIRED)
 
@@ -77,14 +79,43 @@ add_library(maxpack_page STATIC ${MP_PAGE_C})
 target_include_directories(maxpack_page PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/web)
 target_link_libraries(maxpack_web PUBLIC maxpack_page)
 
-# Instalador de PC, solo para probar el motor y la página sin consola.
-add_executable(maxpack-installer-pc src/web/main_pc.c)
-target_link_libraries(maxpack-installer-pc PRIVATE maxpack_web)
-mp_warnings(maxpack-installer-pc)
+if(MAXPACK_PS5)
+  # maxpack.elf: el instalador en la consola. Con -DMAXPACK_RUNTIME=<libSceAmpr.sprx> lleva dentro
+  # ese ampr-emu-ng (y -DMAXPACK_RUNTIME_VERSION=<texto> para mostrarlo).
+  set(MAXPACK_RUNTIME "" CACHE FILEPATH "libSceAmpr.sprx de ampr-emu-ng que lleva el instalador")
+  set(MAXPACK_RUNTIME_VERSION "" CACHE STRING "Versión de ese runtime")
+  set(MP_PS5_SRC src/ps5/main_ps5.c)
+  if(MAXPACK_RUNTIME)
+    set(MP_RT_C ${CMAKE_BINARY_DIR}/gen/mp_runtime.c)
+    add_custom_command(OUTPUT ${MP_RT_C}
+      COMMAND ${CMAKE_COMMAND} -DIN=${MAXPACK_RUNTIME} -DOUT=${MP_RT_C} -DNAME=mp_runtime_sprx
+              -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed.cmake
+      DEPENDS ${MAXPACK_RUNTIME} ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed.cmake
+      COMMENT "Incrustando el runtime")
+    list(APPEND MP_PS5_SRC ${MP_RT_C})
+    file(TIMESTAMP ${MAXPACK_RUNTIME} MP_RT_MTIME "%s" UTC)
+  endif()
+  add_executable(maxpack_elf ${MP_PS5_SRC})
+  set_target_properties(maxpack_elf PROPERTIES OUTPUT_NAME maxpack.elf)
+  target_link_libraries(maxpack_elf PRIVATE maxpack_web SceNotification)
+  if(MAXPACK_RUNTIME)
+    target_compile_definitions(maxpack_elf PRIVATE MAXPACK_HAVE_RUNTIME MAXPACK_RUNTIME_MTIME=${MP_RT_MTIME}
+                               MAXPACK_RUNTIME_VERSION="${MAXPACK_RUNTIME_VERSION}")
+  endif()
+  mp_warnings(maxpack_elf)
+  set(MAXPACK_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+else()
+  # Instalador de PC, solo para probar el motor y la página sin consola.
+  add_executable(maxpack-installer-pc src/web/main_pc.c)
+  target_link_libraries(maxpack-installer-pc PRIVATE maxpack_web)
+  mp_warnings(maxpack-installer-pc)
+endif()
 
-add_executable(maxpack src/cli/main.c)
-target_link_libraries(maxpack PRIVATE maxpack_pack)
-mp_warnings(maxpack)
+if(NOT MAXPACK_PS5)
+  add_executable(maxpack src/cli/main.c)
+  target_link_libraries(maxpack PRIVATE maxpack_pack)
+  mp_warnings(maxpack)
+endif()
 
 option(MAXPACK_BUILD_TESTS "Compilar las pruebas" ON)
 if(MAXPACK_BUILD_TESTS)

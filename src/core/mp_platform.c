@@ -573,6 +573,150 @@ int mp_dir_is_empty(const char *path) {
     return mp_dir_walk(path, has_entry_cb, NULL, NULL) == 0 ? 1 : 0;
 }
 
+int mp_wfile_sync(mp_wfile *f, mp_err *e) {
+    if (!FlushFileBuffers(f->h)) {
+        win_err(e, "no se pudo volcar al disco", f->path, GetLastError());
+        return -1;
+    }
+    return 0;
+}
+
+int mp_dir_list(const char *dir, mp_list_cb cb, void *ctx, mp_err *e) {
+    if (mp_path_kind(dir) != 2) {
+        mp_err_set(e, "no es una carpeta: %s", dir);
+        return -1;
+    }
+    wchar_t *w = long_path(dir);
+    size_t dl = w ? wcslen(w) : 0;
+    wchar_t *pat = w ? malloc((dl + 3) * sizeof(wchar_t)) : NULL;
+    if (!pat) {
+        free(w);
+        mp_err_set(e, "sin memoria");
+        return -1;
+    }
+    wcscpy(pat, w);
+    if (dl && pat[dl - 1] != L'\\') wcscat(pat, L"\\");
+    wcscat(pat, L"*");
+    free(w);
+    WIN32_FIND_DATAW fd;
+    HANDLE h = FindFirstFileExW(pat, FindExInfoBasic, &fd, FindExSearchNameMatch, NULL, 0);
+    free(pat);
+    if (h == INVALID_HANDLE_VALUE) {
+        DWORD err = GetLastError();
+        if (err == ERROR_FILE_NOT_FOUND) return 0;
+        win_err(e, "no se puede listar", dir, err);
+        return -1;
+    }
+    int rc = 0;
+    do {
+        if (!wcscmp(fd.cFileName, L".") || !wcscmp(fd.cFileName, L"..")) continue;
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) continue;
+        char *name = w_to_utf8(fd.cFileName);
+        if (!name) {
+            mp_err_set(e, "sin memoria");
+            rc = -1;
+            break;
+        }
+        int is_dir = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+        uint64_t size = is_dir ? 0 : (((uint64_t)fd.nFileSizeHigh << 32) | fd.nFileSizeLow);
+        rc = cb(ctx, name, is_dir, size);
+        free(name);
+    } while (!rc && FindNextFileW(h, &fd));
+    FindClose(h);
+    return rc;
+}
+
+int mp_rename(const char *from, const char *to, mp_err *e) {
+    wchar_t *a = long_path(from), *b = long_path(to);
+    int rc = 0;
+    if (!a || !b) {
+        mp_err_set(e, "ruta no válida: %s", !a ? from : to);
+        rc = -1;
+    } else if (!MoveFileExW(a, b, 0)) {
+        win_err(e, "no se puede renombrar", from, GetLastError());
+        rc = -1;
+    }
+    free(a);
+    free(b);
+    return rc;
+}
+
+static int remove_tree_w(const wchar_t *path, const char *shown, mp_err *e) {
+    DWORD attr = GetFileAttributesW(path);
+    if (attr == INVALID_FILE_ATTRIBUTES) return 0;
+    if (attr & FILE_ATTRIBUTE_READONLY) SetFileAttributesW(path, attr & ~(DWORD)FILE_ATTRIBUTE_READONLY);
+    if (!(attr & FILE_ATTRIBUTE_DIRECTORY)) {
+        if (!DeleteFileW(path)) {
+            win_err(e, "no se puede borrar", shown, GetLastError());
+            return -1;
+        }
+        return 0;
+    }
+    if (!(attr & FILE_ATTRIBUTE_REPARSE_POINT)) {   // un enlace se borra sin entrar
+        size_t dl = wcslen(path);
+        wchar_t *pat = malloc((dl + 3) * sizeof(wchar_t));
+        if (!pat) {
+            mp_err_set(e, "sin memoria");
+            return -1;
+        }
+        wcscpy(pat, path);
+        wcscat(pat, L"\\*");
+        WIN32_FIND_DATAW fd;
+        HANDLE h = FindFirstFileExW(pat, FindExInfoBasic, &fd, FindExSearchNameMatch, NULL, 0);
+        free(pat);
+        int rc = 0;
+        if (h != INVALID_HANDLE_VALUE) {
+            do {
+                if (!wcscmp(fd.cFileName, L".") || !wcscmp(fd.cFileName, L"..")) continue;
+                size_t nl = wcslen(fd.cFileName);
+                wchar_t *child = malloc((dl + nl + 2) * sizeof(wchar_t));
+                if (!child) {
+                    mp_err_set(e, "sin memoria");
+                    rc = -1;
+                    break;
+                }
+                wcscpy(child, path);
+                wcscat(child, L"\\");
+                wcscat(child, fd.cFileName);
+                rc = remove_tree_w(child, shown, e);
+                free(child);
+            } while (!rc && FindNextFileW(h, &fd));
+            FindClose(h);
+        }
+        if (rc) return rc;
+    }
+    if (!RemoveDirectoryW(path)) {
+        win_err(e, "no se puede borrar la carpeta", shown, GetLastError());
+        return -1;
+    }
+    return 0;
+}
+
+int mp_remove_tree(const char *path, mp_err *e) {
+    wchar_t *w = long_path(path);
+    if (!w) {
+        mp_err_set(e, "ruta no válida: %s", path);
+        return -1;
+    }
+    int rc = remove_tree_w(w, path, e);
+    free(w);
+    return rc;
+}
+
+int mp_disk_free(const char *path, uint64_t *free_bytes, mp_err *e) {
+    wchar_t *w = long_path(path);
+    ULARGE_INTEGER avail = {0};
+    BOOL ok = w && GetDiskFreeSpaceExW(w, &avail, NULL, NULL);
+    DWORD err = GetLastError();
+    free(w);
+    if (!ok) {
+        win_err(e, "no se puede saber el espacio libre de", path, err);
+        return -1;
+    }
+    *free_bytes = avail.QuadPart;
+    return 0;
+}
+
 void mp_args_utf8(int *argc, char ***argv) {
     int n = 0;
     wchar_t **w = CommandLineToArgvW(GetCommandLineW(), &n);
@@ -599,6 +743,7 @@ void mp_args_utf8(int *argc, char ***argv) {
 #include <fcntl.h>
 #include <pthread.h>
 #include <sys/stat.h>
+#include <sys/statvfs.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -951,6 +1096,97 @@ void mp_sleep_ms(unsigned ms) {
     struct timespec ts = {(time_t)(ms / 1000), (long)(ms % 1000) * 1000000L};
     while (nanosleep(&ts, &ts) != 0 && errno == EINTR) {
     }
+}
+
+int mp_wfile_sync(mp_wfile *f, mp_err *e) {
+    if (fsync(f->fd) != 0) {
+        mp_err_set(e, "no se pudo volcar al disco %s: %s", f->path, strerror(errno));
+        return -1;
+    }
+    return 0;
+}
+
+int mp_dir_list(const char *dir, mp_list_cb cb, void *ctx, mp_err *e) {
+    DIR *d = opendir(dir);
+    if (!d) {
+        mp_err_set(e, "no se puede listar %s: %s", dir, strerror(errno));
+        return -1;
+    }
+    int rc = 0;
+    struct dirent *de;
+    while (!rc && (de = readdir(d)) != NULL) {
+        if (!strcmp(de->d_name, ".") || !strcmp(de->d_name, "..")) continue;
+        char *full = join_rel(dir, de->d_name);
+        struct stat st;
+        if (!full) {
+            mp_err_set(e, "sin memoria");
+            rc = -1;
+        } else if (lstat(full, &st) == 0 && (S_ISDIR(st.st_mode) || S_ISREG(st.st_mode))) {
+            rc = cb(ctx, de->d_name, S_ISDIR(st.st_mode), S_ISDIR(st.st_mode) ? 0 : (uint64_t)st.st_size);
+        }
+        free(full);
+    }
+    closedir(d);
+    return rc;
+}
+
+int mp_rename(const char *from, const char *to, mp_err *e) {
+    struct stat st;
+    if (lstat(to, &st) == 0) {
+        mp_err_set(e, "no se puede renombrar %s: %s ya existe", from, to);
+        return -1;
+    }
+    if (rename(from, to) != 0) {
+        mp_err_set(e, "no se puede renombrar %s: %s", from, strerror(errno));
+        return -1;
+    }
+    return 0;
+}
+
+int mp_remove_tree(const char *path, mp_err *e) {
+    struct stat st;
+    if (lstat(path, &st) != 0) return 0;
+    if (!S_ISDIR(st.st_mode)) {   // archivo o enlace: se borra sin seguirlo
+        if (unlink(path) != 0) {
+            mp_err_set(e, "no se puede borrar %s: %s", path, strerror(errno));
+            return -1;
+        }
+        return 0;
+    }
+    DIR *d = opendir(path);
+    if (!d) {
+        mp_err_set(e, "no se puede listar %s: %s", path, strerror(errno));
+        return -1;
+    }
+    int rc = 0;
+    struct dirent *de;
+    while (!rc && (de = readdir(d)) != NULL) {
+        if (!strcmp(de->d_name, ".") || !strcmp(de->d_name, "..")) continue;
+        char *full = join_rel(path, de->d_name);
+        if (!full) {
+            mp_err_set(e, "sin memoria");
+            rc = -1;
+        } else {
+            rc = mp_remove_tree(full, e);
+        }
+        free(full);
+    }
+    closedir(d);
+    if (!rc && rmdir(path) != 0) {
+        mp_err_set(e, "no se puede borrar la carpeta %s: %s", path, strerror(errno));
+        rc = -1;
+    }
+    return rc;
+}
+
+int mp_disk_free(const char *path, uint64_t *free_bytes, mp_err *e) {
+    struct statvfs s;
+    if (statvfs(path, &s) != 0) {
+        mp_err_set(e, "no se puede saber el espacio libre de %s: %s", path, strerror(errno));
+        return -1;
+    }
+    *free_bytes = (uint64_t)s.f_bavail * (uint64_t)s.f_frsize;
+    return 0;
 }
 
 #endif

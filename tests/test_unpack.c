@@ -7,124 +7,18 @@
 #include "mp_pack.h"
 #include "mp_platform.h"
 #include "mp_test.h"
+#include "mp_fixture.h"
 
 #define TMP MP_TEST_TMP "/unpack"
 #define BASIC MP_FIXTURES_DIR "/basic.exfat"
 
-// Borrado para limpiar las salidas de las pruebas. En Windows con las funciones anchas: el dump
-// reconstruido tiene un nombre con emoji que remove() (ANSI) no puede borrar.
-#ifdef _WIN32
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-static void wide_op(const char *p, int dir) {
-    wchar_t w[2048];
-    if (MultiByteToWideChar(CP_UTF8, 0, p, -1, w, 2048) <= 0) return;
-    if (dir)
-        RemoveDirectoryW(w);
-    else
-        DeleteFileW(w);
-}
-#define remove_(p) wide_op((p), 0)
-#define rmdir_(p) wide_op((p), 1)
-#else
-#include <unistd.h>
-#define remove_(p) remove(p)
-#define rmdir_ rmdir
-#endif
-
-typedef struct {
-    char **v;
-    size_t n, cap;
-} strlist;
-
-static int list_cb(void *ctx, const char *rel, int is_dir, uint64_t size, int64_t mtime) {
-    strlist *l = ctx;
-    (void)size;
-    (void)mtime;
-    if (is_dir) return 0;
-    if (l->n == l->cap) l->v = realloc(l->v, (l->cap = l->cap ? 2 * l->cap : 256) * sizeof *l->v);
-    l->v[l->n++] = mp_strdup(rel);
-    return 0;
-}
-
-static int cmp_str(const void *a, const void *b) { return strcmp(*(char *const *)a, *(char *const *)b); }
-
-static strlist list_dir(const char *dir) {
-    strlist l = {0};
-    mp_dir_walk(dir, list_cb, &l, NULL);
-    if (l.n > 1) qsort(l.v, l.n, sizeof *l.v, cmp_str);
-    return l;
-}
-
-static void free_list(strlist *l) {
-    for (size_t i = 0; i < l->n; i++) free(l->v[i]);
-    free(l->v);
-    l->v = NULL;
-    l->n = l->cap = 0;
-}
-
-typedef struct {
-    const char *root;
-    strlist dirs;
-} rmctx;
-
-static int rm_cb(void *ctx, const char *rel, int is_dir, uint64_t size, int64_t mtime) {
-    rmctx *c = ctx;
-    (void)size;
-    (void)mtime;
-    char p[2048];
-    snprintf(p, sizeof p, "%s/%s", c->root, rel);
-    if (is_dir)
-        list_cb(&c->dirs, p, 0, 0, 0);
-    else
-        remove_(p);
-    return 0;
-}
-
-static void clear_dir(const char *dir) {
-    if (strncmp(dir, MP_TEST_TMP, strlen(MP_TEST_TMP)) != 0) return;
-    rmctx c = {dir, {0}};
-    mp_dir_walk(dir, rm_cb, &c, NULL);
-    for (size_t i = c.dirs.n; i-- > 0;) rmdir_(c.dirs.v[i]);
-    free_list(&c.dirs);
-}
-
-static uint8_t *slurp(const char *path, size_t *len) {
-    mp_file *f = NULL;
-    uint64_t size = 0;
-    size_t got = 0;
-    *len = 0;
-    if (mp_file_open_read(path, &f, NULL) != 0) return NULL;
-    mp_file_size(f, &size, NULL);
-    uint8_t *b = malloc((size_t)size + 1);
-    mp_file_pread(f, b, (size_t)size, 0, &got, NULL);
-    mp_file_close(f);
-    *len = got;
-    return b;
-}
-
-static int pack_any(const char *src, const char *dst, int p5z, const char *runtime) {
-    mp_err e = {{0}};
-    mp_make_dirs(TMP, &e);
-    mp_pack_opts o;
-    mp_pack_opts_default(&o);
-    o.threads = 4;
-    o.progress = 0;
-    o.runtime = runtime;
-    mp_pack_out out;
-    if (p5z) {
-        remove(dst);
-        if (mp_pack_out_p5z(dst, 4, &out, &e) != 0) return -1;
-    } else {
-        clear_dir(dst);
-        if (mp_pack_out_dir(dst, &out, &e) != 0) return -1;
-    }
-    mp_pack_result r;
-    int rc = mp_pack_run(src, &out, &o, &r, &e);
-    out.destroy(out.ctx);
-    if (rc) MP_FAIL_("pack: %s", e.msg);
-    return rc;
-}
+// Utilidades comunes de las pruebas (antes estaban aquí).
+#define strlist mpt_list
+#define list_dir mpt_list_dir
+#define free_list mpt_list_free
+#define clear_dir mpt_clear
+#define slurp mpt_slurp
+#define pack_any mpt_pack
 
 static mp_p5z *open_p5z(const char *path) {
     mp_err e = {{0}};

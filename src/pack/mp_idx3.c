@@ -200,6 +200,45 @@ long mp_idx3_find(const mp_idx3_entry *v, size_t n, const char *rel) {
     return -1;
 }
 
+int mp_idx3_set_row(const uint8_t *idx, size_t n, const char *rel, uint64_t size, int64_t mtime,
+                    uint8_t **out, size_t *out_len, mp_err *e) {
+    *out = NULL;
+    *out_len = 0;
+    mp_idx3_entry *v = NULL;
+    size_t m = 0;
+    if (mp_idx3_parse(idx, n, &v, &m, e) != 0) return -1;
+    mp_idx3_row *rows = malloc((m + 1) * sizeof *rows);
+    if (!rows) {
+        mp_idx3_entries_free(v, m);
+        mp_err_set(e, "sin memoria");
+        return -1;
+    }
+    size_t k = 0;
+    int found = 0;
+    for (size_t i = 0; i < m; i++) {
+        rows[k].path = v[i].app0_path + APP0_LEN;
+        rows[k].size = v[i].size;
+        rows[k].mtime = v[i].mtime;
+        if (fold_cmp(rows[k].path, rel) == 0) {   // el runtime no distingue mayúsculas
+            rows[k].path = rel;
+            rows[k].size = size;
+            rows[k].mtime = mtime;
+            found = 1;
+        }
+        k++;
+    }
+    if (!found) {
+        rows[k].path = rel;
+        rows[k].size = size;
+        rows[k].mtime = mtime;
+        k++;
+    }
+    int rc = mp_idx3_build(rows, k, out, out_len, e);
+    free(rows);
+    mp_idx3_entries_free(v, m);
+    return rc;
+}
+
 void mp_idx3_entries_free(mp_idx3_entry *v, size_t n) {
     if (!v) return;
     for (size_t i = 0; i < n; i++) free(v[i].app0_path);

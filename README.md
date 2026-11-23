@@ -4,11 +4,14 @@ Herramienta para que un juego de PS5 (dump propio o homebrew) ocupe lo mínimo p
 jugable. El diseño completo está en
 [docs/diseno/maxpack.md](docs/diseno/maxpack.md).
 
-**Estado: fases 0 y 1.**
+**Estado: fases 0, 1 y 2.**
 - `maxpack analyze` mide cuánto gana cada técnica de compresión en un juego concreto.
-- `maxpack pack` lo empaquetará en packs zstd que ampr-emu-ng sirve en la consola: en una carpeta
+- `maxpack pack` lo empaqueta en packs zstd que ampr-emu-ng sirve en la consola: en una carpeta
   lista para copiar a la PS5 o en un único `.p5z` para guardar en el PC.
 - `unpack`, `verify` e `info` completan el ciclo: el `.p5z` devuelve el dump original bit a bit.
+- `maxpack.elf`, el instalador en la PS5, instala los `.p5z` (que siguen comprimidos en la consola) y
+  también, tal cual, carpetas e imágenes, con una página web en el puerto 8095:
+  [docs/instalador-ps5.md](docs/instalador-ps5.md).
 
 `maxpack` nunca escribe en el juego de origen y no toca claves, cifrado ni DRM.
 
@@ -125,7 +128,8 @@ maxpack verify <juego.p5z | carpeta> [--against <origen>]
   - con `--against <origen>` compara además la carpeta con el juego original;
   - `unpack --original` vuelve a comprobar cada SHA-256 al reconstruir.
 
-Para probar un juego empaquetado en la consola: [docs/probar-en-ps5.md](docs/probar-en-ps5.md).
+Para probar un juego empaquetado en la consola: [docs/probar-en-ps5.md](docs/probar-en-ps5.md). Para
+instalarlo desde la propia consola: [docs/instalador-ps5.md](docs/instalador-ps5.md).
 
 ## Cómo leer el informe
 

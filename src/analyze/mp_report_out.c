@@ -17,14 +17,14 @@ static const char *const cfg_label[MP_CFG_COUNT] = {
     "zlib 64 KiB (≈ .ffpfsc)",
 };
 
-static double finite(double v) { return isfinite(v) ? v : 0.0; }
+static double finite_or_zero(double v) { return isfinite(v) ? v : 0.0; }
 
 static uint64_t console_total(const mp_report *r, int c) {
     return r->loose_bytes + r->est_packed[c] + (mp_cfg_is_v1((mp_cfg)c) ? r->v1_index_bytes : 0);
 }
 
 static double mb_per_s(const mp_cfg_stat *s) {
-    return s->ns ? finite((double)s->raw / ((double)s->ns / 1e9) / 1e6) : 0.0;
+    return s->ns ? finite_or_zero((double)s->raw / ((double)s->ns / 1e9) / 1e6) : 0.0;
 }
 
 // ---- Texto ---------------------------------------------------------------------------------
@@ -58,7 +58,7 @@ static const char *duration(uint64_t s, char buf[32]) {
 }
 
 static const char *pct(double v, char buf[16]) {
-    snprintf(buf, 16, "%.1f %%", finite(v));
+    snprintf(buf, 16, "%.1f %%", finite_or_zero(v));
     for (char *p = buf; *p; p++)
         if (*p == '.') *p = ',';
     return buf;
@@ -229,7 +229,7 @@ static void sb_str(sb *s, const char *v) {
     sb_add(s, "\"");
 }
 
-static void sb_num(sb *s, double v) { sb_add(s, "%.6g", finite(v)); }
+static void sb_num(sb *s, double v) { sb_add(s, "%.6g", finite_or_zero(v)); }
 
 char *mp_report_json(const mp_report *r) {
     sb s = {malloc(4096), 0, 4096, 0};

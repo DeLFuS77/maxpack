@@ -30,6 +30,10 @@ void mp_idx3_entries_free(mp_idx3_entry *v, size_t n);
 // Fila de la ruta relativa rel ("/app0/" + rel, sin distinguir mayúsculas), o -1. Las filas de un
 // índice válido van ordenadas por esa clave (mp_idx3_parse lo comprueba).
 long mp_idx3_find(const mp_idx3_entry *v, size_t n, const char *rel);
+// Copia del índice (malloc) con la fila 'rel' cambiada, o añadida, a size/mtime. Valida como
+// mp_idx3_parse. Es lo que hace pack --runtime con la fila de fakelib/libSceAmpr.sprx.
+int mp_idx3_set_row(const uint8_t *idx, size_t n, const char *rel, uint64_t size, int64_t mtime,
+                    uint8_t **out, size_t *out_len, mp_err *e);
 
 // Valida una ruta relativa para los dos índices (AMPRZPK1 y AMPRIDX3). 0 si vale.
 int mp_pack_path_check(const char *rel, mp_err *e);

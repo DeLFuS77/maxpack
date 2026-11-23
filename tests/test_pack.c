@@ -235,7 +235,7 @@ MP_TEST(pack_refuses_case_dups) {
     clear_dir(TMP "/casedup");
     MP_CHECK(pack_to(MP_FIXTURES_DIR "/casedup.exfat", TMP "/casedup", &o, &r, &e) == -1);
     MP_CHECK_CONTAINS(e.msg, "mayúsculas");
-    MP_CHECK(mp_dir_is_empty(TMP "/casedup") == 1);   // no se ha escrito nada
+    MP_CHECK(mp_dir_is_empty(TMP "/casedup") != 0);   // no se ha escrito nada: vacía o ni creada
 }
 
 // Con una carpeta de salida que no existía, un origen rechazado no la crea.

@@ -28,6 +28,7 @@ int mp_wfile_write(mp_wfile *f, const void *p, size_t n, mp_err *e);
 int mp_wfile_pwrite(mp_wfile *f, const void *p, size_t n, uint64_t off, mp_err *e);
 uint64_t mp_wfile_size(const mp_wfile *f);
 int mp_wfile_close(mp_wfile *f, mp_err *e);   // también libera f si falla
+int mp_wfile_sync(mp_wfile *f, mp_err *e);    // fuerza los datos al disco (fsync)
 int mp_set_mtime(const char *utf8_path, int64_t unix_seconds, mp_err *e);
 int mp_remove_file(const char *utf8_path);   // 0 si se borró
 int mp_stat(const char *utf8_path, uint64_t *size, int64_t *mtime);   // 0 si existe
@@ -45,6 +46,16 @@ int mp_path_kind(const char *utf8_path);
 typedef int (*mp_dir_cb)(void *ctx, const char *rel_utf8, int is_dir, uint64_t size,
                          int64_t mtime_unix);
 int mp_dir_walk(const char *root_utf8, mp_dir_cb cb, void *ctx, mp_err *e);
+
+// Un solo nivel de la carpeta, sin "." ni "..", sin enlaces. -1 si no es una carpeta.
+typedef int (*mp_list_cb)(void *ctx, const char *name, int is_dir, uint64_t size);
+int mp_dir_list(const char *dir_utf8, mp_list_cb cb, void *ctx, mp_err *e);
+// Renombra un archivo o carpeta dentro del mismo sistema de archivos; falla si 'to' existe.
+int mp_rename(const char *from_utf8, const char *to_utf8, mp_err *e);
+// Borra una carpeta entera (sin seguir enlaces) o un archivo. 0 también si no existe.
+int mp_remove_tree(const char *utf8_path, mp_err *e);
+// Bytes libres para el usuario en el sistema de archivos de path (que debe existir).
+int mp_disk_free(const char *utf8_path, uint64_t *free_bytes, mp_err *e);
 
 typedef struct mp_thread mp_thread;
 int mp_thread_start(mp_thread **t, void (*fn)(void *), void *arg);

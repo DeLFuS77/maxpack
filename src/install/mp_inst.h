@@ -45,6 +45,7 @@ typedef struct {
     char *path;
     char title_id[16], version[16], name[128];
     uint64_t p5z_size, install_size;   // install_size = lo que ocupará la carpeta instalada
+    uint64_t original_size;            // lo que ocupaba el dump original
     uint8_t archive_id[16];
 } mp_inst_found;
 

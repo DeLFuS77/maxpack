@@ -54,6 +54,7 @@ int mp_inst_probe(const char *path, mp_inst_found *out, mp_err *e) {
     out->p5z_size = p->size;
     for (size_t i = 0; i < p->nfiles; i++)
         if (p->files[i].role != MP_ROLE_ORIGINAL) out->install_size += p->files[i].size;
+    for (size_t i = 0; i < m->n; i++) out->original_size += m->v[i].size;
     mp_p5z_close(p);
     out->path = mp_strdup(path);
     if (!out->path) {

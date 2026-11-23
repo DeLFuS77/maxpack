@@ -47,10 +47,16 @@ MP_TEST(scan_depth) {
     MP_CHECK(p && mp_unpack_folder(p, TMP "/unp", 2, 0, &e) == 0);
     mp_p5z_close(p);
     uint64_t want = mpt_dir_size(TMP "/unp");
+    mpt_clear(TMP "/orig");
+    MP_CHECK(mp_p5z_open(TMP "/basic.p5z", &p, &e) == 0);
+    MP_CHECK(p && mp_unpack_original(p, TMP "/orig", 2, 0, &e) == 0);
+    mp_p5z_close(p);
+    uint64_t orig = mpt_dir_size(TMP "/orig");
     int seen_deep = 0;
     for (size_t i = 0; i < n; i++) {
         MP_CHECK_STR(v[i].title_id, "TEST00001");
         MP_CHECK_EQ_U64(v[i].install_size, want);
+        MP_CHECK_EQ_U64(v[i].original_size, orig);
         MP_CHECK(v[i].p5z_size > 0);
         if (strstr(v[i].path, "/a/b/")) seen_deep = 1;
     }

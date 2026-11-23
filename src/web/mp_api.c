@@ -40,7 +40,8 @@ struct mp_api {
     int busy, pause_req;
     char stage[32];
     uint64_t done, total;
-    int has_last;
+    int has_last, last_counts;
+    uint64_t last_ok, last_bad;
     char last_kind[16], last_title[16], last_code[32], last_detail[600];
     int smp_alive;
     char smp_version[32];
@@ -160,6 +161,7 @@ static void set_last(mp_api *a, const char *kind, const char *title, const char 
     snprintf(a->last_title, sizeof a->last_title, "%s", title);
     snprintf(a->last_code, sizeof a->last_code, "%s", code);
     snprintf(a->last_detail, sizeof a->last_detail, "%s", detail ? detail : "");
+    a->last_counts = 0;
     mp_mutex_unlock(a->mu);
 }
 
@@ -195,7 +197,10 @@ static void run_install(mp_api *a, job_t *j) {
         snprintf(detail, sizeof detail, "faltan %llu bytes", (unsigned long long)(r.need - r.avail));
     else
         snprintf(detail, sizeof detail, "%s", e.msg);
-    if (r.status == MP_INST_DONE) register_smp(a, r.title_id);
+    if (r.status == MP_INST_DONE) {
+        api_progress(a, "registrando", r.need, r.need);
+        register_smp(a, r.title_id);
+    }
     else if (r.status == MP_INST_FAILED && a->user.notify) {
         char msg[800];
         snprintf(msg, sizeof msg, "No se pudo instalar %s: %s", j->name[0] ? j->name : j->title, e.msg);
@@ -216,6 +221,11 @@ static void run_verify(mp_api *a, job_t *j) {
     snprintf(detail, sizeof detail, "%llu correctos, %llu con fallos%s", (unsigned long long)r.files_ok,
              (unsigned long long)r.files_bad, r.p5z_checked ? "" : " (sin el .p5z para comparar los sueltos)");
     set_last(a, "verify", j->title, r.files_bad ? "verify_bad" : "done", detail);
+    mp_mutex_lock(a->mu);
+    a->last_counts = 1;
+    a->last_ok = r.files_ok;
+    a->last_bad = r.files_bad;
+    mp_mutex_unlock(a->mu);
     if (a->user.notify) {
         char msg[300];
         snprintf(msg, sizeof msg, "%s: %s", j->title, detail);
@@ -343,6 +353,8 @@ static void put_found(mp_jbuf *b, const mp_inst_found *f) {
     mp_jbuf_u64(b, f->p5z_size);
     key(b, "install_size", 0);
     mp_jbuf_u64(b, f->install_size);
+    key(b, "original_size", 0);
+    mp_jbuf_u64(b, f->original_size);
     mp_jbuf_raw(b, "}");
 }
 
@@ -444,6 +456,12 @@ static void handle_state(mp_api *a, mp_http_resp *rs) {
         mp_jbuf_str(&b, a->last_code);
         key(&b, "detail", 0);
         mp_jbuf_str(&b, a->last_detail);
+        if (a->last_counts) {
+            key(&b, "files_ok", 0);
+            mp_jbuf_u64(&b, a->last_ok);
+            key(&b, "files_bad", 0);
+            mp_jbuf_u64(&b, a->last_bad);
+        }
         mp_jbuf_raw(&b, "}");
     } else {
         mp_jbuf_raw(&b, "null");

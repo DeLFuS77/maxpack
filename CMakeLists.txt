@@ -66,6 +66,22 @@ target_include_directories(maxpack_web PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/we
 target_link_libraries(maxpack_web PUBLIC maxpack_install)
 mp_warnings(maxpack_web)
 
+# La página del instalador, incrustada en el binario.
+set(MP_PAGE_C ${CMAKE_BINARY_DIR}/gen/mp_page.c)
+add_custom_command(OUTPUT ${MP_PAGE_C}
+  COMMAND ${CMAKE_COMMAND} -DIN=${CMAKE_CURRENT_SOURCE_DIR}/web/index.html -DOUT=${MP_PAGE_C} -DNAME=mp_page_html
+          -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed.cmake
+  DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/web/index.html ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed.cmake
+  COMMENT "Incrustando web/index.html")
+add_library(maxpack_page STATIC ${MP_PAGE_C})
+target_include_directories(maxpack_page PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/web)
+target_link_libraries(maxpack_web PUBLIC maxpack_page)
+
+# Instalador de PC, solo para probar el motor y la página sin consola.
+add_executable(maxpack-installer-pc src/web/main_pc.c)
+target_link_libraries(maxpack-installer-pc PRIVATE maxpack_web)
+mp_warnings(maxpack-installer-pc)
+
 add_executable(maxpack src/cli/main.c)
 target_link_libraries(maxpack PRIVATE maxpack_pack)
 mp_warnings(maxpack)
@@ -127,6 +143,7 @@ if(MAXPACK_BUILD_TESTS)
   mp_add_test(test_http)
   mp_add_test(test_smp)
   mp_add_test(test_api FIXTURES)
+  mp_add_test(test_page)
   mp_add_test(test_idx3 FIXTURES)
   set_tests_properties(test_idx3 PROPERTIES FIXTURES_SETUP idx3)
   add_test(NAME check_idx3 COMMAND ${Python3_EXECUTABLE} -I

@@ -79,4 +79,35 @@ typedef struct {
 int mp_inst_record_load(const mp_inst_env *env, const char *title_id, mp_inst_record *r, mp_err *e);
 int mp_inst_record_save(const mp_inst_env *env, const mp_inst_record *r, mp_err *e);
 
+// ---- instalar ------------------------------------------------------------------------------
+
+typedef struct {
+    const char *p5z_path;
+    const char *dest_root;                          // env->internal o una unidad que existe
+    const char *const *replace;                     // rutas confirmadas para borrar
+    size_t nreplace;
+    const char *const *known;                       // copias que conoce ShadowMountPlus
+    size_t nknown;
+    int delete_p5z;
+} mp_inst_req;
+
+enum { MP_INST_DONE = 0, MP_INST_STOPPED, MP_INST_NEEDS_CONFIRM, MP_INST_NO_SPACE, MP_INST_FAILED };
+
+typedef struct {
+    int status;
+    const char *code;   // "done" "stopped" "needs_confirm" "no_space" "bad_p5z" "bad_dest"
+                        // "no_runtime" "io_error"
+    char title_id[16];
+    char final_dir[1024];
+    uint64_t need, avail;
+    int runtime_replaced;
+    mp_inst_existing *existing;   // con needs_confirm
+    size_t nexisting;
+} mp_inst_result;
+
+// 0 si terminó con una decisión (done, stopped, needs_confirm, no_space); -1 si falló (e).
+// Lo instalado queda con smp_pending = 1 en el registro: el registro en ShadowMountPlus es aparte.
+int mp_inst_install(const mp_inst_env *env, const mp_inst_req *req, mp_inst_result *r, mp_err *e);
+void mp_inst_result_free(mp_inst_result *r);
+
 #endif

@@ -33,8 +33,10 @@ file(GLOB MP_ANALYZE_SRC CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/analy
 add_library(maxpack_analyze STATIC ${MP_ANALYZE_SRC})
 target_include_directories(maxpack_analyze PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/analyze)
 target_link_libraries(maxpack_analyze PUBLIC maxpack_core)
-if(NOT MSVC)
-  target_link_libraries(maxpack_analyze PUBLIC m)
+# libm aparte solo donde existe (en la PS5 las funciones matemáticas van en la libc).
+find_library(MP_LIBM m)
+if(MP_LIBM)
+  target_link_libraries(maxpack_analyze PUBLIC ${MP_LIBM})
 endif()
 mp_warnings(maxpack_analyze)
 

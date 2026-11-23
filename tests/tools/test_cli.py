@@ -412,7 +412,18 @@ rc, so, err = run("verify", pj)
 check("human_output_unchanged", rc == 0 and so.startswith("verify:") and '"event"' not in so + err, so + err)
 
 rc, so, _ = run("--help")
-check("help_tiene_todas_las_ordenes", rc == 0 and all(w in so for w in ("analyze", "pack", "unpack", "verify", "info")), so[:300])
+check("help_tiene_todas_las_ordenes", rc == 0 and all(w in so for w in ("analyze", "pack", "unpack", "verify", "info",
+                                                                        "info --json", "icon", "--capabilities")), so[:300])
+
+# --capabilities: lo que esta versión sabe hacer, para que la ventana sepa si es la suya.
+rc, so, err = run("--capabilities")
+try:
+    caps = json.loads(so)
+    check("capabilities", rc == 0 and all(caps.get(k) is True for k in
+                                          ("progress_json", "control_stdin", "max_file_size", "info_json", "icon", "packs")),
+          so + err)
+except Exception as ex:  # noqa: BLE001
+    check("capabilities", False, repr(ex) + so[-200:] + err[-200:])
 
 # info --json e icon.
 rc, so, err = run("info", "--json", BASIC)

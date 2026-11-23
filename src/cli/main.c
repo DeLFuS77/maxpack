@@ -31,8 +31,11 @@ static void usage(FILE *out) {
             "  maxpack pack <carpeta|imagen.exfat> -o <salida> [opciones]\n"
             "  maxpack unpack <juego.p5z> --folder|--original -o <carpeta> [--threads N]\n"
             "  maxpack info <juego.p5z>\n"
+            "  maxpack info --json <carpeta|imagen.exfat|juego.p5z>\n"
+            "  maxpack icon <carpeta|imagen.exfat|juego.p5z> -o <icono.png>\n"
             "  maxpack verify <juego.p5z | carpeta> [--against <origen>] [--threads N]\n"
             "  maxpack --version\n"
+            "  maxpack --capabilities   lo que sabe hacer esta versión, en JSON (para una interfaz)\n"
             "\n"
             "Opciones de pack:\n"
             "  -o SALIDA          carpeta nueva o vacía (--folder) para copiar a la consola\n"
@@ -828,6 +831,12 @@ int main(int argc, char **argv) {
     if (argc >= 2 && strcmp(argv[1], "--version") == 0) {
         printf("maxpack %s (zstd %s, zlib %s)\n", mp_version_string(), ZSTD_versionString(),
                zlibVersion());
+        return 0;
+    }
+    if (argc >= 2 && strcmp(argv[1], "--capabilities") == 0) {
+        // lo que la ventana necesita de esta versión del motor
+        printf("{\"progress_json\":true,\"control_stdin\":true,\"max_file_size\":true,\"info_json\":true,"
+               "\"icon\":true,\"packs\":true}\n");
         return 0;
     }
     if (argc >= 2 && (!strcmp(argv[1], "--help") || !strcmp(argv[1], "-h") || !strcmp(argv[1], "help"))) {

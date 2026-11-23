@@ -59,6 +59,13 @@ target_include_directories(maxpack_install PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/sr
 target_link_libraries(maxpack_install PUBLIC maxpack_pack maxpack_net)
 mp_warnings(maxpack_install)
 
+# Web del instalador (fase 2): API y página.
+file(GLOB MP_WEB_SRC CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/web/mp_*.c)
+add_library(maxpack_web STATIC ${MP_WEB_SRC})
+target_include_directories(maxpack_web PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/web)
+target_link_libraries(maxpack_web PUBLIC maxpack_install)
+mp_warnings(maxpack_web)
+
 add_executable(maxpack src/cli/main.c)
 target_link_libraries(maxpack PRIVATE maxpack_pack)
 mp_warnings(maxpack)
@@ -74,7 +81,7 @@ if(MAXPACK_BUILD_TESTS)
   function(mp_add_test name)
     cmake_parse_arguments(T "FIXTURES" "" "" ${ARGN})
     add_executable(${name} tests/${name}.c)
-    target_link_libraries(${name} PRIVATE maxpack_install)
+    target_link_libraries(${name} PRIVATE maxpack_web)
     target_include_directories(${name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests)
     target_compile_definitions(${name} PRIVATE
       MP_TEST_TMP="${MP_TEST_TMP}" MP_FIXTURES_DIR="${MP_FIXTURES_DIR}")
@@ -119,6 +126,7 @@ if(MAXPACK_BUILD_TESTS)
   mp_add_test(test_inst_manage FIXTURES)
   mp_add_test(test_http)
   mp_add_test(test_smp)
+  mp_add_test(test_api FIXTURES)
   mp_add_test(test_idx3 FIXTURES)
   set_tests_properties(test_idx3 PROPERTIES FIXTURES_SETUP idx3)
   add_test(NAME check_idx3 COMMAND ${Python3_EXECUTABLE} -I

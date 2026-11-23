@@ -1,0 +1,82 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Motor del instalador (fase 2): buscar lo instalable, instalar, reanudar, reemplazar, verificar y
+// desinstalar. Portable: el mismo código en el PC (pruebas) y en la PS5.
+// Diseño: docs/diseno/fase2-instalador.md
+#ifndef MP_INST_H
+#define MP_INST_H
+
+#include <stddef.h>
+#include <stdint.h>
+
+#include "mp_err.h"
+
+typedef struct {
+    const uint8_t *data;   // NULL: el instalador no lleva runtime
+    size_t len;
+    int64_t mtime;
+    const char *version;
+} mp_inst_runtime;
+
+// Se llama tras cada escritura con los bytes escritos en esta llamada a mp_inst_install.
+// Devuelve 0 para seguir, 1 para parar (pausa) o -1 para fallar (con e).
+typedef int (*mp_inst_io_check)(void *ctx, uint64_t bytes_written, mp_err *e);
+
+// progress recibe una de estas etapas: "copiando", "comprobando", "terminando".
+typedef struct {
+    const char *internal;                    // "/data"
+    const char *const *drive_candidates;     // "/mnt/usb0".."/mnt/ext1"; cuentan las que existen
+    size_t ndrive_candidates;
+    mp_inst_runtime runtime;
+    unsigned threads;                        // 4 por defecto
+    uint64_t space_margin;                   // 256 MiB por defecto
+    int (*free_space)(void *ctx, const char *path, uint64_t *out);   // NULL: mp_disk_free
+    mp_inst_io_check io_check;
+    void (*notify)(void *ctx, const char *msg);
+    void (*progress)(void *ctx, const char *stage, uint64_t done, uint64_t total);
+    void *ctx;
+} mp_inst_env;
+
+// Valores de la PS5: /data y /mnt/usb0..7, /mnt/ext0..1.
+void mp_inst_env_default(mp_inst_env *env);
+int mp_inst_title_ok(const char *title_id);   // 1 si son 4 letras A-Z y 5 dígitos
+size_t mp_inst_drives(const mp_inst_env *env, const char **out, size_t max);   // las que existen
+
+typedef struct {
+    char *path;
+    char title_id[16], version[16], name[128];
+    uint64_t p5z_size, install_size;   // install_size = lo que ocupará la carpeta instalada
+    uint8_t archive_id[16];
+} mp_inst_found;
+
+int mp_inst_probe(const char *p5z_path, mp_inst_found *out, mp_err *e);   // abre y valida
+// .p5z en la raíz y un nivel por debajo de cada unidad, y en <internal>/maxpack/. Los que no se
+// pueden abrir se saltan (con notify).
+int mp_inst_scan(const mp_inst_env *env, mp_inst_found **out, size_t *n, mp_err *e);
+void mp_inst_found_free(mp_inst_found *v, size_t n);
+
+typedef struct {
+    char *path;
+    uint64_t size;
+    int is_file;
+    int from_maxpack;   // el registro de MaxPack apunta a esta ruta
+} mp_inst_existing;
+
+// Copias de title_id en las rutas que exploran los cargadores (por su sce_sys/param.json), más
+// <raíz>/homebrew/<title_id> si existe, más 'known' (rutas que da ShadowMountPlus).
+int mp_inst_find_existing(const mp_inst_env *env, const char *title_id, const char *const *known,
+                          size_t nknown, mp_inst_existing **out, size_t *n, mp_err *e);
+void mp_inst_existing_free(mp_inst_existing *v, size_t n);
+
+// Registro de lo instalado: <internal>/maxpack/installed/<TITLE_ID>.json.
+typedef struct {
+    char title_id[16], version[16], name[128], dir[1024], p5z[1024];
+    uint8_t archive_id[16], runtime_sha[32];
+    int runtime_replaced, smp_pending;
+    char smp_why[256];
+    int64_t installed_at;
+} mp_inst_record;
+
+int mp_inst_record_load(const mp_inst_env *env, const char *title_id, mp_inst_record *r, mp_err *e);
+int mp_inst_record_save(const mp_inst_env *env, const mp_inst_record *r, mp_err *e);
+
+#endif

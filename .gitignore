@@ -2,3 +2,5 @@ build/
 out/
 __pycache__/
 gui/out/
+!gui/build/
+gui/rsrc_*.syso

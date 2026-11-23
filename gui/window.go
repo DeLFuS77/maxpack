@@ -16,12 +16,19 @@ import (
 	"github.com/wailsapp/wails/v2"
 	wailsoptions "github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"github.com/wailsapp/wails/v2/pkg/options/linux"
 	"github.com/wailsapp/wails/v2/pkg/options/mac"
 	"github.com/wailsapp/wails/v2/pkg/options/windows"
 )
 
 //go:embed all:frontend
 var frontend embed.FS
+
+// appIcon is the icon of the window on Linux; Windows takes it from the resources of the program
+// (build/winres) and macOS from its app.
+//
+//go:embed build/appicon.png
+var appIcon []byte
 
 // singleWindow is the lock that keeps MaxPack to one window: the files given to another MaxPack
 // (the Explorer, the command line, the Finder) go to the one open.
@@ -60,8 +67,9 @@ func runWindow(start launch) int {
 		DragAndDrop:        &wailsoptions.DragAndDrop{EnableFileDrop: true, DisableWebViewDrop: true},
 		SingleInstanceLock: single,
 		// files opened on, or dropped on, the Dock icon go where the ones of a second MaxPack go
-		Mac:  &mac.Options{OnFileOpen: func(path string) { app.receive([]string{path}) }},
-		Bind: []any{app},
+		Mac:   &mac.Options{OnFileOpen: func(path string) { app.receive([]string{path}) }},
+		Linux: &linux.Options{Icon: appIcon, ProgramName: "maxpack"},
+		Bind:  []any{app},
 		// portable: the page keeps its settings next to the program too
 		Windows: &windows.Options{WebviewUserDataPath: portable.WebviewFolder()},
 	})

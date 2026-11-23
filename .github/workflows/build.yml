@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Compila y prueba MaxPack en Linux y Windows, y compila maxpack.elf para la PS5.
+# Compila y prueba MaxPack en Linux y Windows, compila maxpack.elf para la PS5 y empaqueta la
+# ventana del PC (Wails) para Windows, Linux y macOS, cada una en una máquina de su sistema.
 name: build
 
 on:
   push:
-    branches: [main, "fase*"]
+    branches: [main, "fase*", "interfaz-*"]
   pull_request:
 
 jobs:
@@ -56,3 +57,239 @@ jobs:
         with:
           name: maxpack-ps5
           path: build-ps5/maxpack.elf
+
+  # La ventana del PC: el motor (CMake, Release) junto a ella como maxpack-core, las pruebas de Go
+  # con ese motor y las imágenes de prueba, y los paquetes de cada sistema. Cada sistema usa su
+  # webview (WebView2, WebKitGTK, WebKit) y su compilador de C (cgo).
+  gui:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows-x64
+            runner: windows-2025
+          - name: linux-x64
+            runner: ubuntu-24.04
+          - name: macos-apple-silicon
+            runner: macos-15
+          - name: macos-intel
+            runner: macos-15-intel
+    name: gui ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      # el macOS más antiguo que admite Go
+      MACOSX_DEPLOYMENT_TARGET: "13.0"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: gui/go.mod
+          cache-dependency-path: gui/go.sum
+
+      - name: WebKitGTK
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev desktop-file-utils
+
+      # la etiqueta de la versión, o "dev-" y el commit
+      - name: Versión
+        run: |
+          version="dev-${GITHUB_SHA::7}"
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            version="${GITHUB_REF_NAME}"
+          fi
+          echo "VERSION=${version}" >> "${GITHUB_ENV}"
+
+      - name: Motor
+        run: |
+          if [ "${RUNNER_OS}" = "Windows" ]; then
+            cmake -B build
+            cmake --build build --config Release -j 4 --target maxpack
+            core="${GITHUB_WORKSPACE}/build/Release/maxpack.exe"
+          else
+            cmake -B build -DCMAKE_BUILD_TYPE=Release
+            cmake --build build -j 4 --target maxpack
+            core="${GITHUB_WORKSPACE}/build/maxpack"
+          fi
+          echo "MAXPACK_CORE=${core}" >> "${GITHUB_ENV}"
+          "${core}" --version
+
+      - name: Imágenes de prueba
+        run: |
+          python -I tests/tools/make_exfat.py --out build/fixtures
+          echo "MP_FIXTURES=${GITHUB_WORKSPACE}/build/fixtures" >> "${GITHUB_ENV}"
+
+      # el icono, el manifiesto y la versión del programa de Windows
+      - name: Recursos de Windows
+        if: runner.os == 'Windows'
+        working-directory: gui
+        run: |
+          numbers="0.0.0"
+          if [[ "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            numbers="${VERSION}"
+          fi
+          go run github.com/tc-hib/go-winres@v0.3.3 make --in build/winres/winres.json --arch amd64 \
+            --file-version "${numbers}.0" --product-version "${VERSION}"
+
+      # sin -H windowsgui: la ventana esconde su consola (HideConsole) y, al reenviar a maxpack-core,
+      # conserva la entrada y la salida de la línea de comandos
+      - name: Ventana
+        working-directory: gui
+        env:
+          CGO_ENABLED: "1"
+        run: |
+          tags="desktop,production"
+          if [ "${RUNNER_OS}" = "macOS" ]; then
+            # los diálogos de archivos de Wails usan UTType, un framework que Wails no enlaza solo
+            export CGO_LDFLAGS="-framework UniformTypeIdentifiers"
+          fi
+          if [ "${RUNNER_OS}" = "Linux" ]; then
+            tags="${tags},webkit2_41"
+          fi
+          exe="maxpack"
+          core="maxpack-core"
+          if [ "${RUNNER_OS}" = "Windows" ]; then
+            exe="MaxPack.exe"
+            core="maxpack-core.exe"
+          fi
+          go vet -tags "${tags}" ./...
+          go test -tags "${tags}" ./...
+          go build -tags "${tags}" -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o "out/${exe}" .
+          # el motor, junto a la ventana
+          cp "${MAXPACK_CORE}" "out/${core}"
+          ls -l out
+          "./out/${exe}" --version
+
+      - name: Paquete de Windows
+        if: runner.os == 'Windows'
+        working-directory: gui
+        run: |
+          mkdir -p ../dist
+          # el zip portable: la ventana, el motor y la carpeta settings, donde guarda todo lo suyo
+          mkdir -p out/portable/MaxPack/settings
+          cp out/MaxPack.exe out/maxpack-core.exe ../LICENSE out/portable/MaxPack/
+          printf '%s\r\n' "MaxPack guarda aqui sus ajustes, la posicion de la ventana y lo que ya ha comprobado." "Si borras esta carpeta, MaxPack guarda lo suyo en tu carpeta de usuario." > out/portable/MaxPack/settings/LEEME.txt
+          pwsh -NoProfile -Command "Compress-Archive -Path out/portable/MaxPack -DestinationPath ../dist/maxpack-${{ matrix.name }}-portable.zip"
+          ls -l ../dist
+
+      # el instalador (NSIS)
+      - name: Instalador de Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        working-directory: gui
+        run: |
+          $makensis = "C:\Program Files (x86)\NSIS\makensis.exe"
+          if (-not (Test-Path $makensis)) {
+            choco install nsis -y --no-progress
+          }
+          $numbers = "0.0.0.0"
+          if ($env:VERSION -match '^\d+\.\d+\.\d+$') { $numbers = "$($env:VERSION).0" }
+          $dist = (Resolve-Path ../dist).Path
+          & $makensis /V2 "/DVERSION=$env:VERSION" "/DNUMBERS=$numbers" `
+            "/DPROGRAM=$((Resolve-Path out/MaxPack.exe).Path)" "/DCORE=$((Resolve-Path out/maxpack-core.exe).Path)" `
+            "/DLICENSE=$((Resolve-Path ../LICENSE).Path)" "/DICON=$((Resolve-Path build/appicon.ico).Path)" `
+            "/DOUTFILE=$dist\maxpack-${{ matrix.name }}-setup.exe" `
+            build/windows/installer/maxpack.nsi
+          if ($LASTEXITCODE -ne 0) { throw "makensis falló" }
+          Get-ChildItem $dist
+
+      # el instalador pone MaxPack en la carpeta dada y en «Aplicaciones instaladas», la ventana
+      # reenvía al motor y comprime una imagen, y el desinstalador lo quita todo; todo en silencio
+      - name: Probar el instalador
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $folder = Join-Path $env:RUNNER_TEMP "MaxPackProbe"
+          $setup = Get-Item dist/maxpack-${{ matrix.name }}-setup.exe
+          Start-Process -FilePath $setup.FullName -ArgumentList "/S", "/D=$folder" -Wait
+          $key = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\MaxPack"
+          foreach ($file in "MaxPack.exe", "maxpack-core.exe", "uninstall.exe") {
+            if (-not (Test-Path "$folder\$file")) { throw "falta $file" }
+          }
+          if ((Get-ItemProperty $key).InstallLocation -ne $folder) { throw "no sale en Aplicaciones instaladas" }
+          & "$folder\MaxPack.exe" --version
+          if ($LASTEXITCODE -ne 0) { throw "--version" }
+          $out = Join-Path $env:RUNNER_TEMP "probe.p5z"
+          & "$folder\MaxPack.exe" pack "$env:MP_FIXTURES\basic.exfat" -o $out --p5z
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path $out)) { throw "pack" }
+          Start-Process -FilePath "$folder\uninstall.exe" -ArgumentList "/S", "_?=$folder" -Wait
+          if (Test-Path "$folder\MaxPack.exe") { throw "no se desinstaló" }
+          if (Test-Path $key) { throw "sigue en Aplicaciones instaladas" }
+
+      - name: Paquete de macOS
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p dist
+          bash gui/build/macos/macos_app.sh gui/out/maxpack gui/out/maxpack-core "${VERSION}" gui/out gui/build/appicon.png
+          tar -czf "dist/maxpack-${{ matrix.name }}.tar.gz" -C gui/out MaxPack.app
+          # el disco para arrastrar MaxPack a Aplicaciones, sin ningún script
+          stage="$(mktemp -d)"
+          ditto gui/out/MaxPack.app "${stage}/MaxPack.app"
+          ln -s /Applications "${stage}/Applications"
+          hdiutil create -volname MaxPack -srcfolder "${stage}" -ov -format UDZO "dist/maxpack-${{ matrix.name }}.dmg"
+          ls -l dist
+
+      # el disco se abre con MaxPack.app y el enlace a Aplicaciones; la app copiada de él, como
+      # hace el Finder al arrastrarla, conserva la firma, reenvía al motor y comprime una imagen
+      - name: Probar el disco de macOS
+        if: runner.os == 'macOS'
+        run: |
+          image="dist/maxpack-${{ matrix.name }}.dmg"
+          hdiutil verify "${image}"
+          mount=$(mktemp -d)
+          hdiutil attach "${image}" -nobrowse -readonly -mountpoint "${mount}"
+          trap 'hdiutil detach "${mount}" || hdiutil detach -force "${mount}"' EXIT
+          ls -la "${mount}"
+          test "$(ls "${mount}" | paste -sd " " -)" = "Applications MaxPack.app"
+          apps=$(mktemp -d)
+          ditto "${mount}/MaxPack.app" "${apps}/MaxPack.app"
+          codesign --verify "${apps}/MaxPack.app"
+          "${apps}/MaxPack.app/Contents/MacOS/maxpack" --version
+          "${apps}/MaxPack.app/Contents/MacOS/maxpack" pack "${MP_FIXTURES}/basic.exfat" -o "${apps}/probe.p5z" --p5z
+          test -s "${apps}/probe.p5z"
+          rm -rf "${apps}/MaxPack.app"
+
+      - name: Paquete de Linux
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p dist gui/out/MaxPack
+          cp gui/out/maxpack gui/out/maxpack-core gui/build/linux/maxpack.desktop gui/build/linux/maxpack.png gui/build/linux/install.sh LICENSE gui/out/MaxPack/
+          chmod 755 gui/out/MaxPack/maxpack gui/out/MaxPack/maxpack-core gui/out/MaxPack/install.sh
+          tar -czf "dist/maxpack-${{ matrix.name }}.tar.gz" -C gui/out MaxPack
+          ls -l dist
+
+      # install.sh pone la ventana, el motor, el icono y la entrada del menú en su sitio, y los quita
+      - name: Probar la instalación en Linux
+        if: runner.os == 'Linux'
+        run: |
+          desktop-file-validate gui/build/linux/maxpack.desktop
+          home=$(mktemp -d)
+          HOME="$home" sh gui/out/MaxPack/install.sh
+          test -x "$home/.local/lib/maxpack/maxpack"
+          test -x "$home/.local/lib/maxpack/maxpack-core"
+          test -f "$home/.local/share/icons/hicolor/256x256/apps/maxpack.png"
+          desktop-file-validate "$home/.local/share/applications/maxpack.desktop"
+          grep -q "^Exec=$home/.local/lib/maxpack/maxpack %F$" "$home/.local/share/applications/maxpack.desktop"
+          "$home/.local/bin/maxpack" --version
+          "$home/.local/bin/maxpack" pack "${MP_FIXTURES}/basic.exfat" -o "$home/probe.p5z" --p5z
+          test -s "$home/probe.p5z"
+          HOME="$home" sh gui/out/MaxPack/install.sh --uninstall
+          test ! -e "$home/.local/bin/maxpack"
+          test ! -e "$home/.local/lib/maxpack"
+          test ! -e "$home/.local/share/applications/maxpack.desktop"
+
+      # los paquetes conservan los permisos de los archivos, que los artefactos pierden
+      - uses: actions/upload-artifact@v4
+        with:
+          name: maxpack-${{ matrix.name }}
+          path: dist/*
+          if-no-files-found: error

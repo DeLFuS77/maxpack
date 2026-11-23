@@ -42,6 +42,13 @@ target_include_directories(maxpack_pack PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/p
 target_link_libraries(maxpack_pack PUBLIC maxpack_analyze)
 mp_warnings(maxpack_pack)
 
+# Instalador (fase 2): motor portable. Dependencias: maxpack_web -> maxpack_install -> maxpack_pack.
+file(GLOB MP_INSTALL_SRC CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/install/*.c)
+add_library(maxpack_install STATIC ${MP_INSTALL_SRC})
+target_include_directories(maxpack_install PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/install)
+target_link_libraries(maxpack_install PUBLIC maxpack_pack)
+mp_warnings(maxpack_install)
+
 add_executable(maxpack src/cli/main.c)
 target_link_libraries(maxpack PRIVATE maxpack_pack)
 mp_warnings(maxpack)
@@ -57,7 +64,7 @@ if(MAXPACK_BUILD_TESTS)
   function(mp_add_test name)
     cmake_parse_arguments(T "FIXTURES" "" "" ${ARGN})
     add_executable(${name} tests/${name}.c)
-    target_link_libraries(${name} PRIVATE maxpack_pack)
+    target_link_libraries(${name} PRIVATE maxpack_install)
     target_include_directories(${name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests)
     target_compile_definitions(${name} PRIVATE
       MP_TEST_TMP="${MP_TEST_TMP}" MP_FIXTURES_DIR="${MP_FIXTURES_DIR}")
@@ -94,6 +101,7 @@ if(MAXPACK_BUILD_TESTS)
   mp_add_test(test_hash)
   mp_add_test(test_wfile)
   mp_add_test(test_fsops)
+  mp_add_test(test_json)
   mp_add_test(test_idx3 FIXTURES)
   set_tests_properties(test_idx3 PROPERTIES FIXTURES_SETUP idx3)
   add_test(NAME check_idx3 COMMAND ${Python3_EXECUTABLE} -I

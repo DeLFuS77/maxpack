@@ -325,7 +325,8 @@ try:
     check("info_json", rc == 0 and d["kind"] == "exfat" and d["title_id"] == "TEST00001"
           and d["version"] == "01.000.000" and d["files"] > 0 and d["packed"] is False
           and d["has_runtime"] is False and d["has_zstd_runtime"] is False
-          and d["install_size"] == d["original_size"] and d["p5z_size"] == 0, so[-300:] + err[-200:])
+          and d["install_size"] == d["original_size"] and d["p5z_size"] == 0
+          and d["packed_files"] == 0 and d["volumes"] == 0, so[-300:] + err[-200:])
 except Exception as ex:
     check("info_json", False, repr(ex) + so[-200:])
 rc, so, err = run("info", "--json", pj)
@@ -333,6 +334,13 @@ try:
     d = json.loads(so)
     check("info_json_p5z", rc == 0 and d["kind"] == "p5z" and d["packed"] is True
           and d["p5z_size"] == os.path.getsize(pj), so[-300:] + err[-200:])
+    # los packs, como los cuenta info para personas: archivos empaquetados y volúmenes
+    _, human, _ = run("info", pj)
+    packed = re.search(r"\((\d+) sueltos, (\d+) empaquetados\)", human)
+    vols = re.search(r"en (\d+) volúmenes", human)
+    check("info_json_packs", packed is not None and vols is not None
+          and d["packed_files"] == int(packed.group(2)) and d["volumes"] == int(vols.group(1))
+          and 0 < d["packed_files"] < d["files"] and d["volumes"] >= 1, so[-300:] + human)
 except Exception as ex:
     check("info_json_p5z", False, repr(ex) + so[-200:])
 # Nombre con comillas, barras, acentos y control: JSON válido y bytes intactos.

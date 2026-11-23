@@ -7,6 +7,18 @@
 
 #define TMP MP_TEST_TMP "/describe"
 
+// Volúmenes de los packs de una carpeta: sus ampr_zstd-NNN.pak.
+static uint64_t pak_count(const char *dir) {
+    mpt_list l = mpt_list_dir(dir);
+    uint64_t n = 0;
+    for (size_t i = 0; i < l.n; i++) {
+        size_t len = strlen(l.v[i]);
+        if (!strncmp(l.v[i], "ampr_zstd-", 10) && len > 14 && !strcmp(l.v[i] + len - 4, ".pak")) n++;
+    }
+    mpt_list_free(&l);
+    return n;
+}
+
 static mp_p5z *open_p5z(const char *path) {
     mp_err e = {{0}};
     mp_p5z *p = NULL;
@@ -28,6 +40,8 @@ MP_TEST(describe_kinds) {
     MP_CHECK_EQ_U64(d.p5z_size, 0);
     MP_CHECK_EQ_U64(d.install_size, d.original_size);
     MP_CHECK(d.has_runtime == 0 && d.has_zstd_runtime == 0 && d.packed == 0);
+    MP_CHECK_EQ_U64(d.packed_files, 0);
+    MP_CHECK_EQ_U64(d.volumes, 0);
 
     // Carpeta de unpack --original: lo mismo.
     mpt_pack(MPT_BASIC, TMP "/a.p5z", 1, NULL);
@@ -42,6 +56,7 @@ MP_TEST(describe_kinds) {
     MP_CHECK_EQ_U64(f.original_size, d.original_size);
     MP_CHECK_EQ_U64(f.original_size, mpt_dir_size(TMP "/orig"));
     MP_CHECK_EQ_U64(f.files, d.files);
+    MP_CHECK(f.packed == 0 && f.packed_files == 0 && f.volumes == 0);
 
     // .p5z con runtime que lee zstd.
     uint8_t rt[256];
@@ -62,6 +77,18 @@ MP_TEST(describe_kinds) {
     MP_CHECK(mp_unpack_folder(p, TMP "/fold", 2, 0, &e) == 0);
     mp_p5z_close(p);
     MP_CHECK_EQ_U64(z.install_size, mpt_dir_size(TMP "/fold"));
+    // los packs: los archivos que el manifiesto marca empaquetados, y los volúmenes que deja unpack
+    p = open_p5z(TMP "/b.p5z");
+    if (!p) return;
+    const mp_pack_manifest *m = mp_p5z_manifest(p);
+    uint64_t in_packs = 0;
+    for (size_t i = 0; i < m->n; i++)
+        if (m->v[i].flags & MP_MANIFEST_PACKED) in_packs++;
+    mp_p5z_close(p);
+    MP_CHECK(in_packs > 0 && in_packs < z.files);
+    MP_CHECK_EQ_U64(z.packed_files, in_packs);
+    MP_CHECK(pak_count(TMP "/fold") >= 1);
+    MP_CHECK_EQ_U64(z.volumes, pak_count(TMP "/fold"));
     FILE *fp = fopen(TMP "/b.p5z", "rb");
     if (fp) {
         fseek(fp, 0, SEEK_END);
@@ -75,6 +102,8 @@ MP_TEST(describe_kinds) {
     MP_CHECK(mp_describe_path(TMP "/packed", &g, &e) == 0);
     MP_CHECK_STR(g.kind, "folder");
     MP_CHECK(g.packed == 1 && g.has_zstd_runtime == 1);
+    MP_CHECK_EQ_U64(g.packed_files, z.packed_files);
+    MP_CHECK_EQ_U64(g.volumes, pak_count(TMP "/packed"));
 
     // No existe.
     MP_CHECK(mp_describe_path(TMP "/nada", &d, &e) != 0 && e.msg[0]);
@@ -90,7 +119,7 @@ MP_TEST(describe_runtime_old) {
     MP_CHECK(mp_describe_path(TMP "/old", &d, &e) == 0);
     MP_CHECK(d.has_runtime == 1);
     MP_CHECK(d.has_zstd_runtime == 0);
-    MP_CHECK(d.packed == 0);
+    MP_CHECK(d.packed == 0 && d.packed_files == 0 && d.volumes == 0);
     MP_CHECK_STR(d.title_id, "OLD000001");
     MP_CHECK_STR(d.version, "01.002.000");
 }

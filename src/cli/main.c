@@ -583,6 +583,8 @@ static int cmd_info_json(const char *path) {
     printf(",\"original_size\":%llu,\"install_size\":%llu,\"p5z_size\":%llu,\"files\":%llu",
            (unsigned long long)d.original_size, (unsigned long long)d.install_size,
            (unsigned long long)d.p5z_size, (unsigned long long)d.files);
+    printf(",\"packed_files\":%llu,\"volumes\":%llu", (unsigned long long)d.packed_files,
+           (unsigned long long)d.volumes);
     printf(",\"has_runtime\":%s,\"has_zstd_runtime\":%s,\"packed\":%s}\n", d.has_runtime ? "true" : "false",
            d.has_zstd_runtime ? "true" : "false", d.packed ? "true" : "false");
     fflush(stdout);

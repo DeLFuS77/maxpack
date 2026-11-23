@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Descripción de un juego (carpeta, imagen .exfat o .p5z) para una interfaz: ID, versión, nombre,
-// tamaños y si lleva un runtime que lea zstd. Es lo que muestra `maxpack info --json`.
+// tamaños, sus packs y si lleva un runtime que lea zstd. Es lo que muestra `maxpack info --json`.
 #ifndef MP_DESCRIBE_H
 #define MP_DESCRIBE_H
 
@@ -16,6 +16,8 @@ typedef struct {
     uint64_t install_size;    // lo que ocupa al instalarlo (.p5z: lo que deja unpack --folder)
     uint64_t p5z_size;        // tamaño del .p5z (0 si no lo es)
     uint64_t files;           // archivos del dump original
+    uint64_t packed_files;    // de ellos, los que van en los packs zstd (0 si no está empaquetado)
+    uint64_t volumes;         // volúmenes de los packs, ampr_zstd-NNN.pak (0 si no está empaquetado)
     int has_runtime, has_zstd_runtime, packed;   // packed: ya trae ampr_zstd.index
 } mp_describe;
 

@@ -69,6 +69,21 @@ static long find_ci(mp_source *s, const char *path) {
     return -1;
 }
 
+static uint32_t rd32(const uint8_t *p) { return p[0] | p[1] << 8 | p[2] << 16 | (uint32_t)p[3] << 24; }
+static uint64_t rd64(const uint8_t *p) { return rd32(p) | (uint64_t)rd32(p + 4) << 32; }
+
+// Los packs de una carpeta ya empaquetada, como los dice la cabecera de su ampr_zstd.index
+// (AMPRZPK1: volúmenes en +20, archivos en +40). Solo se leen los contadores: comprobar el
+// índice entero es cosa de verify. Una cabecera que no se puede leer deja los dos a 0.
+static void index_counts(mp_source *s, size_t i, mp_describe *d) {
+    uint8_t h[MP_ZPK_HEADER];
+    if (mp_source_entry(s, i)->size < sizeof h || mp_source_read(s, i, 0, h, sizeof h, NULL) != 0 ||
+        memcmp(h, "AMPRZPK1", 8) != 0)
+        return;
+    d->volumes = rd32(h + 20);
+    d->packed_files = rd64(h + 40);
+}
+
 static int describe_source(const char *path, mp_describe *d, mp_err *e) {
     mp_source *s = NULL;
     if (mp_source_open(path, &s, e) != 0) return -1;
@@ -78,7 +93,9 @@ static int describe_source(const char *path, mp_describe *d, mp_err *e) {
     for (size_t i = 0; i < n; i++) d->original_size += mp_source_entry(s, i)->size;
     d->install_size = d->original_size;
     d->files = n;
-    d->packed = find_ci(s, INDEX_PATH) >= 0;
+    long ix = find_ci(s, INDEX_PATH);
+    d->packed = ix >= 0;
+    if (ix >= 0) index_counts(s, (size_t)ix, d);
     long rt = find_ci(s, RUNTIME_PATH);
     if (rt >= 0) {
         uint8_t *b = NULL;
@@ -198,9 +215,14 @@ static int describe_p5z(const char *path, mp_describe *d, mp_err *e) {
     int rc = -1;
     snprintf(d->kind, sizeof d->kind, "p5z");
     const mp_pack_manifest *m = &p->man;
-    for (size_t i = 0; i < m->n; i++) d->original_size += m->v[i].size;
-    for (size_t i = 0; i < p->nfiles; i++)
+    for (size_t i = 0; i < m->n; i++) {
+        d->original_size += m->v[i].size;
+        if (m->v[i].flags & MP_MANIFEST_PACKED) d->packed_files++;
+    }
+    for (size_t i = 0; i < p->nfiles; i++) {
         if (p->files[i].role != MP_ROLE_ORIGINAL) d->install_size += p->files[i].size;
+        if (p->files[i].role == MP_ROLE_VOLUME) d->volumes++;
+    }
     d->files = m->n;
     d->p5z_size = p->size;
     d->packed = 1;   // lo empaquetó MaxPack: lleva ampr_zstd.index

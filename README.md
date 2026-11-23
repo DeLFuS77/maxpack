@@ -15,6 +15,14 @@ jugable. El diseño completo está en
 
 `maxpack` nunca escribe en el juego de origen y no toca claves, cifrado ni DRM.
 
+## La ventana para el PC
+
+MaxPack también tiene una ventana para Windows, macOS y Linux: sueltas los juegos, eliges «Instalador
+MaxPack» (un `.p5z`) o «Jugar desde el USB» (una carpeta en `homebrew/`), y los comprime y verifica.
+GitHub Actions la empaqueta en cada cambio (instalador y zip portable en Windows, `.dmg` en macOS,
+`.tar.gz` en Linux). La guía, con capturas, está en [docs/ventana-pc.md](docs/ventana-pc.md). El código
+está en [gui/](gui/) y usa `maxpack-core` (este mismo motor) junto a ella.
+
 ## Compilar
 
 Hace falta git, CMake 3.20 o posterior y un compilador de C. zstd 1.5.6 y zlib 1.3.1 vienen como

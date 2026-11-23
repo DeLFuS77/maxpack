@@ -15,7 +15,13 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
+	"time"
 )
+
+// CancelGrace is how long Run waits for the engine to stop after asking it to cancel, before it
+// kills it.
+var CancelGrace = 5 * time.Second
 
 // Event is a line of the engine: "progress" or the final "result".
 type Event struct {
@@ -56,7 +62,7 @@ func Locate() (string, error) {
 
 // Version is what the engine says of itself ("maxpack 1.0 (zstd ..., zlib ...)").
 func Version(core string) (string, error) {
-	out, err := exec.Command(core, "--version").Output()
+	out, err := hide(exec.Command(core, "--version")).Output()
 	if err != nil {
 		return "", fmt.Errorf("maxpack-core no responde: %w", err)
 	}
@@ -77,10 +83,12 @@ func parse(line []byte) (Event, bool) {
 }
 
 // Run runs the engine with args plus --progress json --control stdin, and gives each progress to
-// onEvent (which may be nil). When ctx ends it asks the engine to cancel and waits for it. It
-// gives the result, and the exit code of the engine.
+// onEvent (which may be nil). When ctx ends it asks the engine to cancel and waits for it, up to
+// CancelGrace; an engine that does not stop by then is killed, and Run gives a result of its own
+// ({"ok": false, "error": "cancelled"}) with code 130, as an engine that cancelled would. It gives
+// the result, and the exit code of the engine.
 func Run(ctx context.Context, core string, args []string, onEvent func(Event)) (Event, int, error) {
-	command := exec.Command(core, append(append([]string{}, args...), "--progress", "json", "--control", "stdin")...)
+	command := hide(exec.Command(core, append(append([]string{}, args...), "--progress", "json", "--control", "stdin")...))
 	stdin, err := command.StdinPipe()
 	if err != nil {
 		return Event{}, -1, err
@@ -96,14 +104,22 @@ func Run(ctx context.Context, core string, args []string, onEvent func(Event)) (
 	}
 	ended := make(chan struct{})
 	stopped := make(chan struct{})
+	var killed atomic.Bool
 	go func() {
 		defer close(stopped)
 		select {
 		case <-ctx.Done():
 			stdin.Write([]byte("cancel\n"))
+			stdin.Close()
+			select {
+			case <-ended:
+			case <-time.After(CancelGrace):
+				killed.Store(true)
+				command.Process.Kill()
+			}
 		case <-ended:
+			stdin.Close()
 		}
-		stdin.Close()
 	}()
 
 	var result Event
@@ -125,6 +141,9 @@ func Run(ctx context.Context, core string, args []string, onEvent func(Event)) (
 	close(ended)
 	<-stopped
 
+	if killed.Load() {
+		return Event{Kind: "result", Raw: map[string]any{"event": "result", "ok": false, "error": "cancelled"}}, 130, nil
+	}
 	code := command.ProcessState.ExitCode()
 	var exit *exec.ExitError
 	if waitErr != nil && !errors.As(waitErr, &exit) {
@@ -140,7 +159,7 @@ func Run(ctx context.Context, core string, args []string, onEvent func(Event)) (
 // Info is `info --json` of a folder, an image or a .p5z.
 func Info(core, path string) (map[string]any, error) {
 	var stderr bytes.Buffer
-	command := exec.Command(core, "info", "--json", path)
+	command := hide(exec.Command(core, "info", "--json", path))
 	command.Stderr = &stderr
 	out, err := command.Output()
 	if err != nil {
@@ -156,7 +175,7 @@ func Info(core, path string) (map[string]any, error) {
 // Icon writes the icon of the game to out, as a PNG; an error when it has none.
 func Icon(core, path, out string) error {
 	var stderr bytes.Buffer
-	command := exec.Command(core, "icon", path, "-o", out)
+	command := hide(exec.Command(core, "icon", path, "-o", out))
 	command.Stderr = &stderr
 	if err := command.Run(); err != nil {
 		return fmt.Errorf("icono de %s: %w: %s", path, err, strings.TrimSpace(stderr.String()))

@@ -4,10 +4,12 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // needCore gives the engine and the fixtures of the environment, or skips the test.
@@ -92,5 +94,35 @@ func TestVersionInfoIcon(t *testing.T) {
 	// el dump de prueba no trae icono: Icon lo dice con un error
 	if err := Icon(core, pack, filepath.Join(t.TempDir(), "i.png")); err == nil {
 		t.Log("el dump trae icono")
+	}
+}
+
+// TestMain lets the test binary act as an engine that ignores cancel.
+func TestMain(m *testing.M) {
+	if os.Getenv("MP_FAKE_CORE") == "1" {
+		fmt.Println(`{"event":"progress","phase":"packing","done":1,"total":2}`)
+		time.Sleep(time.Minute)
+		os.Exit(0)
+	}
+	os.Exit(m.Run())
+}
+
+func TestRunKillsStubbornCore(t *testing.T) {
+	t.Setenv("MP_FAKE_CORE", "1")
+	old := CancelGrace
+	CancelGrace = 300 * time.Millisecond
+	defer func() { CancelGrace = old }()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	begin := time.Now()
+	result, code, err := Run(ctx, os.Args[0], []string{"pack"}, func(e Event) { cancel() })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code != 130 || result.Raw["error"] != "cancelled" || result.Raw["ok"] != false {
+		t.Fatalf("código %d, resultado %+v", code, result)
+	}
+	if time.Since(begin) > 5*time.Second {
+		t.Fatalf("tardó %v", time.Since(begin))
 	}
 }

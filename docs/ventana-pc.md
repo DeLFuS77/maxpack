@@ -30,7 +30,7 @@ Después, sigue los pasos de tu sistema.
   suyo (ajustes, tamaño y posición de la ventana) en ella y nada en tu usuario. Es lo cómodo para un USB.
 - `MaxPack.exe` y `maxpack-core.exe` tienen que estar juntos. La ventana usa `maxpack-core.exe` para
   trabajar, y si falta te dice qué falta. Si el que hay es de otra versión (uno antiguo que no hace
-  todo lo que la ventana necesita), te dice «maxpack-core es de otra versión» y no deja empezar: pon
+  todo lo que la ventana necesita), te dice «maxpack-core de otra versión» y no deja empezar: pon
   junto a MaxPack el `maxpack-core` que venía con ella.
 
 > Ni el instalador ni `MaxPack.exe` están firmados: Windows SmartScreen avisará la primera vez
@@ -107,7 +107,9 @@ Cada juego se guarda en **una carpeta lista para la consola**, con los packs zst
 Después:
 1. Pon las carpetas en `homebrew/` del USB o del almacenamiento interno de la PS5. Si las hiciste en
    otra carpeta, muévelas ahí: ShadowMountPlus solo mira en `homebrew/`.
-2. ShadowMountPlus las verá y las montará: [probar-en-ps5.md](probar-en-ps5.md).
+2. ShadowMountPlus las verá y las montará. Como no pasan por el instalador, el modo de fakelib de cada
+   juego lo fijas tú en ShadowMountPlus, para que no le cambie ampr-emu-ng:
+   [probar-en-ps5.md](probar-en-ps5.md). Kraken Mount trae su propio ampr-emu-ng.
 
 ## 3. Descomprimir y verificar
 
@@ -143,8 +145,9 @@ Después:
     (4 GiB menos un byte): antes de pasarse, para, borra lo escrito y te dice que no cabe.
 
   Con un USB en exFAT no hay límite.
-- **Espacio.** Comprueba que el destino tenga sitio para el resultado. Con **Reemplazar** tienen que
-  caber el nuevo y el viejo a la vez.
+- **Espacio.** Si el destino tiene menos sitio libre que el juego original, avisa de que «puede no
+  caber», y puedes empezar igualmente. Con **Reemplazar** tienen que caber el nuevo y el viejo a la
+  vez: si no caben, ese juego no empieza.
 - **Reemplazar.** Si el juego ya está en el destino, MaxPack pregunta antes de tocar nada. Si aceptas,
   lo nuevo se escribe aparte, en `<destino>.maxpack-tmp`, se verifica, y solo entonces se aparta y se
   borra lo viejo. Si cancelas, o algo falla (por ejemplo, quitas el USB), lo viejo queda intacto y

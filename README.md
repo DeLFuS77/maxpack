@@ -4,6 +4,8 @@ Herramienta para que un juego de PS5 (dump propio o homebrew) ocupe lo mínimo p
 jugable. El diseño completo está en
 [docs/diseno/maxpack.md](docs/diseno/maxpack.md).
 
+**Guía completa, de la descarga a jugar en la PS5: [docs/guia.md](docs/guia.md).**
+
 **Estado: fases 0, 1 y 2.**
 - `maxpack analyze` mide cuánto gana cada técnica de compresión en un juego concreto.
 - `maxpack pack` lo empaqueta en packs zstd que ampr-emu-ng sirve en la consola: en una carpeta
@@ -20,8 +22,9 @@ jugable. El diseño completo está en
 MaxPack también tiene una ventana para Windows, macOS y Linux: sueltas los juegos, eliges «Instalador
 MaxPack» (un `.p5z`) o «Jugar desde el USB» (una carpeta en `homebrew/`), y los comprime y verifica.
 GitHub Actions la empaqueta en cada cambio (instalador y zip portable en Windows, `.dmg` en macOS,
-`.tar.gz` en Linux). La guía, con capturas, está en [docs/ventana-pc.md](docs/ventana-pc.md). El código
-está en [gui/](gui/) y usa `maxpack-core` (este mismo motor) junto a ella.
+`.tar.gz` en Linux). La guía de la ventana, con capturas, está en
+[docs/ventana-pc.md](docs/ventana-pc.md). El código está en [gui/](gui/) y usa `maxpack-core` (este
+mismo motor) junto a ella.
 
 ## Compilar
 

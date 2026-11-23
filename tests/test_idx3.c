@@ -4,6 +4,7 @@
 
 #include "mp_hash.h"
 #include "mp_idx3.h"
+#include "mp_pack.h"
 #include "mp_platform.h"
 #include "mp_source.h"
 #include "mp_test.h"
@@ -159,7 +160,102 @@ MP_TEST(idx3_find_case_insensitive) {
     mp_source_close(s);
 }
 
+static uint8_t *slurp_file(const char *path, size_t *len) {
+    mp_file *f = NULL;
+    uint64_t size = 0;
+    size_t got = 0;
+    *len = 0;
+    if (mp_file_open_read(path, &f, NULL) != 0) return NULL;
+    mp_file_size(f, &size, NULL);
+    uint8_t *b = malloc((size_t)size + 1);
+    if (b) mp_file_pread(f, b, (size_t)size, 0, &got, NULL);
+    mp_file_close(f);
+    *len = got;
+    return b;
+}
+
+static int pack_folder(const char *dst, const char *runtime) {
+    mp_err e = {{0}};
+    mp_remove_tree(dst, &e);
+    mp_pack_opts o;
+    mp_pack_opts_default(&o);
+    o.threads = 4;
+    o.progress = 0;
+    o.runtime = runtime;
+    mp_pack_out out;
+    if (mp_pack_out_dir(dst, &out, &e) != 0) {
+        MP_FAIL_("pack_out_dir: %s", e.msg);
+        return -1;
+    }
+    mp_pack_result r;
+    int rc = mp_pack_run(MP_FIXTURES_DIR "/basic.exfat", &out, &o, &r, &e);
+    out.destroy(out.ctx);
+    if (rc) MP_FAIL_("pack: %s", e.msg);
+    return rc;
+}
+
+MP_TEST(idx3_set_row_matches_pack_runtime) {
+    mp_err e = {{0}};
+    MP_CHECK(mp_make_dirs(TMP, &e) == 0);
+    uint8_t rt[4096];
+    for (size_t i = 0; i < sizeof rt; i++) rt[i] = (uint8_t)(i * 7);
+    memcpy(rt + 100, "AMPRZPK1", 8);
+    MP_CHECK(mp_write_file(TMP "/rt.sprx", rt, sizeof rt, &e) == 0);
+    MP_CHECK(mp_set_mtime(TMP "/rt.sprx", 1700000000, &e) == 0);
+    if (pack_folder(TMP "/sin_rt", NULL) || pack_folder(TMP "/con_rt", TMP "/rt.sprx")) return;
+    size_t na = 0, nb = 0, nc = 0;
+    uint8_t *a = slurp_file(TMP "/sin_rt/ampr_emu.index", &na);
+    uint8_t *b = slurp_file(TMP "/con_rt/ampr_emu.index", &nb);
+    uint8_t *c = NULL;
+    MP_CHECK(a && b);
+    MP_CHECK(a && mp_idx3_set_row(a, na, "fakelib/libSceAmpr.sprx", 4096, 1700000000, &c, &nc, &e) == 0);
+    if (e.msg[0]) fprintf(stderr, "  %s\n", e.msg);
+    MP_CHECK(c && nc == nb && !memcmp(c, b, nb));
+    free(a);
+    free(b);
+    free(c);
+}
+
+MP_TEST(idx3_set_row_replaces) {
+    mp_err e = {{0}};
+    mp_idx3_row rows[2] = {{"a/uno.bin", 10, 100}, {"fakelib/libSceAmpr.sprx", 5, 200}};
+    uint8_t *d = NULL, *x = NULL, *y = NULL;
+    size_t n = 0, nx = 0, ny = 0;
+    MP_CHECK(mp_idx3_build(rows, 2, &d, &n, &e) == 0);
+    MP_CHECK(mp_idx3_set_row(d, n, "fakelib/libSceAmpr.sprx", 777, 300, &x, &nx, &e) == 0);
+    MP_CHECK(x && mp_idx3_set_row(x, nx, "fakelib/libSceAmpr.sprx", 888, 400, &y, &ny, &e) == 0);
+    mp_idx3_entry *v = NULL;
+    size_t m = 0;
+    MP_CHECK(y && mp_idx3_parse(y, ny, &v, &m, &e) == 0);
+    MP_CHECK_EQ_U64(m, 2);
+    long k = v ? mp_idx3_find(v, m, "fakelib/libSceAmpr.sprx") : -1;
+    MP_CHECK(k >= 0 && v[k].size == 888 && v[k].mtime == 400);
+    long u = v ? mp_idx3_find(v, m, "a/uno.bin") : -1;
+    MP_CHECK(u >= 0 && v[u].size == 10 && v[u].mtime == 100);
+    mp_idx3_entries_free(v, m);
+    free(d);
+    free(x);
+    free(y);
+}
+
+MP_TEST(idx3_set_row_bad_input) {
+    mp_err e = {{0}};
+    mp_idx3_row rows[1] = {{"a.bin", 1, 1}};
+    uint8_t *d = NULL, *x = NULL;
+    size_t n = 0, nx = 0;
+    MP_CHECK(mp_idx3_build(rows, 1, &d, &n, &e) == 0);
+    if (!d) return;
+    d[0] = 'X';
+    mp_err e2 = {{0}};
+    MP_CHECK(mp_idx3_set_row(d, n, "fakelib/libSceAmpr.sprx", 1, 1, &x, &nx, &e2) == -1);
+    MP_CHECK(x == NULL && e2.msg[0] != 0);
+    free(d);
+}
+
 int main(void) {
+    MP_RUN(idx3_set_row_matches_pack_runtime);
+    MP_RUN(idx3_set_row_replaces);
+    MP_RUN(idx3_set_row_bad_input);
     MP_RUN(idx3_find_case_insensitive);
     MP_RUN(idx3_two_rows);
     MP_RUN(idx3_rejects_case_dup);

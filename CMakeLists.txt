@@ -118,6 +118,7 @@ if(MAXPACK_BUILD_TESTS)
   mp_add_test(test_inst_replace FIXTURES)
   mp_add_test(test_inst_manage FIXTURES)
   mp_add_test(test_http)
+  mp_add_test(test_smp)
   mp_add_test(test_idx3 FIXTURES)
   set_tests_properties(test_idx3 PROPERTIES FIXTURES_SETUP idx3)
   add_test(NAME check_idx3 COMMAND ${Python3_EXECUTABLE} -I

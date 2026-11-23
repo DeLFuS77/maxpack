@@ -115,4 +115,18 @@ void mp_inst_result_free(mp_inst_result *r);
 typedef struct mp_p5z mp_p5z;
 long mp_inst_check_dir(mp_p5z *p, const char *dir, int skip_runtime, unsigned threads, mp_err *e);
 
+// ---- gestionar lo instalado ------------------------------------------------------------------
+
+// Registros de lo instalado, por TITLE_ID (malloc). Los dañados se saltan con notify.
+int mp_inst_list(const mp_inst_env *env, mp_inst_record **out, size_t *n, mp_err *e);
+
+typedef struct {
+    uint64_t files_ok, files_bad;
+    int p5z_checked;   // se comparó con el .p5z (sigue en su sitio y es el mismo)
+} mp_inst_verify_result;
+
+int mp_inst_verify(const mp_inst_env *env, const char *title_id, mp_inst_verify_result *r, mp_err *e);
+// Solo títulos del registro de MaxPack: borra la carpeta y el registro.
+int mp_inst_uninstall(const mp_inst_env *env, const char *title_id, mp_err *e);
+
 #endif

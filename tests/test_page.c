@@ -16,7 +16,8 @@ MP_TEST(page_rules) {
     for (size_t i = 0; i < sizeof banned / sizeof *banned; i++)
         if (strstr(p, banned[i])) MP_FAIL_("la página usa \"%s\"", banned[i]);
     const char *needed[] = {"XMLHttpRequest", "textContent", "navigator.language", "/api/state", "Instalar",
-                            "Install",        "Desinstalar", "Uninstall",          "/api/icon", "original_size"};
+                            "Install",        "Desinstalar", "Uninstall",          "/api/icon", "original_size",
+                            "/api/discard",   "pending",     "Descartar",          "Discard"};
     for (size_t i = 0; i < sizeof needed / sizeof *needed; i++)
         if (!strstr(p, needed[i])) MP_FAIL_("a la página le falta \"%s\"", needed[i]);
 }

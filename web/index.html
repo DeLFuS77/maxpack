@@ -143,6 +143,11 @@ button.danger { color: var(--bad); }
 
   <div id="msg" class="msg" role="status" hidden><p id="msg-text"></p><p class="detail" id="msg-detail"></p></div>
 
+  <section id="pending-box" hidden>
+    <h2 data-t="pendingTitle"></h2>
+    <ul id="pending" class="games"></ul>
+  </section>
+
   <section>
     <div class="head">
       <h2 data-t="found"></h2>
@@ -209,6 +214,12 @@ button.danger { color: var(--bad); }
       installedAs: "%s instalado",
       ofOriginal: "de %s",
       version: "versión %s",
+      pendingTitle: "Instalaciones a medias",
+      pendingMeta: "%s copiados. Origen: %o",
+      resume: "Seguir",
+      discard: "Descartar",
+      confirmDiscard: "Se borrará lo ya copiado de %n (%s).\n\n¿Descartar?",
+      discarded: "Descartado.",
       kind_p5z: ".p5z de MaxPack",
       kind_folder: "Carpeta",
       kind_image: "Imagen",
@@ -271,6 +282,12 @@ button.danger { color: var(--bad); }
       installedAs: "%s installed",
       ofOriginal: "of %s",
       version: "version %s",
+      pendingTitle: "Unfinished installs",
+      pendingMeta: "%s copied. Source: %o",
+      resume: "Resume",
+      discard: "Discard",
+      confirmDiscard: "What was copied of %n (%s) will be deleted.\n\nDiscard?",
+      discarded: "Discarded.",
       kind_p5z: "MaxPack .p5z",
       kind_folder: "Folder",
       kind_image: "Image",
@@ -305,7 +322,7 @@ button.danger { color: var(--bad); }
   var selected = null;
   var dest = null;
   var extra = [];
-  var keys = { found: "", installed: "", drives: "", last: "" };
+  var keys = { found: "", installed: "", drives: "", last: "", pending: "" };
   var speed = { title: "", t: 0, done: 0, v: 0 };
 
   function $(id) { return document.getElementById(id); }
@@ -390,7 +407,7 @@ button.danger { color: var(--bad); }
     $("manual-path").placeholder = t("manualPh");
     var b = document.querySelectorAll(".lang button");
     for (var k = 0; k < b.length; k++) b[k].setAttribute("aria-pressed", b[k].getAttribute("data-lang") === lang ? "true" : "false");
-    keys.found = keys.installed = keys.drives = keys.last = "";
+    keys.found = keys.installed = keys.drives = keys.last = keys.pending = "";
     if (state) render();
   }
 
@@ -546,6 +563,45 @@ button.danger { color: var(--bad); }
     $("installed-empty").hidden = state.installed.length > 0;
   }
 
+  function pendingRow(p) {
+    var name = nameFor(p.title_id);
+    var li = el("li", "game static");
+    li.appendChild(el("div", "ph", name.charAt(0).toUpperCase()));
+    var info = el("div", "info");
+    info.appendChild(el("p", "name", name));
+    info.appendChild(el("p", "meta", t("pendingMeta").replace("%s", size(p.bytes)).replace("%o", p.source)));
+    li.appendChild(info);
+    var act = el("div", "actions");
+    var go = el("button", null, t("resume"));
+    go.type = "button";
+    go.onclick = function () { installFrom(p.source, p.dest, [], false); };
+    var drop = el("button", "danger", t("discard"));
+    drop.type = "button";
+    drop.onclick = function () {
+      var q = t("confirmDiscard").replace("%n", name).replace("%s", size(p.bytes));
+      if (!window.confirm(q)) return;
+      post("/api/discard", { title_id: p.title_id }, function (j) {
+        if (j.ok) show("ok", t("discarded"));
+        else show("err", t(j.code), j.detail);
+      });
+    };
+    act.appendChild(go);
+    act.appendChild(drop);
+    li.appendChild(act);
+    return li;
+  }
+
+  function renderPending() {
+    var list = state.pending || [];
+    var key = lang + JSON.stringify(list);
+    if (key === keys.pending) return;
+    keys.pending = key;
+    var ul = $("pending");
+    clear(ul);
+    for (var i = 0; i < list.length; i++) ul.appendChild(pendingRow(list[i]));
+    $("pending-box").hidden = list.length === 0;
+  }
+
   function renderJob() {
     var j = state.job;
     $("job").hidden = !j;
@@ -590,6 +646,10 @@ button.danger { color: var(--bad); }
     keys.last = key;
     if (first && !l.code) return;
     var name = nameFor(l.title_id);
+    if (l.code === "needs_confirm" && l.existing && l.source) {
+      askReplace(l.source, l.dest, l.existing, false);
+      return;
+    }
     var counts = l.files_ok !== undefined ? t("counts").replace("%o", l.files_ok).replace("%b", l.files_bad) : "";
     if (l.code === "done") show("ok", t("done_" + l.kind).replace("%n", name), counts);
     else show("err", t(l.code), counts || l.detail);
@@ -604,6 +664,7 @@ button.danger { color: var(--bad); }
   function render() {
     renderSmp();
     renderJob();
+    renderPending();
     renderFound();
     renderDrives();
     renderInstalled();
@@ -630,27 +691,32 @@ button.danger { color: var(--bad); }
     });
   }
 
-  function install(replace) {
-    if (!selected) { show("err", t("pickFirst")); return; }
-    var body = { p5z: selected, dest: dest, replace: replace || [], delete_p5z: $("del").checked };
+  function askReplace(src, dst, existing, del) {
+    var lines = [t("confirmReplace"), ""], paths = [];
+    for (var i = 0; i < existing.length; i++) {
+      lines.push(existing[i].path + " (" + size(existing[i].size) + ")");
+      paths.push(existing[i].path);
+    }
+    lines.push("", t("confirmReplaceQ"));
+    if (window.confirm(lines.join("\n"))) installFrom(src, dst, paths, del);
+  }
+
+  function installFrom(src, dst, replace, del) {
+    var body = { p5z: src, dest: dst, replace: replace || [], delete_p5z: !!del };
     post("/api/install", body, function (j) {
       if (j.ok) { show("ok", t("queued")); return; }
-      if (j.code === "needs_confirm" && j.existing) {
-        var lines = [t("confirmReplace"), ""], paths = [];
-        for (var i = 0; i < j.existing.length; i++) {
-          lines.push(j.existing[i].path + " (" + size(j.existing[i].size) + ")");
-          paths.push(j.existing[i].path);
-        }
-        lines.push("", t("confirmReplaceQ"));
-        if (window.confirm(lines.join("\n"))) install(paths);
-        return;
-      }
+      if (j.code === "needs_confirm" && j.existing) { askReplace(src, dst, j.existing, del); return; }
       if (j.code === "no_space") { show("err", t("no_space").replace("%s", size(j.need - j.avail))); return; }
       show("err", t(j.code), j.detail);
     });
   }
 
-  $("install").onclick = function () { install([]); };
+  function install() {
+    if (!selected) { show("err", t("pickFirst")); return; }
+    installFrom(selected, dest, [], $("del").checked);
+  }
+
+  $("install").onclick = function () { install(); };
   $("pause").onclick = function () { post("/api/pause", {}); };
   $("rescan").onclick = function () { post("/api/scan", {}, function () { keys.found = ""; }); };
   $("manual").onsubmit = function (ev) {

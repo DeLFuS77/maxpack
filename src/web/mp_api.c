@@ -42,6 +42,9 @@ struct mp_api {
     uint64_t done, total;
     int has_last, last_counts;
     uint64_t last_ok, last_bad;
+    mp_inst_existing *last_ex;   // con needs_confirm: lo que hay que confirmar
+    size_t last_nex;
+    char last_src[1024], last_dest[1024];
     char last_kind[16], last_title[16], last_code[32], last_detail[600];
     int smp_alive;
     char smp_version[32];
@@ -179,6 +182,10 @@ static void set_last(mp_api *a, const char *kind, const char *title, const char 
     snprintf(a->last_code, sizeof a->last_code, "%s", code);
     snprintf(a->last_detail, sizeof a->last_detail, "%s", detail ? detail : "");
     a->last_counts = 0;
+    mp_inst_existing_free(a->last_ex, a->last_nex);
+    a->last_ex = NULL;
+    a->last_nex = 0;
+    a->last_src[0] = a->last_dest[0] = 0;
     mp_mutex_unlock(a->mu);
 }
 
@@ -224,6 +231,16 @@ static void run_install(mp_api *a, job_t *j) {
         a->user.notify(a->user.ctx, msg);
     }
     set_last(a, "install", j->title, r.code ? r.code : "io_error", detail);
+    if (r.status == MP_INST_NEEDS_CONFIRM) {   // algo cambió desde que se encoló: la página vuelve a preguntar
+        mp_mutex_lock(a->mu);
+        a->last_ex = r.existing;
+        a->last_nex = r.nexisting;
+        r.existing = NULL;
+        r.nexisting = 0;
+        snprintf(a->last_src, sizeof a->last_src, "%s", j->p5z);
+        snprintf(a->last_dest, sizeof a->last_dest, "%s", j->dest);
+        mp_mutex_unlock(a->mu);
+    }
     mp_inst_result_free(&r);
 }
 
@@ -401,6 +418,21 @@ static void put_drive(mp_jbuf *b, const mp_api *a, const char *root, int interna
     mp_jbuf_raw(b, "}");
 }
 
+static void put_existing(mp_jbuf *b, const mp_inst_existing *ex, size_t n) {
+    mp_jbuf_raw(b, "[");
+    for (size_t i = 0; i < n; i++) {
+        mp_jbuf_raw(b, i ? ",{" : "{");
+        key(b, "path", 1);
+        mp_jbuf_str(b, ex[i].path);
+        key(b, "size", 0);
+        mp_jbuf_u64(b, ex[i].size);
+        key(b, "from_maxpack", 0);
+        mp_jbuf_raw(b, ex[i].from_maxpack ? "true" : "false");
+        mp_jbuf_raw(b, "}");
+    }
+    mp_jbuf_raw(b, "]");
+}
+
 static void handle_state(mp_api *a, mp_http_resp *rs) {
     mp_jbuf b = {0};
     mp_jbuf_raw(&b, "{\"ok\":true");
@@ -440,6 +472,31 @@ static void handle_state(mp_api *a, mp_http_resp *rs) {
     }
     mp_jbuf_raw(&b, "]");
     free(rec);
+    mp_inst_pending_item *pend = NULL;
+    size_t npend = 0;
+    mp_inst_pending(&quiet, &pend, &npend, NULL);
+    mp_mutex_lock(a->mu);
+    char busy_title[16] = "";
+    if (a->busy) snprintf(busy_title, sizeof busy_title, "%s", a->cur.title);
+    mp_mutex_unlock(a->mu);
+    key(&b, "pending", 0);
+    mp_jbuf_raw(&b, "[");
+    for (size_t i = 0, first = 1; i < npend; i++) {
+        if (!strcmp(pend[i].title_id, busy_title)) continue;   // la que está en marcha no es "a medias"
+        mp_jbuf_raw(&b, first ? "{" : ",{");
+        first = 0;
+        key(&b, "title_id", 1);
+        mp_jbuf_str(&b, pend[i].title_id);
+        key(&b, "source", 0);
+        mp_jbuf_str(&b, pend[i].source);
+        key(&b, "dest", 0);
+        mp_jbuf_str(&b, pend[i].dest);
+        key(&b, "bytes", 0);
+        mp_jbuf_u64(&b, pend[i].bytes);
+        mp_jbuf_raw(&b, "}");
+    }
+    mp_jbuf_raw(&b, "]");
+    free(pend);
     mp_mutex_lock(a->mu);
     key(&b, "found", 0);
     mp_jbuf_raw(&b, "[");
@@ -483,6 +540,14 @@ static void handle_state(mp_api *a, mp_http_resp *rs) {
         mp_jbuf_str(&b, a->last_code);
         key(&b, "detail", 0);
         mp_jbuf_str(&b, a->last_detail);
+        if (a->last_ex) {
+            key(&b, "existing", 0);
+            put_existing(&b, a->last_ex, a->last_nex);
+            key(&b, "source", 0);
+            mp_jbuf_str(&b, a->last_src);
+            key(&b, "dest", 0);
+            mp_jbuf_str(&b, a->last_dest);
+        }
         if (a->last_counts) {
             key(&b, "files_ok", 0);
             mp_jbuf_u64(&b, a->last_ok);
@@ -596,57 +661,51 @@ static void handle_install(mp_api *a, const mp_json *in, mp_http_resp *rs) {
         const char *s = mp_json_str(mp_json_at(rep, i));
         if (s && (j.replace[j.nreplace] = mp_strdup(s)) != NULL) j.nreplace++;
     }
-    // Lo mismo que comprobará el motor, para contestar ya: copias sin confirmar y espacio.
+    // La misma decisión que tomará el motor (mp_inst_plan_make), para contestar ya.
     char **known = NULL;
     size_t nknown = 0;
     smp_known(a, f.title_id, &known, &nknown);
-    mp_inst_existing *ex = NULL;
-    size_t nex = 0;
-    mp_inst_find_existing(&a->env, f.title_id, (const char *const *)known, nknown, &ex, &nex, NULL);
+    free(f.path);
+    mp_inst_req q;
+    memset(&q, 0, sizeof q);
+    q.p5z_path = j.p5z;
+    q.dest_root = j.dest;
+    q.replace = (const char *const *)j.replace;
+    q.nreplace = j.nreplace;
+    q.known = (const char *const *)known;
+    q.nknown = nknown;
+    mp_inst_plan pl;
+    const char *code = NULL;
+    int prc = mp_inst_plan_make(&a->env, &q, &pl, &code, &e);
     free_strs(known, nknown);
-    int unconfirmed = 0;
-    for (size_t i = 0; i < nex; i++) {
-        if (!strcmp(ex[i].path, f.path) || mp_same_file(ex[i].path, f.path)) continue;   // el origen
-        int ok = 0;
-        for (size_t k = 0; k < j.nreplace && !ok; k++) ok = !strcmp(ex[i].path, j.replace[k]);
-        unconfirmed |= !ok;
-    }
-    if (unconfirmed) {
-        mp_jbuf b = {0};
-        mp_jbuf_raw(&b, "{\"ok\":false,\"code\":\"needs_confirm\",\"existing\":[");
-        for (size_t i = 0, first = 1; i < nex; i++) {
-            if (!strcmp(ex[i].path, f.path) || mp_same_file(ex[i].path, f.path)) continue;
-            mp_jbuf_raw(&b, first ? "{" : ",{");
-            first = 0;
-            key(&b, "path", 1);
-            mp_jbuf_str(&b, ex[i].path);
-            key(&b, "size", 0);
-            mp_jbuf_u64(&b, ex[i].size);
-            key(&b, "from_maxpack", 0);
-            mp_jbuf_raw(&b, ex[i].from_maxpack ? "true" : "false");
-            mp_jbuf_raw(&b, "}");
-        }
-        mp_jbuf_raw(&b, "]}");
-        mp_inst_existing_free(ex, nex);
+    if (prc != 0) {
         job_free(&j);
-        free(f.path);
+        respond_err(rs, 200, code ? code : "io_error", e.msg);
+        return;
+    }
+    if (pl.status == MP_INST_NEEDS_CONFIRM) {
+        mp_jbuf b = {0};
+        mp_jbuf_raw(&b, "{\"ok\":false,\"code\":\"needs_confirm\",\"existing\":");
+        put_existing(&b, pl.ex, pl.nex);
+        mp_jbuf_raw(&b, "}");
+        mp_inst_plan_free(&pl);
+        job_free(&j);
         respond(rs, 200, &b);
         return;
     }
-    mp_inst_existing_free(ex, nex);
-    uint64_t avail = free_of(a, dest), need = f.install_size + a->env.space_margin;
-    free(f.path);
-    if (need > avail) {
-        job_free(&j);
+    if (pl.status == MP_INST_NO_SPACE) {
         mp_jbuf b = {0};
         mp_jbuf_raw(&b, "{\"ok\":false,\"code\":\"no_space\",\"need\":");
-        mp_jbuf_u64(&b, need);
+        mp_jbuf_u64(&b, pl.need);
         mp_jbuf_raw(&b, ",\"avail\":");
-        mp_jbuf_u64(&b, avail);
+        mp_jbuf_u64(&b, pl.avail);
         mp_jbuf_raw(&b, "}");
+        mp_inst_plan_free(&pl);
+        job_free(&j);
         respond(rs, 200, &b);
         return;
     }
+    mp_inst_plan_free(&pl);
     const char *err = enqueue(a, &j);
     if (err) respond_err(rs, 200, err, "ese juego ya se está instalando o la cola está llena");
     else respond_ok(rs);
@@ -679,6 +738,28 @@ static void handle_title_job(mp_api *a, const mp_json *in, mp_http_resp *rs, int
     snprintf(j.name, sizeof j.name, "%s", rec.name);
     const char *err = enqueue(a, &j);
     if (err) respond_err(rs, 200, err, "ese juego está ocupado o la cola está llena");
+    else respond_ok(rs);
+}
+
+// Descartar una instalación a medias: borra su estado y su temporal.
+static void handle_discard(mp_api *a, const mp_json *in, mp_http_resp *rs) {
+    const char *title = mp_json_str(mp_json_get(in, "title_id"));
+    if (!title || !mp_inst_title_ok(title)) {
+        respond_err(rs, 200, "not_found", "no hay ninguna instalación a medias de ese juego");
+        return;
+    }
+    mp_mutex_lock(a->mu);
+    int busy = title_busy(a, title);
+    mp_mutex_unlock(a->mu);
+    if (busy) {
+        respond_err(rs, 200, "busy", "ese juego se está instalando o está en cola");
+        return;
+    }
+    mp_err e = {{0}};
+    mp_mutex_lock(a->run_mu);
+    int rc = mp_inst_discard(&a->env, title, &e);
+    mp_mutex_unlock(a->run_mu);
+    if (rc != 0) respond_err(rs, 200, "not_found", e.msg);
     else respond_ok(rs);
 }
 
@@ -819,6 +900,8 @@ void mp_api_handle(void *ctx, const mp_http_req *rq, mp_http_resp *rs) {
         handle_title_job(a, in, rs, JOB_VERIFY);
     } else if (!strcmp(r, "uninstall")) {
         handle_title_job(a, in, rs, JOB_UNINSTALL);
+    } else if (!strcmp(r, "discard")) {
+        handle_discard(a, in, rs);
     } else {
         respond_err(rs, 404, "not_found", rq->path);
     }
@@ -850,6 +933,7 @@ mp_api *mp_api_new(const mp_inst_env *env, const mp_smp_cfg *smp, unsigned smp_r
         mp_err_set(e, "sin memoria");
         return NULL;
     }
+    mp_inst_recover(&a->env);   // un corte a mitad de reemplazar deja lo viejo apartado
     rescan(a);
     if (mp_thread_start(&a->worker, worker, a) != 0 || mp_thread_start(&a->smp_thread, smp_loop, a) != 0) {
         mp_api_free(a);
@@ -882,6 +966,7 @@ void mp_api_free(mp_api *a) {
     if (a->smp_thread) mp_thread_join(a->smp_thread);
     for (size_t i = 0; i < a->qn; i++) job_free(&a->queue[i]);
     mp_inst_found_free(a->found, a->nfound);
+    mp_inst_existing_free(a->last_ex, a->last_nex);
     if (a->mu) mp_mutex_free(a->mu);
     if (a->run_mu) mp_mutex_free(a->run_mu);
     free(a);

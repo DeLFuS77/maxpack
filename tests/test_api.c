@@ -443,6 +443,61 @@ MP_TEST(api_rejects_cross_site) {
                         "Content-Type: application/json; charset=utf-8\r\nContent-Length: 2\r\n\r\n{}") == 200);
 }
 
+MP_TEST(api_dest_occupied_unknown) {
+    // El destino de una imagen sin ID en el nombre ya está ocupado: hay que preguntar antes.
+    setup();
+    mpt_copy_file(MPT_BASIC, USB "/img/basic.exfat");
+    mpt_put_text(DATA "/homebrew/basic.exfat", "otro archivo que ya estaba");
+    char body[1200];
+    mp_json *r = NULL;
+    snprintf(body, sizeof body, "{\"p5z\":\"%s\",\"dest\":\"%s\"}", USB "/img/basic.exfat", DATA);
+    MP_CHECK(call("POST", "/api/install", body, &r) == 200);
+    MP_CHECK_STR(jcode(r), "needs_confirm");
+    int seen = 0;
+    const mp_json *ex = mp_json_get(r, "existing");
+    for (size_t i = 0; i < mp_json_len(ex); i++)
+        seen |= !strcmp(mp_json_str(mp_json_get(mp_json_at(ex, i), "path")) ? mp_json_str(mp_json_get(mp_json_at(ex, i), "path")) : "",
+                        DATA "/homebrew/basic.exfat");
+    MP_CHECK(seen);
+    mp_json_free(r);
+    MP_CHECK(mp_api_wait_idle(api, 20000) == 0);
+    size_t n = 0;
+    uint8_t *b = mpt_slurp(DATA "/homebrew/basic.exfat", &n);
+    MP_CHECK(b && n == strlen("otro archivo que ya estaba"));
+    free(b);
+    mpt_clear(DATA "/homebrew/basic.exfat");
+    mpt_clear(USB "/img");
+}
+
+MP_TEST(api_pending_discard) {
+    setup();
+    hold = 1;
+    mp_json *r = NULL;
+    MP_CHECK(call("POST", "/api/install", install_json(USB "/basic.p5z", 1), &r) == 200 && jok(r));
+    mp_json_free(r);
+    MP_CHECK(wait_job_running());
+    MP_CHECK(call("POST", "/api/pause", "{}", NULL) == 200);
+    hold = 0;
+    MP_CHECK(mp_api_wait_idle(api, 20000) == 0);
+    mp_json *s = NULL;
+    call("GET", "/api/state", NULL, &s);
+    const mp_json *p = mp_json_get(s, "pending");
+    MP_CHECK_EQ_U64(mp_json_len(p), 1);
+    MP_CHECK_STR(mp_json_str(mp_json_get(mp_json_at(p, 0), "title_id")), "TEST00001");
+    MP_CHECK_STR(mp_json_str(mp_json_get(mp_json_at(p, 0), "source")), USB "/basic.p5z");
+    MP_CHECK_STR(mp_json_str(mp_json_get(mp_json_at(p, 0), "dest")), DATA);
+    mp_json_free(s);
+    MP_CHECK(call("POST", "/api/discard", "{\"title_id\":\"TEST00001\"}", &r) == 200 && jok(r));
+    mp_json_free(r);
+    call("GET", "/api/state", NULL, &s);
+    MP_CHECK_EQ_U64(mp_json_len(mp_json_get(s, "pending")), 0);
+    mp_json_free(s);
+    MP_CHECK(mp_path_kind(DATA "/maxpack/tmp/TEST00001") == 0);
+    MP_CHECK(call("POST", "/api/discard", "{\"title_id\":\"TEST00001\"}", &r) == 200);
+    MP_CHECK_STR(jcode(r), "not_found");
+    mp_json_free(r);
+}
+
 int main(void) {
     MP_RUN(api_state_and_scan);
     MP_RUN(api_install_flow);
@@ -455,6 +510,8 @@ int main(void) {
     MP_RUN(api_refuses_running);
     MP_RUN(api_kinds);
     MP_RUN(api_rejects_cross_site);
+    MP_RUN(api_dest_occupied_unknown);
+    MP_RUN(api_pending_discard);
     mp_http_stop(web);
     mp_api_free(api);
     if (smp_srv) smp_down();

@@ -110,4 +110,9 @@ typedef struct {
 int mp_inst_install(const mp_inst_env *env, const mp_inst_req *req, mp_inst_result *r, mp_err *e);
 void mp_inst_result_free(mp_inst_result *r);
 
+// Relee la carpeta y compara cada archivo que viene del .p5z con su SHA-256 (skip_runtime: no
+// compara ampr_emu.index ni el runtime, que cambió el instalador). Fallos, o -1 si no pudo.
+typedef struct mp_p5z mp_p5z;
+long mp_inst_check_dir(mp_p5z *p, const char *dir, int skip_runtime, unsigned threads, mp_err *e);
+
 #endif

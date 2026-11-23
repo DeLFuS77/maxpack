@@ -418,19 +418,14 @@ int mp_inst_install(const mp_inst_env *env, const mp_inst_req *req, mp_inst_resu
         for (size_t k = 0; k < req->nreplace && !ok; k++) ok = !strcmp(ex[i].path, req->replace[k]);
         unconfirmed |= !ok;
     }
-    if (nex) {
+    if (nex && unconfirmed) {
         free(f.path);
-        if (unconfirmed) {
-            r->existing = ex;
-            r->nexisting = nex;
-            set_result(r, MP_INST_NEEDS_CONFIRM, "needs_confirm");
-            return 0;
-        }
-        mp_inst_existing_free(ex, nex);   // el reemplazo confirmado llega en la Task 7
-        mp_err_set(e, "reemplazar aún no está disponible");
-        set_result(r, MP_INST_FAILED, "io_error");
-        return -1;
+        r->existing = ex;
+        r->nexisting = nex;
+        set_result(r, MP_INST_NEEDS_CONFIRM, "needs_confirm");
+        return 0;
     }
+    // Las copias confirmadas (ex) se borran solo al final, con lo nuevo ya verificado en su sitio.
 
     // Espacio.
     uint64_t avail = 0;
@@ -440,11 +435,13 @@ int mp_inst_install(const mp_inst_env *env, const mp_inst_req *req, mp_inst_resu
     r->avail = avail;
     if (frc != 0) {
         free(f.path);
+        mp_inst_existing_free(ex, nex);
         set_result(r, MP_INST_FAILED, "io_error");
         return -1;
     }
     if (r->need > avail) {
         free(f.path);
+        mp_inst_existing_free(ex, nex);
         set_result(r, MP_INST_NO_SPACE, "no_space");
         return 0;
     }
@@ -452,6 +449,7 @@ int mp_inst_install(const mp_inst_env *env, const mp_inst_req *req, mp_inst_resu
     mp_p5z *p = NULL;
     if (mp_p5z_open(req->p5z_path, &p, e) != 0) {
         free(f.path);
+        mp_inst_existing_free(ex, nex);
         set_result(r, MP_INST_FAILED, "bad_p5z");
         return -1;
     }
@@ -460,6 +458,7 @@ int mp_inst_install(const mp_inst_env *env, const mp_inst_req *req, mp_inst_resu
     if (prc != 0) {
         mp_p5z_close(p);
         free(f.path);
+        mp_inst_existing_free(ex, nex);
         set_result(r, MP_INST_FAILED, prc == 1 ? "no_runtime" : "bad_p5z");
         return -1;
     }
@@ -516,6 +515,17 @@ int mp_inst_install(const mp_inst_env *env, const mp_inst_req *req, mp_inst_resu
         }
     }
     if (rc == 0 && !stopped && rp.replace) rc = install_runtime(env, p, &rp, tmp, e);
+    // Si después se borra el .p5z, esta carpeta será la única copia: se relee entera.
+    if (rc == 0 && !stopped && req->delete_p5z) {
+        if (env->progress) env->progress(env->ctx, "comprobando", 0, f.install_size);
+        long bad = mp_inst_check_dir(p, tmp, rp.replace, env->threads, e);
+        if (bad != 0) {
+            if (bad > 0)
+                mp_err_set(e, "la copia no coincide con el .p5z en %ld archivos: no se borra el .p5z", bad);
+            rc = -1;
+            fail_code = "io_error";
+        }
+    }
     mp_inst_record rec;
     memset(&rec, 0, sizeof rec);
     if (rc == 0 && !stopped) {
@@ -533,11 +543,13 @@ int mp_inst_install(const mp_inst_env *env, const mp_inst_req *req, mp_inst_resu
     mpi_state_close(st);
     if (rc == 0 && stopped) {
         free(f.path);
+        mp_inst_existing_free(ex, nex);
         set_result(r, MP_INST_STOPPED, "stopped");
         return 0;
     }
     if (rc != 0) {
         free(f.path);
+        mp_inst_existing_free(ex, nex);
         set_result(r, MP_INST_FAILED, fail_code);
         return -1;
     }
@@ -547,7 +559,24 @@ int mp_inst_install(const mp_inst_env *env, const mp_inst_req *req, mp_inst_resu
     char hb[1100];
     snprintf(hb, sizeof hb, "%s/homebrew", req->dest_root);
     rc = mp_make_dirs(hb, e);
+    char old[1200];
+    snprintf(old, sizeof old, "%s.old", tmp);
+    int moved_old = 0;
+    if (rc == 0 && mp_path_kind(final_dir) != 0) {   // el destino está ocupado (confirmado)
+        mp_remove_tree(old, NULL);
+        rc = mp_rename(final_dir, old, e);
+        moved_old = rc == 0;
+    }
     if (rc == 0) rc = mp_rename(tmp, final_dir, e);
+    if (rc != 0 && moved_old) mp_rename(old, final_dir, NULL);   // vuelve lo que había
+    if (rc == 0) {
+        mp_err e2 = {{0}};
+        if (moved_old && mp_remove_tree(old, &e2) != 0 && env->notify) env->notify(env->ctx, e2.msg);
+        for (size_t i = 0; i < nex; i++) {
+            if (!strcmp(ex[i].path, final_dir)) continue;
+            if (mp_remove_tree(ex[i].path, &e2) != 0 && env->notify) env->notify(env->ctx, e2.msg);
+        }
+    }
     if (rc == 0) {
         snprintf(rec.title_id, sizeof rec.title_id, "%s", f.title_id);
         snprintf(rec.version, sizeof rec.version, "%s", f.version);
@@ -561,9 +590,12 @@ int mp_inst_install(const mp_inst_env *env, const mp_inst_req *req, mp_inst_resu
         rc = mp_inst_record_save(env, &rec, e);
     }
     if (rc == 0) mpi_state_remove(env, f.title_id);
+    if (rc == 0 && req->delete_p5z && mp_remove_file(req->p5z_path) != 0 && env->notify)
+        env->notify(env->ctx, "No se pudo borrar el .p5z");
     r->runtime_replaced = rp.replace;
     if (rc != 0) {
         free(f.path);
+        mp_inst_existing_free(ex, nex);
         set_result(r, MP_INST_FAILED, "io_error");
         return -1;
     }
@@ -573,6 +605,7 @@ int mp_inst_install(const mp_inst_env *env, const mp_inst_req *req, mp_inst_resu
         env->notify(env->ctx, msg);
     }
     free(f.path);
+    mp_inst_existing_free(ex, nex);
     set_result(r, MP_INST_DONE, "done");
     return 0;
 }

@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -33,7 +34,11 @@ func TestForwardArgs(t *testing.T) {
 		t.Skip("falta MAXPACK_CORE: se necesita el motor")
 	}
 	exe := filepath.Join(t.TempDir(), "MaxPack.exe")
-	build := exec.Command("go", "build", "-tags", "desktop,production", "-o", exe, ".")
+	tags := "desktop,production"
+	if runtime.GOOS == "linux" {
+		tags += ",webkit2_41" // WebKitGTK 4.1, the one current distributions have
+	}
+	build := exec.Command("go", "build", "-tags", tags, "-o", exe, ".")
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("no compila: %v\n%s", err, out)
 	}

@@ -157,3 +157,30 @@ func TestRunClosingLeavesTheEngineToCleanUp(t *testing.T) {
 		t.Fatalf("the output is still there: %v", err)
 	}
 }
+
+func TestCapabilities(t *testing.T) {
+	core, _ := needCore(t)
+	missing, err := Missing(core)
+	if err != nil || len(missing) != 0 {
+		t.Fatalf("el motor de esta versión: falta %v, %v", missing, err)
+	}
+}
+
+// An engine of another version: one of before --capabilities fails it, and one that lacks
+// something says so.
+func TestCapabilitiesOfAnotherVersion(t *testing.T) {
+	t.Setenv(fakecore.Env, "old")
+	if _, err := Missing(os.Args[0]); err == nil {
+		t.Fatal("un motor sin --capabilities no da error")
+	}
+	t.Setenv(fakecore.Env, "partial")
+	missing, err := Missing(os.Args[0])
+	if err != nil || len(missing) == 0 {
+		t.Fatalf("falta %v, %v", missing, err)
+	}
+	for _, m := range missing {
+		if m == "progress_json" || m == "control_stdin" {
+			t.Fatalf("%s sí lo tiene: %v", m, missing)
+		}
+	}
+}

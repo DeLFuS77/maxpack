@@ -15,6 +15,8 @@ import (
 
 // Env says that the binary is to act as the engine, and how:
 //   - "stubborn": tells some progress and then ignores cancel, for a minute;
+//   - "old": an engine of before --capabilities: it knows --version and nothing else;
+//   - "partial": an engine that says it can do less than the window needs;
 //   - "writes-stubborn": writes part of its output (-o) and then ignores cancel, for a minute;
 //   - "writes-slow-clean": writes part of its output and, once cancelled (the line "cancel", or
 //     its input closed), takes MP_FAKE_CLEAN_MS (1000 by default) to take it away, as a big
@@ -36,6 +38,15 @@ func run(mode string, args []string) int {
 		return 0
 	}
 	switch mode {
+	case "old":
+		fmt.Fprintln(os.Stderr, "error: orden desconocida:", args)
+		return 2
+	case "partial":
+		if len(args) > 0 && args[0] == "--capabilities" {
+			fmt.Println(`{"progress_json":true,"control_stdin":true}`)
+			return 0
+		}
+		return 2
 	case "stubborn":
 		progress()
 		time.Sleep(time.Minute)

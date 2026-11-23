@@ -46,8 +46,8 @@ type Options struct {
 
 // Plan is what will be done with one game: where it goes, what it replaces, what to tell the
 // user and, if it cannot be done, why not. Block is "same_as_source", "no_space" or
-// "fat32_too_big" ("" when it can go). Warnings are "fat32", "needs_runtime", "may_not_fit"
-// and "duplicate_target". A Plan with Replace is one the user accepted to replace: not going
+// "fat32_too_big" ("" when it can go). Warnings are "fat32", "needs_runtime", "may_not_fit",
+// "duplicate_target" and "no_title_id". A Plan with Replace is one the user accepted to replace: not going
 // on with it is a matter of dropping the plan.
 type Plan struct {
 	Item     Item
@@ -237,6 +237,10 @@ func PlanCompress(items []Item, o Options, fs FS) []Plan {
 	for i := range plans {
 		if !plans[i].Item.HasZstdRuntime && o.Runtime == "" {
 			plans[i].Warnings = append(plans[i].Warnings, "needs_runtime")
+		}
+		// the installer of the PS5 refuses a .p5z with no TITLE_ID
+		if o.Mode == ModeP5z && plans[i].Item.TitleID == "" && plans[i].Block == "" {
+			plans[i].Warnings = append(plans[i].Warnings, "no_title_id")
 		}
 	}
 	return plans

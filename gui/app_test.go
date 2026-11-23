@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,8 +11,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DeLFuS77/maxpack/gui/internal/fakecore"
 	"github.com/DeLFuS77/maxpack/gui/internal/portable"
 	"github.com/DeLFuS77/maxpack/gui/settings"
+
+	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 func TestCoreMissingReported(t *testing.T) {
@@ -69,5 +73,55 @@ func TestSetupFromSettings(t *testing.T) {
 	}
 	if setup := a.Setup(); setup.Lang != "en" || setup.Theme != "dark" {
 		t.Fatalf("%+v", setup)
+	}
+}
+
+// An engine of another version (one of before --capabilities, or one that lacks something the
+// window needs) is said as such, and the page takes it as a missing one; the engine of this
+// version is fine.
+func TestCoreOtherVersionReported(t *testing.T) {
+	folder := t.TempDir()
+	settings.Dir = func() (string, error) { return folder, nil }
+	t.Cleanup(func() { settings.Dir = portable.DataFolder })
+	ours := os.Getenv("MAXPACK_CORE")
+	t.Setenv("MAXPACK_CORE", os.Args[0])
+	for _, mode := range []string{"old", "partial"} {
+		t.Setenv(fakecore.Env, mode)
+		setup := (&App{}).Setup()
+		if setup.CoreError != "maxpack-core es de otra versión" || !setup.CoreOtherVersion || setup.CoreVersion == "" {
+			t.Errorf("%s: %+v", mode, setup)
+		}
+	}
+	if ours == "" {
+		t.Skip("falta MAXPACK_CORE: se necesita el motor")
+	}
+	t.Setenv(fakecore.Env, "")
+	t.Setenv("MAXPACK_CORE", ours)
+	if setup := (&App{}).Setup(); setup.CoreError != "" || setup.CoreOtherVersion {
+		t.Errorf("el motor de esta versión: %+v", setup)
+	}
+}
+
+// The runtime chosen in Ajustes has to read zstd (the one of ampr-emu-ng carries AMPRZPK1): any
+// other is refused, and nothing is kept.
+func TestChooseRuntimeChecksZstd(t *testing.T) {
+	dir := t.TempDir()
+	good := filepath.Join(dir, "bueno.sprx")
+	os.WriteFile(good, append(make([]byte, 300), []byte("..AMPRZPK1..")...), 0o644)
+	old := filepath.Join(dir, "viejo.sprx")
+	os.WriteFile(old, make([]byte, 300), 0o644)
+	var chosen string
+	a := &App{ctx: context.Background(), openFile: func(context.Context, wailsruntime.OpenDialogOptions) (string, error) { return chosen, nil }}
+	chosen = good
+	if path, err := a.ChooseRuntime(); path != good || err != nil {
+		t.Errorf("el de ampr-emu-ng: %q, %v", path, err)
+	}
+	chosen = old
+	if path, err := a.ChooseRuntime(); path != "" || err == nil || !strings.HasPrefix(err.Error(), "runtime_not_zstd") {
+		t.Errorf("uno que no lee zstd: %q, %v", path, err)
+	}
+	chosen = ""
+	if path, err := a.ChooseRuntime(); path != "" || err != nil {
+		t.Errorf("sin elegir: %q, %v", path, err)
 	}
 }

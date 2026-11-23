@@ -30,6 +30,10 @@ var CancelGrace = 120 * time.Second
 // what it wrote on its own even once the window is gone.
 var ErrClosing = errors.New("la ventana se cierra")
 
+// Required is what the window needs of the engine, as `maxpack --capabilities` says it: an engine
+// that does not say one of them is of another version.
+var Required = []string{"progress_json", "control_stdin", "max_file_size", "info_json", "icon", "packs"}
+
 // Event is a line of the engine: "progress" or the final "result".
 type Event struct {
 	Kind, Phase string
@@ -74,6 +78,29 @@ func Version(core string) (string, error) {
 		return "", fmt.Errorf("maxpack-core no responde: %w", err)
 	}
 	return strings.TrimSpace(string(out)), nil
+}
+
+// Missing gives what of Required the engine does not do, from `--capabilities`; an error when it
+// does not answer it (an engine of before it).
+func Missing(core string) ([]string, error) {
+	var stderr bytes.Buffer
+	command := hide(exec.Command(core, "--capabilities"))
+	command.Stderr = &stderr
+	out, err := command.Output()
+	if err != nil {
+		return nil, fmt.Errorf("maxpack-core no dice lo que sabe hacer: %w: %s", err, strings.TrimSpace(stderr.String()))
+	}
+	var can map[string]bool
+	if err := json.Unmarshal(out, &can); err != nil {
+		return nil, fmt.Errorf("maxpack-core no dice bien lo que sabe hacer: %w", err)
+	}
+	missing := []string{}
+	for _, need := range Required {
+		if !can[need] {
+			missing = append(missing, need)
+		}
+	}
+	return missing, nil
 }
 
 func parse(line []byte) (Event, bool) {

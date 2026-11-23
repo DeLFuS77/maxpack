@@ -52,12 +52,13 @@ func textKeys(t *testing.T, lang string) map[string]bool {
 func pageCodes() []string {
 	states := []string{jobs.StateWaiting, jobs.StatePacking, jobs.StateVerifying, jobs.StateUnpacking,
 		jobs.StateOK, jobs.StateError, jobs.StateSkipped, jobs.StateCancelled}
-	warnings := []string{"fat32", "needs_runtime", "may_not_fit", "duplicate_target"}
+	warnings := []string{"fat32", "needs_runtime", "may_not_fit", "duplicate_target", "no_title_id"}
 	details := []string{
 		// blocks of a plan, which the Runner gives as the detail of a skip
 		"same_as_source", "no_space", "fat32_too_big", "exists",
 		// the Runner
 		"dest_missing", "tmp_not_deleted", "partial_not_deleted", "old_not_deleted", "swap_failed",
+		"runtime_without_zstd",
 		"verify_failed", "files_bad", "exit", "cancelled", "io",
 		// the engine
 		"bad_input", "too_big",

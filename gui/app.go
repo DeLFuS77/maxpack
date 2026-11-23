@@ -13,6 +13,7 @@ import (
 	"github.com/DeLFuS77/maxpack/gui/settings"
 
 	wailsoptions "github.com/wailsapp/wails/v2/pkg/options"
+	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // App is what the window asks for: its methods are called from the page.
@@ -40,6 +41,8 @@ type App struct {
 	lang    func() string // the language of the notices, when not the one of the settings
 	onEvent func(i int, e core.Event)
 	onItem  func(i int, state, detail string)
+	// the dialog that chooses a file, when not the one of the system
+	openFile func(ctx context.Context, options wailsruntime.OpenDialogOptions) (string, error)
 
 	notices      sync.Once
 	noticesReady bool
@@ -51,8 +54,10 @@ type Setup struct {
 	Core        string `json:"core"`
 	CoreVersion string `json:"coreVersion"`
 	CoreError   string `json:"coreError"`
-	Lang        string `json:"lang"`
-	Theme       string `json:"theme"`
+	// CoreOtherVersion: maxpack-core is there but is of another version (CoreError says so)
+	CoreOtherVersion bool   `json:"coreOtherVersion"`
+	Lang             string `json:"lang"`
+	Theme            string `json:"theme"`
 }
 
 func (a *App) startup(ctx context.Context) {
@@ -65,7 +70,8 @@ func (a *App) startup(ctx context.Context) {
 	}
 }
 
-// Setup says what the window runs with. It never fails: a missing or broken maxpack-core is
+// Setup says what the window runs with. It never fails: a missing or broken maxpack-core, or one
+// of another version (one that does not do all the window needs, as --capabilities says), is
 // reported in CoreError and the window opens all the same.
 func (a *App) Setup() Setup {
 	saved, _ := settings.Load()
@@ -78,6 +84,10 @@ func (a *App) Setup() Setup {
 	setup.Core = path
 	if setup.CoreVersion, err = core.Version(path); err != nil {
 		setup.CoreError = err.Error()
+		return setup
+	}
+	if missing, err := core.Missing(path); err != nil || len(missing) > 0 {
+		setup.CoreError, setup.CoreOtherVersion = "maxpack-core es de otra versión", true
 	}
 	return setup
 }

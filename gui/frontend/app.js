@@ -249,7 +249,9 @@ function rowWarnings(row) {
   if (row.section === "compress" && game.Packed) list.push(t("detail_already_packed"));
   if (row.section === "verify" && game.Kind === "folder" && !game.Packed) list.push(t("detail_not_packed"));
   const lacks = row.section === "compress" && !game.Packed && !game.HasZstdRuntime && !state.settings.Runtime;
-  if (lacks || row.warnings.includes("needs_runtime")) list.push(t("warn_needs_runtime"));
+  // made without a runtime that reads zstd: its note says it already
+  const told = row.state === "ok" && /(^|; )runtime_without_zstd($|; )/.test(row.detail);
+  if ((lacks || row.warnings.includes("needs_runtime")) && !told) list.push(t("warn_needs_runtime"));
   for (const warning of row.warnings) if (warning !== "needs_runtime") list.push(t("warn_" + warning));
   return list;
 }
@@ -390,8 +392,8 @@ function paintNav() {
   }
   const setup = state.setup, core = $("side-core");
   core.classList.toggle("bad", !setup || !!setup.coreError);
-  core.textContent = !setup ? t("noWindowShort") : setup.coreError ? t("coreMissingShort") : "maxpack-core " + (setup.coreVersion.split(" ")[1] || "");
-  core.title = setup ? setup.coreError || setup.coreVersion : "";
+  core.textContent = !setup ? t("noWindowShort") : setup.coreError ? (setup.coreOtherVersion ? t("coreOtherVersionShort") : t("coreMissingShort")) : "maxpack-core " + (setup.coreVersion.split(" ")[1] || "");
+  core.title = setup ? coreText(setup) || setup.coreVersion : "";
 }
 
 function paintHead() {
@@ -468,7 +470,7 @@ function paintSettings() {
   $("pref-runtime").classList.toggle("bad", !s.Runtime);
   $("pref-runtime-clear").hidden = !s.Runtime;
   $("about-version").textContent = setup ? setup.version : "—";
-  $("about-core").textContent = !setup ? "—" : setup.coreError || setup.coreVersion;
+  $("about-core").textContent = !setup ? "—" : coreText(setup) || setup.coreVersion;
   $("about-core").classList.toggle("bad", !!(setup && setup.coreError));
   const tile = $("settings-tile");
   if (!tile.firstChild) tile.append(document.querySelector('nav button[data-section="settings"] svg').cloneNode(true));
@@ -525,6 +527,12 @@ function render() {
   paintSummary();
 }
 
+// what is wrong with maxpack-core, in the language; "" when nothing is
+function coreText(setup) {
+  if (!setup || !setup.coreError) return "";
+  return setup.coreOtherVersion ? t("coreOtherVersion") + " (" + setup.coreVersion + ")" : setup.coreError;
+}
+
 function banner(text) {
   $("banner").hidden = !text;
   $("banner-text").textContent = text || "";
@@ -558,7 +566,11 @@ async function chooseDest() {
 }
 
 async function chooseRuntime() {
-  const path = await go.call("ChooseRuntime").catch(error => { toast(message(error)); return ""; });
+  const path = await go.call("ChooseRuntime").catch(error => {
+    const text = message(error);
+    toast(text.startsWith("runtime_not_zstd") ? t("runtimeNotZstd") : text);
+    return "";
+  });
   if (path) { keep({ Runtime: path }); render(); }
   return path || "";
 }
@@ -696,7 +708,7 @@ async function startQueue() {
     }
     if (!going.length) { toast(t("nothingToDo")); return; }
     // what to know before it starts: it may not fit, two games to one place
-    const told = w => w === "may_not_fit" || w === "duplicate_target";
+    const told = w => w === "may_not_fit" || w === "duplicate_target" || w === "no_title_id";
     const warned = going.filter(n => (plans[n].Warnings || []).some(told));
     if (warned.length) {
       $("warn-list").replaceChildren(...warned.map(n => line(plans[n].Item.Name, plans[n].Warnings.filter(told).map(w => t("warn_" + w)).join(" · "))));
@@ -786,11 +798,11 @@ function showDone(job, summary) {
   $("done-top-block").hidden = !top.length;
   $("done-next-block").hidden = !summary.Done;
   $("done-next").textContent = nextStep(job);
-  // the games made without the runtime they need are said again, at the end
-  const lacking = job.section === "compress" && !job.runtime
-    ? job.rows.filter(row => row.state === "ok" && row.game && !row.game.HasZstdRuntime).length : 0;
+  // the games made without a runtime that reads zstd are said again, at the end: none was given
+  // (the dump has none and Ajustes neither), or the one of Ajustes does not read zstd
+  const lacking = job.section === "compress" ? summary.NoZstdRuntime || 0 : 0;
   $("done-runtime").hidden = !lacking;
-  $("done-runtime").textContent = lacking ? t("doneNoRuntime")(lacking) : "";
+  $("done-runtime").textContent = lacking ? (job.runtime ? t("doneRuntimeWrong")(lacking) : t("doneNoRuntime")(lacking)) : "";
   const dialog = $("done-dialog");
   dialog.classList.toggle("failed", !summary.Done);
   if (!dialog.open) dialog.showModal();
@@ -908,7 +920,8 @@ async function main() {
   state.lang = state.settings.Lang === "en" ? "en" : "es";
   tellCloseTexts();
   applyTheme();
-  banner(state.setup && state.setup.coreError ? t("coreMissing") + " " + state.setup.coreError : "");
+  const setup = state.setup;
+  banner(setup && setup.coreError ? (setup.coreOtherVersion ? coreText(setup) : t("coreMissing") + " " + setup.coreError) : "");
   render();
   addSent(await go.call("PendingFiles").catch(() => null));
 }

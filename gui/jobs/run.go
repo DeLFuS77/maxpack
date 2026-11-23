@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/DeLFuS77/maxpack/gui/core"
@@ -35,9 +36,11 @@ type TopItem struct {
 	Saved         uint64
 }
 
-// Summary is what a queue did.
+// Summary is what a queue did. NoZstdRuntime are the games done that will not start until given
+// a libSceAmpr.sprx that reads zstd (they have none, or one that does not).
 type Summary struct {
 	Done, Failed, Skipped, Cancelled int
+	NoZstdRuntime                    int
 	Saved                            uint64
 	Top                              []TopItem
 	Duration                         time.Duration
@@ -113,6 +116,9 @@ func (r *Runner) Run(ctx context.Context, plans []Plan, o Options) Summary {
 		switch state {
 		case StateOK:
 			sum.Done++
+			if hasPart(detail, "runtime_without_zstd") {
+				sum.NoZstdRuntime++
+			}
 			sum.Saved += saved
 			if saved > 0 {
 				sum.Top = append(sum.Top, TopItem{Name: p.Item.Name, TitleID: p.Item.TitleID, Saved: saved})
@@ -187,6 +193,11 @@ func (r *Runner) one(ctx context.Context, i int, p Plan, o Options) (saved uint6
 	if !ok {
 		return 0, endState(false, failure), discard(failure)
 	}
+	// made, but with a runtime that does not read zstd it will not start: said, and it goes on
+	var notes []string
+	if bad, _ := result.Raw["runtime_without_zstd"].(bool); bad && compress {
+		notes = append(notes, "runtime_without_zstd")
+	}
 	// "unpack --original" already checks every file against its SHA-256; "unpack --folder"
 	// only writes the files, so what replaces an old copy is verified first
 	if compress || (o.Mode == ModeConsole && p.Tmp != "") {
@@ -212,10 +223,10 @@ func (r *Runner) one(ctx context.Context, i int, p Plan, o Options) (saved uint6
 			return 0, StateError, discard("swap_failed: " + err.Error())
 		}
 		if leftover {
-			return saved, StateOK, "old_not_deleted: " + p.Out + ".maxpack-old"
+			notes = append(notes, "old_not_deleted: "+p.Out+".maxpack-old")
 		}
 	}
-	return saved, StateOK, ""
+	return saved, StateOK, strings.Join(notes, "; ")
 }
 
 // What an output is before a game starts.
@@ -255,6 +266,16 @@ func emptyFolder(path string) error {
 		}
 	}
 	return first
+}
+
+// hasPart tells whether a detail ("code; code: path; ...") has the code.
+func hasPart(detail, code string) bool {
+	for _, part := range strings.Split(detail, "; ") {
+		if part == code || strings.HasPrefix(part, code+": ") {
+			return true
+		}
+	}
+	return false
 }
 
 func endState(ok bool, failure string) string {

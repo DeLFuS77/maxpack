@@ -6,6 +6,7 @@ package main
 // are, the plans of a queue, and the queue itself.
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"errors"
@@ -411,12 +412,48 @@ func (a *App) ChooseDest() (string, error) {
 }
 
 // ChooseRuntime asks for the libSceAmpr.sprx of ampr-emu-ng that reads zstd, for the dumps that
-// do not carry one; "" when none is chosen.
+// do not carry one; "" when none is chosen. One that does not read zstd is refused (the error
+// starts with "runtime_not_zstd", which the page says in its language): a game given it would
+// pack, verify and not start.
 func (a *App) ChooseRuntime() (string, error) {
 	if a.ctx == nil {
 		return "", errNoWindow
 	}
-	return wailsruntime.OpenFileDialog(a.ctx, wailsruntime.OpenDialogOptions{
+	open := wailsruntime.OpenFileDialog
+	if a.openFile != nil {
+		open = a.openFile
+	}
+	path, err := open(a.ctx, wailsruntime.OpenDialogOptions{
 		Filters: []wailsruntime.FileFilter{{DisplayName: "libSceAmpr.sprx", Pattern: "*.sprx"}},
 	})
+	if err != nil || path == "" {
+		return "", err
+	}
+	if err := readsZstd(path); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+// runtimeMax is the most a libSceAmpr.sprx may take, as the engine takes it.
+const runtimeMax = 64 << 20
+
+// readsZstd tells whether a libSceAmpr.sprx reads the packs zstd: the one of ampr-emu-ng carries
+// the mark AMPRZPK1, as the engine looks for it.
+func readsZstd(path string) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	if info.IsDir() || info.Size() == 0 || info.Size() > runtimeMax {
+		return fmt.Errorf("runtime_not_zstd: %s no parece un libSceAmpr.sprx (%d bytes)", path, info.Size())
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	if !bytes.Contains(data, []byte("AMPRZPK1")) {
+		return fmt.Errorf("runtime_not_zstd: %s no lee zstd: no es el libSceAmpr.sprx de ampr-emu-ng", path)
+	}
+	return nil
 }

@@ -724,3 +724,44 @@ func TestOutWithContentNeverTouched(t *testing.T) {
 		}
 	}
 }
+
+// A game packed with a runtime that does not read zstd (none, or a wrong one) is made, but says
+// that it will not start; the summary counts it. With the runtime of ampr-emu-ng it says nothing.
+func TestRuntimeWithoutZstdWarned(t *testing.T) {
+	engine, fixtures := needCore(t)
+	it := describe(t, engine, filepath.Join(fixtures, "basic.exfat"))
+	if it.HasZstdRuntime {
+		t.Fatal("el dump de prueba trae runtime")
+	}
+	good := filepath.Join(t.TempDir(), "bueno.sprx")
+	os.WriteFile(good, append(bytes.Repeat([]byte{7}, 100), []byte("AMPRZPK1 resto")...), 0o644)
+	wrong := filepath.Join(t.TempDir(), "viejo.sprx")
+	os.WriteFile(wrong, bytes.Repeat([]byte{7}, 200), 0o644)
+	for _, c := range []struct {
+		runtime string
+		warned  bool
+	}{{"", true}, {wrong, true}, {good, false}} {
+		o := Options{Mode: ModeP5z, Dest: t.TempDir(), Level: 1, Runtime: c.runtime}
+		on, state, detail := lastDetail()
+		sum := (&Runner{Core: engine, OnItem: on}).Run(context.Background(), PlanCompress([]Item{it}, o, newFS()), o)
+		warned := strings.Contains(*detail, "runtime_without_zstd")
+		if sum.Done != 1 || *state != StateOK || warned != c.warned || (sum.NoZstdRuntime == 1) != c.warned {
+			t.Errorf("runtime %q: %+v, %s %q", c.runtime, sum, *state, *detail)
+		}
+	}
+}
+
+// A .p5z needs the TITLE_ID: the installer refuses one without it. A dump whose param.json does
+// not give it is warned of before it starts; a folder is named after its folder all the same.
+func TestNoTitleIdWarned(t *testing.T) {
+	dest := t.TempDir()
+	it := item("Sin ID", "", 10)
+	p := PlanCompress([]Item{it}, Options{Mode: ModeP5z, Dest: dest}, newFS())[0]
+	if !hasWarning(p, "no_title_id") || p.Block != "" {
+		t.Errorf("p5z: %v %q", p.Warnings, p.Block)
+	}
+	p = PlanCompress([]Item{item("Con ID", "TEST00001", 10)}, Options{Mode: ModeP5z, Dest: dest}, newFS())[0]
+	if hasWarning(p, "no_title_id") {
+		t.Errorf("con ID: %v", p.Warnings)
+	}
+}

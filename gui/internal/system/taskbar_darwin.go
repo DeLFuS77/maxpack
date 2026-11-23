@@ -5,15 +5,23 @@
 package system
 
 /*
+#cgo CFLAGS: -x objective-c
 #cgo LDFLAGS: -framework Cocoa
 #import <Cocoa/Cocoa.h>
 #include <stdlib.h>
+#include <string.h>
 
-// dockBadge puts the text on the icon of the Dock, on the main thread; "" clears it.
+// dockBadge puts the text on the icon of the Dock, on the main thread; "" clears it. The text is
+// copied, as the caller frees its own before the block runs, and the string is made inside a
+// pool of its own: this runs on a thread of Go, which has none.
 static void dockBadge(const char *text) {
-	NSString *label = [NSString stringWithUTF8String:text];
+	char *copy = strdup(text);
 	dispatch_async(dispatch_get_main_queue(), ^{
-		[[NSApp dockTile] setBadgeLabel:(label.length > 0 ? label : nil)];
+		@autoreleasepool {
+			NSString *label = [NSString stringWithUTF8String:copy];
+			[[NSApp dockTile] setBadgeLabel:(label.length > 0 ? label : nil)];
+		}
+		free(copy);
 	});
 }
 */

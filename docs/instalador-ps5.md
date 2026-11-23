@@ -21,6 +21,9 @@ jugar, ShadowMountPlus o Kraken Mount.
 
 Si sale "MaxPack ya está en marcha", es que ya estaba cargado: abre la página directamente.
 
+La página solo acepta peticiones que llegan por la IP de la consola y desde la propia página: otra web
+abierta en un móvil o un PC de tu red no puede instalar ni borrar nada.
+
 ## 2. Instalar
 
 1. Conecta un USB con tus juegos. Si un `.p5z` pesa más de 4 GiB, el USB tiene que estar en exFAT.
@@ -37,7 +40,12 @@ Si sale "MaxPack ya está en marcha", es que ya estaba cargado: abre la página 
    instalador te dice qué se borrará y cuánto ocupa, y te pide confirmación. Lo viejo solo se borra
    cuando lo nuevo ya está instalado y verificado.
 4. **Pausar** detiene la instalación sin perder lo hecho. Si se corta (USB quitado, reposo, apagón),
-   pulsa **Instalar** otra vez con el mismo juego: sigue donde se quedó y relee lo ya copiado.
+   aparece en **Instalaciones a medias**:
+   - **Seguir** continúa donde se quedó y relee lo ya copiado;
+   - **Descartar** borra lo copiado hasta entonces.
+
+   Lo que ya ocupa la copia a medias cuenta como espacio disponible al seguir. Si un corte pilla al
+   instalador justo cuando reemplaza un juego, al volver a cargarlo deja el juego viejo en su sitio.
 5. "Borrar el .p5z cuando esté instalado y verificado" relee el juego instalado entero antes de borrar
    el `.p5z`, porque después será la única copia.
 
@@ -105,6 +113,9 @@ Lo que guarda el instalador, siempre fuera de las carpetas de los juegos:
   El instalador llama a `manual/remove` y a `scan`.
 - **P3. Modo reposo.** Comprueba si el instalador sigue cargado después del reposo. Si no, vuelve a
   cargarlo: la instalación sigue donde iba.
+- **P5. USB sin conectar.** Sin ningún USB, comprueba si `/mnt/usb0` sigue existiendo como carpeta vacía.
+  Si es así, la página lo ofrecerá como destino aunque no haya nada conectado. Avísame para que el
+  instalador lo distinga.
 - **P4. El runtime.** Hay que decidir qué copia de ampr-emu-ng lleva el instalador dentro: la de Dump
   Forge o la de Kraken Mount, y qué versión. Mientras tanto se compila sin runtime dentro, y solo se
   instalan `.p5z` empaquetados con `--runtime` y carpetas que ya traen ampr-emu-ng.

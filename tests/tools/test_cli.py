@@ -11,6 +11,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 
 EXE, FX, TMP = sys.argv[1], sys.argv[2], sys.argv[3]
 BASIC = os.path.join(FX, "basic.exfat")
@@ -267,6 +268,58 @@ try:
           "rc=%s %s %s" % (p.returncode, (first + rest)[-300:], errtxt[-200:]))
 except Exception as ex:  # noqa: BLE001
     check("control_stdin_cancel", False, repr(ex))
+
+# Si no se puede borrar lo escrito al cancelar, no dice que no queda nada: dice qué queda. Un
+# archivo abierto (Windows) o una carpeta sin permiso de escritura (los demás) impiden borrarlo.
+hold = os.path.join(TMP, "hold_out")
+held_dir = os.path.join(hold, "sce_sys")
+if os.path.isdir(held_dir):
+    os.chmod(held_dir, 0o755)
+rmtree(hold)
+if os.name == "nt" or os.geteuid() != 0:
+    p = subprocess.Popen([EXE, "pack", BIG, "-o", hold, "--threads", "1", "--progress", "json", "--control", "stdin"],
+                         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    first = p.stdout.readline()
+    holder = None
+    for _ in range(500):
+        try:
+            if os.name == "nt":
+                holder = open(os.path.join(held_dir, "param.json"), "rb")   # sin compartir el borrado
+            else:
+                os.stat(os.path.join(held_dir, "param.json"))
+                os.chmod(held_dir, 0o555)
+                holder = True
+            break
+        except OSError:
+            time.sleep(0.01)
+    p.stdin.write(b"cancel\n")
+    p.stdin.flush()
+    rest = p.stdout.read()
+    errtxt = p.stderr.read().decode("utf-8", "replace")
+    p.wait()
+    if os.name == "nt" and holder:
+        holder.close()
+    if os.path.isdir(held_dir):
+        os.chmod(held_dir, 0o755)
+    left = os.path.exists(os.path.join(held_dir, "param.json"))
+    check("cancel_sin_poder_borrar_dice_que_queda",
+          holder is not None and p.returncode == 130 and left and "no queda nada escrito" not in errtxt
+          and "queda a medias" in errtxt and hold in errtxt,
+          "rc=%s holder=%s left=%s %s" % (p.returncode, holder is not None, left, errtxt[-400:]))
+    rmtree(hold)
+
+# Si quien lanzó el motor se va (cierra su lectura y stdin), el motor cancela y limpia: no muere
+# al escribir en una tubería cerrada.
+gone = os.path.join(TMP, "gone_out")
+rmtree(gone)
+p = subprocess.Popen([EXE, "pack", BIG, "-o", gone, "--threads", "2", "--progress", "json", "--control", "stdin"],
+                     stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+p.stdout.readline()
+p.stdout.close()
+p.stderr.close()
+p.stdin.close()
+p.wait()
+check("ventana_ida_motor_limpia", p.returncode == 130 and not os.path.exists(gone), "rc=%s" % p.returncode)
 
 # Cerrar stdin también cancela.
 cdst2 = os.path.join(TMP, "cancel_out2")

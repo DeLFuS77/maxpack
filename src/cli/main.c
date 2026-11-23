@@ -10,6 +10,7 @@
 #include <fcntl.h>
 #include <io.h>
 #else
+#include <signal.h>
 #include <unistd.h>
 #endif
 
@@ -118,6 +119,10 @@ static void control_thread(void *arg) {
 }
 
 static void start_json_and_control(void) {
+#ifndef _WIN32
+    // si quien nos lanzó se va, escribir en su tubería no debe matarnos antes de limpiar
+    if (g_json || g_control) signal(SIGPIPE, SIG_IGN);
+#endif
     if (g_json) {
 #ifdef _WIN32
         _setmode(_fileno(stdout), _O_BINARY);   // líneas con \n, sin \r
@@ -142,25 +147,52 @@ static int finish_cmd(int rc) {
 }
 
 // Deja la salida como estaba antes: la borra si no existía, o vacía su contenido si era una
-// carpeta vacía.
+// carpeta vacía. Devuelve 0, o -1 con el porqué en e si algo no se pudo borrar (se intenta todo).
+typedef struct {
+    const char *dir;
+    int failed;
+    mp_err *e;
+} rm_ctx;
+
 static int rm_entry_cb(void *ctx, const char *name, int is_dir, uint64_t size) {
     (void)is_dir;
     (void)size;
-    const char *dir = ctx;
-    size_t n = strlen(dir) + strlen(name) + 2;
+    rm_ctx *c = ctx;
+    size_t n = strlen(c->dir) + strlen(name) + 2;
     char *full = malloc(n);
-    if (!full) return 0;
-    snprintf(full, n, "%s/%s", dir, name);
-    mp_remove_tree(full, NULL);
+    if (!full) {
+        if (!c->failed) mp_err_set(c->e, "sin memoria");
+        c->failed = 1;
+        return 0;
+    }
+    snprintf(full, n, "%s/%s", c->dir, name);
+    mp_err one = {{0}};
+    if (mp_remove_tree(full, &one) != 0) {
+        if (!c->failed) mp_err_set(c->e, "%s", one.msg);
+        c->failed = 1;
+    }
     free(full);
     return 0;
 }
 
-static void clean_output(const char *dst, int existed) {
-    if (!existed)
-        mp_remove_tree(dst, NULL);
-    else if (mp_path_kind(dst) == 2)
-        mp_dir_list(dst, rm_entry_cb, (void *)dst, NULL);
+static int clean_output(const char *dst, int existed, mp_err *e) {
+    if (!existed) return mp_remove_tree(dst, e);
+    if (mp_path_kind(dst) != 2) return 0;
+    rm_ctx c = {dst, 0, e};
+    if (mp_dir_list(dst, rm_entry_cb, &c, e) != 0) return -1;
+    return c.failed ? -1 : 0;
+}
+
+// Tras un fallo: el error y qué queda en dst. left es si no se pudo borrar lo escrito, y why, el
+// porqué.
+static void say_left(const char *msg, const char *dst, int left, const char *why) {
+    fprintf(stderr, "\nerror: %s\n", msg);
+    if (!left)
+        fprintf(stderr, "(no queda nada escrito en %s)\n", dst);
+    else if (why && why[0])
+        fprintf(stderr, "(no se pudo borrar lo escrito: queda a medias en %s; %s)\n", dst, why);
+    else
+        fprintf(stderr, "(no se pudo borrar lo escrito: queda a medias en %s)\n", dst);
 }
 
 static int sum_cb(void *ctx, const char *rel, int is_dir, uint64_t size, int64_t mtime) {
@@ -485,9 +517,14 @@ static int run_pack(int argc, char **argv) {
     out.destroy(out.ctx);
     free(keep);
     if (rc != 0) {
-        if (!p5z) clean_output(dst, existed);   // el .p5z a medias ya lo borra el escritor
         if (too_big) g_err_code = "too_big";
-        fprintf(stderr, "\nerror: %s\n(no queda nada escrito en %s)\n", e.msg, dst);
+        mp_err why = {{0}};
+        int left;
+        if (p5z)
+            left = mp_path_kind(dst) != 0;   // el .p5z a medias lo borra el escritor al destruirse
+        else
+            left = clean_output(dst, existed, &why) != 0;
+        say_left(e.msg, dst, left, why.msg);
         return 1;
     }
     FILE *hum = g_json ? stderr : stdout;   // con --progress json, stdout es solo JSON
@@ -704,8 +741,9 @@ static int run_unpack(int argc, char **argv) {
     int rc = mode == 1 ? mp_unpack_folder(p, dst, threads, 1, &e) : mp_unpack_original(p, dst, threads, 1, &e);
     mp_p5z_close(p);
     if (rc != 0) {
-        clean_output(dst, existed);
-        fprintf(stderr, "\nerror: %s\n(no queda nada escrito en %s)\n", e.msg, dst);
+        mp_err why = {{0}};
+        int left = clean_output(dst, existed, &why) != 0;
+        say_left(e.msg, dst, left, why.msg);
         return 1;
     }
     FILE *hum = g_json ? stderr : stdout;

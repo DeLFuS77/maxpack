@@ -41,8 +41,12 @@ void mp_inst_env_default(mp_inst_env *env);
 int mp_inst_title_ok(const char *title_id);   // 1 si son 4 letras A-Z y 5 dígitos
 size_t mp_inst_drives(const mp_inst_env *env, const char **out, size_t max);   // las que existen
 
+enum { MP_SRC_P5Z = 0, MP_SRC_FOLDER, MP_SRC_IMAGE };
+
 typedef struct {
     char *path;
+    int kind;     // MP_SRC_*
+    int packed;   // carpeta (o imagen exFAT) con packs zstd: ampr_zstd.index en la raíz
     char title_id[16], version[16], name[128];
     uint64_t p5z_size, install_size;   // install_size = lo que ocupará la carpeta instalada
     uint64_t original_size;            // lo que ocupaba el dump original
@@ -50,8 +54,12 @@ typedef struct {
 } mp_inst_found;
 
 int mp_inst_probe(const char *p5z_path, mp_inst_found *out, mp_err *e);   // abre y valida
-// .p5z en la raíz y un nivel por debajo de cada unidad, y en <internal>/maxpack/. Los que no se
-// pueden abrir se saltan (con notify).
+// .p5z, carpeta de juego (con sce_sys/param.json) o imagen .exfat/.ffpkg/.ffpfs/.ffpfsc. En
+// .ffpkg/.ffpfs/.ffpfsc el TITLE_ID sale del nombre del archivo. Fuera de un .p5z, archive_id queda
+// a cero y p5z_size = install_size = original_size = lo que se copia.
+int mp_inst_probe_any(const char *path, mp_inst_found *out, mp_err *e);
+// .p5z, carpetas de juego e imágenes en la raíz y un nivel por debajo de cada unidad, y .p5z en
+// <internal>/maxpack/. Los que no se pueden abrir se saltan (con notify).
 int mp_inst_scan(const mp_inst_env *env, mp_inst_found **out, size_t *n, mp_err *e);
 void mp_inst_found_free(mp_inst_found *v, size_t n);
 

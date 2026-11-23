@@ -7,6 +7,7 @@
 #include "mp_inst_internal.h"
 #include "mp_p5z_internal.h"
 #include "mp_platform.h"
+#include "mp_source.h"
 
 static const char *const ps5_drives[] = {"/mnt/usb0", "/mnt/usb1", "/mnt/usb2", "/mnt/usb3", "/mnt/usb4",
                                          "/mnt/usb5", "/mnt/usb6", "/mnt/usb7", "/mnt/ext0", "/mnt/ext1"};
@@ -64,6 +65,101 @@ int mp_inst_probe(const char *path, mp_inst_found *out, mp_err *e) {
     return 0;
 }
 
+static int is_image(const char *name) {
+    return mpi_has_ext(name, ".exfat") || mpi_has_ext(name, ".ffpkg") || mpi_has_ext(name, ".ffpfs") ||
+           mpi_has_ext(name, ".ffpfsc");
+}
+
+// Primer AAAA00000 del nombre (sin distinguir mayúsculas).
+static int title_from_name(const char *name, char id[16]) {
+    size_t n = strlen(name);
+    for (size_t i = 0; i + 9 <= n; i++) {
+        char t[10];
+        for (int k = 0; k < 9; k++) {
+            char c = name[i + (size_t)k];
+            t[k] = (char)(c >= 'a' && c <= 'z' ? c - 32 : c);
+        }
+        t[9] = 0;
+        if (mp_inst_title_ok(t)) {
+            memcpy(id, t, 10);
+            return 0;
+        }
+    }
+    return -1;
+}
+
+static const char *base_name(const char *p) {
+    const char *s = strrchr(p, '/');
+    return s ? s + 1 : p;
+}
+
+// param.json de una imagen exFAT (con el lector de la fase 0).
+static int exfat_param(const char *path, char id[16], char ver[16], char name[128], int *packed) {
+    mp_source *s = NULL;
+    if (mp_source_open(path, &s, NULL) != 0) return -1;
+    *packed = mp_source_find(s, "ampr_zstd.index") >= 0;
+    long k = mp_source_find(s, "sce_sys/param.json");
+    int rc = -1;
+    if (k >= 0 && mp_source_entry(s, (size_t)k)->size <= (1u << 20)) {
+        size_t n = (size_t)mp_source_entry(s, (size_t)k)->size;
+        char *buf = malloc(n + 1);
+        if (buf && mp_source_read(s, (size_t)k, 0, buf, n, NULL) == 0) rc = mpi_param_parse(buf, n, id, ver, name);
+        free(buf);
+    }
+    mp_source_close(s);
+    return rc;
+}
+
+int mp_inst_probe_any(const char *path, mp_inst_found *out, mp_err *e) {
+    int kind = mp_path_kind(path);
+    if (kind == 1 && mpi_has_ext(path, ".p5z")) {
+        if (mp_inst_probe(path, out, e) != 0) return -1;
+        out->kind = MP_SRC_P5Z;
+        out->packed = 1;
+        return 0;
+    }
+    memset(out, 0, sizeof *out);
+    if (kind == 2) {
+        char *pj = mpi_join(path, "sce_sys/param.json"), *buf = NULL, *zi = mpi_join(path, "ampr_zstd.index");
+        size_t n = 0;
+        int ok = pj && mp_path_kind(pj) == 1 && mpi_read_small(pj, 1u << 20, &buf, &n, NULL) == 0 &&
+                 mpi_param_parse(buf, n, out->title_id, out->version, out->name) == 0;
+        out->packed = zi && mp_path_kind(zi) == 1;
+        free(pj);
+        free(buf);
+        free(zi);
+        if (!ok || !mp_inst_title_ok(out->title_id)) {
+            mp_err_set(e, "%s no es una carpeta de juego (falta sce_sys/param.json con un titleId válido)", path);
+            return -1;
+        }
+        out->kind = MP_SRC_FOLDER;
+    } else if (kind == 1 && is_image(path)) {
+        out->kind = MP_SRC_IMAGE;
+        if (mpi_has_ext(path, ".exfat")) {
+            if (exfat_param(path, out->title_id, out->version, out->name, &out->packed) != 0 ||
+                !mp_inst_title_ok(out->title_id)) {
+                mp_err_set(e, "%s: no se pudo leer su sce_sys/param.json", path);
+                return -1;
+            }
+        } else if (title_from_name(base_name(path), out->title_id) != 0) {
+            mp_err_set(e, "no se sabe qué juego es %s: añade su ID (por ejemplo PPSA12544) al nombre del archivo",
+                       base_name(path));
+            return -1;
+        }
+        if (!out->name[0]) snprintf(out->name, sizeof out->name, "%s", base_name(path));
+    } else {
+        mp_err_set(e, "%s no es un .p5z, una carpeta de juego ni una imagen", path);
+        return -1;
+    }
+    out->install_size = out->p5z_size = out->original_size = mpi_tree_size(path);
+    out->path = mp_strdup(path);
+    if (!out->path) {
+        mp_err_set(e, "sin memoria");
+        return -1;
+    }
+    return 0;
+}
+
 void mp_inst_found_free(mp_inst_found *v, size_t n) {
     if (!v) return;
     for (size_t i = 0; i < n; i++) free(v[i].path);
@@ -113,7 +209,7 @@ typedef struct {
 static void add_found(found_list *fl, const char *path) {
     mp_inst_found f;
     mp_err e = {{0}};
-    if (mp_inst_probe(path, &f, &e) != 0) {
+    if (mp_inst_probe_any(path, &f, &e) != 0) {
         if (fl->env->notify) {
             char msg[700];
             snprintf(msg, sizeof msg, "Se salta %s: %s", path, e.msg);
@@ -135,8 +231,17 @@ static void add_found(found_list *fl, const char *path) {
     fl->v[fl->n++] = f;
 }
 
-// .p5z de dir y, si depth > 0, de sus subcarpetas (salvo la temporal del instalador).
-static void scan_dir(found_list *fl, const char *dir, int depth) {
+static int has_param(const char *dir) {
+    char *p = mpi_join(dir, "sce_sys/param.json");
+    int ok = p && mp_path_kind(p) == 1;
+    free(p);
+    return ok;
+}
+
+// Lo instalable de dir y, si depth > 0, de sus subcarpetas (salvo la temporal del instalador).
+// Una carpeta con sce_sys/param.json es un juego: se ofrece entera y no se entra en ella.
+// files_only: solo .p5z (en <internal>/maxpack).
+static void scan_dir(found_list *fl, const char *dir, int depth, int files_only) {
     names l = {0};
     if (mp_dir_list(dir, names_cb, &l, NULL) != 0) {
         names_free(&l);
@@ -148,8 +253,12 @@ static void scan_dir(found_list *fl, const char *dir, int depth) {
             fl->oom = 1;
             break;
         }
-        if (!l.is_dir[i] && mpi_has_ext(l.names[i], ".p5z")) add_found(fl, p);
-        else if (l.is_dir[i] && depth > 0 && strcmp(l.names[i], "maxpack-tmp") != 0) scan_dir(fl, p, depth - 1);
+        if (!l.is_dir[i]) {
+            if (mpi_has_ext(l.names[i], ".p5z") || (!files_only && is_image(l.names[i]))) add_found(fl, p);
+        } else if (!files_only && strcmp(l.names[i], "maxpack-tmp") != 0) {
+            if (has_param(p)) add_found(fl, p);
+            else if (depth > 0) scan_dir(fl, p, depth - 1, 0);
+        }
         free(p);
     }
     names_free(&l);
@@ -165,9 +274,9 @@ int mp_inst_scan(const mp_inst_env *env, mp_inst_found **out, size_t *n, mp_err 
     found_list fl = {env, NULL, 0, 0, 0};
     const char *drives[16];
     size_t nd = mp_inst_drives(env, drives, 16);
-    for (size_t i = 0; i < nd; i++) scan_dir(&fl, drives[i], 1);
+    for (size_t i = 0; i < nd; i++) scan_dir(&fl, drives[i], 1, 0);
     char *mine = mpi_join(env->internal, "maxpack");
-    if (mine) scan_dir(&fl, mine, 0);   // sin bajar: dentro están tmp/, state/ e installed/
+    if (mine) scan_dir(&fl, mine, 0, 1);   // solo .p5z: dentro están tmp/, state/ e installed/
     free(mine);
     if (fl.oom || !mine) {
         mp_inst_found_free(fl.v, fl.n);
@@ -234,7 +343,16 @@ static void scan_root(ex_list *x, const char *root, const char *title_id) {
             }
     }
     for (size_t i = 0; i < l.n && !x->oom; i++) {
-        if (!l.is_dir[i]) continue;
+        if (!l.is_dir[i]) {   // una imagen con el ID en el nombre es una copia del juego
+            char id[16];
+            if (is_image(l.names[i]) && title_from_name(l.names[i], id) == 0 && !strcmp(id, title_id)) {
+                char *p = mpi_join(root, l.names[i]);
+                if (!p) x->oom = 1;
+                else add_existing(x, p);
+                free(p);
+            }
+            continue;
+        }
         char *p = mpi_join(root, l.names[i]);
         char id[16];
         if (!p) {

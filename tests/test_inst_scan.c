@@ -189,7 +189,102 @@ MP_TEST(record_roundtrip) {
     MP_CHECK(mp_inst_record_load(&env, "../x", &back, &e2) == -1);
 }
 
+static const char *kcands[] = {TMP "/usbk"};
+
+static mp_inst_env kinds_env(void) {
+    mp_inst_env env;
+    mp_inst_env_default(&env);
+    env.internal = TMP "/datak";
+    env.drive_candidates = kcands;
+    env.ndrive_candidates = 1;
+    return env;
+}
+
+static const mp_inst_found *find_found(const mp_inst_found *v, size_t n, const char *path) {
+    for (size_t i = 0; i < n; i++)
+        if (!strcmp(v[i].path, path)) return &v[i];
+    return NULL;
+}
+
+MP_TEST(scan_kinds) {
+    setup();
+    mpt_clear(TMP "/usbk");
+    mpt_clear(TMP "/datak");
+    mp_err e = {{0}};
+    mp_make_dirs(TMP "/datak", &e);
+    mpt_put_text(TMP "/usbk/Juego/sce_sys/param.json", "{\"titleId\":\"TEST00003\",\"contentVersion\":\"01.000.000\"}");
+    mpt_put_text(TMP "/usbk/Juego/eboot.bin", "eboot del juego");
+    mpt_copy_file(MPT_BASIC, TMP "/usbk/basic.exfat");
+    static char junk[1 << 20];
+    for (size_t i = 0; i < sizeof junk; i++) junk[i] = (char)(i * 7);
+    mpt_put(TMP "/usbk/x/Silksong-PPSA12544.ffpkg", junk, sizeof junk);
+    mpt_put(TMP "/usbk/sinid.ffpfsc", junk, 1000);
+    mp_inst_env env = kinds_env();
+    mp_inst_found *v = NULL;
+    size_t n = 0;
+    MP_CHECK(mp_inst_scan(&env, &v, &n, &e) == 0);
+    MP_CHECK_EQ_U64(n, 3);
+    const mp_inst_found *a = find_found(v, n, TMP "/usbk/Juego");
+    const mp_inst_found *b = find_found(v, n, TMP "/usbk/basic.exfat");
+    const mp_inst_found *c = find_found(v, n, TMP "/usbk/x/Silksong-PPSA12544.ffpkg");
+    MP_CHECK(a && b && c);
+    if (a) {
+        MP_CHECK(a->kind == MP_SRC_FOLDER);
+        MP_CHECK_STR(a->title_id, "TEST00003");
+        MP_CHECK_EQ_U64(a->install_size, mpt_dir_size(TMP "/usbk/Juego"));
+    }
+    if (b) {
+        MP_CHECK(b->kind == MP_SRC_IMAGE);
+        MP_CHECK_STR(b->title_id, "TEST00001");
+        MP_CHECK_STR(b->version, "01.000.000");
+    }
+    if (c) {
+        MP_CHECK(c->kind == MP_SRC_IMAGE);
+        MP_CHECK_STR(c->title_id, "PPSA12544");
+        MP_CHECK_EQ_U64(c->install_size, sizeof junk);
+    }
+    mp_inst_found_free(v, n);
+    mp_inst_found f;
+    mp_err e2 = {{0}};
+    MP_CHECK(mp_inst_probe_any(TMP "/usbk/sinid.ffpfsc", &f, &e2) == -1);
+    MP_CHECK_CONTAINS(e2.msg, "nombre");
+    MP_CHECK(mp_inst_probe_any(TMP "/basic.p5z", &f, &e2) == 0 && f.kind == MP_SRC_P5Z);
+    free(f.path);
+}
+
+MP_TEST(probe_any_packed) {
+    setup();
+    mpt_pack(MPT_BASIC, TMP "/packed_dir", 0, NULL);
+    mp_inst_found f;
+    mp_err e = {{0}};
+    MP_CHECK(mp_inst_probe_any(TMP "/packed_dir", &f, &e) == 0);
+    MP_CHECK(f.kind == MP_SRC_FOLDER && f.packed == 1);
+    free(f.path);
+    MP_CHECK(mp_inst_probe_any(TMP "/usbk/Juego", &f, &e) == 0);
+    MP_CHECK(f.kind == MP_SRC_FOLDER && f.packed == 0);
+    free(f.path);
+}
+
+MP_TEST(existing_images) {
+    setup();
+    char junk[4096] = {1};
+    mpt_put(TMP "/datak/homebrew/Silksong-PPSA12544.ffpkg", junk, sizeof junk);
+    mp_inst_env env = kinds_env();
+    mp_inst_existing *v = NULL;
+    size_t n = 0;
+    mp_err e = {{0}};
+    MP_CHECK(mp_inst_find_existing(&env, "PPSA12544", NULL, 0, &v, &n, &e) == 0);
+    int seen = 0;
+    for (size_t i = 0; i < n; i++)
+        if (!strcmp(v[i].path, TMP "/datak/homebrew/Silksong-PPSA12544.ffpkg")) seen = v[i].is_file == 1 && v[i].size == 4096;
+    MP_CHECK(seen);
+    mp_inst_existing_free(v, n);
+}
+
 int main(void) {
+    MP_RUN(scan_kinds);
+    MP_RUN(probe_any_packed);
+    MP_RUN(existing_images);
     MP_RUN(scan_depth);
     MP_RUN(drives_only_existing);
     MP_RUN(probe_rejects);

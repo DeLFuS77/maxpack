@@ -158,7 +158,7 @@ static int flush_frames(p5out *o, int last, mp_err *e) {
     }
     if (!nj) return 0;
     if (mp_parallel_run(o->threads, nj, frame_work, o, NULL) != 0) {
-        mp_err_set(e, "error al comprimir para el .p5z");
+        if (mp_cancel_check(e) == 0) mp_err_set(e, "error al comprimir para el .p5z");
         return -1;
     }
     for (size_t j = 0; j < nj; j++) {
@@ -196,6 +196,7 @@ static int f_write(void *ctx, const void *p, size_t n, mp_err *e) {
     const uint8_t *b = p;
     size_t cap = (size_t)o->threads * MP_LONG_FRAME;
     while (n) {
+        if (mp_cancel_check(e) != 0) return -1;
         size_t k = cap - o->npend < n ? cap - o->npend : n;
         memcpy(o->pend + o->npend, b, k);
         o->npend += k;

@@ -129,6 +129,7 @@ int mp_zpk_write(mp_source *src, const uint32_t *files, size_t n, const mp_zpk_o
     int64_t cur_vol = -1;
     if (n) mp_sha256_init(&shs[0]);
     while (fi < n) {
+        if (mp_cancel_check(e) != 0) goto done;
         // 1. Leer un lote (puede cruzar archivos) y actualizar los SHA-256.
         size_t nb = 0;
         uint64_t first_g = gchunk;
@@ -152,7 +153,7 @@ int mp_zpk_write(mp_source *src, const uint32_t *files, size_t n, const mp_zpk_o
         if (!nb) break;
         // 2. Comprimir en paralelo.
         if (mp_parallel_run(threads, nb, compress_work, &cs, NULL) != 0) {
-            mp_err_set(e, "error al comprimir");
+            if (mp_cancel_check(e) == 0) mp_err_set(e, "error al comprimir");
             goto done;
         }
         // 3. Escribir en orden, abriendo volúmenes cuando el actual se llena.

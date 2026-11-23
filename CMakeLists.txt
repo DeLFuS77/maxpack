@@ -197,6 +197,7 @@ if(MAXPACK_BUILD_TESTS)
   set_tests_properties(test_pack PROPERTIES TIMEOUT 600)
   mp_add_test(test_p5z FIXTURES)
   mp_add_test(test_unpack FIXTURES)
+  mp_add_test(test_cancel FIXTURES)
   mp_add_test(test_verify FIXTURES)
   mp_add_test(test_malformed FIXTURES)
   add_test(NAME test_cli COMMAND ${Python3_EXECUTABLE} -I

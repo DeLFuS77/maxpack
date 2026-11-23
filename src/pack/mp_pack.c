@@ -87,6 +87,7 @@ static int copy_file(mp_source *src, size_t i, const char *rel, int role, mp_pac
     mp_sha256_init(&s);
     for (uint64_t off = 0; off < en->size; off += COPY_PIECE) {
         size_t k = en->size - off < COPY_PIECE ? (size_t)(en->size - off) : COPY_PIECE;
+        if (mp_cancel_check(e) != 0) return -1;
         if (mp_source_read(src, i, off, buf, k, e) != 0 || out->file_write(out->ctx, buf, k, e) != 0) return -1;
         mp_sha256_update(&s, buf, k);
         mp_progress_add(prog, k);
@@ -274,7 +275,8 @@ int mp_pack_run(const char *src_path, mp_pack_out *out, const mp_pack_opts *o, m
     mp_progress_init(&prog, "Copiando los sueltos", loose_total, o->progress);
     for (size_t i = 0; i < n && rc == -1; i++) {
         if (role[i] != MP_ROLE_LOOSE) continue;
-        if (copy_file(src, i, man.v[i].path, MP_ROLE_LOOSE, out, buf, man.v[i].sha, &prog, e) != 0) {
+        if (mp_cancel_check(e) != 0 ||
+            copy_file(src, i, man.v[i].path, MP_ROLE_LOOSE, out, buf, man.v[i].sha, &prog, e) != 0) {
             mp_progress_free(&prog);
             goto done;
         }
@@ -311,6 +313,7 @@ int mp_pack_run(const char *src_path, mp_pack_out *out, const mp_pack_opts *o, m
     }
 
     // 6. ampr_emu.index, runtime y originales reemplazados.
+    if (mp_cancel_check(e) != 0) goto done;
     if (put_buffer(out, "ampr_emu.index", MP_ROLE_IDX3, idx3, idx3_len, gen_mtime, e) != 0) goto done;
     if (rt && put_buffer(out, RUNTIME_PATH, MP_ROLE_RUNTIME, rt, rt_len, rt_mtime, e) != 0) goto done;
     for (size_t i = 0; i < n; i++)
@@ -323,7 +326,7 @@ int mp_pack_run(const char *src_path, mp_pack_out *out, const mp_pack_opts *o, m
         goto done;
     man.n = n;
     man.level = o->level;
-    if (out->finish(out->ctx, &man, e) != 0) goto done;
+    if (mp_cancel_check(e) != 0 || out->finish(out->ctx, &man, e) != 0) goto done;
     rc = 0;
     goto done;
 oom:

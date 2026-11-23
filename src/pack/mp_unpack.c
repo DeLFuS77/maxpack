@@ -45,7 +45,10 @@ static char *out_path(const char *dir, const char *rel, mp_err *e) {
     return p;
 }
 
-static int to_wfile(void *ctx, const void *p, size_t n, mp_err *e) { return mp_wfile_write(ctx, p, n, e); }
+static int to_wfile(void *ctx, const void *p, size_t n, mp_err *e) {
+    if (mp_cancel_check(e) != 0) return -1;
+    return mp_wfile_write(ctx, p, n, e);
+}
 
 static int write_stored(mp_p5z *p, size_t fi, const char *dir, const char *rel, int64_t mtime,
                         mp_progress *prog, mp_err *e) {
@@ -74,6 +77,7 @@ int mp_unpack_folder(mp_p5z *p, const char *out_dir, unsigned threads, int progr
     for (size_t i = 0; i < p->nfiles && !rc; i++)
         if (p->files[i].role != MP_ROLE_ORIGINAL)
             rc = write_stored(p, i, out_dir, p->files[i].path, p->files[i].mtime, &prog, e);
+    if (!rc) rc = mp_cancel_check(e);
     if (!rc && progress) fprintf(stderr, "\rExtrayendo la carpeta: 100.0 %%\n");
     mp_progress_free(&prog);
     return rc;
@@ -96,6 +100,10 @@ int mp_unpack_original(mp_p5z *p, const char *out_dir, unsigned threads, int pro
     size_t zi = 0;   // el manifiesto y los packs van en orden distinto: búsqueda por ruta
     for (size_t i = 0; i < p->man.n && !rc; i++) {
         const mp_manifest_entry *m = &p->man.v[i];
+        if (mp_cancel_check(e) != 0) {
+            rc = -1;
+            break;
+        }
         if (!(m->flags & MP_MANIFEST_PACKED)) {
             rc = write_stored(p, p->man_file[i], out_dir, m->path, m->mtime, &prog, e);
             continue;
@@ -118,7 +126,8 @@ int mp_unpack_original(mp_p5z *p, const char *out_dir, unsigned threads, int pro
         mp_sha256_init(&s);
         for (uint64_t off = 0; !rc && off < m->size; off += PIECE) {
             size_t k = m->size - off < PIECE ? (size_t)(m->size - off) : PIECE;
-            rc = mp_zpk_read_file(z, zi, off, buf, k, e);
+            rc = mp_cancel_check(e);
+            if (!rc) rc = mp_zpk_read_file(z, zi, off, buf, k, e);
             if (!rc) rc = mp_wfile_write(w, buf, k, e);
             if (!rc) mp_sha256_update(&s, buf, k);
             mp_progress_add(&prog, k);
@@ -134,6 +143,7 @@ int mp_unpack_original(mp_p5z *p, const char *out_dir, unsigned threads, int pro
         if (!rc) rc = mp_set_mtime(path, m->mtime, e);
         free(path);
     }
+    if (!rc) rc = mp_cancel_check(e);
     if (!rc && progress) fprintf(stderr, "\rReconstruyendo el original: 100.0 %%\n");
     mp_progress_free(&prog);
     free(buf);

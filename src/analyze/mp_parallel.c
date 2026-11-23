@@ -4,6 +4,36 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
+#define HOOK_INTERVAL_NS 100000000ull
+
+static mp_progress_hook g_hook;
+static volatile long g_cancel;
+
+void mp_progress_set_hook(const mp_progress_hook *h) {
+    if (h) g_hook = *h;
+    else g_hook = (mp_progress_hook){NULL, NULL};
+}
+
+#ifdef _WIN32
+void mp_cancel_request(void) { InterlockedExchange(&g_cancel, 1); }
+int mp_cancelled(void) { return InterlockedCompareExchange(&g_cancel, 0, 0) != 0; }
+void mp_cancel_reset(void) { InterlockedExchange(&g_cancel, 0); }
+#else
+void mp_cancel_request(void) { __atomic_store_n(&g_cancel, 1, __ATOMIC_SEQ_CST); }
+int mp_cancelled(void) { return __atomic_load_n(&g_cancel, __ATOMIC_SEQ_CST) != 0; }
+void mp_cancel_reset(void) { __atomic_store_n(&g_cancel, 0, __ATOMIC_SEQ_CST); }
+#endif
+
+int mp_cancel_check(mp_err *e) {
+    if (!mp_cancelled()) return 0;
+    mp_err_set(e, "cancelado");
+    return -1;
+}
+
 void mp_progress_init(mp_progress *p, const char *phase, uint64_t total, int print) {
     p->mu = mp_mutex_new();
     p->done = 0;
@@ -11,6 +41,9 @@ void mp_progress_init(mp_progress *p, const char *phase, uint64_t total, int pri
     p->phase = phase;
     p->print = print;
     p->last_ns = 0;
+    p->hook = g_hook;
+    p->hook_ns = 0;
+    p->hook_final = 0;
 }
 
 void mp_progress_maybe_print(mp_progress *p) {
@@ -29,6 +62,15 @@ void mp_progress_add(mp_progress *p, uint64_t n) {
     if (!p || !p->mu) return;
     mp_mutex_lock(p->mu);
     p->done += n;
+    if (p->hook.cb) {
+        int final = p->done >= p->total && !p->hook_final;
+        uint64_t now = mp_now_ns();
+        if (final || !p->hook_ns || now - p->hook_ns >= HOOK_INTERVAL_NS) {
+            if (final) p->hook_final = 1;
+            p->hook_ns = now ? now : 1;
+            p->hook.cb(p->hook.ctx, p->phase, p->done, p->total);
+        }
+    }
     mp_mutex_unlock(p->mu);
 }
 
@@ -54,6 +96,7 @@ static void worker(void *arg) {
     mp_mutex_unlock(p->mu);
     for (;;) {
         mp_mutex_lock(p->mu);
+        if (!p->err && p->next < p->n && mp_cancelled()) p->err = -1;   // cancelado: no se reparte más
         if (p->err || p->next >= p->n) {
             mp_mutex_unlock(p->mu);
             break;

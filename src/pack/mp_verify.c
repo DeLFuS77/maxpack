@@ -33,7 +33,7 @@ typedef struct {
 
 static int null_sink(void *ctx, const void *p, size_t n, mp_err *e) {
     (void)p;
-    (void)e;
+    if (mp_cancel_check(e) != 0) return -1;
     mp_progress_add(ctx, n);
     return 0;
 }
@@ -44,7 +44,7 @@ static int sha_source(mp_source *s, size_t i, uint8_t d[32], uint8_t *buf, mp_er
     uint64_t size = mp_source_entry(s, i)->size;
     for (uint64_t off = 0; off < size; off += PIECE) {
         size_t k = size - off < PIECE ? (size_t)(size - off) : PIECE;
-        if (mp_source_read(s, i, off, buf, k, e) != 0) return -1;
+        if (mp_cancel_check(e) != 0 || mp_source_read(s, i, off, buf, k, e) != 0) return -1;
         mp_sha256_update(&h, buf, k);
     }
     mp_sha256_final(&h, d);
@@ -57,7 +57,7 @@ static int sha_zpk(mp_zpk *z, size_t i, uint8_t d[32], uint8_t *buf, mp_progress
     uint64_t size = mp_zpk_size(z, i);
     for (uint64_t off = 0; off < size; off += PIECE) {
         size_t k = size - off < PIECE ? (size_t)(size - off) : PIECE;
-        if (mp_zpk_read_file(z, i, off, buf, k, e) != 0) return -1;
+        if (mp_cancel_check(e) != 0 || mp_zpk_read_file(z, i, off, buf, k, e) != 0) return -1;
         mp_sha256_update(&h, buf, k);
         mp_progress_add(prog, k);
     }
@@ -77,7 +77,8 @@ static int sha_path(const char *path, uint8_t d[32], uint8_t *buf, mp_err *e) {
     int rc = 0;
     for (uint64_t off = 0; off < size && !rc; off += PIECE) {
         size_t k = size - off < PIECE ? (size_t)(size - off) : PIECE, got = 0;
-        rc = mp_file_pread(f, buf, k, off, &got, e);
+        rc = mp_cancel_check(e);
+        if (!rc) rc = mp_file_pread(f, buf, k, off, &got, e);
         if (!rc && got != k) {
             mp_err_set(e, "lectura incompleta");
             rc = -1;
@@ -93,6 +94,7 @@ static int check_work(void *vc, size_t i, unsigned tid) {
     vctx *v = vc;
     (void)tid;
     check *c = &v->c[i];
+    if (mp_cancelled()) return 0;   // la cancelación se informa al acabar run_checks
     mp_err e = {{0}};
     uint8_t got[32], want[32];
     uint8_t *buf = malloc(PIECE);
@@ -162,11 +164,16 @@ static void report(const check *c, size_t n, mp_verify_result *r) {
     if (listed > MAX_LISTED) fprintf(stderr, "... y %zu fallos más\n", listed - MAX_LISTED);
 }
 
-static int run_checks(vctx *v, size_t n, unsigned threads, int progress, uint64_t total, mp_verify_result *r) {
+static int run_checks(vctx *v, size_t n, unsigned threads, int progress, uint64_t total, mp_verify_result *r,
+                      mp_err *e) {
     mp_progress prog;
     mp_progress_init(&prog, "Verificando", total, progress);
     v->prog = &prog;
     mp_parallel_run(threads ? threads : 1, n, check_work, v, NULL);
+    if (mp_cancel_check(e) != 0) {
+        mp_progress_free(&prog);
+        return -1;
+    }
     if (progress) fprintf(stderr, "\rVerificando: 100.0 %%\n");
     r->bytes_checked = prog.done;
     mp_progress_free(&prog);
@@ -214,7 +221,12 @@ int mp_verify_p5z(const char *path, unsigned threads, int progress, mp_verify_re
             }
     }
     size_t todo = packs_ok ? n : n - 1;
-    run_checks(&v, todo, threads, progress, total, r);
+    if (run_checks(&v, todo, threads, progress, total, r, e) != 0) {
+        free(v.c);
+        mp_zpk_close(v.z);
+        mp_p5z_close(p);
+        return -1;
+    }
     if (!packs_ok) report(&v.c[n - 1], 1, r);
     free(v.c);
     mp_zpk_close(v.z);
@@ -339,8 +351,12 @@ int mp_verify_folder(const char *dir, const char *against, unsigned threads, int
         if (!v.c[i].bad) todo[nt++] = v.c[i];
     check *all = v.c;
     v.c = todo;
-    run_checks(&v, nt, threads, progress, total, r);
+    int crc = run_checks(&v, nt, threads, progress, total, r, e);
     v.c = all;
+    if (crc != 0) {
+        free(todo);
+        goto done;   // rc sigue en -1
+    }
     for (size_t i = 0; i < n; i++)
         if (all[i].bad) report(&all[i], 1, r);
     free(todo);

@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/DeLFuS77/maxpack/gui/core"
 	"github.com/DeLFuS77/maxpack/gui/internal/system"
@@ -23,8 +24,8 @@ type extras struct {
 const taskbarPart = 1000
 
 // run does the plans with the Runner and the extras: the PC stays awake meanwhile, the taskbar
-// shows the progress of the whole queue (never going back), and one notice tells the summary
-// at the end.
+// shows the progress of the whole queue (never going back), the page is told how each game
+// goes (job:item, job:progress), and one notice tells the summary at the end.
 func (a *App) run(ctx context.Context, plans []jobs.Plan, o jobs.Options) jobs.Summary {
 	x := a.extras
 	if x.Awake == nil {
@@ -60,11 +61,14 @@ func (a *App) run(ctx context.Context, plans []jobs.Plan, o jobs.Options) jobs.S
 	if path == "" {
 		path, _ = core.Locate()
 	}
+	// the page is told each state and the progress, with the speed
+	page := &teller{app: a, plans: plans, mode: o.Mode}
 	runner := &jobs.Runner{
 		Core: path,
 		OnEvent: func(i int, e core.Event) {
 			if e.Total > 0 {
 				show(uint64(i)*taskbarPart + min(e.Done, e.Total)*taskbarPart/e.Total)
+				page.progress(i, e, time.Now())
 			}
 			if a.onEvent != nil {
 				a.onEvent(i, e)
@@ -75,6 +79,7 @@ func (a *App) run(ctx context.Context, plans []jobs.Plan, o jobs.Options) jobs.S
 			case jobs.StateOK, jobs.StateError, jobs.StateSkipped, jobs.StateCancelled:
 				show(uint64(i+1) * taskbarPart)
 			}
+			page.item(i, state, detail)
 			if a.onItem != nil {
 				a.onItem(i, state, detail)
 			}

@@ -4,7 +4,9 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"github.com/DeLFuS77/maxpack/gui/internal/portable"
@@ -13,15 +15,35 @@ import (
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
+// sizeText is a size as the page writes it (size() in app.js, as NXPress does): in steps of
+// 1024, B with no decimals and one from KB on, with the decimal comma in Spanish and no
+// thousands separator.
+func sizeText(lang string, bytes uint64) string {
+	units := []string{"B", "KB", "MB", "GB", "TB"}
+	value, unit := float64(bytes), 0
+	for value >= 1024 && unit < len(units)-1 {
+		value /= 1024
+		unit++
+	}
+	if unit == 0 {
+		return strconv.FormatUint(bytes, 10) + " B"
+	}
+	// half away from zero, as Intl.NumberFormat rounds on the page
+	text := strconv.FormatFloat(math.Round(value*10)/10, 'f', 1, 64)
+	if lang == "es" {
+		text = strings.Replace(text, ".", ",", 1)
+	}
+	return text + " " + units[unit]
+}
+
 // noticeText is the notice of the system when a queue ends: the title and a body that says the
-// games done, the ones that failed and what was saved, in the language of the settings. The
-// texts of the notice are all here.
+// games done, the ones that failed and what was saved, in the language of the settings, in the
+// words of the page. The texts of the notice are all here.
 func noticeText(lang string, s jobs.Summary) (title, body string) {
 	title = "MaxPack"
-	saved := fmt.Sprintf("%.1f", float64(s.Saved)/(1<<30))
+	saved := sizeText(lang, s.Saved)
 	var parts []string
 	if lang == "es" {
-		saved = strings.Replace(saved, ".", ",", 1)
 		parts = append(parts, plural(s.Done, "juego listo", "juegos listos"))
 		if s.Failed > 0 {
 			parts = append(parts, fmt.Sprintf("%d con error", s.Failed))
@@ -30,7 +52,7 @@ func noticeText(lang string, s jobs.Summary) (title, body string) {
 			parts = append(parts, plural(s.Cancelled, "cancelado", "cancelados"))
 		}
 		if s.Saved > 0 {
-			parts = append(parts, saved+" GB ahorrados")
+			parts = append(parts, saved+" ahorrados")
 		}
 		return title, strings.Join(parts, ", ")
 	}
@@ -42,7 +64,7 @@ func noticeText(lang string, s jobs.Summary) (title, body string) {
 		parts = append(parts, fmt.Sprintf("%d cancelled", s.Cancelled))
 	}
 	if s.Saved > 0 {
-		parts = append(parts, saved+" GB saved")
+		parts = append(parts, saved+" saved")
 	}
 	return title, strings.Join(parts, ", ")
 }

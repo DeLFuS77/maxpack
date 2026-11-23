@@ -8,6 +8,7 @@ import (
 
 	"github.com/DeLFuS77/maxpack/gui/core"
 	"github.com/DeLFuS77/maxpack/gui/internal/system"
+	"github.com/DeLFuS77/maxpack/gui/jobs"
 	"github.com/DeLFuS77/maxpack/gui/settings"
 
 	wailsoptions "github.com/wailsapp/wails/v2/pkg/options"
@@ -23,11 +24,13 @@ type App struct {
 	mutex     sync.Mutex
 	pending   FilesAdd // files that came before the page asked for them
 	pageReady bool
+	cancelJob context.CancelFunc // the queue running (see Start), nil when there is none
 
 	// what the tests stand in for; the zero values are the real ones
 	emit    func(event string, data any)
 	extras  extras
 	core    string        // the engine, when not the one Locate finds
+	fs      jobs.FS       // the drives, when not the ones of the system
 	lang    func() string // the language of the notices, when not the one of the settings
 	onEvent func(i int, e core.Event)
 	onItem  func(i int, state, detail string)

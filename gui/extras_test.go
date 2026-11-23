@@ -85,7 +85,7 @@ func TestRunExtras(t *testing.T) {
 	if !strings.Contains(strings.Join(log, " "), "taskbar:none") {
 		t.Fatalf("la barra no se limpia: %v", log)
 	}
-	if notices != 1 || title != "MaxPack" || !strings.Contains(body, "1") || !strings.Contains(body, "GB") {
+	if notices != 1 || title != "MaxPack" || !strings.Contains(body, "1 juego listo") || !strings.Contains(body, sizeText("es", sum.Saved)+" ahorrados") {
 		t.Fatalf("aviso: %d %q %q", notices, title, body)
 	}
 }
@@ -114,5 +114,42 @@ func TestNoticeText(t *testing.T) {
 	}
 	if !strings.Contains(en, "2 games") || !strings.Contains(en, "failed") || !strings.Contains(en, "3.5 GB") {
 		t.Errorf("en: %q", en)
+	}
+	// the size as the page writes it: what was saved in its own unit, not always in GB
+	small := jobs.Summary{Done: 1, Saved: 500 << 20}
+	if _, es := noticeText("es", small); es != "1 juego listo, 500,0 MB ahorrados" {
+		t.Errorf("es: %q", es)
+	}
+	if _, en := noticeText("en", small); en != "1 game done, 500.0 MB saved" {
+		t.Errorf("en: %q", en)
+	}
+}
+
+// TestSizeText: sizes as size() of the page (and NXPress) writes them: steps of 1024, B with no
+// decimals, one decimal from KB on, the decimal comma in Spanish, no thousands separator.
+func TestSizeText(t *testing.T) {
+	cases := []struct {
+		bytes  uint64
+		es, en string
+	}{
+		{0, "0 B", "0 B"},
+		{1023, "1023 B", "1023 B"},
+		{1024, "1,0 KB", "1.0 KB"},
+		{1536, "1,5 KB", "1.5 KB"},
+		{10_200, "10,0 KB", "10.0 KB"},
+		{3_147_695, "3,0 MB", "3.0 MB"},
+		{1023 << 20, "1023,0 MB", "1023.0 MB"},
+		{3_758_096_384, "3,5 GB", "3.5 GB"},
+		{9_006_000_000, "8,4 GB", "8.4 GB"},
+		{1 << 40, "1,0 TB", "1.0 TB"},
+		{3 << 50, "3072,0 TB", "3072.0 TB"},
+	}
+	for _, c := range cases {
+		if got := sizeText("es", c.bytes); got != c.es {
+			t.Errorf("es %d: %q, esperaba %q", c.bytes, got, c.es)
+		}
+		if got := sizeText("en", c.bytes); got != c.en {
+			t.Errorf("en %d: %q, esperaba %q", c.bytes, got, c.en)
+		}
 	}
 }

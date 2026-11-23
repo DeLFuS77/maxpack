@@ -1,39 +1,241 @@
 <!doctype html>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!-- The page of MaxPack, as the one of NXPress: the sections on the left, the list of games in
+     the middle with the progress under it, and the options of the section on the right. Every
+     text comes from i18n/ (data-t), and the data of the games is written by app.js as text. -->
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<title>MaxPack</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<style>
-  :root { color-scheme: light dark; --bg: #fff; --fg: #18181b; --muted: #71717a; --bad: #b91c1c; }
-  @media (prefers-color-scheme: dark) { :root { --bg: #18181b; --fg: #f4f4f5; --muted: #a1a1aa; --bad: #f87171; } }
-  body { margin: 0; padding: 24px; background: var(--bg); color: var(--fg); font: 14px system-ui, sans-serif; }
-  dt { color: var(--muted); margin-top: 12px; }
-  dd { margin: 2px 0 0; }
-  .bad { color: var(--bad); }
-</style>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'self'">
+<title>MaxPack</title>
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
-<h1 id="title">MaxPack</h1>
-<dl id="info"></dl>
-<script>
-  function add(list, name, value, bad) {
-    const dt = document.createElement('dt'), dd = document.createElement('dd');
-    dt.textContent = name; dd.textContent = value || '-';
-    if (bad) dd.className = 'bad';
-    list.append(dt, dd);
-  }
-  async function start() {
-    const api = window.go && window.go.main && window.go.main.App;
-    if (!api) return;
-    const setup = await api.Setup();
-    const list = document.getElementById('info');
-    add(list, 'version', setup.version);
-    add(list, 'maxpack-core', setup.coreVersion || setup.core);
-    if (setup.coreError) add(list, 'error', setup.coreError, true);
-    add(list, 'lang / theme', setup.lang + ' / ' + setup.theme);
-  }
-  start();
-</script>
+<main>
+  <nav data-t-label="sections">
+    <div class="group" data-t="groupSpace"></div>
+    <button data-section="compress" class="tone-space"><span class="tile"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v6m0 0-3-3m3 3 3-3M12 21v-6m0 0-3 3m3-3 3 3M5 12h14"/></svg></span><span><b data-t="compress"></b><small data-t="hintCompress"></small></span></button>
+    <button data-section="decompress" class="tone-space"><span class="tile"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 9V3m0 0-3 3m3-3 3 3M12 15v6m0 0-3-3m3 3 3-3M5 12h14"/></svg></span><span><b data-t="decompress"></b><small data-t="hintDecompress"></small></span></button>
+    <div class="group" data-t="groupCheck"></div>
+    <button data-section="verify" class="tone-check"><span class="tile"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4.5 6v6c0 4.3 3.2 7.7 7.5 9 4.3-1.3 7.5-4.7 7.5-9V6z"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg></span><span><b data-t="verify"></b><small data-t="hintVerify"></small></span></button>
+    <button data-section="details" class="tone-check"><span class="tile"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></svg></span><span><b data-t="details"></b><small data-t="hintDetails"></small></span></button>
+    <div class="side-foot">
+      <button data-section="settings" class="tone-neutral side-item"><span class="tile"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h9m4 0h3M4 12h3m4 0h9M4 18h11m4 0h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></svg></span><span><b data-t="settings"></b></span></button>
+      <div class="side-core" id="side-core"></div>
+    </div>
+  </nav>
+
+  <section id="work">
+    <div class="page-head">
+      <h1 class="title-row"><span class="tile" id="title-tile" aria-hidden="true"></span><span id="title"></span></h1>
+      <p id="about" class="muted"></p>
+    </div>
+
+    <div id="banner" class="banner bad" role="alert" hidden><span id="banner-text"></span></div>
+
+    <div class="toolbar" id="toolbar">
+      <button id="add-files" data-t="addFiles"></button>
+      <button id="add-folder" data-t="addFolder"></button>
+      <button id="clear" class="quiet" data-t="clear"></button>
+    </div>
+
+    <div id="drop">
+      <div id="empty">
+        <svg class="empty-icon" viewBox="0 0 48 48" aria-hidden="true"><path d="M12 30v8h24v-8M24 8v22M16 22l8 8 8-8"/></svg>
+        <div class="big" data-t="dropHere"></div>
+        <div class="muted" data-t="orChoose"></div>
+        <div class="empty-buttons">
+          <button id="empty-files" class="outline" data-t="addFiles"></button>
+          <button id="empty-folder" data-t="addFolder"></button>
+        </div>
+        <div class="types" id="takes"></div>
+      </div>
+      <table id="files" hidden>
+        <thead><tr><th data-t="game"></th><th class="size" data-t="size"></th><th class="state" data-t="state"></th><th class="remove"></th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+
+    <div class="actions">
+      <div class="summary">
+        <div id="summary-text"></div>
+        <div class="bar total" id="total-bar" hidden><div></div></div>
+        <div id="status" class="muted" aria-live="polite"></div>
+      </div>
+      <button id="cancel" class="secondary" data-t="cancel" hidden></button>
+      <button id="start" class="primary big"></button>
+    </div>
+  </section>
+
+  <aside id="options">
+    <section class="block" data-for="compress">
+      <h2 id="made-for-name" data-t="madeFor"></h2>
+      <div role="radiogroup" aria-labelledby="made-for-name">
+        <label class="choice"><input type="radio" name="made-for" value="p5z" checked>
+          <span><b data-t="forInstaller"></b><small data-t="forInstallerHint"></small></span></label>
+        <label class="choice"><input type="radio" name="made-for" value="folder">
+          <span><b data-t="forUsb"></b><small data-t="forUsbHint"></small></span></label>
+      </div>
+    </section>
+
+    <section class="block" data-for="compress">
+      <div class="level-head"><span id="level-name" data-t="level"></span><b id="level-value"></b></div>
+      <input id="level" type="range" min="1" max="22" value="19" aria-labelledby="level-name">
+      <div class="ends muted"><span data-t="faster"></span><span data-t="smaller"></span></div>
+      <div class="segmented levels" role="group" aria-labelledby="level-name"><button data-level="3"><span data-t="light"></span><small>1–6</small></button><button data-level="12"><span data-t="medium"></span><small>7–14</small></button><button data-level="19"><span data-t="maximum"></span><small>15–22</small></button></div>
+      <p class="hint" id="level-hint"></p>
+    </section>
+
+    <section class="block" data-for="decompress">
+      <h2 id="unpack-to-name" data-t="unpackTo"></h2>
+      <div role="radiogroup" aria-labelledby="unpack-to-name">
+        <label class="choice"><input type="radio" name="unpack-to" value="original" checked>
+          <span><b data-t="toOriginal"></b><small data-t="toOriginalHint"></small></span></label>
+        <label class="choice"><input type="radio" name="unpack-to" value="console">
+          <span><b data-t="toConsole"></b><small data-t="toConsoleHint"></small></span></label>
+      </div>
+    </section>
+
+    <section class="block" data-for="compress decompress">
+      <div class="label" data-t="dest"></div>
+      <div class="path"><span id="dest"></span><button id="choose-dest" data-t="choose"></button></div>
+      <p class="hint" id="dest-hint"></p>
+    </section>
+
+    <section class="block" data-for="compress">
+      <div class="label">ampr-emu-ng</div>
+      <div class="runtime" id="runtime-state"></div>
+      <button id="choose-runtime" class="link" data-t="runtimeChoose"></button>
+      <p class="hint" data-t="runtimeHint"></p>
+    </section>
+
+    <section class="block" data-for="verify">
+      <h2 data-t="verify"></h2>
+      <p class="hint" data-t="verifyHint"></p>
+    </section>
+  </aside>
+
+  <section id="settings" hidden>
+    <div class="page-head"><h1 class="title-row"><span class="tile tone-neutral" id="settings-tile" aria-hidden="true"></span><span data-t="settings"></span></h1></div>
+    <div class="pref-page">
+      <section class="pref-group">
+        <h2 data-t="prefLook"></h2>
+        <div class="pref-item">
+          <div class="pref-text"><b id="language-name" data-t="language"></b></div>
+          <div class="segmented" id="languages" role="radiogroup" aria-labelledby="language-name"></div>
+        </div>
+        <div class="pref-item">
+          <div class="pref-text"><b id="theme-name" data-t="theme"></b></div>
+          <div class="segmented" role="radiogroup" aria-labelledby="theme-name"><button role="radio" data-theme="system" data-t="themeSystem"></button><button role="radio" data-theme="light" data-t="themeLight"></button><button role="radio" data-theme="dark" data-t="themeDark"></button></div>
+        </div>
+      </section>
+      <section class="pref-group">
+        <h2>ampr-emu-ng</h2>
+        <div class="pref-item">
+          <div class="pref-text"><b data-t="runtimeTitle"></b><small data-t="runtimeHint"></small><small class="pref-path" id="pref-runtime"></small></div>
+          <div class="pref-buttons"><button id="pref-runtime-choose" data-t="choose"></button><button id="pref-runtime-clear" class="quiet" data-t="forget"></button></div>
+        </div>
+      </section>
+      <section class="pref-group">
+        <h2 data-t="prefAbout"></h2>
+        <dl class="about-list"><dt>MaxPack</dt><dd id="about-version"></dd><dt>maxpack-core</dt><dd id="about-core"></dd></dl>
+        <p class="hint" data-t="legal"></p>
+      </section>
+    </div>
+  </section>
+</main>
+
+<!-- a game of the list; app.js fills it, with text only -->
+<template id="row-template">
+  <tr>
+    <td class="name">
+      <div class="game">
+        <img class="icon" alt="" hidden>
+        <span class="cover" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="3"/><path d="M7.5 12h4M9.5 10v4M15 11h.01M17 13h.01"/></svg></span>
+        <div class="text">
+          <div class="title"></div>
+          <div class="file"></div>
+          <div class="sizes" hidden></div>
+          <div class="where" hidden></div>
+          <div class="list-warn" hidden></div>
+          <dl class="facts" hidden></dl>
+          <div class="note" hidden></div>
+        </div>
+      </div>
+    </td>
+    <td class="size"></td>
+    <td class="state"><span class="badge" hidden></span><div class="segs" hidden></div><div class="step"></div><div class="saved"></div></td>
+    <td class="remove"><button class="quiet icon">✕</button></td>
+  </tr>
+</template>
+<!-- a step of the bar of a game: compress, then verify -->
+<template id="seg-template"><div class="seg"><div></div></div></template>
+<!-- a game of a warning: its name, and what to know of it -->
+<template id="line-template"><li><b></b><span></span></li></template>
+
+<!-- the warnings that need a choice, before a queue starts; Escape starts nothing -->
+<dialog id="replace-dialog" class="warn-dialog" aria-labelledby="replace-title" aria-describedby="replace-text">
+  <h2 id="replace-title"><svg class="warn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 2.8 19.5h18.4z"/><path d="M12 9.5v4.5M12 16.8v.2"/></svg><span data-t="replaceTitle"></span></h2>
+  <p class="muted" id="replace-text"></p>
+  <ul class="space-list"><li><b id="replace-path"></b><span id="replace-size"></span></li></ul>
+  <p class="hint" data-t="replaceHow"></p>
+  <label class="check" id="replace-all-row"><input id="replace-all" type="checkbox"><span id="replace-all-text"></span></label>
+  <form method="dialog" class="dialog-actions"><button value="cancel" class="quiet" data-t="cancel"></button><button value="skip" data-t="skip" autofocus></button><button value="replace" class="danger" data-t="replace"></button></form>
+</dialog>
+
+<dialog id="fat32-dialog" class="warn-dialog" aria-labelledby="fat32-title">
+  <h2 id="fat32-title"><svg class="warn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 2.8 19.5h18.4z"/><path d="M12 9.5v4.5M12 16.8v.2"/></svg><span data-t="fat32Title"></span></h2>
+  <p class="muted" data-t="fat32Text"></p>
+  <ul class="space-list" id="fat32-list"></ul>
+  <p class="hint" data-t="fat32Anyway"></p>
+  <form method="dialog" class="dialog-actions"><button value="cancel" class="quiet" data-t="cancel"></button><button value="anyway" data-t="fat32Continue"></button><button value="folder" class="primary" data-t="fat32UseFolder" autofocus></button></form>
+</dialog>
+
+<dialog id="runtime-dialog" class="warn-dialog" aria-labelledby="runtime-title">
+  <h2 id="runtime-title"><svg class="warn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 2.8 19.5h18.4z"/><path d="M12 9.5v4.5M12 16.8v.2"/></svg><span data-t="runtimeAskTitle"></span></h2>
+  <p class="muted" data-t="runtimeAskText"></p>
+  <ul class="space-list" id="runtime-list"></ul>
+  <p class="hint" data-t="runtimeAskWithout"></p>
+  <form method="dialog" class="dialog-actions"><button value="cancel" class="quiet" data-t="cancel"></button><button value="without" data-t="runtimeWithout"></button><button value="choose" class="primary" data-t="runtimeChooseFile" autofocus></button></form>
+</dialog>
+
+<dialog id="block-dialog" class="warn-dialog" aria-labelledby="block-title">
+  <h2 id="block-title"><svg class="warn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 2.8 19.5h18.4z"/><path d="M12 9.5v4.5M12 16.8v.2"/></svg><span data-t="blockTitle"></span></h2>
+  <p class="muted" data-t="blockText"></p>
+  <ul class="space-list" id="block-list"></ul>
+  <form method="dialog" class="dialog-actions"><button value="cancel" class="quiet" data-t="cancel"></button><button value="skip" id="block-skip" data-t="blockSkip"></button><button value="dest" class="primary" data-t="otherDest" autofocus></button></form>
+</dialog>
+
+<dialog id="warn-dialog" class="warn-dialog" aria-labelledby="warn-title">
+  <h2 id="warn-title"><svg class="warn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 2.8 19.5h18.4z"/><path d="M12 9.5v4.5M12 16.8v.2"/></svg><span data-t="warnTitle"></span></h2>
+  <ul class="space-list" id="warn-list"></ul>
+  <form method="dialog" class="dialog-actions"><button value="cancel" class="quiet" data-t="cancel" autofocus></button><button value="go" class="primary" data-t="startAnyway"></button></form>
+</dialog>
+
+<!-- the end of a queue that wrote games: what it saved, what saved most, and what to do now -->
+<dialog id="done-dialog" aria-labelledby="done-title">
+  <h2 id="done-title" data-t="doneTitle"></h2>
+  <p class="done-saved" id="done-saved"></p>
+  <p class="muted" id="done-stats"></p>
+  <div id="done-top-block">
+    <h3 data-t="doneTop"></h3>
+    <ol class="done-top" id="done-top"></ol>
+  </div>
+  <div class="done-next" id="done-next-block">
+    <h3 data-t="doneNext"></h3>
+    <p id="done-next"></p>
+  </div>
+  <p class="warning" id="done-runtime" hidden></p>
+  <form method="dialog" class="dialog-actions"><button value="close" class="primary" data-t="close" autofocus></button></form>
+</dialog>
+
+<div id="drop-overlay" hidden><div class="drop-card"><svg class="drop-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 19h14"/></svg><b data-t="dropHere"></b></div></div>
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+<script src="i18n/base.js"></script>
+<script src="i18n/es.js"></script>
+<script src="i18n/en.js"></script>
+<script src="app.js"></script>
 </body>
 </html>

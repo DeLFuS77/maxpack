@@ -82,6 +82,11 @@ func Describe(engine, path string) (Item, error) {
 	if err != nil {
 		return Item{}, err
 	}
+	return FromInfo(path, info), nil
+}
+
+// FromInfo is the Item of the game at path from what `info --json` says of it.
+func FromInfo(path string, info map[string]any) Item {
 	text := func(key string) string { s, _ := info[key].(string); return s }
 	number := func(key string) uint64 { n, _ := info[key].(float64); return uint64(n) }
 	flag := func(key string) bool { b, _ := info[key].(bool); return b }
@@ -92,7 +97,7 @@ func Describe(engine, path string) (Item, error) {
 	if it.Name == "" {
 		it.Name = baseName(path)
 	}
-	return it, nil
+	return it
 }
 
 func isRoot(dest string, fs FS) bool { return same(fs.Root(dest), dest) }

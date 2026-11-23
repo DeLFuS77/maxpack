@@ -1,0 +1,439 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+package main
+
+import (
+	"bytes"
+	"encoding/base64"
+	"math"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"reflect"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/DeLFuS77/maxpack/gui/jobs"
+)
+
+// pageEvents keeps what the App tells the page, and waits for the end of a queue.
+type pageEvents struct {
+	mutex    sync.Mutex
+	items    []itemEvent
+	progress []progressEvent
+	done     chan jobs.Summary
+}
+
+func newPageEvents() *pageEvents { return &pageEvents{done: make(chan jobs.Summary, 4)} }
+
+func (p *pageEvents) emit(event string, data any) {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+	switch event {
+	case "job:item":
+		p.items = append(p.items, data.(itemEvent))
+	case "job:progress":
+		p.progress = append(p.progress, data.(progressEvent))
+	case "job:done":
+		p.done <- data.(jobs.Summary)
+	}
+}
+
+func (p *pageEvents) wait(t *testing.T) jobs.Summary {
+	t.Helper()
+	select {
+	case sum := <-p.done:
+		return sum
+	case <-time.After(2 * time.Minute):
+		t.Fatal("la cola no terminó")
+	}
+	return jobs.Summary{}
+}
+
+// states gives the states told of game i, in order.
+func (p *pageEvents) states(i int) []string {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+	var states []string
+	for _, e := range p.items {
+		if e.I == i {
+			states = append(states, e.State)
+		}
+	}
+	return states
+}
+
+func (p *pageEvents) last(i int) itemEvent {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+	var last itemEvent
+	for _, e := range p.items {
+		if e.I == i {
+			last = e
+		}
+	}
+	return last
+}
+
+func quietExtras() extras {
+	return extras{Awake: func() func() { return func() {} }, Taskbar: func(string, uint64, uint64) {}, Notify: func(string, string) {}}
+}
+
+func pageApp(engine string, events *pageEvents) *App {
+	return &App{core: engine, fs: realFS{}, lang: func() string { return "es" }, extras: quietExtras(), emit: events.emit}
+}
+
+func makeDump(t *testing.T, parent, folder, id, title string) string {
+	t.Helper()
+	dump := filepath.Join(parent, folder)
+	if err := os.MkdirAll(filepath.Join(dump, "sce_sys"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	param := `{"titleId":"` + id + `","titleName":"` + title + `","contentVersion":"01.000.000"}`
+	if err := os.WriteFile(filepath.Join(dump, "sce_sys", "param.json"), []byte(param), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dump
+}
+
+func touch(t *testing.T, parent, name string, size int) string {
+	t.Helper()
+	path := filepath.Join(parent, name)
+	if err := os.WriteFile(path, bytes.Repeat([]byte("x"), size), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestExpandSections(t *testing.T) {
+	root := t.TempDir()
+	dump := makeDump(t, root, "Juego A", "PPSA00001", "Juego A")
+	image := touch(t, root, "b.exfat", 1)
+	p5z := touch(t, root, "c.p5z", 1)
+	upper := touch(t, root, "D.P5Z", 1)
+	touch(t, root, "notas.txt", 1)
+	other := filepath.Join(root, "otra")
+	os.Mkdir(other, 0o755)
+	deep := makeDump(t, other, "Profundo", "PPSA00002", "Profundo")
+	makeDump(t, deep, "Dentro", "PPSA00003", "Dentro") // inside a dump: the dump is the game
+	gone := filepath.Join(root, "no-existe.exfat")
+
+	a := &App{}
+	cases := []struct {
+		section string
+		paths   []string
+		want    []string
+	}{
+		// a folder that is not a game: the dumps and images one level below, by name
+		{"compress", []string{root}, []string{dump, image}},
+		{"compress", []string{dump}, []string{dump}},
+		{"compress", []string{image, p5z, gone}, []string{image}},
+		{"compress", []string{root, dump, image, root}, []string{dump, image}},
+		{"compress", []string{other}, []string{deep}},
+		{"decompress", []string{root}, []string{upper, p5z}},
+		{"decompress", []string{p5z, dump, image}, []string{p5z}},
+		{"verify", []string{root}, []string{upper, dump, p5z}},
+		{"details", []string{root}, []string{upper, dump, image, p5z}},
+		{"details", []string{dump + string(filepath.Separator)}, []string{dump}},
+		{"settings", []string{root}, []string{}},
+		{"compress", nil, []string{}},
+	}
+	for _, c := range cases {
+		got := a.Expand(c.paths, c.section)
+		if got == nil || !reflect.DeepEqual(got, c.want) {
+			t.Errorf("%s %v:\n  %v\n  esperaba %v", c.section, c.paths, got, c.want)
+		}
+	}
+}
+
+func TestDescribeIcon(t *testing.T) {
+	engine, fixtures := needCore(t)
+	dump := makeDump(t, t.TempDir(), "Con icono", "ICON00001", "Con icono")
+	png := append([]byte("\x89PNG\r\n\x1a\n"), bytes.Repeat([]byte{7}, 300)...)
+	if err := os.WriteFile(filepath.Join(dump, "sce_sys", "icon0.png"), png, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// the icon goes through a temporary file, which is gone afterwards
+	temp := t.TempDir()
+	t.Setenv("TMP", temp)
+	t.Setenv("TEMP", temp)
+	t.Setenv("TMPDIR", temp)
+
+	a := &App{core: engine}
+	game, err := a.Describe(dump)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if game.TitleID != "ICON00001" || game.Name != "Con icono" || game.Version != "01.000.000" || game.Kind != "folder" || game.Packed || game.Path != dump {
+		t.Fatalf("%+v", game)
+	}
+	const prefix = "data:image/png;base64,"
+	if !strings.HasPrefix(game.Icon, prefix) {
+		t.Fatalf("icono: %.60q", game.Icon)
+	}
+	if data, err := base64.StdEncoding.DecodeString(game.Icon[len(prefix):]); err != nil || !bytes.Equal(data, png) {
+		t.Fatalf("el icono no es el del juego: %v", err)
+	}
+	if left, _ := os.ReadDir(temp); len(left) != 0 {
+		t.Fatalf("quedan temporales: %v", left)
+	}
+
+	// without an icon: the game, with no icon and no error
+	plain, err := a.Describe(filepath.Join(fixtures, "basic.exfat"))
+	if err != nil || plain.Icon != "" || plain.TitleID != "TEST00001" || plain.Name != "basic" || plain.Kind != "exfat" || plain.OriginalSize == 0 {
+		t.Fatalf("%+v %v", plain, err)
+	}
+	if left, _ := os.ReadDir(temp); len(left) != 0 {
+		t.Fatalf("quedan temporales: %v", left)
+	}
+	if _, err := a.Describe(filepath.Join(temp, "no-existe")); err == nil {
+		t.Fatal("algo que no existe se describe")
+	}
+}
+
+func TestDetails(t *testing.T) {
+	engine, fixtures := needCore(t)
+	image := filepath.Join(fixtures, "basic.exfat")
+	p5z := filepath.Join(t.TempDir(), "b.p5z")
+	if out, err := exec.Command(engine, "pack", image, "-o", p5z, "--p5z", "--level", "1").CombinedOutput(); err != nil {
+		t.Fatalf("%v: %s", err, out)
+	}
+	stat, _ := os.Stat(p5z)
+	a := &App{core: engine}
+	packed, err := a.Details(p5z)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if packed.Kind != "p5z" || !packed.Packed || packed.P5zSize != uint64(stat.Size()) || packed.TitleID != "TEST00001" ||
+		packed.Files == 0 || packed.OriginalSize == 0 || packed.InstallSize == 0 || packed.Path != p5z || packed.Name != "b" {
+		t.Fatalf("%+v", packed)
+	}
+	plain, err := a.Details(image)
+	if err != nil || plain.Kind != "exfat" || plain.Packed || plain.P5zSize != 0 || plain.HasZstdRuntime || plain.Version != "01.000.000" {
+		t.Fatalf("%+v %v", plain, err)
+	}
+}
+
+func TestRateFromProgress(t *testing.T) {
+	const mib = 1 << 20
+	near := func(got uint64, want float64) bool { return math.Abs(float64(got)-want) <= 2 }
+	var r rater
+	t0 := time.Unix(1000, 0)
+	steps := []struct {
+		i     int
+		phase string
+		done  uint64
+		at    time.Duration
+		want  float64
+	}{
+		{0, "packing", 0, 0, 0},
+		{0, "packing", 100 * mib, time.Second, 100 * mib},
+		// too close to the one before to be measured: the speed is kept
+		{0, "packing", 150 * mib, 1100 * time.Millisecond, 100 * mib},
+		// smoothed: one line does not make it jump
+		{0, "packing", 300 * mib, 2 * time.Second, 0.7*100*mib + 0.3*200*mib},
+		// a new step starts its bytes from 0: the speed is kept, not taken as a fall
+		{0, "verifying", 0, 3 * time.Second, 130 * mib},
+		{0, "verifying", 50 * mib, 3500 * time.Millisecond, 0.7*130*mib + 0.3*100*mib},
+		// and so does the next game
+		{1, "packing", 10, 4 * time.Second, 121 * mib},
+		{1, "packing", 10 + 121*mib, 5 * time.Second, 121 * mib},
+	}
+	for n, s := range steps {
+		if got := r.add(s.i, s.phase, s.done, t0.Add(s.at)); !near(got, s.want) {
+			t.Fatalf("paso %d: %d, esperaba %.0f", n, got, s.want)
+		}
+	}
+}
+
+func TestPlanTellsReplaceSize(t *testing.T) {
+	dest := t.TempDir()
+	source := makeDump(t, t.TempDir(), "Juego", "PPSA00001", "Juego")
+	item := jobs.Item{Path: source, TitleID: "PPSA00001", Name: "Juego", Kind: "folder", OriginalSize: 1000, HasZstdRuntime: true}
+	old := touch(t, dest, jobs.P5zName(item), 1234)
+	a := &App{fs: realFS{}}
+
+	plans, err := a.Plan("compress", []jobs.Item{item}, Choices{Options: jobs.Options{Mode: jobs.ModeP5z, Dest: dest, Level: 3}})
+	if err != nil || len(plans) != 1 {
+		t.Fatalf("%v %v", plans, err)
+	}
+	p := plans[0]
+	if !reflect.DeepEqual(p.Replace, []string{old}) || p.ReplaceSize != 1234 || p.Tmp != old+".maxpack-tmp" || p.Block != "" {
+		t.Fatalf("%+v", p)
+	}
+	// a folder in the way: all its files count
+	folder := filepath.Join(dest, "PPSA00001")
+	os.MkdirAll(filepath.Join(folder, "sub"), 0o755)
+	touch(t, folder, "a", 100)
+	touch(t, filepath.Join(folder, "sub"), "b", 50)
+	plans, err = a.Plan("compress", []jobs.Item{item}, Choices{Options: jobs.Options{Mode: jobs.ModeFolder, Dest: dest}})
+	if err != nil || plans[0].Out != folder || plans[0].ReplaceSize != 150 {
+		t.Fatalf("%+v %v", plans, err)
+	}
+	// a mode that is not of the section is its default: an installer, the original dump
+	plans, _ = a.Plan("compress", []jobs.Item{item}, Choices{Options: jobs.Options{Mode: jobs.ModeConsole, Dest: dest}})
+	if !strings.Contains(strings.Join(plans[0].Args, " "), "--p5z") {
+		t.Fatalf("%v", plans[0].Args)
+	}
+	packed := jobs.Item{Path: old, TitleID: "PPSA00001", Name: "Juego", Kind: "p5z", OriginalSize: 1000}
+	plans, _ = a.Plan("decompress", []jobs.Item{packed}, Choices{Options: jobs.Options{Mode: jobs.ModeVerify, Dest: t.TempDir()}})
+	if !strings.Contains(strings.Join(plans[0].Args, " "), "--original") {
+		t.Fatalf("%v", plans[0].Args)
+	}
+	plans, err = a.Plan("verify", []jobs.Item{packed}, Choices{})
+	if err != nil || len(plans) != 1 || plans[0].Args[0] != "verify" || plans[0].Out != "" {
+		t.Fatalf("%+v %v", plans, err)
+	}
+	if _, err := a.Plan("details", []jobs.Item{packed}, Choices{}); err == nil {
+		t.Fatal("Detalles no hace planes")
+	}
+}
+
+func TestStartNeedsConsentToReplace(t *testing.T) {
+	dest := t.TempDir()
+	source := makeDump(t, t.TempDir(), "Juego", "PPSA00001", "Juego")
+	item := jobs.Item{Path: source, TitleID: "PPSA00001", Name: "Juego", Kind: "folder", OriginalSize: 10, HasZstdRuntime: true}
+	old := touch(t, dest, jobs.P5zName(item), 5)
+	events := newPageEvents()
+	a := pageApp(filepath.Join(t.TempDir(), "no-existe.exe"), events)
+	// what is in the way and was not accepted is not touched: something new may have come there
+	// since the user was asked
+	if err := a.Start("compress", []jobs.Item{item}, Choices{Options: jobs.Options{Mode: jobs.ModeP5z, Dest: dest}}); err != nil {
+		t.Fatal(err)
+	}
+	sum := events.wait(t)
+	if sum.Skipped != 1 || sum.Done+sum.Failed != 0 {
+		t.Fatalf("%+v", sum)
+	}
+	if last := events.last(0); last.State != jobs.StateSkipped || last.Detail != "exists" {
+		t.Fatalf("%+v", last)
+	}
+	if data, _ := os.ReadFile(old); string(data) != "xxxxx" {
+		t.Fatalf("lo viejo cambió: %q", data)
+	}
+
+	engine, fixtures := needCore(t)
+	image, err := (&App{core: engine}).Describe(filepath.Join(fixtures, "basic.exfat"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := touch(t, dest, jobs.P5zName(image.Item), 5)
+	events = newPageEvents()
+	a = pageApp(engine, events)
+	if err := a.Start("compress", []jobs.Item{image.Item}, Choices{Options: jobs.Options{Mode: jobs.ModeP5z, Dest: dest, Level: 1}, Replace: []string{out}}); err != nil {
+		t.Fatal(err)
+	}
+	if sum := events.wait(t); sum.Done != 1 {
+		t.Fatalf("%+v %+v", sum, events.items)
+	}
+	stat, err := os.Stat(out)
+	if err != nil || stat.Size() <= 5 {
+		t.Fatalf("no se reemplazó: %v %v", stat, err)
+	}
+	if last := events.last(0); last.State != jobs.StateOK || last.Out != out || last.Size != uint64(stat.Size()) {
+		t.Fatalf("%+v", last)
+	}
+}
+
+func TestStartTellsThePage(t *testing.T) {
+	engine, fixtures := needCore(t)
+	image, err := (&App{core: engine}).Describe(filepath.Join(fixtures, "basic.exfat"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dest := t.TempDir()
+	events := newPageEvents()
+	a := pageApp(engine, events)
+	if err := a.Start("compress", []jobs.Item{image.Item}, Choices{Options: jobs.Options{Mode: jobs.ModeP5z, Dest: dest, Level: 3}}); err != nil {
+		t.Fatal(err)
+	}
+	sum := events.wait(t)
+	if sum.Done != 1 || sum.Saved == 0 || len(sum.Top) != 1 {
+		t.Fatalf("%+v", sum)
+	}
+	if got := strings.Join(events.states(0), " "); got != "waiting packing verifying ok" {
+		t.Fatalf("estados: %s", got)
+	}
+	out := filepath.Join(dest, jobs.P5zName(image.Item))
+	stat, _ := os.Stat(out)
+	if last := events.last(0); last.Out != out || stat == nil || last.Size != uint64(stat.Size()) {
+		t.Fatalf("%+v", last)
+	}
+	events.mutex.Lock()
+	progress := append([]progressEvent{}, events.progress...)
+	events.mutex.Unlock()
+	if len(progress) == 0 {
+		t.Fatal("sin progreso")
+	}
+	phases := map[string]bool{}
+	for _, p := range progress {
+		phases[p.Phase] = true
+		if p.I != 0 || p.Total == 0 || p.Done > p.Total {
+			t.Fatalf("%+v", p)
+		}
+	}
+	if !phases["packing"] || !phases["verifying"] {
+		t.Fatalf("fases: %v", phases)
+	}
+	// the end of every step is told, whatever the pace of the lines
+	if end := progress[len(progress)-1]; end.Done != end.Total || end.Phase != "verifying" {
+		t.Fatalf("%+v", end)
+	}
+
+	// the .p5z made, verified and then unpacked to the original dump
+	packed, err := a.Describe(out)
+	if err != nil || !packed.Packed {
+		t.Fatalf("%+v %v", packed, err)
+	}
+	events = newPageEvents()
+	a = pageApp(engine, events)
+	if err := a.Start("verify", []jobs.Item{packed.Item}, Choices{}); err != nil {
+		t.Fatal(err)
+	}
+	if sum := events.wait(t); sum.Done != 1 || strings.Join(events.states(0), " ") != "waiting verifying ok" {
+		t.Fatalf("%+v %v", sum, events.states(0))
+	}
+	unpacked := t.TempDir()
+	events = newPageEvents()
+	a = pageApp(engine, events)
+	if err := a.Start("decompress", []jobs.Item{packed.Item}, Choices{Options: jobs.Options{Mode: jobs.ModeOriginal, Dest: unpacked}}); err != nil {
+		t.Fatal(err)
+	}
+	if sum := events.wait(t); sum.Done != 1 || strings.Join(events.states(0), " ") != "waiting unpacking ok" {
+		t.Fatalf("%+v %v", sum, events.items)
+	}
+	if last := events.last(0); last.Out == "" || last.Size != image.OriginalSize {
+		t.Fatalf("%+v (original %d)", last, image.OriginalSize)
+	}
+}
+
+func TestStartOneAtATime(t *testing.T) {
+	events := newPageEvents()
+	a := pageApp(filepath.Join(t.TempDir(), "no-existe.exe"), events)
+	awake := make(chan struct{})
+	a.extras.Awake = func() func() { <-awake; return func() {} }
+	item := jobs.Item{Path: t.TempDir(), TitleID: "PPSA00001", Name: "x", Kind: "folder", OriginalSize: 1, HasZstdRuntime: true}
+	o := Choices{Options: jobs.Options{Mode: jobs.ModeP5z, Dest: t.TempDir()}}
+	if err := a.Start("compress", []jobs.Item{item}, o); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Start("compress", []jobs.Item{item}, o); err == nil {
+		t.Fatal("dos colas a la vez")
+	}
+	a.Cancel()
+	close(awake)
+	if sum := events.wait(t); sum.Cancelled != 1 {
+		t.Fatalf("%+v", sum)
+	}
+	// once told the end, the next one starts
+	if err := a.Start("compress", []jobs.Item{item}, o); err != nil {
+		t.Fatal(err)
+	}
+	events.wait(t)
+	a.Cancel() // with nothing running, nothing happens
+	if err := a.Start("details", []jobs.Item{item}, o); err == nil {
+		t.Fatal("Detalles no empieza nada")
+	}
+}

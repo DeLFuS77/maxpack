@@ -180,7 +180,7 @@ jobs:
           # el zip portable: la ventana, el motor y la carpeta settings, donde guarda todo lo suyo
           mkdir -p out/portable/MaxPack/settings
           cp out/MaxPack.exe out/maxpack-core.exe ../LICENSE out/portable/MaxPack/
-          printf '%s\r\n' "MaxPack guarda aqui sus ajustes, la posicion de la ventana y lo que ya ha comprobado." "Si borras esta carpeta, MaxPack guarda lo suyo en tu carpeta de usuario." > out/portable/MaxPack/settings/LEEME.txt
+          printf '%s\r\n' "MaxPack guarda aqui sus ajustes, el tamano y la posicion de la ventana y los datos de su pagina." "Si borras esta carpeta, MaxPack guarda lo suyo en tu carpeta de usuario." > out/portable/MaxPack/settings/LEEME.txt
           pwsh -NoProfile -Command "Compress-Archive -Path out/portable/MaxPack -DestinationPath ../dist/maxpack-${{ matrix.name }}-portable.zip"
           ls -l ../dist
 

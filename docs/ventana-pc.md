@@ -29,7 +29,9 @@ Después, sigue los pasos de tu sistema.
   `MaxPack.exe`. Lleva una carpeta `settings` al lado, y mientras esté ahí MaxPack guarda todo lo
   suyo (ajustes, tamaño y posición de la ventana) en ella y nada en tu usuario. Es lo cómodo para un USB.
 - `MaxPack.exe` y `maxpack-core.exe` tienen que estar juntos. La ventana usa `maxpack-core.exe` para
-  trabajar, y si falta te dice qué falta.
+  trabajar, y si falta te dice qué falta. Si el que hay es de otra versión (uno antiguo que no hace
+  todo lo que la ventana necesita), te dice «maxpack-core es de otra versión» y no deja empezar: pon
+  junto a MaxPack el `maxpack-core` que venía con ella.
 
 > Ni el instalador ni `MaxPack.exe` están firmados: Windows SmartScreen avisará la primera vez
 > («Windows protegió su PC»). Pulsa **Más información** y **Ejecutar de todas formas**.
@@ -57,8 +59,9 @@ Con opciones de línea de comandos (`MaxPack pack ...`, `MaxPack --version`) se 
 ## 2. Comprimir
 
 1. Suelta aquí juegos o carpetas, o usa **Añadir archivos** y **Añadir carpeta**. Valen las carpetas de
-   dump de PS5, las imágenes `.exfat` y las carpetas ya comprimidas con packs. En cada juego se ve su
-   título, ID, versión y tamaño.
+   dump de PS5 y las imágenes `.exfat`. En cada juego se ve su título, ID, versión y tamaño. Una
+   carpeta ya comprimida (con packs) no se vuelve a comprimir: sale como «ya está comprimido» y se
+   salta; para comprobarla, usa **Verificar**.
 2. Elige **Hecho para**.
 3. Elige el **nivel** de compresión, del 1 al 22 (19 por defecto), o uno de los atajos **Ligero**,
    **Medio** y **Máximo**. Del 20 al 22 usa mucha memoria y tarda bastante más para ganar poco.
@@ -67,8 +70,19 @@ Con opciones de línea de comandos (`MaxPack pack ...`, `MaxPack --version`) se 
 ![MaxPack comprimiendo, con el progreso de cada juego](img/ventana-trabajando.jpg)
 
 Mientras hay trabajo el PC no se duerme. El progreso sale también en la barra de tareas (Windows) o en
-el Dock (macOS), y al terminar el sistema te avisa. Cancelar, o cerrar la ventana con trabajo en
-marcha, para el juego actual sin dejar nada a medias ni sin verificar.
+el Dock (macOS), y al terminar el sistema te avisa. La versión portable de Windows no avisa: para
+mandar avisos tendría que apuntarse en el registro de Windows, y la portable no lo hace.
+
+Cancelar, o cerrar la ventana con trabajo en marcha, para el juego actual sin dejar nada a medias ni
+sin verificar:
+- lo que llevaba escrito se borra, y el destino queda como estaba: sin el juego si no estaba, o vacía
+  si era una carpeta vacía; con **Reemplazar**, lo viejo queda intacto;
+- `maxpack-core` acaba primero lo que tiene entre manos y luego borra, así que en un juego grande o un
+  USB lento puede tardar unos segundos;
+- si cierras la ventana, `maxpack-core` no se corta: sigue solo hasta haberlo borrado, aunque la
+  ventana ya se haya ido;
+- si algo no se puede borrar (por ejemplo, un archivo abierto en otro programa), la fila lo dice,
+  con la ruta, para que lo borres tú.
 
 ![El resultado: lo que más ahorró y qué hacer después](img/ventana-resultado.jpg)
 
@@ -111,6 +125,11 @@ Después:
   traen un `libSceAmpr.sprx` antiguo que no los lee. Para esos juegos MaxPack pone el
   `libSceAmpr.sprx` de ampr-emu-ng en su `fakelib/`. Descárgalo de
   https://github.com/quer3q/ampr-emu-ng, elígelo en Ajustes y MaxPack lo recuerda. **Quitar** lo olvida.
+  - MaxPack comprueba que el que eliges lee zstd (el de ampr-emu-ng lleva la marca `AMPRZPK1`). Si no
+    la lleva, no lo acepta y te pide otro: con él, el juego se comprimiría y se verificaría bien, pero
+    no arrancaría.
+  - Si aun así un juego sale con un runtime que no lee zstd, su fila lo dice al terminar, y el resumen
+    cuenta cuántos juegos no arrancarán hasta que les pongas el de ampr-emu-ng.
   - Si un juego lo necesita y en Ajustes no hay ninguno, MaxPack lo pide una vez antes de empezar.
   - Si sigues sin él, te avisa de que ese juego no arrancará hasta que tenga ampr-emu-ng, y te deja
     seguir.
@@ -120,7 +139,8 @@ Después:
 - **FAT32.** FAT32 no admite archivos de más de 4 GiB, y un `.p5z` puede pasar de eso. Si el destino es
   FAT32 y el juego original pasa de 4 GiB, MaxPack te lo dice antes de empezar:
   - **Usar carpeta** cambia a «Jugar desde el USB», cuyas partes caben en FAT32;
-  - **Seguir igualmente** lo intenta, y si el `.p5z` llega a 4 GiB, para, borra lo escrito y te lo dice.
+  - **Seguir igualmente** lo intenta. MaxPack nunca escribe en el `.p5z` más de lo que cabe en FAT32
+    (4 GiB menos un byte): antes de pasarse, para, borra lo escrito y te dice que no cabe.
 
   Con un USB en exFAT no hay límite.
 - **Espacio.** Comprueba que el destino tenga sitio para el resultado. Con **Reemplazar** tienen que
@@ -132,4 +152,7 @@ Después:
 - **El origen nunca es el destino.** Si coinciden, o el destino está dentro del juego de origen, pide
   otro.
 - **Dos juegos con el mismo ID** hacia el mismo destino se avisan antes de empezar.
+- **Sin ID.** Si el `param.json` de un juego no da su ID (TITLE_ID), MaxPack lo avisa antes de empezar
+  en «Instalador MaxPack»: el instalador MaxPack no acepta un `.p5z` sin él. Un `param.json` con BOM o
+  con relleno al final se lee bien.
 - MaxPack no escribe nunca en el juego de origen y no toca claves, cifrado ni DRM.

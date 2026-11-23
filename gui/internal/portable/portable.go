@@ -11,8 +11,8 @@ import (
 )
 
 // Folder is the folder "settings" next to the program, when there is one: MaxPack then
-// keeps everything it remembers there, the window, the settings of the page and the cache of the
-// files checked, and nothing in the folders of the user.
+// keeps everything it remembers there, the size and place of the window, the settings and the
+// data of the page (its webview), and nothing in the folders of the user.
 func Folder() string {
 	executable, err := os.Executable()
 	if err != nil {

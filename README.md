@@ -67,8 +67,14 @@ cmake --build build -j
 ctest --test-dir build --output-on-failure
 ```
 
-> GitHub Actions compila el motor y pasa sus pruebas en Windows, Linux y macOS (Apple silicon e Intel)
-> en cada cambio.
+> GitHub Actions, en cada cambio:
+> - en Windows y Linux compila el motor y pasa todas sus pruebas (`ctest`);
+> - compila `maxpack.elf` para la PS5;
+> - en Windows, Linux y macOS (Apple silicon e Intel) compila `maxpack` y la ventana, pasa las
+>   pruebas de la ventana (Go) con ese motor y hace los paquetes.
+>
+> En macOS no se pasan las pruebas del motor (`ctest`): allí el motor solo se prueba a través de las
+> pruebas de la ventana.
 
 ## Uso
 
@@ -106,7 +112,10 @@ maxpack pack <carpeta|imagen.exfat> -o <juego.p5z> --p5z [--level N] [--runtime 
 maxpack unpack <juego.p5z> --folder -o <carpeta>      # la carpeta para la consola
 maxpack unpack <juego.p5z> --original -o <carpeta>    # el dump original, bit a bit
 maxpack info <juego.p5z>
+maxpack info --json <carpeta|imagen.exfat|juego.p5z>   # lo que la ventana lee de un juego
+maxpack icon <carpeta|imagen.exfat|juego.p5z> -o <icono.png>
 maxpack verify <juego.p5z | carpeta> [--against <origen>]
+maxpack --capabilities                                 # lo que sabe hacer esta versión, en JSON
 ```
 
 - **`pack --folder`** (por defecto) produce la carpeta que se copia a la consola:
@@ -122,7 +131,8 @@ maxpack verify <juego.p5z | carpeta> [--against <origen>]
   Formato en [docs/formato-p5z.md](docs/formato-p5z.md).
 - **El runtime de la consola** tiene que ser el `libSceAmpr.sprx` de **ampr-emu-ng**: el ampr_emu
   antiguo no lee packs zstd. Con `--runtime` se coloca en `fakelib/`. Si el runtime final no parece
-  leer zstd, `pack` lo avisa.
+  leer zstd, `pack` lo avisa. También avisa si `sce_sys/param.json` no da el TITLE_ID: el instalador no
+  acepta un `.p5z` sin él.
 - **Garantías de seguridad:**
   - nunca escribe en el origen;
   - no acepta una salida que no esté vacía;

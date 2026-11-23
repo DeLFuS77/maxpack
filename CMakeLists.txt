@@ -42,11 +42,21 @@ target_include_directories(maxpack_pack PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/p
 target_link_libraries(maxpack_pack PUBLIC maxpack_analyze)
 mp_warnings(maxpack_pack)
 
+# Red mínima (fase 2): servidor y cliente HTTP.
+file(GLOB MP_NET_SRC CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/net/*.c)
+add_library(maxpack_net STATIC ${MP_NET_SRC})
+target_include_directories(maxpack_net PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/net)
+target_link_libraries(maxpack_net PUBLIC maxpack_core)
+if(WIN32)
+  target_link_libraries(maxpack_net PUBLIC ws2_32)
+endif()
+mp_warnings(maxpack_net)
+
 # Instalador (fase 2): motor portable. Dependencias: maxpack_web -> maxpack_install -> maxpack_pack.
 file(GLOB MP_INSTALL_SRC CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/install/*.c)
 add_library(maxpack_install STATIC ${MP_INSTALL_SRC})
 target_include_directories(maxpack_install PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/install)
-target_link_libraries(maxpack_install PUBLIC maxpack_pack)
+target_link_libraries(maxpack_install PUBLIC maxpack_pack maxpack_net)
 mp_warnings(maxpack_install)
 
 add_executable(maxpack src/cli/main.c)
@@ -107,6 +117,7 @@ if(MAXPACK_BUILD_TESTS)
   mp_add_test(test_inst_resume FIXTURES)
   mp_add_test(test_inst_replace FIXTURES)
   mp_add_test(test_inst_manage FIXTURES)
+  mp_add_test(test_http)
   mp_add_test(test_idx3 FIXTURES)
   set_tests_properties(test_idx3 PROPERTIES FIXTURES_SETUP idx3)
   add_test(NAME check_idx3 COMMAND ${Python3_EXECUTABLE} -I

@@ -489,3 +489,115 @@ func TestSystemFS(t *testing.T) {
 		}
 	}
 }
+
+// failingRemove makes the removal of paths that exist fail, as an antivirus holding a file does.
+func failingRemove(t *testing.T, match string) {
+	t.Helper()
+	old := removeAll
+	removeAll = func(path string) error {
+		if _, err := os.Stat(path); err == nil && strings.HasSuffix(path, match) {
+			return os.ErrPermission
+		}
+		return old(path)
+	}
+	t.Cleanup(func() { removeAll = old })
+}
+
+func lastDetail() (func(int, string, string), *string, *string) {
+	var state, detail string
+	return func(_ int, s, d string) { state, detail = s, d }, &state, &detail
+}
+
+func TestStaleTmpNotDeleted(t *testing.T) {
+	engine, fixtures := needCore(t)
+	it := describe(t, engine, filepath.Join(fixtures, "basic.exfat"))
+	dest := t.TempDir()
+	o := Options{Mode: "p5z", Dest: dest}
+	out := filepath.Join(dest, P5zName(it))
+	os.WriteFile(out, []byte("viejo"), 0o644)
+	plans := PlanCompress([]Item{it}, o, newFS())
+	os.WriteFile(plans[0].Tmp, []byte("resto"), 0o644)
+	failingRemove(t, ".maxpack-tmp")
+	s := &states{list: map[int][]string{}}
+	on, state, detail := lastDetail()
+	r := &Runner{Core: engine, OnItem: func(i int, st, d string) { s.on(i, st, d); on(i, st, d) }}
+	sum := r.Run(context.Background(), plans, o)
+	if sum.Failed != 1 || *state != "error" || !strings.Contains(*detail, "tmp_not_deleted") || !strings.Contains(*detail, plans[0].Tmp) {
+		t.Errorf("%+v %s %q", sum, *state, *detail)
+	}
+	if hasArg(s.list[0], "packing") {
+		t.Errorf("el motor llegó a correr: %v", s.list[0])
+	}
+	if data, _ := os.ReadFile(out); string(data) != "viejo" {
+		t.Error("lo viejo cambió")
+	}
+}
+
+func TestDiscardFailureReported(t *testing.T) {
+	engine, fixtures := needCore(t)
+	it := describe(t, engine, filepath.Join(fixtures, "basic.exfat"))
+	dest := t.TempDir()
+	o := Options{Mode: "p5z", Dest: dest}
+	out := filepath.Join(dest, P5zName(it))
+	os.WriteFile(out, []byte("viejo"), 0o644)
+	plans := PlanCompress([]Item{it}, o, newFS())
+	failingRemove(t, ".maxpack-tmp")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	on, state, detail := lastDetail()
+	r := &Runner{Core: engine, OnItem: func(i int, st, d string) {
+		on(i, st, d)
+		if st == "verifying" {
+			cancel()
+		}
+	}}
+	r.Run(ctx, plans, o)
+	if *state != "cancelled" || !strings.Contains(*detail, "cancelled") || !strings.Contains(*detail, "tmp_not_deleted") {
+		t.Errorf("%s %q", *state, *detail)
+	}
+	if data, _ := os.ReadFile(out); string(data) != "viejo" {
+		t.Error("lo viejo cambió")
+	}
+}
+
+func TestConsoleReplaceVerifies(t *testing.T) {
+	engine, fixtures := needCore(t)
+	src := describe(t, engine, filepath.Join(fixtures, "basic.exfat"))
+	p5z := filepath.Join(t.TempDir(), "juego.p5z")
+	engineRun(t, engine, "pack", src.Path, "-o", p5z, "--p5z")
+	it := describe(t, engine, p5z)
+	for _, cancelAtVerify := range []bool{false, true} {
+		dest := t.TempDir()
+		o := Options{Mode: "console", Dest: dest}
+		old := filepath.Join(dest, "TEST00001")
+		os.MkdirAll(old, 0o755)
+		os.WriteFile(filepath.Join(old, "viejo.txt"), []byte("viejo"), 0o644)
+		plans := PlanDecompress([]Item{it}, o, fakeFS{free: 1000 * gib, typ: "NTFS"})
+		if len(plans[0].Replace) == 0 {
+			t.Fatal("no reemplaza")
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		s := &states{list: map[int][]string{}}
+		r := &Runner{Core: engine, OnItem: func(i int, st, d string) {
+			s.on(i, st, d)
+			if st == "verifying" && cancelAtVerify {
+				cancel()
+			}
+		}}
+		sum := r.Run(ctx, plans, o)
+		cancel()
+		got := strings.Join(s.list[0], ",")
+		if !strings.Contains(got, "unpacking,verifying") {
+			t.Errorf("sin verificar antes del cambio: %s", got)
+		}
+		_, oldErr := os.Stat(filepath.Join(old, "viejo.txt"))
+		entries, _ := os.ReadDir(dest)
+		if cancelAtVerify {
+			if sum.Done != 0 || oldErr != nil || len(entries) != 1 {
+				t.Errorf("cancelado: %+v, viejo %v, %v", sum, oldErr, entries)
+			}
+		} else if sum.Done != 1 || oldErr == nil || len(entries) != 1 {
+			t.Errorf("%+v, viejo %v, %v", sum, oldErr, entries)
+		}
+	}
+}

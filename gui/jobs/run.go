@@ -13,6 +13,9 @@ import (
 	"github.com/DeLFuS77/maxpack/gui/core"
 )
 
+// removeAll is how leftovers are deleted (a variable so the tests can make it fail).
+var removeAll = os.RemoveAll
+
 // The states of a game in the queue.
 const (
 	StateWaiting   = "waiting"
@@ -141,15 +144,28 @@ func (r *Runner) one(ctx context.Context, i int, p Plan, o Options) (saved uint6
 	target := p.Out
 	if p.Tmp != "" {
 		target = p.Tmp
-		os.RemoveAll(p.Tmp)
+		// a leftover of an earlier run: if it cannot go, say so, not "exists" from the engine
+		if err := removeAll(p.Tmp); err != nil {
+			return 0, StateError, "tmp_not_deleted: " + p.Tmp + ": " + err.Error()
+		}
 	}
 	// what this run made and has to take away if it does not end well; with no Replace the
-	// engine already does it for its own failures, but not for a verification that fails
+	// engine already does it for its own failures, but not for a verification that fails.
+	// When it cannot be taken away, why goes with the detail.
 	made := false
-	discard := func() {
-		if made || p.Tmp != "" {
-			os.RemoveAll(target)
+	discard := func(detail string) string {
+		if !made && p.Tmp == "" {
+			return detail
 		}
+		err := removeAll(target)
+		if err == nil {
+			return detail
+		}
+		code := "partial_not_deleted"
+		if p.Tmp != "" {
+			code = "tmp_not_deleted"
+		}
+		return detail + "; " + code + ": " + target + ": " + err.Error()
 	}
 	if err := os.MkdirAll(filepath.Dir(p.Out), 0o755); err != nil {
 		return 0, StateError, "io: " + err.Error()
@@ -162,36 +178,35 @@ func (r *Runner) one(ctx context.Context, i int, p Plan, o Options) (saved uint6
 	r.item(i, working, "")
 	result, ok, failure := r.engine(ctx, i, p.Args)
 	if !ok {
-		discard()
-		return 0, endState(false, failure), failure
+		return 0, endState(false, failure), discard(failure)
 	}
 	made = true
-	if compress {
+	// "unpack --original" already checks every file against its SHA-256; "unpack --folder"
+	// only writes the files, so what replaces an old copy is verified first
+	if compress || (o.Mode == ModeConsole && p.Tmp != "") {
 		r.item(i, StateVerifying, "")
 		_, ok, failure = r.engine(ctx, i, []string{"verify", target})
 		if !ok {
-			discard()
+			state := endState(false, failure)
 			if failure != "cancelled" {
 				failure = "verify_failed: " + failure
 			}
-			return 0, endState(false, failure), failure
+			return 0, state, discard(failure)
 		}
-		if original, output := number(result, "original_size"), number(result, "output_size"); original > output {
+		if original, output := number(result, "original_size"), number(result, "output_size"); compress && original > output {
 			saved = original - output
 		}
 	}
 	if ctx.Err() != nil {
-		discard()
-		return 0, StateCancelled, "cancelled"
+		return 0, StateCancelled, discard("cancelled")
 	}
 	if p.Tmp != "" {
 		leftover, err := swap(p.Out, p.Tmp)
 		if err != nil {
-			os.RemoveAll(p.Tmp)
-			return 0, StateError, "swap_failed: " + err.Error()
+			return 0, StateError, discard("swap_failed: " + err.Error())
 		}
 		if leftover {
-			return saved, StateOK, "old_not_deleted"
+			return saved, StateOK, "old_not_deleted: " + p.Out + ".maxpack-old"
 		}
 	}
 	return saved, StateOK, ""

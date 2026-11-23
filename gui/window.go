@@ -16,20 +16,21 @@ import (
 	"github.com/wailsapp/wails/v2"
 	wailsoptions "github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"github.com/wailsapp/wails/v2/pkg/options/mac"
 	"github.com/wailsapp/wails/v2/pkg/options/windows"
 )
 
 //go:embed all:frontend
 var frontend embed.FS
 
-// singleWindow is the lock that keeps MaxPack to one window on Windows: the files the Explorer
-// gives to another MaxPack go to the one open.
+// singleWindow is the lock that keeps MaxPack to one window: the files given to another MaxPack
+// (the Explorer, the command line, the Finder) go to the one open.
 const singleWindow = "maxpack-window-1"
 
 // runWindow opens the window with the files given, and gives the exit code once it is closed.
 func runWindow(start launch) int {
 	app := &App{files: start.files}
-	var single *wailsoptions.SingleInstanceLock
+	single := &wailsoptions.SingleInstanceLock{UniqueId: singleWindow, OnSecondInstanceLaunch: app.secondInstance}
 	if runtime.GOOS == "windows" {
 		// the files go to the MaxPack open, which comes to the front; one starting meanwhile
 		// is waited for, until its window takes files (see startup)
@@ -39,7 +40,6 @@ func runWindow(start launch) int {
 		if another {
 			system.AllowForeground()
 		}
-		single = &wailsoptions.SingleInstanceLock{UniqueId: singleWindow, OnSecondInstanceLaunch: app.secondInstance}
 	}
 	// the window opens where it was left and as big (see windowplace)
 	place, _ := windowplace.LoadWindowPlace()
@@ -60,7 +60,9 @@ func runWindow(start launch) int {
 		},
 		DragAndDrop:        &wailsoptions.DragAndDrop{EnableFileDrop: true, DisableWebViewDrop: true},
 		SingleInstanceLock: single,
-		Bind:               []any{app},
+		// files opened on, or dropped on, the Dock icon go where the ones of a second MaxPack go
+		Mac:  &mac.Options{OnFileOpen: func(path string) { app.receive([]string{path}) }},
+		Bind: []any{app},
 		// portable: the page keeps its settings next to the program too
 		Windows: &windows.Options{WebviewUserDataPath: portable.WebviewFolder()},
 	})

@@ -735,8 +735,41 @@ static void handle_icon(mp_api *a, const mp_http_req *rq, mp_http_resp *rs) {
     mp_p5z_close(p);
 }
 
+// Host tiene que ser una IP, [IPv6] o localhost (con puerto o sin él): así una web cualquiera no
+// puede leer la API con un nombre que apunte a la consola (rebinding de DNS).
+static int host_ok(const char *h) {
+    if (!h || !*h) return 0;
+    if (h[0] == '[') return strchr(h, ']') != NULL;
+    size_t n = strcspn(h, ":");
+    if (n == 9 && !strncmp(h, "localhost", 9)) return 1;
+    int dots = 0;
+    for (size_t i = 0; i < n; i++) {
+        if (h[i] == '.') dots++;
+        else if (h[i] < '0' || h[i] > '9') return 0;
+    }
+    return dots == 3;
+}
+
+// Un POST de otra web sin preflight solo puede llevar text/plain, form o multipart: exigir JSON
+// hace que el navegador pida permiso antes (y este servidor no lo da).
+static int json_ok(const char *ct) {
+    const char *want = "application/json";
+    if (!ct) return 0;
+    for (size_t i = 0; want[i]; i++) {
+        char c = ct[i];
+        if (c >= 'A' && c <= 'Z') c = (char)(c + 32);
+        if (c != want[i]) return 0;
+    }
+    return ct[16] == 0 || ct[16] == ';' || ct[16] == ' ';
+}
+
 void mp_api_handle(void *ctx, const mp_http_req *rq, mp_http_resp *rs) {
     mp_api *a = ctx;
+    if (!strncmp(rq->path, "/api/", 5) &&
+        (!host_ok(rq->host) || (!strcmp(rq->method, "POST") && !json_ok(rq->content_type)))) {
+        respond_err(rs, 403, "forbidden", "petición rechazada: solo se acepta la página de MaxPack");
+        return;
+    }
     int get = !strcmp(rq->method, "GET"), post = !strcmp(rq->method, "POST");
     if (get && !strcmp(rq->path, "/")) {
         if (!a->page) {

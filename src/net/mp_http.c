@@ -183,6 +183,10 @@ static void serve_one(mp_http_server *srv, sock_t c) {
     snprintf(target, sizeof target, "%s", sp1 + 1);
     buf[hend - 2] = 0;   // las cabeceras acaban en NUL para buscarlas
     const char *cl = find_header(line_end, "Content-Length");
+    char ctype[128] = "", host[256] = "";
+    const char *ct = find_header(line_end, "Content-Type"), *ho = find_header(line_end, "Host");
+    if (ct) snprintf(ctype, sizeof ctype, "%.*s", (int)strcspn(ct, "\r"), ct);
+    if (ho) snprintf(host, sizeof host, "%.*s", (int)strcspn(ho, "\r"), ho);
     unsigned long long len = cl ? strtoull(cl, NULL, 10) : 0;
     if (len > MP_HTTP_MAX_BODY) {
         send_simple(c, 413);
@@ -213,7 +217,7 @@ static void serve_one(mp_http_server *srv, sock_t c) {
         *q = 0;
         query = q + 1;
     }
-    mp_http_req rq = {method, target, query, body, (size_t)len};
+    mp_http_req rq = {method, target, query, body, (size_t)len, ctype, host};
     mp_http_resp rs = {200, NULL, NULL, 0};
     srv->h(srv->ctx, &rq, &rs);
     send_response(c, rs.status, rs.content_type ? rs.content_type : "application/json", rs.body ? rs.body : "",

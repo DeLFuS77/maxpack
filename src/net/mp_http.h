@@ -15,6 +15,7 @@ typedef struct {
     const char *method, *path, *query;   // query sin '?', "" si no hay
     const char *body;
     size_t body_len;
+    const char *content_type, *host;   // cabeceras ("" si no vienen; NULL fuera del servidor)
 } mp_http_req;
 
 typedef struct {

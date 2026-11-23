@@ -7,6 +7,20 @@
 #include "mp_json.h"
 #include "mp_smp.h"
 
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+typedef SOCKET sock_t;
+#define close_sock closesocket
+#else
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
+typedef int sock_t;
+#define close_sock close
+#endif
+
 #define TMP MP_TEST_TMP "/api"
 #define DATA TMP "/data"
 #define USB TMP "/usb0"
@@ -389,6 +403,46 @@ MP_TEST(api_kinds) {
     MP_CHECK(mp_path_kind(USB "/Juego/eboot.bin") == 1);
 }
 
+// Petición tal cual (cabeceras incluidas) y código de estado de la respuesta.
+static int raw_status(const char *raw) {
+    sock_t s = socket(AF_INET, SOCK_STREAM, 0);
+    struct sockaddr_in a;
+    memset(&a, 0, sizeof a);
+    a.sin_family = AF_INET;
+    a.sin_port = htons(web_port);
+    inet_pton(AF_INET, "127.0.0.1", &a.sin_addr);
+    connect(s, (struct sockaddr *)&a, sizeof a);
+    send(s, raw, (int)strlen(raw), 0);
+    char buf[256];
+    int n = (int)recv(s, buf, sizeof buf - 1, 0);
+    close_sock(s);
+    if (n <= 12) return -1;
+    buf[n] = 0;
+    return strncmp(buf, "HTTP/1.1 ", 9) ? -1 : atoi(buf + 9);
+}
+
+MP_TEST(api_rejects_cross_site) {
+    setup();
+    const char *body = "{\"title_id\":\"TEST00001\",\"confirm\":true}";
+    char req[1024];
+    // Un POST "simple" de otra web (sin preflight): text/plain.
+    snprintf(req, sizeof req,
+             "POST /api/uninstall HTTP/1.1\r\nHost: 127.0.0.1:%u\r\nContent-Type: text/plain\r\n"
+             "Content-Length: %zu\r\n\r\n%s",
+             (unsigned)web_port, strlen(body), body);
+    MP_CHECK(raw_status(req) == 403);
+    // Sin Content-Type tampoco.
+    MP_CHECK(raw_status("POST /api/scan HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: 2\r\n\r\n{}") == 403);
+    // Un nombre que no es una IP (rebinding de DNS), o sin Host.
+    MP_CHECK(raw_status("GET /api/state HTTP/1.1\r\nHost: evil.example:8095\r\n\r\n") == 403);
+    MP_CHECK(raw_status("GET /api/state HTTP/1.1\r\n\r\n") == 403);
+    // Lo que manda la página sí vale.
+    MP_CHECK(raw_status("GET /api/state HTTP/1.1\r\nHost: 192.168.1.50:8095\r\n\r\n") == 200);
+    MP_CHECK(raw_status("GET /api/state HTTP/1.1\r\nHost: localhost\r\n\r\n") == 200);
+    MP_CHECK(raw_status("POST /api/scan HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+                        "Content-Type: application/json; charset=utf-8\r\nContent-Length: 2\r\n\r\n{}") == 200);
+}
+
 int main(void) {
     MP_RUN(api_state_and_scan);
     MP_RUN(api_install_flow);
@@ -400,6 +454,7 @@ int main(void) {
     MP_RUN(api_smp_retry);
     MP_RUN(api_refuses_running);
     MP_RUN(api_kinds);
+    MP_RUN(api_rejects_cross_site);
     mp_http_stop(web);
     mp_api_free(api);
     if (smp_srv) smp_down();

@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -17,6 +18,12 @@ import (
 
 // removeAll is how leftovers are deleted (a variable so the tests can make it fail).
 var removeAll = os.RemoveAll
+
+// lstat and readDir are how an output is looked at (variables so the tests can make them fail).
+var (
+	lstat   = os.Lstat
+	readDir = os.ReadDir
+)
 
 // The states of a game in the queue.
 const (
@@ -191,6 +198,10 @@ func (r *Runner) one(ctx context.Context, i int, p Plan, o Options) (saved uint6
 	r.item(i, working, "")
 	result, ok, failure := r.engine(ctx, i, p.Args)
 	if !ok {
+		// "exists": what is at Out is not the engine's, nor ours: only Tmp (ours) is taken away
+		if failure == "exists" && p.Tmp == "" {
+			return 0, endState(false, failure), failure
+		}
 		return 0, endState(false, failure), discard(failure)
 	}
 	// made, but with a runtime that does not read zstd it will not start: said, and it goes on
@@ -237,14 +248,14 @@ const (
 )
 
 func outState(path string) int {
-	info, err := os.Lstat(path)
+	info, err := lstat(path)
 	switch {
-	case err != nil:
+	case errors.Is(err, fs.ErrNotExist):
 		return outMissing
-	case !info.IsDir():
-		return outFull
+	case err != nil, !info.IsDir():
+		return outFull // not being able to look is not "nothing there"
 	}
-	if entries, err := os.ReadDir(path); err == nil && len(entries) == 0 {
+	if entries, err := readDir(path); err == nil && len(entries) == 0 {
 		return outEmpty
 	}
 	return outFull

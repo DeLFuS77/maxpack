@@ -21,6 +21,8 @@ import (
 //   - "writes-slow-clean": writes part of its output and, once cancelled (the line "cancel", or
 //     its input closed), takes MP_FAKE_CLEAN_MS (1000 by default) to take it away, as a big
 //     batch of zstd on a slow disk does; then it leaves <output>.cleaned and ends as cancelled.
+//   - "exists": something that is not the engine's is at its output (-o) when it looks: it writes
+//     part of it and refuses with error "exists" (exit 1), as the real one does.
 const Env = "MP_FAKE_CORE"
 
 // Main acts as the engine and exits when Env says so; else it returns at once.
@@ -51,6 +53,18 @@ func run(mode string, args []string) int {
 		progress()
 		time.Sleep(time.Minute)
 		return 0
+	case "exists":
+		out := output(args)
+		if out == "" {
+			fmt.Fprintln(os.Stderr, "error: falta -o")
+			return 2
+		}
+		if err := writePart(out, hasArg(args, "--p5z")); err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			return 1
+		}
+		fmt.Println(`{"event":"result","ok":false,"error":"exists"}`)
+		return 1
 	case "writes-stubborn", "writes-slow-clean":
 		out := output(args)
 		if out == "" {

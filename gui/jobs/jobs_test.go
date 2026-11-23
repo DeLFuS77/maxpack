@@ -765,3 +765,94 @@ func TestNoTitleIdWarned(t *testing.T) {
 		t.Errorf("con ID: %v", p.Warnings)
 	}
 }
+
+// When the engine refuses with "exists", what is at the output is not ours whatever the Runner
+// saw before: it is not removed, nor emptied. With Replace only Tmp goes.
+func TestExistsRefusalNeverCleansOut(t *testing.T) {
+	t.Setenv(fakecore.Env, "exists")
+	for _, c := range []struct {
+		mode  Mode
+		empty bool
+	}{{ModeP5z, false}, {ModeFolder, false}, {ModeFolder, true}} {
+		dest := t.TempDir()
+		o := Options{Mode: c.mode, Dest: dest}
+		plans := PlanCompress([]Item{item("Juego", "TEST00001", 10)}, o, newFS())
+		if c.empty {
+			os.MkdirAll(plans[0].Out, 0o755)
+		}
+		on, state, detail := lastDetail()
+		(&Runner{Core: os.Args[0], OnItem: on}).Run(context.Background(), plans, o)
+		if *state != StateError || *detail != "exists" {
+			t.Errorf("%s vacía=%v: %s %q", c.mode, c.empty, *state, *detail)
+		}
+		if _, err := os.Stat(plans[0].Out); err != nil {
+			t.Errorf("%s vacía=%v: la salida ajena desapareció: %v", c.mode, c.empty, err)
+		}
+		if c.mode == ModeFolder {
+			if _, err := os.Stat(filepath.Join(plans[0].Out, "eboot.bin")); err != nil {
+				t.Errorf("%s: el archivo ajeno desapareció: %v", c.mode, err)
+			}
+		}
+	}
+}
+
+func TestExistsRefusalReplaceCleansOnlyTmp(t *testing.T) {
+	t.Setenv(fakecore.Env, "exists")
+	dest := t.TempDir()
+	o := Options{Mode: ModeP5z, Dest: dest}
+	it := item("Juego", "TEST00001", 10)
+	out := filepath.Join(dest, P5zName(it))
+	os.WriteFile(out, []byte("viejo"), 0o644)
+	plans := PlanCompress([]Item{it}, o, newFS())
+	if plans[0].Tmp == "" {
+		t.Fatal("el plan no reemplaza")
+	}
+	(&Runner{Core: os.Args[0]}).Run(context.Background(), plans, o)
+	if data, _ := os.ReadFile(out); string(data) != "viejo" {
+		t.Errorf("lo viejo: %q", data)
+	}
+	if _, err := os.Stat(plans[0].Tmp); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("quedó Tmp: %v", err)
+	}
+}
+
+// Only "does not exist" is "nothing there": any other failure to look at the output (access, I/O,
+// sharing) counts as full, so it is never a candidate for deletion.
+func TestOutStateUnreadableIsFull(t *testing.T) {
+	oldL, oldR := lstat, readDir
+	t.Cleanup(func() { lstat, readDir = oldL, oldR })
+	dir := t.TempDir()
+	if got := outState(filepath.Join(dir, "no")); got != outMissing {
+		t.Errorf("inexistente: %d", got)
+	}
+	lstat = func(string) (fs.FileInfo, error) { return nil, fs.ErrPermission }
+	if got := outState(dir); got != outFull {
+		t.Errorf("Lstat falla: %d", got)
+	}
+	lstat = oldL
+	readDir = func(string) ([]os.DirEntry, error) { return nil, errors.New("EIO") }
+	if got := outState(dir); got != outFull {
+		t.Errorf("ReadDir falla: %d", got)
+	}
+}
+
+// With an output that cannot be looked at, a failed game takes nothing away.
+func TestUnreadableOutNotCleaned(t *testing.T) {
+	t.Setenv(fakecore.Env, "writes-stubborn")
+	shortGrace(t)
+	oldL := lstat
+	t.Cleanup(func() { lstat = oldL })
+	dest := t.TempDir()
+	o := Options{Mode: ModeP5z, Dest: dest}
+	plans := PlanCompress([]Item{item("Juego", "TEST00001", 10)}, o, newFS())
+	lstat = func(p string) (fs.FileInfo, error) {
+		if p == plans[0].Out {
+			return nil, fs.ErrPermission
+		}
+		return oldL(p)
+	}
+	runCancelled(t, plans, o)
+	if _, err := os.Stat(plans[0].Out); err != nil {
+		t.Errorf("se borró lo que no se pudo leer: %v", err)
+	}
+}

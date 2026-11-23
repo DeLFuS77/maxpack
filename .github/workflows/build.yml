@@ -8,6 +8,9 @@ on:
     branches: [main, "fase*", "interfaz-*"]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   linux:
     runs-on: ubuntu-24.04

@@ -11,9 +11,16 @@ para qué los quieres y pulsas **Comprimir**.
 
 ## 1. Descargar y abrir
 
-GitHub Actions construye la ventana en cada cambio, como un artefacto por sistema
-(`maxpack-windows-x64`, `maxpack-linux-x64`, `maxpack-macos-apple-silicon` y `maxpack-macos-intel`).
-Descarga el tuyo y sigue los pasos de tu sistema.
+Cuando haya versiones publicadas, estarán en **Releases** del repositorio. Mientras tanto, GitHub
+Actions construye la ventana en cada cambio, como un artefacto por sistema (`maxpack-windows-x64`,
+`maxpack-linux-x64`, `maxpack-macos-apple-silicon` y `maxpack-macos-intel`):
+1. En https://github.com/DeLFuS77/maxpack abre **Actions**, el último trabajo `build` en verde y, abajo,
+   **Artifacts**.
+2. Hace falta tener sesión iniciada en GitHub, y los artefactos caducan pasado un tiempo.
+3. Cada artefacto baja como un zip que envuelve el paquete de verdad: descomprímelo y dentro está lo que
+   sigue (el instalador, el `.dmg`, el `.tar.gz`...).
+
+Después, sigue los pasos de tu sistema.
 
 **Windows**
 - `maxpack-windows-x64-setup.exe` es el instalador. Instala MaxPack en tu carpeta de usuario, sin
@@ -24,14 +31,18 @@ Descarga el tuyo y sigue los pasos de tu sistema.
 - `MaxPack.exe` y `maxpack-core.exe` tienen que estar juntos. La ventana usa `maxpack-core.exe` para
   trabajar, y si falta te dice qué falta.
 
+> Ni el instalador ni `MaxPack.exe` están firmados: Windows SmartScreen avisará la primera vez
+> («Windows protegió su PC»). Pulsa **Más información** y **Ejecutar de todas formas**.
+
 > El instalador de Windows se comprueba en cada compilación de forma automática (instalar en silencio,
 > comprimir una imagen de prueba y desinstalar), pero todavía no se ha probado a mano con doble clic y
 > el asistente en pantalla. Si algo no va, usa el zip portable y cuéntalo.
 
 **macOS**
 - Abre el `.dmg` y arrastra `MaxPack.app` a Aplicaciones. El `.tar.gz` lleva la misma app.
-- La app no está notarizada: la primera vez ábrela con clic derecho, **Abrir** (o permítela en
-  Ajustes del Sistema, Privacidad y seguridad).
+- La app no está notarizada. La primera vez ábrela con clic derecho, **Abrir**. En macOS 15 o
+  posterior, si no te deja, intenta abrirla una vez, y luego en Ajustes del Sistema, Privacidad y
+  seguridad, pulsa **Abrir igualmente**.
 - Las versiones de Apple silicon e Intel son distintas: elige la de tu Mac.
 
 **Linux**

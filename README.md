@@ -67,8 +67,8 @@ cmake --build build -j
 ctest --test-dir build --output-on-failure
 ```
 
-> Linux y macOS todavía no se han compilado ni probado; el código está escrito para ellos (POSIX y
-> pthreads), pero de momento solo está verificado en Windows con MSVC.
+> GitHub Actions compila el motor y pasa sus pruebas en Windows, Linux y macOS (Apple silicon e Intel)
+> en cada cambio.
 
 ## Uso
 

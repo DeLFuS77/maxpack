@@ -46,8 +46,24 @@ cat > "${app}/Contents/Info.plist" <<PLIST
 	<key>CFBundleShortVersionString</key><string>${version}</string>
 	<key>LSMinimumSystemVersion</key><string>13.0</string>
 	<key>NSHighResolutionCapable</key><true/>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key><string>Carpeta</string>
+			<key>CFBundleTypeRole</key><string>Viewer</string>
+			<key>LSHandlerRank</key><string>Alternate</string>
+			<key>LSItemContentTypes</key><array><string>public.folder</string></array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key><string>Juego de PS5</string>
+			<key>CFBundleTypeRole</key><string>Viewer</string>
+			<key>LSHandlerRank</key><string>Alternate</string>
+			<key>CFBundleTypeExtensions</key><array><string>p5z</string><string>exfat</string></array>
+		</dict>
+	</array>
 </dict>
 </plist>
 PLIST
+plutil -lint "${app}/Contents/Info.plist"
 codesign --force --deep --sign - "${app}"
 codesign --verify "${app}"

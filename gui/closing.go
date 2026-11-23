@@ -3,13 +3,16 @@
 package main
 
 // Closing the window while a queue runs, as NXPress does: it is asked first, in the dialog of the
-// page; and once the answer is to cancel and close, the queue is cancelled and waited for, so the
-// game at work leaves nothing half made or unverified behind.
+// page; and once the answer is to cancel and close, the queue is cancelled and waited for a while,
+// so the game at work leaves nothing half made or unverified behind. The engine is never killed
+// as the window closes: it is told to cancel and its input is closed, and it takes away what it
+// wrote on its own, even once MaxPack is gone.
 
 import (
 	"context"
 	"time"
 
+	"github.com/DeLFuS77/maxpack/gui/core"
 	"github.com/DeLFuS77/maxpack/gui/internal/windowplace"
 	"github.com/DeLFuS77/maxpack/gui/settings"
 
@@ -17,7 +20,8 @@ import (
 )
 
 // closeWait is how long MaxPack waits as it closes for the queue to stop: the game at work takes
-// away what it half made or did not verify (a big one takes a while on a slow disk).
+// away what it half made or did not verify (a big one takes a while on a slow disk). An engine
+// that takes longer goes on alone, and takes it away itself.
 var closeWait = 10 * time.Second
 
 // beforeClose (OnBeforeClose) keeps the window open while it asks whether to stop the queue
@@ -104,12 +108,13 @@ func (a *App) closeQuestion() (question, yes, no string) {
 
 // closed (OnShutdown) stops the queue running as MaxPack closes, and waits for it, closeWait at
 // most: the Runner takes away what the game at work made and did not verify, or the copy that
-// was to replace an old one. MaxPack ends right after.
+// was to replace an old one. MaxPack ends right after; the engine is not killed (core.ErrClosing),
+// and once cancelled it takes away what it wrote itself.
 func (a *App) closed(context.Context) {
 	a.mutex.Lock()
 	q := a.queue
 	a.mutex.Unlock()
-	a.Cancel()
+	a.stop(core.ErrClosing)
 	if q == nil {
 		return
 	}

@@ -317,12 +317,12 @@ func (a *App) Start(section string, items []jobs.Item, opts Choices) error {
 			plans[i].Block = "exists"
 		}
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancelCause(context.Background())
 	q := &queue{ctx: ctx, cancel: cancel, done: make(chan struct{})}
 	a.mutex.Lock()
 	if a.queue != nil {
 		a.mutex.Unlock()
-		cancel()
+		cancel(nil)
 		return errors.New("ya hay un trabajo en marcha")
 	}
 	a.queue = q
@@ -332,7 +332,7 @@ func (a *App) Start(section string, items []jobs.Item, opts Choices) error {
 		a.mutex.Lock()
 		a.queue = nil
 		a.mutex.Unlock()
-		cancel()
+		cancel(nil)
 		close(q.done)
 		// told once the next queue can start
 		a.send("job:done", sum)
@@ -340,21 +340,24 @@ func (a *App) Start(section string, items []jobs.Item, opts Choices) error {
 	return nil
 }
 
-// queue is the queue running: its context, how to stop it, and when the Runner returned (with
-// what it made and did not verify taken away).
+// queue is the queue running: its context, how to stop it (with why: core.ErrClosing when the
+// window closes), and when the Runner returned (with what it made and did not verify taken away).
 type queue struct {
 	ctx    context.Context
-	cancel context.CancelFunc
+	cancel context.CancelCauseFunc
 	done   chan struct{}
 }
 
 // Cancel stops the queue running: the game at work stops without leaving anything half made,
 // and the ones waiting are not started.
-func (a *App) Cancel() {
+func (a *App) Cancel() { a.stop(nil) }
+
+// stop cancels the queue running, if any, with why.
+func (a *App) stop(why error) {
 	a.mutex.Lock()
 	defer a.mutex.Unlock()
 	if a.queue != nil {
-		a.queue.cancel()
+		a.queue.cancel(why)
 	}
 }
 

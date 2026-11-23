@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -13,8 +14,10 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/DeLFuS77/maxpack/gui/core"
+	"github.com/DeLFuS77/maxpack/gui/internal/fakecore"
 )
 
 const gib = uint64(1) << 30
@@ -598,6 +601,126 @@ func TestConsoleReplaceVerifies(t *testing.T) {
 			}
 		} else if sum.Done != 1 || oldErr == nil || len(entries) != 1 {
 			t.Errorf("%+v, viejo %v, %v", sum, oldErr, entries)
+		}
+	}
+}
+
+// shortGrace makes Run kill an engine that does not stop soon after asking it to cancel.
+func shortGrace(t *testing.T) {
+	t.Helper()
+	old := core.CancelGrace
+	core.CancelGrace = 200 * time.Millisecond
+	t.Cleanup(func() { core.CancelGrace = old })
+}
+
+// runCancelled runs the plans with the engine of the test binary and cancels at its first
+// progress; it gives the summary and the last state and detail of the first game.
+func runCancelled(t *testing.T, plans []Plan, o Options) (Summary, string, string) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	on, state, detail := lastDetail()
+	r := &Runner{Core: os.Args[0], OnItem: on, OnEvent: func(int, core.Event) { cancel() }}
+	sum := r.Run(ctx, plans, o)
+	return sum, *state, *detail
+}
+
+// An engine that is killed after a cancel (it did not stop in time) leaves what it wrote; the
+// Runner takes the output back to what it was: gone if it was not there, empty if it was an
+// empty folder.
+func TestKilledEngineLeavesNothing(t *testing.T) {
+	t.Setenv(fakecore.Env, "writes-stubborn")
+	shortGrace(t)
+	for _, c := range []struct {
+		mode  Mode
+		empty bool
+	}{{ModeP5z, false}, {ModeFolder, false}, {ModeFolder, true}} {
+		dest := t.TempDir()
+		o := Options{Mode: c.mode, Dest: dest}
+		plans := PlanCompress([]Item{item("Juego", "TEST00001", 10)}, o, newFS())
+		if c.empty {
+			os.MkdirAll(plans[0].Out, 0o755)
+		}
+		sum, state, detail := runCancelled(t, plans, o)
+		if sum.Cancelled != 1 || state != StateCancelled || detail != "cancelled" {
+			t.Errorf("%s vacía=%v: %+v %s %q", c.mode, c.empty, sum, state, detail)
+		}
+		entries, err := os.ReadDir(plans[0].Out)
+		switch {
+		case c.empty && (err != nil || len(entries) != 0):
+			t.Errorf("%s: la carpeta vacía no quedó vacía: %v %v", c.mode, entries, err)
+		case !c.empty:
+			if _, err := os.Stat(plans[0].Out); !errors.Is(err, fs.ErrNotExist) {
+				t.Errorf("%s: quedó la salida a medias: %v", c.mode, err)
+			}
+		}
+	}
+}
+
+// When what a killed engine wrote cannot be taken away, the detail says where it is.
+func TestPartialNotDeletedReported(t *testing.T) {
+	t.Setenv(fakecore.Env, "writes-stubborn")
+	shortGrace(t)
+	for _, c := range []struct {
+		mode  Mode
+		empty bool
+		match string
+	}{{ModeP5z, false, ".p5z"}, {ModeFolder, true, "eboot.bin"}} {
+		dest := t.TempDir()
+		o := Options{Mode: c.mode, Dest: dest}
+		plans := PlanCompress([]Item{item("Juego", "TEST00001", 10)}, o, newFS())
+		if c.empty {
+			os.MkdirAll(plans[0].Out, 0o755)
+		}
+		failingRemove(t, c.match)
+		_, state, detail := runCancelled(t, plans, o)
+		if state != StateCancelled || !strings.Contains(detail, "partial_not_deleted: "+plans[0].Out) {
+			t.Errorf("%s: %s %q", c.mode, state, detail)
+		}
+	}
+}
+
+// With Replace the engine writes in Tmp: a killed one leaves the old one as it was and no Tmp.
+func TestKilledEngineKeepsOld(t *testing.T) {
+	t.Setenv(fakecore.Env, "writes-stubborn")
+	shortGrace(t)
+	dest := t.TempDir()
+	o := Options{Mode: ModeP5z, Dest: dest}
+	it := item("Juego", "TEST00001", 10)
+	out := filepath.Join(dest, P5zName(it))
+	os.WriteFile(out, []byte("viejo"), 0o644)
+	plans := PlanCompress([]Item{it}, o, newFS())
+	if plans[0].Tmp == "" {
+		t.Fatal("el plan no reemplaza")
+	}
+	_, state, detail := runCancelled(t, plans, o)
+	if data, _ := os.ReadFile(out); string(data) != "viejo" || state != StateCancelled {
+		t.Errorf("lo viejo: %q, %s %q", data, state, detail)
+	}
+	if entries, _ := os.ReadDir(dest); len(entries) != 1 {
+		t.Errorf("sobran archivos: %v", entries)
+	}
+}
+
+// What is at the output with something in it when the game starts (it came after the plan) is
+// not the Runner's: the engine refuses it, and it stays as it was.
+func TestOutWithContentNeverTouched(t *testing.T) {
+	engine, fixtures := needCore(t)
+	it := describe(t, engine, filepath.Join(fixtures, "basic.exfat"))
+	for _, mode := range []Mode{ModeP5z, ModeFolder} {
+		dest := t.TempDir()
+		o := Options{Mode: mode, Dest: dest}
+		plans := PlanCompress([]Item{it}, o, newFS())
+		mine := plans[0].Out
+		if mode == ModeFolder {
+			os.MkdirAll(mine, 0o755)
+			mine = filepath.Join(mine, "mio.txt")
+		}
+		os.WriteFile(mine, []byte("ajeno"), 0o644)
+		on, state, detail := lastDetail()
+		(&Runner{Core: engine, OnItem: on}).Run(context.Background(), plans, o)
+		if data, _ := os.ReadFile(mine); string(data) != "ajeno" || *state != StateError {
+			t.Errorf("%s: %q, %s %q", mode, data, *state, *detail)
 		}
 	}
 }

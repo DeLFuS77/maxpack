@@ -4,6 +4,7 @@ package jobs
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -149,23 +150,29 @@ func (r *Runner) one(ctx context.Context, i int, p Plan, o Options) (saved uint6
 			return 0, StateError, "tmp_not_deleted: " + p.Tmp + ": " + err.Error()
 		}
 	}
-	// what this run made and has to take away if it does not end well; with no Replace the
-	// engine already does it for its own failures, but not for a verification that fails.
-	// When it cannot be taken away, why goes with the detail.
-	made := false
+	// what the output was before: anything that does not end well takes it back to that, whoever
+	// wrote it (the engine for its own failures, but not when it is killed, nor for a verification
+	// that fails). With Replace the new one is made in Tmp, which goes; else what was not there
+	// goes, and an empty folder is emptied. An output with something in it is never touched: the
+	// engine does not write in one. When it cannot be taken back, why goes with the detail.
+	before := outState(p.Out)
 	discard := func(detail string) string {
-		if !made && p.Tmp == "" {
+		var err error
+		code, path := "partial_not_deleted", p.Out
+		switch {
+		case p.Tmp != "":
+			code, path, err = "tmp_not_deleted", p.Tmp, removeAll(p.Tmp)
+		case before == outMissing:
+			err = removeAll(p.Out)
+		case before == outEmpty:
+			err = emptyFolder(p.Out)
+		default:
 			return detail
 		}
-		err := removeAll(target)
 		if err == nil {
 			return detail
 		}
-		code := "partial_not_deleted"
-		if p.Tmp != "" {
-			code = "tmp_not_deleted"
-		}
-		return detail + "; " + code + ": " + target + ": " + err.Error()
+		return detail + "; " + code + ": " + path + ": " + err.Error()
 	}
 	if err := os.MkdirAll(filepath.Dir(p.Out), 0o755); err != nil {
 		return 0, StateError, "io: " + err.Error()
@@ -180,7 +187,6 @@ func (r *Runner) one(ctx context.Context, i int, p Plan, o Options) (saved uint6
 	if !ok {
 		return 0, endState(false, failure), discard(failure)
 	}
-	made = true
 	// "unpack --original" already checks every file against its SHA-256; "unpack --folder"
 	// only writes the files, so what replaces an old copy is verified first
 	if compress || (o.Mode == ModeConsole && p.Tmp != "") {
@@ -210,6 +216,45 @@ func (r *Runner) one(ctx context.Context, i int, p Plan, o Options) (saved uint6
 		}
 	}
 	return saved, StateOK, ""
+}
+
+// What an output is before a game starts.
+const (
+	outMissing = iota // nothing there
+	outEmpty          // an empty folder
+	outFull           // a file, or a folder with something in it (or that cannot be read)
+)
+
+func outState(path string) int {
+	info, err := os.Lstat(path)
+	switch {
+	case err != nil:
+		return outMissing
+	case !info.IsDir():
+		return outFull
+	}
+	if entries, err := os.ReadDir(path); err == nil && len(entries) == 0 {
+		return outEmpty
+	}
+	return outFull
+}
+
+// emptyFolder takes away what is in a folder, and leaves the folder; the first error, if any.
+func emptyFolder(path string) error {
+	entries, err := os.ReadDir(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var first error
+	for _, entry := range entries {
+		if err := removeAll(filepath.Join(path, entry.Name())); err != nil && first == nil {
+			first = err
+		}
+	}
+	return first
 }
 
 func endState(ok bool, failure string) string {

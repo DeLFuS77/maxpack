@@ -20,8 +20,15 @@ import (
 )
 
 // CancelGrace is how long Run waits for the engine to stop after asking it to cancel, before it
-// kills it.
-var CancelGrace = 5 * time.Second
+// kills it. It is only for an engine that hangs: one that cancels finishes the batch at work
+// first (a 32 MiB zstd 19 frame on each thread) and then takes away what it wrote, which on a slow
+// USB takes a while; killed before, it would leave that half written.
+var CancelGrace = 120 * time.Second
+
+// ErrClosing is the cause of a cancel because the window closes (context.WithCancelCause): the
+// engine is asked to cancel and its input is closed, but it is never killed, so it takes away
+// what it wrote on its own even once the window is gone.
+var ErrClosing = errors.New("la ventana se cierra")
 
 // Event is a line of the engine: "progress" or the final "result".
 type Event struct {
@@ -83,9 +90,10 @@ func parse(line []byte) (Event, bool) {
 }
 
 // Run runs the engine with args plus --progress json --control stdin, and gives each progress to
-// onEvent (which may be nil). When ctx ends it asks the engine to cancel and waits for it, up to
-// CancelGrace; an engine that does not stop by then is killed, and Run gives a result of its own
-// ({"ok": false, "error": "cancelled"}) with code 130, as an engine that cancelled would. It gives
+// onEvent (which may be nil). When ctx ends it asks the engine to cancel, closes its input and
+// waits for it, up to CancelGrace; an engine that does not stop by then is killed, and Run gives a
+// result of its own ({"ok": false, "error": "cancelled"}) with code 130, as an engine that
+// cancelled would. When ctx ends with the cause ErrClosing the engine is never killed. It gives
 // the result, and the exit code of the engine.
 func Run(ctx context.Context, core string, args []string, onEvent func(Event)) (Event, int, error) {
 	command := hide(exec.Command(core, append(append([]string{}, args...), "--progress", "json", "--control", "stdin")...))
@@ -111,6 +119,10 @@ func Run(ctx context.Context, core string, args []string, onEvent func(Event)) (
 		case <-ctx.Done():
 			stdin.Write([]byte("cancel\n"))
 			stdin.Close()
+			if errors.Is(context.Cause(ctx), ErrClosing) {
+				<-ended
+				return
+			}
 			select {
 			case <-ended:
 			case <-time.After(CancelGrace):

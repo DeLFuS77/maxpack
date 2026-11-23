@@ -6,9 +6,12 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/DeLFuS77/maxpack/gui/core"
+	"github.com/DeLFuS77/maxpack/gui/internal/fakecore"
 	"github.com/DeLFuS77/maxpack/gui/jobs"
 )
 
@@ -168,5 +171,53 @@ func TestClosingWaitsAWhileAtMost(t *testing.T) {
 	(&App{}).closed(context.Background())
 	if time.Since(start) > 50*time.Millisecond {
 		t.Fatal("closing waited with nothing running")
+	}
+}
+
+// Closing with a game at work does not kill the engine, however long it takes to stop: it is
+// asked to cancel and its input is closed, and it takes away what it wrote on its own, even once
+// MaxPack is gone (here it takes longer than both closeWait and CancelGrace).
+func TestClosingLeavesTheEngineToCleanUp(t *testing.T) {
+	t.Setenv(fakecore.Env, "writes-slow-clean")
+	t.Setenv("MP_FAKE_CLEAN_MS", "1000")
+	waited, grace := closeWait, core.CancelGrace
+	closeWait, core.CancelGrace = 200*time.Millisecond, 100*time.Millisecond
+	defer func() { closeWait, core.CancelGrace = waited, grace }()
+	dest := t.TempDir()
+	events := newPageEvents()
+	a := pageApp(os.Args[0], events)
+	atWork := make(chan struct{})
+	var once sync.Once
+	a.onEvent = func(int, core.Event) { once.Do(func() { close(atWork) }) }
+	item := jobs.Item{Path: t.TempDir(), TitleID: "PPSA00001", Name: "x", Kind: "folder", OriginalSize: 1, HasZstdRuntime: true}
+	if err := a.Start("compress", []jobs.Item{item}, Choices{Options: jobs.Options{Mode: jobs.ModeP5z, Dest: dest}}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-atWork:
+	case <-time.After(time.Minute):
+		t.Fatal("the engine never started")
+	}
+	out := filepath.Join(dest, jobs.P5zName(item))
+	if _, err := os.Stat(out); err != nil {
+		t.Fatalf("the engine wrote nothing: %v", err)
+	}
+	a.ConfirmClose()
+	a.closed(context.Background())
+	cleaned := false
+	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
+		if _, err := os.Stat(out + ".cleaned"); err == nil {
+			cleaned = true
+			break
+		}
+	}
+	if !cleaned {
+		t.Fatal("the engine was killed before it could take away what it wrote")
+	}
+	if _, err := os.Stat(out); err == nil {
+		t.Fatal("the half written .p5z is still there")
+	}
+	if sum := events.wait(t); sum.Cancelled != 1 {
+		t.Fatalf("%+v", sum)
 	}
 }

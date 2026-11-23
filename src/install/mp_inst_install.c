@@ -381,13 +381,43 @@ static int recheck_done(const mp_inst_env *env, mp_p5z *p, const char *tmp, char
     return 0;
 }
 
+// ---- poner en su sitio ----------------------------------------------------------------------
+
+int mpi_place(const mp_inst_env *env, const char *item, const char *final_path, const mp_inst_existing *ex,
+              size_t nex, mp_err *e) {
+    char dir[1200];
+    snprintf(dir, sizeof dir, "%s", final_path);
+    char *s = strrchr(dir, '/');
+    if (s) *s = 0;
+    if (mp_make_dirs(dir, e) != 0) return -1;
+    char old[1300];
+    snprintf(old, sizeof old, "%s.old", item);
+    int moved_old = 0, rc = 0;
+    if (mp_path_kind(final_path) != 0) {   // el destino está ocupado (confirmado)
+        mp_remove_tree(old, NULL);
+        rc = mp_rename(final_path, old, e);
+        moved_old = rc == 0;
+    }
+    if (rc == 0) rc = mp_rename(item, final_path, e);
+    if (rc != 0 && moved_old) mp_rename(old, final_path, NULL);   // vuelve lo que había
+    if (rc == 0) {
+        mp_err e2 = {{0}};
+        if (moved_old && mp_remove_tree(old, &e2) != 0 && env->notify) env->notify(env->ctx, e2.msg);
+        for (size_t i = 0; i < nex; i++) {
+            if (!strcmp(ex[i].path, final_path)) continue;
+            if (mp_remove_tree(ex[i].path, &e2) != 0 && env->notify) env->notify(env->ctx, e2.msg);
+        }
+    }
+    return rc;
+}
+
 // ---- instalar -------------------------------------------------------------------------------
 
 int mp_inst_install(const mp_inst_env *env, const mp_inst_req *req, mp_inst_result *r, mp_err *e) {
     memset(r, 0, sizeof *r);
     mp_inst_found f;
-    if (mp_inst_probe(req->p5z_path, &f, e) != 0) {
-        set_result(r, MP_INST_FAILED, "bad_p5z");
+    if (mp_inst_probe_any(req->p5z_path, &f, e) != 0) {
+        set_result(r, MP_INST_FAILED, mpi_has_ext(req->p5z_path, ".p5z") ? "bad_p5z" : "bad_source");
         return -1;
     }
     snprintf(r->title_id, sizeof r->title_id, "%s", f.title_id);
@@ -399,7 +429,10 @@ int mp_inst_install(const mp_inst_env *env, const mp_inst_req *req, mp_inst_resu
     }
     int internal = !strcmp(req->dest_root, env->internal);
     char final_dir[1024], tmp_root[1024], tmp[1100];
-    snprintf(final_dir, sizeof final_dir, "%s/homebrew/%s", req->dest_root, f.title_id);
+    const char *src_name = strrchr(f.path, '/');
+    src_name = src_name ? src_name + 1 : f.path;
+    if (f.kind == MP_SRC_IMAGE) snprintf(final_dir, sizeof final_dir, "%s/homebrew/%s", req->dest_root, src_name);
+    else snprintf(final_dir, sizeof final_dir, "%s/homebrew/%s", req->dest_root, f.title_id);
     snprintf(tmp_root, sizeof tmp_root, internal ? "%s/maxpack/tmp" : "%s/maxpack-tmp", req->dest_root);
     snprintf(tmp, sizeof tmp, "%s/%s", tmp_root, f.title_id);
     snprintf(r->final_dir, sizeof r->final_dir, "%s", final_dir);
@@ -411,6 +444,33 @@ int mp_inst_install(const mp_inst_env *env, const mp_inst_req *req, mp_inst_resu
         free(f.path);
         set_result(r, MP_INST_FAILED, "io_error");
         return -1;
+    }
+    // El origen nunca es una copia que reemplazar: no se toca (spec 5.4 bis).
+    for (size_t i = 0; i < nex;) {
+        if (!strcmp(ex[i].path, f.path) || mp_same_file(ex[i].path, f.path)) {
+            free(ex[i].path);
+            ex[i] = ex[--nex];
+        } else {
+            i++;
+        }
+    }
+    // El destino ocupado cuenta siempre como copia (aunque no se reconozca como este juego).
+    int listed = 0;
+    for (size_t i = 0; i < nex; i++) listed |= !strcmp(ex[i].path, final_dir);
+    if (!listed && mp_path_kind(final_dir) != 0) {
+        mp_inst_existing *nx = realloc(ex, (nex + 1) * sizeof *nx);
+        char *dup = mp_strdup(final_dir);
+        if (nx && dup) {
+            ex = nx;
+            memset(&ex[nex], 0, sizeof ex[nex]);
+            ex[nex].path = dup;
+            ex[nex].is_file = mp_path_kind(final_dir) == 1;
+            ex[nex].size = mpi_tree_size(final_dir);
+            nex++;
+        } else {
+            if (nx) ex = nx;
+            free(dup);
+        }
     }
     int unconfirmed = 0;
     for (size_t i = 0; i < nex; i++) {
@@ -444,6 +504,13 @@ int mp_inst_install(const mp_inst_env *env, const mp_inst_req *req, mp_inst_resu
         mp_inst_existing_free(ex, nex);
         set_result(r, MP_INST_NO_SPACE, "no_space");
         return 0;
+    }
+
+    if (f.kind != MP_SRC_P5Z) {   // tal cual (spec 5.4 bis)
+        int crc = mpi_copy_install(env, req, &f, tmp, final_dir, ex, nex, r, e);
+        free(f.path);
+        mp_inst_existing_free(ex, nex);
+        return crc;
     }
 
     mp_p5z *p = NULL;
@@ -559,24 +626,7 @@ int mp_inst_install(const mp_inst_env *env, const mp_inst_req *req, mp_inst_resu
     char hb[1100];
     snprintf(hb, sizeof hb, "%s/homebrew", req->dest_root);
     rc = mp_make_dirs(hb, e);
-    char old[1200];
-    snprintf(old, sizeof old, "%s.old", tmp);
-    int moved_old = 0;
-    if (rc == 0 && mp_path_kind(final_dir) != 0) {   // el destino está ocupado (confirmado)
-        mp_remove_tree(old, NULL);
-        rc = mp_rename(final_dir, old, e);
-        moved_old = rc == 0;
-    }
-    if (rc == 0) rc = mp_rename(tmp, final_dir, e);
-    if (rc != 0 && moved_old) mp_rename(old, final_dir, NULL);   // vuelve lo que había
-    if (rc == 0) {
-        mp_err e2 = {{0}};
-        if (moved_old && mp_remove_tree(old, &e2) != 0 && env->notify) env->notify(env->ctx, e2.msg);
-        for (size_t i = 0; i < nex; i++) {
-            if (!strcmp(ex[i].path, final_dir)) continue;
-            if (mp_remove_tree(ex[i].path, &e2) != 0 && env->notify) env->notify(env->ctx, e2.msg);
-        }
-    }
+    if (rc == 0) rc = mpi_place(env, tmp, final_dir, ex, nex, e);
     if (rc == 0) {
         snprintf(rec.title_id, sizeof rec.title_id, "%s", f.title_id);
         snprintf(rec.version, sizeof rec.version, "%s", f.version);
@@ -584,6 +634,8 @@ int mp_inst_install(const mp_inst_env *env, const mp_inst_req *req, mp_inst_resu
         snprintf(rec.dir, sizeof rec.dir, "%s", final_dir);
         snprintf(rec.p5z, sizeof rec.p5z, "%s", req->p5z_path);
         memcpy(rec.archive_id, f.archive_id, 16);
+        rec.kind = MP_SRC_P5Z;
+        rec.packed = 1;
         rec.runtime_replaced = rp.replace;
         rec.smp_pending = 1;
         rec.installed_at = (int64_t)time(NULL);

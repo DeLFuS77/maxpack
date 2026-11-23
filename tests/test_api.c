@@ -18,9 +18,16 @@ static const char *drives[] = {USB};
 
 static mp_http_server *smp_srv;
 static uint16_t smp_port;
+static mp_mutex *smp_mu;
+static char smp_log[65536];
 
 static void smp_handler(void *ctx, const mp_http_req *rq, mp_http_resp *rs) {
     (void)ctx;
+    mp_mutex_lock(smp_mu);
+    size_t k = strlen(smp_log);
+    if (k + rq->body_len + 300 < sizeof smp_log)
+        snprintf(smp_log + k, sizeof smp_log - k, "%s %.*s\n", rq->path, (int)rq->body_len, rq->body);
+    mp_mutex_unlock(smp_mu);
     const char *body = "{\"status\":0}";
     if (!strcmp(rq->path, "/api/v1/version")) body = "{\"status\":0,\"shadowmount_version\":\"1.7\"}";
     else if (!strcmp(rq->path, "/api/v1/scan")) body = "{\"status\":0,\"scan_queued\":true,\"scan_deferred\":false}";
@@ -32,6 +39,7 @@ static void smp_handler(void *ctx, const mp_http_req *rq, mp_http_resp *rs) {
 
 static void smp_up(uint16_t p) {
     mp_err e = {{0}};
+    if (!smp_mu) smp_mu = mp_mutex_new();
     smp_srv = mp_http_start("127.0.0.1", p, smp_handler, NULL, &e);
     if (!smp_srv) MP_FAIL_("ShadowMountPlus falso: %s", e.msg);
     else smp_port = mp_http_port(smp_srv);
@@ -338,6 +346,49 @@ MP_TEST(api_refuses_running) {
     MP_CHECK(mp_path_kind(DATA "/homebrew/TEST00001") == 0);
 }
 
+MP_TEST(api_kinds) {
+    setup();
+    mpt_put_text(USB "/Juego/sce_sys/param.json", "{\"titleId\":\"TEST00003\",\"contentVersion\":\"01.000.000\"}");
+    mpt_put_text(USB "/Juego/eboot.bin", "eboot del juego");
+    char junk[5000] = {7};
+    mpt_put(USB "/x/Silksong-PPSA12544.ffpkg", junk, sizeof junk);
+    mpt_put_text(TMP "/src4/sce_sys/param.json", "{\"titleId\":\"TEST00004\",\"contentVersion\":\"01.000.000\"}");
+    static char big[600000];
+    for (size_t i = 0; i < sizeof big; i++) big[i] = (char)('a' + i % 19);
+    mpt_put(TMP "/src4/datos/grande.bin", big, sizeof big);
+    mpt_pack(TMP "/src4", USB "/Packed4", 0, TMP "/R.sprx");
+    call("POST", "/api/scan", "{}", NULL);
+    char *s = state_text();
+    MP_CHECK_CONTAINS(s, "\"kind\":\"folder\"");
+    MP_CHECK_CONTAINS(s, "\"kind\":\"image\"");
+    MP_CHECK_CONTAINS(s, "\"kind\":\"p5z\"");
+    free(s);
+    mp_mutex_lock(smp_mu);
+    smp_log[0] = 0;
+    mp_mutex_unlock(smp_mu);
+    char body[1200];
+    mp_json *r = NULL;
+    snprintf(body, sizeof body, "{\"p5z\":\"%s\",\"dest\":\"%s\"}", USB "/Juego", DATA);
+    MP_CHECK(call("POST", "/api/install", body, &r) == 200 && jok(r));
+    mp_json_free(r);
+    MP_CHECK(mp_api_wait_idle(api, 20000) == 0);
+    mp_json *st = NULL;
+    call("GET", "/api/state", NULL, &st);
+    MP_CHECK_STR(mp_json_str(mp_json_get(mp_json_get(st, "last"), "code")), "done");
+    mp_json_free(st);
+    snprintf(body, sizeof body, "{\"p5z\":\"%s\",\"dest\":\"%s\"}", USB "/Packed4", DATA);
+    MP_CHECK(call("POST", "/api/install", body, &r) == 200 && jok(r));
+    mp_json_free(r);
+    MP_CHECK(mp_api_wait_idle(api, 20000) == 0);
+    mp_mutex_lock(smp_mu);
+    MP_CHECK(strstr(smp_log, "/api/v1/games/fakelib {\"title_id\":\"TEST00003\"") == NULL);
+    MP_CHECK(strstr(smp_log, "/api/v1/games/fakelib {\"title_id\":\"TEST00004\"") != NULL);
+    MP_CHECK(strstr(smp_log, "/api/v1/manual/add {\"path\":\"" DATA "/homebrew/TEST00003\"}") != NULL);
+    mp_mutex_unlock(smp_mu);
+    MP_CHECK(mp_path_kind(DATA "/homebrew/TEST00003/eboot.bin") == 1);
+    MP_CHECK(mp_path_kind(USB "/Juego/eboot.bin") == 1);
+}
+
 int main(void) {
     MP_RUN(api_state_and_scan);
     MP_RUN(api_install_flow);
@@ -348,6 +399,7 @@ int main(void) {
     MP_RUN(api_escapes);
     MP_RUN(api_smp_retry);
     MP_RUN(api_refuses_running);
+    MP_RUN(api_kinds);
     mp_http_stop(web);
     mp_api_free(api);
     if (smp_srv) smp_down();

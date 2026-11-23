@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "mp_inst_internal.h"
+#include "mp_json.h"
 #include "mp_p5z.h"
 #include "mp_platform.h"
 
@@ -73,10 +74,42 @@ int mp_inst_list(const mp_inst_env *env, mp_inst_record **out, size_t *n, mp_err
     return 0;
 }
 
+// Lo instalado tal cual: cada archivo contra el SHA-256 guardado al copiarlo.
+static int verify_copy(const mp_inst_env *env, const mp_inst_record *rec, mp_inst_verify_result *r, mp_err *e) {
+    char path[1200], *buf = NULL;
+    size_t n = 0;
+    snprintf(path, sizeof path, "%s/maxpack/installed/%s.files.json", env->internal, rec->title_id);
+    if (mpi_read_small(path, (size_t)1 << 30, &buf, &n, e) != 0) return -1;
+    mp_json *j = mp_json_parse(buf, n, NULL);
+    free(buf);
+    const mp_json *files = mp_json_get(j, "files");
+    if (!j || !files) {
+        mp_json_free(j);
+        mp_err_set(e, "lista de archivos dañada: %s", path);
+        return -1;
+    }
+    for (size_t i = 0; i < mp_json_len(files); i++) {
+        const mp_json *it = mp_json_at(files, i);
+        const char *rel = mp_json_str(mp_json_get(it, "path"));
+        uint8_t want[32], got[32];
+        uint64_t size = 0, wsize = 0;
+        mp_json_u64(mp_json_get(it, "size"), &wsize);
+        int ok = rel && mpi_unhex(mp_json_str(mp_json_get(it, "sha")), want, 32) == 0;
+        char *p = ok ? (rec->kind == MP_SRC_IMAGE ? mp_strdup(rec->dir) : mpi_join(rec->dir, rel)) : NULL;
+        ok = p && mpi_file_sha(p, 0, got, &size, NULL) == 0 && size == wsize && !memcmp(got, want, 32);
+        free(p);
+        if (ok) r->files_ok++;
+        else r->files_bad++;
+    }
+    mp_json_free(j);
+    return 0;
+}
+
 int mp_inst_verify(const mp_inst_env *env, const char *title_id, mp_inst_verify_result *r, mp_err *e) {
     memset(r, 0, sizeof *r);
     mp_inst_record rec;
     if (mp_inst_record_load(env, title_id, &rec, e) != 0) return -1;
+    if (rec.kind != MP_SRC_P5Z) return verify_copy(env, &rec, r, e);
     if (mp_path_kind(rec.dir) != 2) {
         mp_err_set(e, "no está la carpeta del juego: %s", rec.dir);
         return -1;
@@ -121,6 +154,8 @@ int mp_inst_uninstall(const mp_inst_env *env, const char *title_id, mp_err *e) {
     }
     if (mp_remove_tree(rec.dir, e) != 0) return -1;
     char path[1200];
+    snprintf(path, sizeof path, "%s/maxpack/installed/%s.files.json", env->internal, title_id);
+    mp_remove_file(path);
     mpi_record_path(env, title_id, path, sizeof path);
     if (mp_remove_file(path) != 0) {
         mp_err_set(e, "no se pudo borrar el registro %s", path);

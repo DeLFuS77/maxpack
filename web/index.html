@@ -159,7 +159,7 @@ button.danger { color: var(--bad); }
   <section>
     <h2 data-t="dest"></h2>
     <div id="drives" class="drives" role="radiogroup"></div>
-    <label class="check"><input type="checkbox" id="del"> <span data-t="deleteP5z"></span></label>
+    <label class="check" id="del-row"><input type="checkbox" id="del"> <span data-t="deleteP5z"></span></label>
     <button type="button" id="install" class="primary" data-t="install"></button>
   </section>
 
@@ -209,6 +209,11 @@ button.danger { color: var(--bad); }
       installedAs: "%s instalado",
       ofOriginal: "de %s",
       version: "versión %s",
+      kind_p5z: ".p5z de MaxPack",
+      kind_folder: "Carpeta",
+      kind_image: "Imagen",
+      asIs: "se copia tal cual",
+      bad_source: "Esa carpeta o imagen no se puede instalar.",
       queued: "En cola. Puedes seguir usando la página.",
       confirmReplace: "Para que quede una sola copia, después de instalar y verificar la nueva se borrará:",
       confirmReplaceQ: "¿Instalar y reemplazar?",
@@ -266,6 +271,11 @@ button.danger { color: var(--bad); }
       installedAs: "%s installed",
       ofOriginal: "of %s",
       version: "version %s",
+      kind_p5z: "MaxPack .p5z",
+      kind_folder: "Folder",
+      kind_image: "Image",
+      asIs: "copied as is",
+      bad_source: "That folder or image can't be installed.",
       queued: "Queued. You can keep using the page.",
       confirmReplace: "So that only one copy is left, once the new one is installed and verified this will be deleted:",
       confirmReplaceQ: "Install and replace?",
@@ -397,6 +407,12 @@ button.danger { color: var(--bad); }
 
   function sizeBlock(item) {
     var box = el("div", "size");
+    if (item.kind && item.kind !== "p5z") {   // tal cual: sin barra de ahorro
+      var plain = el("div", "pct", size(item.install_size));
+      plain.appendChild(el("small", null, t("asIs")));
+      box.appendChild(plain);
+      return box;
+    }
     var orig = item.original_size || item.install_size;
     var ratio = orig ? item.install_size / orig : 1;
     var saved = Math.floor((1 - ratio) * 100);
@@ -415,8 +431,17 @@ button.danger { color: var(--bad); }
     return box;
   }
 
+  function kindOf(path) {
+    var list = allFound();
+    for (var i = 0; i < list.length; i++) if (list[i].path === path) return list[i].kind || "p5z";
+    return "p5z";
+  }
+
   function select(path) {
     selected = path;
+    var isP5z = kindOf(path) === "p5z";
+    $("del-row").hidden = !isP5z;
+    if (!isP5z) $("del").checked = false;
     var rows = $("found").children;
     for (var i = 0; i < rows.length; i++)
       rows[i].setAttribute("aria-checked", rows[i].getAttribute("data-path") === path ? "true" : "false");
@@ -431,7 +456,8 @@ button.danger { color: var(--bad); }
     li.appendChild(iconFor(item));
     var info = el("div", "info");
     info.appendChild(el("p", "name", item.name || item.title_id));
-    var meta = item.title_id + (item.version ? ", " + t("version").replace("%s", item.version) : "") + ". " + item.path;
+    var meta = t("kind_" + (item.kind || "p5z")) + ". " + item.title_id +
+      (item.version ? ", " + t("version").replace("%s", item.version) : "") + ". " + item.path;
     info.appendChild(el("p", "meta", meta));
     li.appendChild(info);
     li.appendChild(sizeBlock(item));

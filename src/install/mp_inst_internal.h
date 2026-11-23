@@ -37,4 +37,12 @@ void mpi_state_close(mpi_state *st);
 void mpi_state_remove(const mp_inst_env *env, const char *title_id);
 void mpi_done_free(char **v, size_t n);
 
+// Pone item (carpeta o archivo de la temporal) en final_path: si final_path está ocupado (y
+// confirmado en ex) lo aparta y lo borra después; luego borra las demás copias de ex.
+int mpi_place(const mp_inst_env *env, const char *item, const char *final_path, const mp_inst_existing *ex,
+              size_t nex, mp_err *e);
+// Instalar tal cual una carpeta o una imagen (mp_inst_copy.c). Rellena r.
+int mpi_copy_install(const mp_inst_env *env, const mp_inst_req *req, const mp_inst_found *f, const char *tmp_dir,
+                     const char *final_path, const mp_inst_existing *ex, size_t nex, mp_inst_result *r, mp_err *e);
+
 #endif

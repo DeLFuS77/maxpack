@@ -207,7 +207,7 @@ int mp_inst_smp_sync(const mp_inst_env *env, const mp_smp_cfg *c, mp_err *e) {
     for (size_t i = 0; i < n; i++) {
         if (!v[i].smp_pending) continue;
         char why[256];
-        int rc = mp_smp_register(c, v[i].title_id, v[i].dir, 1, why, sizeof why);
+        int rc = mp_smp_register(c, v[i].title_id, v[i].dir, v[i].packed, why, sizeof why);
         v[i].smp_pending = rc != 0;
         snprintf(v[i].smp_why, sizeof v[i].smp_why, "%s", rc ? why : "");
         mp_err se = {{0}};

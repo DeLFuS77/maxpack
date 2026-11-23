@@ -78,7 +78,11 @@ void mp_inst_existing_free(mp_inst_existing *v, size_t n);
 
 // Registro de lo instalado: <internal>/maxpack/installed/<TITLE_ID>.json.
 typedef struct {
-    char title_id[16], version[16], name[128], dir[1024], p5z[1024];
+    char title_id[16], version[16], name[128];
+    char dir[1024];   // carpeta del juego, o el archivo de la imagen
+    char p5z[1024];   // de dónde se instaló (.p5z, carpeta o imagen)
+    int kind;         // MP_SRC_*
+    int packed;       // lleva packs zstd: ShadowMountPlus tiene que dejarle su fakelib
     uint8_t archive_id[16], runtime_sha[32];
     int runtime_replaced, smp_pending;
     char smp_why[256];
@@ -91,7 +95,7 @@ int mp_inst_record_save(const mp_inst_env *env, const mp_inst_record *r, mp_err 
 // ---- instalar ------------------------------------------------------------------------------
 
 typedef struct {
-    const char *p5z_path;
+    const char *p5z_path;                           // .p5z, carpeta de juego o imagen
     const char *dest_root;                          // env->internal o una unidad que existe
     const char *const *replace;                     // rutas confirmadas para borrar
     size_t nreplace;
@@ -105,7 +109,7 @@ enum { MP_INST_DONE = 0, MP_INST_STOPPED, MP_INST_NEEDS_CONFIRM, MP_INST_NO_SPAC
 typedef struct {
     int status;
     const char *code;   // "done" "stopped" "needs_confirm" "no_space" "bad_p5z" "bad_dest"
-                        // "no_runtime" "io_error"
+                        // "no_runtime" "io_error" "bad_source"
     char title_id[16];
     char final_dir[1024];
     uint64_t need, avail;

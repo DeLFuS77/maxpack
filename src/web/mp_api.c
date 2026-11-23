@@ -107,9 +107,26 @@ static int inside_roots(const mp_api *a, const char *path) {
     return 0;
 }
 
-static int p5z_path_ok(const mp_api *a, const char *path) {
-    return path && *path && !dotdot(path) && mpi_has_ext(path, ".p5z") && mp_path_kind(path) == 1 &&
-           inside_roots(a, path);
+static int is_image(const char *p) {
+    return mpi_has_ext(p, ".exfat") || mpi_has_ext(p, ".ffpkg") || mpi_has_ext(p, ".ffpfs") || mpi_has_ext(p, ".ffpfsc");
+}
+
+static int game_dir(const char *path) {
+    char *p = mpi_join(path, "sce_sys/param.json");
+    int ok = p && mp_path_kind(p) == 1;
+    free(p);
+    return ok;
+}
+
+static int dest_ok(const mp_api *a, const char *dest);
+
+// Lo que se puede instalar: un .p5z, una imagen o una carpeta de juego, dentro de /data o de una
+// unidad (y nunca una raíz).
+static int source_ok(const mp_api *a, const char *path) {
+    if (!path || !*path || dotdot(path) || !inside_roots(a, path) || dest_ok(a, path)) return 0;
+    int k = mp_path_kind(path);
+    if (k == 1) return mpi_has_ext(path, ".p5z") || is_image(path);
+    return k == 2 && game_dir(path);
 }
 
 static int dest_ok(const mp_api *a, const char *dest) {
@@ -169,7 +186,7 @@ static void register_smp(mp_api *a, const char *title) {
     mp_inst_record rec;
     if (mp_inst_record_load(&a->env, title, &rec, NULL) != 0) return;
     char why[256];
-    int rc = mp_smp_register(&a->smp, title, rec.dir, 1, why, sizeof why);
+    int rc = mp_smp_register(&a->smp, title, rec.dir, rec.packed, why, sizeof why);
     rec.smp_pending = rc != 0;
     snprintf(rec.smp_why, sizeof rec.smp_why, "%s", rc ? why : "");
     mp_inst_record_save(&a->env, &rec, NULL);
@@ -339,10 +356,18 @@ static void key(mp_jbuf *b, const char *k, int first) {
     mp_jbuf_raw(b, ":");
 }
 
+static const char *kind_name(int kind) {
+    return kind == MP_SRC_FOLDER ? "folder" : kind == MP_SRC_IMAGE ? "image" : "p5z";
+}
+
 static void put_found(mp_jbuf *b, const mp_inst_found *f) {
     mp_jbuf_raw(b, "{");
     key(b, "path", 1);
     mp_jbuf_str(b, f->path);
+    key(b, "kind", 0);
+    mp_jbuf_str(b, kind_name(f->kind));
+    key(b, "packed", 0);
+    mp_jbuf_raw(b, f->packed ? "true" : "false");
     key(b, "title_id", 0);
     mp_jbuf_str(b, f->title_id);
     key(b, "version", 0);
@@ -405,6 +430,8 @@ static void handle_state(mp_api *a, mp_http_resp *rs) {
         mp_jbuf_str(&b, rec[i].version);
         key(&b, "dir", 0);
         mp_jbuf_str(&b, rec[i].dir);
+        key(&b, "kind", 0);
+        mp_jbuf_str(&b, kind_name(rec[i].kind));
         key(&b, "smp_pending", 0);
         mp_jbuf_raw(&b, rec[i].smp_pending ? "true" : "false");
         key(&b, "smp_why", 0);
@@ -510,14 +537,14 @@ static const char *enqueue(mp_api *a, job_t *j) {
 
 static void handle_probe(mp_api *a, const mp_json *in, mp_http_resp *rs) {
     const char *path = mp_json_str(mp_json_get(in, "path"));
-    if (!p5z_path_ok(a, path)) {
+    if (!source_ok(a, path)) {
         respond_err(rs, 200, "bad_path", "ruta no permitida");
         return;
     }
     mp_inst_found f;
     mp_err e = {{0}};
-    if (mp_inst_probe(path, &f, &e) != 0) {
-        respond_err(rs, 200, "bad_p5z", e.msg);
+    if (mp_inst_probe_any(path, &f, &e) != 0) {
+        respond_err(rs, 200, mpi_has_ext(path, ".p5z") ? "bad_p5z" : "bad_source", e.msg);
         return;
     }
     mp_jbuf b = {0};
@@ -530,7 +557,7 @@ static void handle_probe(mp_api *a, const mp_json *in, mp_http_resp *rs) {
 
 static void handle_install(mp_api *a, const mp_json *in, mp_http_resp *rs) {
     const char *path = mp_json_str(mp_json_get(in, "p5z")), *dest = mp_json_str(mp_json_get(in, "dest"));
-    if (!p5z_path_ok(a, path)) {
+    if (!source_ok(a, path)) {
         respond_err(rs, 200, "bad_path", "ruta no permitida");
         return;
     }
@@ -540,8 +567,8 @@ static void handle_install(mp_api *a, const mp_json *in, mp_http_resp *rs) {
     }
     mp_inst_found f;
     mp_err e = {{0}};
-    if (mp_inst_probe(path, &f, &e) != 0) {
-        respond_err(rs, 200, "bad_p5z", e.msg);
+    if (mp_inst_probe_any(path, &f, &e) != 0) {
+        respond_err(rs, 200, mpi_has_ext(path, ".p5z") ? "bad_p5z" : "bad_source", e.msg);
         return;
     }
     mp_mutex_lock(a->mu);
@@ -561,7 +588,7 @@ static void handle_install(mp_api *a, const mp_json *in, mp_http_resp *rs) {
     snprintf(j.dest, sizeof j.dest, "%s", dest);
     int del = 0;
     mp_json_bool(mp_json_get(in, "delete_p5z"), &del);
-    j.delete_p5z = del;
+    j.delete_p5z = del && f.kind == MP_SRC_P5Z;
     const mp_json *rep = mp_json_get(in, "replace");
     size_t nr = mp_json_len(rep);
     j.replace = calloc(nr + 1, sizeof *j.replace);
@@ -579,6 +606,7 @@ static void handle_install(mp_api *a, const mp_json *in, mp_http_resp *rs) {
     free_strs(known, nknown);
     int unconfirmed = 0;
     for (size_t i = 0; i < nex; i++) {
+        if (!strcmp(ex[i].path, f.path) || mp_same_file(ex[i].path, f.path)) continue;   // el origen
         int ok = 0;
         for (size_t k = 0; k < j.nreplace && !ok; k++) ok = !strcmp(ex[i].path, j.replace[k]);
         unconfirmed |= !ok;
@@ -586,8 +614,10 @@ static void handle_install(mp_api *a, const mp_json *in, mp_http_resp *rs) {
     if (unconfirmed) {
         mp_jbuf b = {0};
         mp_jbuf_raw(&b, "{\"ok\":false,\"code\":\"needs_confirm\",\"existing\":[");
-        for (size_t i = 0; i < nex; i++) {
-            mp_jbuf_raw(&b, i ? ",{" : "{");
+        for (size_t i = 0, first = 1; i < nex; i++) {
+            if (!strcmp(ex[i].path, f.path) || mp_same_file(ex[i].path, f.path)) continue;
+            mp_jbuf_raw(&b, first ? "{" : ",{");
+            first = 0;
             key(&b, "path", 1);
             mp_jbuf_str(&b, ex[i].path);
             key(&b, "size", 0);
@@ -672,7 +702,20 @@ static void handle_icon(mp_api *a, const mp_http_req *rq, mp_http_resp *rs) {
     char path[1100];
     rs->status = 404;
     rs->content_type = "text/plain";
-    if (mp_http_query_get(rq->query, "p5z", path, sizeof path) != 0 || !p5z_path_ok(a, path)) return;
+    if (mp_http_query_get(rq->query, "p5z", path, sizeof path) != 0 || !source_ok(a, path)) return;
+    if (mp_path_kind(path) == 2) {   // carpeta de juego: su sce_sys/icon0.png
+        char *icon = mpi_join(path, "sce_sys/icon0.png"), *buf = NULL;
+        size_t n = 0;
+        if (icon && mp_path_kind(icon) == 1 && mpi_read_small(icon, ICON_MAX, &buf, &n, NULL) == 0) {
+            rs->status = 200;
+            rs->content_type = "image/png";
+            rs->body = buf;
+            rs->body_len = n;
+        }
+        free(icon);
+        return;
+    }
+    if (!mpi_has_ext(path, ".p5z")) return;
     mp_p5z *p = NULL;
     if (mp_p5z_open(path, &p, NULL) != 0) return;
     for (size_t i = 0; i < p->nfiles; i++) {

@@ -39,6 +39,8 @@ int mp_inst_record_save(const mp_inst_env *env, const mp_inst_record *r, mp_err 
     put_str(&b, "p5z", r->p5z, 0);
     put_str(&b, "archive_id", aid, 0);
     put_str(&b, "runtime_sha", rsha, 0);
+    put_int(&b, "kind", r->kind);
+    put_int(&b, "packed", r->packed);
     put_int(&b, "runtime_replaced", r->runtime_replaced);
     put_int(&b, "smp_pending", r->smp_pending);
     put_str(&b, "smp_why", r->smp_why, 0);
@@ -97,6 +99,11 @@ int mp_inst_record_load(const mp_inst_env *env, const char *title_id, mp_inst_re
     get_str(j, "smp_why", r->smp_why, sizeof r->smp_why);
     mpi_unhex(mp_json_str(mp_json_get(j, "archive_id")), r->archive_id, 16);
     mpi_unhex(mp_json_str(mp_json_get(j, "runtime_sha")), r->runtime_sha, 32);
+    int64_t kind = 0;
+    mp_json_i64(mp_json_get(j, "kind"), &kind);
+    r->kind = (int)kind;
+    // Sin el campo (registros anteriores), un .p5z siempre lleva packs.
+    r->packed = mp_json_get(j, "packed") ? get_int(j, "packed") : r->kind == MP_SRC_P5Z;
     r->runtime_replaced = get_int(j, "runtime_replaced");
     r->smp_pending = get_int(j, "smp_pending");
     mp_json_i64(mp_json_get(j, "installed_at"), &r->installed_at);

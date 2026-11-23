@@ -189,7 +189,71 @@ MP_TEST(p5z_partial_removed_on_failure) {
     MP_CHECK(mp_path_kind(path) == 0);
 }
 
+// Empaqueta basic.exfat con tope; size es lo que mide el .p5z justo antes de destroy, que es lo
+// más que llega a medir (el escritor nunca lo acorta), y too_big si el escritor paró por el tope.
+static int pack_capped(const char *path, uint64_t cap, uint64_t *size, int *too_big) {
+    mp_err e = {{0}};
+    remove(path);
+    mp_make_dirs(TMP, &e);
+    mp_pack_opts o;
+    mp_pack_opts_default(&o);
+    o.threads = 2;
+    o.progress = 0;
+    mp_pack_out out;
+    if (mp_pack_out_p5z_ex(path, 2, cap, &out, &e) != 0) {
+        MP_FAIL_("p5z: %s", e.msg);
+        return -2;
+    }
+    mp_pack_result r;
+    int rc = mp_pack_run(BASIC, &out, &o, &r, &e);
+    *size = 0;
+    mp_file *f = NULL;
+    if (mp_file_open_read(path, &f, NULL) == 0) {
+        mp_file_size(f, size, NULL);
+        mp_file_close(f);
+    }
+    *too_big = mp_pack_out_p5z_too_big(&out);
+    out.destroy(out.ctx);
+    return rc;
+}
+
+// Con tope, el .p5z no pasa de él en ningún momento: la escritura que lo pasaría no se hace (en
+// FAT32 fallaría antes en el sistema, como "io"). Un tope del tamaño justo del .p5z se acepta.
+MP_TEST(p5z_max_size_never_exceeded) {
+    const char *path = TMP "/tope.p5z";
+    uint64_t full = 0, size = 0;
+    int too_big = 1;
+    if (pack_capped(path, 0, &full, &too_big) != 0) return;
+    MP_CHECK(full > 1000 && !too_big);
+    // más pequeño que la cabecera, que la cabecera y un frame, y que el .p5z por un byte
+    const uint64_t caps[] = {10, P5Z_HEADER, P5Z_HEADER + 200, full / 2, full - P5Z_FOOTER, full - 1};
+    for (size_t i = 0; i < sizeof caps / sizeof caps[0]; i++) {
+        int rc = pack_capped(path, caps[i], &size, &too_big);
+        if (rc != -1 || !too_big || size > caps[i])
+            MP_FAIL_("tope %llu: rc %d, too_big %d, llegó a %llu bytes", (unsigned long long)caps[i], rc, too_big,
+                     (unsigned long long)size);
+        MP_CHECK(mp_path_kind(path) == 0);
+    }
+    // justo del tamaño: cabe
+    MP_CHECK(pack_capped(path, full, &size, &too_big) == 0);
+    MP_CHECK_EQ_U64(size, full);
+    MP_CHECK(!too_big && mp_path_kind(path) == 1);
+    // otro fallo no es del tope
+    mp_err e = {{0}};
+    mp_pack_opts o;
+    mp_pack_opts_default(&o);
+    o.progress = 0;
+    mp_pack_out out;
+    mp_pack_result r;
+    remove(TMP "/otro.p5z");
+    MP_CHECK(mp_pack_out_p5z_ex(TMP "/otro.p5z", 2, full, &out, &e) == 0);
+    MP_CHECK(mp_pack_run(MP_FIXTURES_DIR "/truncated_tail.exfat", &out, &o, &r, &e) == -1);
+    MP_CHECK(!mp_pack_out_p5z_too_big(&out));
+    out.destroy(out.ctx);
+}
+
 int main(void) {
+    MP_RUN(p5z_max_size_never_exceeded);
     MP_RUN(p5z_not_created_on_refusal);
     MP_RUN(p5z_partial_removed_on_failure);
     MP_RUN(p5z_structure);

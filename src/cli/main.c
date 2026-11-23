@@ -481,11 +481,12 @@ static int run_pack(int argc, char **argv) {
     mp_pack_result r;
     uint64_t t0 = mp_now_ns();
     int rc = mp_pack_run(src, &out, &o, &r, &e);
+    int too_big = rc != 0 && p5z && mp_pack_out_p5z_too_big(&out);
     out.destroy(out.ctx);
     free(keep);
     if (rc != 0) {
         if (!p5z) clean_output(dst, existed);   // el .p5z a medias ya lo borra el escritor
-        if (strstr(e.msg, "pasaría de")) g_err_code = "too_big";
+        if (too_big) g_err_code = "too_big";
         fprintf(stderr, "\nerror: %s\n(no queda nada escrito en %s)\n", e.msg, dst);
         return 1;
     }

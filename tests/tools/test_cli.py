@@ -292,6 +292,21 @@ except Exception as ex:  # noqa: BLE001
     check("max_file_size", False, repr(ex))
 rc, _, _ = run("pack", BASIC, "-o", os.path.join(TMP, "mx_folder"), "--max-file-size", "100000")
 check("max_file_size_solo_p5z_sale_2", rc == 2, str(rc))
+# El tope justo del tamaño del .p5z cabe; un byte menos, no: too_big, y nunca pasa del tope.
+full = os.path.getsize(pj)
+for cap, want in ((full, 0), (full - 1, 1), (64, 1)):
+    if os.path.exists(mx):
+        os.remove(mx)
+    rc, so, err = run("pack", BASIC, "-o", mx, "--p5z", "--threads", "2", "--max-file-size", str(cap), "--progress", "json")
+    try:
+        res = last_result(json_lines(so))
+        if want == 0:
+            good = rc == 0 and res.get("ok") is True and os.path.getsize(mx) == full
+        else:
+            good = rc == 1 and res.get("error") == "too_big" and not os.path.exists(mx)
+        check("max_file_size_borde_%d" % cap, good, "rc=%d %s %s" % (rc, so[-200:], err[-200:]))
+    except Exception as ex:  # noqa: BLE001
+        check("max_file_size_borde_%d" % cap, False, repr(ex))
 
 # Un byte cambiado en los datos: unpack falla a mitad y la carpeta de salida no queda.
 dam = os.path.join(TMP, "dam.p5z")

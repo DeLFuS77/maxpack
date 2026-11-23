@@ -29,6 +29,9 @@ void mp_api_handle(void *api, const mp_http_req *rq, mp_http_resp *rs);   // par
 int mp_api_wait_idle(mp_api *a, unsigned timeout_ms);                    // 0 si la cola se vació
 void mp_api_set_page(mp_api *a, const unsigned char *html, size_t len);
 // Con mp_api_set_quit, POST /api/quit (solo loopback) llama a cb(ctx) una vez y responde 200.
+// cb no debe parar el servidor ni liberar la API: solo avisa (se llama dentro del manejador, antes de
+// enviar la respuesta, y pararlo desde ahí se bloquearía o usaría memoria liberada). Hay que llamar
+// a mp_api_set_quit antes de que la API empiece a atender peticiones: cb y ctx no llevan cerrojo.
 typedef void (*mp_api_quit_cb)(void *ctx);
 void mp_api_set_quit(mp_api *a, mp_api_quit_cb cb, void *ctx);
 void mp_api_free(mp_api *a);

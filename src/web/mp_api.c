@@ -882,8 +882,12 @@ void mp_api_handle(void *ctx, const mp_http_req *rq, mp_http_resp *rs) {
     }
     if (!strcmp(rq->path, "/api/quit")) {
         // Solo desde esta misma consola: otra copia de MaxPack pide que se deje el puerto libre.
-        if (!rq->loopback || !a->quit_cb) {
+        if (!rq->loopback) {
             respond_err(rs, 403, "forbidden", "solo se acepta desde la propia consola");
+            return;
+        }
+        if (!a->quit_cb) {
+            respond_err(rs, 403, "forbidden", "no hay a quién avisar");
             return;
         }
         respond_ok(rs);

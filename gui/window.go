@@ -1,0 +1,72 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+package main
+
+import (
+	"context"
+	"embed"
+	"fmt"
+	"os"
+	"runtime"
+
+	"github.com/DeLFuS77/maxpack/gui/internal/portable"
+	"github.com/DeLFuS77/maxpack/gui/internal/system"
+	"github.com/DeLFuS77/maxpack/gui/internal/windowplace"
+
+	"github.com/wailsapp/wails/v2"
+	wailsoptions "github.com/wailsapp/wails/v2/pkg/options"
+	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"github.com/wailsapp/wails/v2/pkg/options/windows"
+)
+
+//go:embed all:frontend
+var frontend embed.FS
+
+// singleWindow is the lock that keeps MaxPack to one window on Windows: the files the Explorer
+// gives to another MaxPack go to the one open.
+const singleWindow = "maxpack-window-1"
+
+// runWindow opens the window with the files given, and gives the exit code once it is closed.
+func runWindow(start launch) int {
+	app := &App{files: start.files}
+	var single *wailsoptions.SingleInstanceLock
+	if runtime.GOOS == "windows" {
+		// the files go to the MaxPack open, which comes to the front; one starting meanwhile
+		// is waited for, until its window takes files (see startup)
+		var another bool
+		app.started, another = system.StartWindow(singleWindow)
+		defer app.started()
+		if another {
+			system.AllowForeground()
+		}
+		single = &wailsoptions.SingleInstanceLock{UniqueId: singleWindow, OnSecondInstanceLaunch: app.secondInstance}
+	}
+	// the window opens where it was left and as big (see windowplace)
+	place, _ := windowplace.LoadWindowPlace()
+	err := wails.Run(&wailsoptions.App{
+		Title:            "MaxPack " + version,
+		Width:            place.Width,
+		Height:           place.Height,
+		MinWidth:         windowplace.WindowMinWidth,
+		MinHeight:        windowplace.WindowMinHeight,
+		StartHidden:      true,
+		BackgroundColour: &wailsoptions.RGBA{R: 24, G: 24, B: 27, A: 255},
+		AssetServer:      &assetserver.Options{Assets: frontend},
+		OnStartup:        app.startup,
+		OnDomReady:       func(ctx context.Context) { windowplace.PlaceWindow(ctx) },
+		OnBeforeClose: func(ctx context.Context) bool {
+			windowplace.KeepWindowPlace(ctx)
+			return false
+		},
+		DragAndDrop:        &wailsoptions.DragAndDrop{EnableFileDrop: true, DisableWebViewDrop: true},
+		SingleInstanceLock: single,
+		Bind:               []any{app},
+		// portable: the page keeps its settings next to the program too
+		Windows: &windows.Options{WebviewUserDataPath: portable.WebviewFolder()},
+	})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "maxpack:", err)
+		return 1
+	}
+	return 0
+}

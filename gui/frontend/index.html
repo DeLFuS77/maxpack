@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>MaxPack</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { color-scheme: light dark; --bg: #fff; --fg: #18181b; --muted: #71717a; --bad: #b91c1c; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #18181b; --fg: #f4f4f5; --muted: #a1a1aa; --bad: #f87171; } }
+  body { margin: 0; padding: 24px; background: var(--bg); color: var(--fg); font: 14px system-ui, sans-serif; }
+  dt { color: var(--muted); margin-top: 12px; }
+  dd { margin: 2px 0 0; }
+  .bad { color: var(--bad); }
+</style>
+</head>
+<body>
+<h1 id="title">MaxPack</h1>
+<dl id="info"></dl>
+<script>
+  function add(list, name, value, bad) {
+    const dt = document.createElement('dt'), dd = document.createElement('dd');
+    dt.textContent = name; dd.textContent = value || '-';
+    if (bad) dd.className = 'bad';
+    list.append(dt, dd);
+  }
+  async function start() {
+    const api = window.go && window.go.main && window.go.main.App;
+    if (!api) return;
+    const setup = await api.Setup();
+    const list = document.getElementById('info');
+    add(list, 'version', setup.version);
+    add(list, 'maxpack-core', setup.coreVersion || setup.core);
+    if (setup.coreError) add(list, 'error', setup.coreError, true);
+    add(list, 'lang / theme', setup.lang + ' / ' + setup.theme);
+  }
+  start();
+</script>
+</body>
+</html>

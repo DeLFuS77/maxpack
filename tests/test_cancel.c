@@ -12,7 +12,10 @@
 
 typedef struct {
     int calls, saw_pack, cancel_at_30;
-    uint64_t last_done, last_total;
+    int cancel_mid;        // cancela en la primera llamada con done < total
+    int cancelled_mid;     // esa llamada ocurrió
+    int reached_total;     // después de cancelar hubo una llamada con done == total
+    uint64_t last_done, last_total, cancel_done, cancel_total;
 } rec;
 
 static void on_progress(void *ctx, const char *phase, uint64_t done, uint64_t total) {
@@ -21,6 +24,13 @@ static void on_progress(void *ctx, const char *phase, uint64_t done, uint64_t to
     r->last_done = done;
     r->last_total = total;
     if (!strncmp(phase, "Empaquetando", 12)) r->saw_pack = 1;
+    if (r->cancelled_mid && total && done >= total) r->reached_total = 1;
+    if (r->cancel_mid && !r->cancelled_mid && total && done < total) {
+        r->cancelled_mid = 1;
+        r->cancel_done = done;
+        r->cancel_total = total;
+        mp_cancel_request();
+    }
     if (r->cancel_at_30 && total && done * 10 >= total * 3) mp_cancel_request();
 }
 
@@ -120,10 +130,98 @@ MP_TEST(no_hook_unchanged) {
     free(b);
 }
 
+// Entrada de varios MiB: la cancelación cae a mitad de un bucle, no al final de una fase.
+#define BIG TMP "/big_src"
+static int make_big(void) {
+    if (mp_path_kind(BIG "/f5.bin") == 1) return 0;
+    mpt_clear(BIG);
+    uint32_t x = 12345;
+    size_t n = 2u << 20;
+    uint8_t *b = malloc(n);
+    if (!b) return -1;
+    for (int f = 0; f < 6; f++) {
+        for (size_t i = 0; i < n; i++) {
+            x ^= x << 13;
+            x ^= x >> 17;
+            x ^= x << 5;
+            b[i] = (uint8_t)(x >> 24);
+        }
+        char path[256];
+        snprintf(path, sizeof path, BIG "/data/f%d.bin", f);
+        mpt_put(path, b, n);
+    }
+    free(b);
+    mpt_put_text(BIG "/sce_sys/param.json", "{\"titleId\":\"TEST00002\"}");
+    return 0;
+}
+
+static void check_mid(const rec *r) {
+    MP_CHECK(r->cancelled_mid);
+    MP_CHECK(r->cancel_done < r->cancel_total);
+    MP_CHECK(!r->reached_total);   // paró antes de terminar la fase
+}
+
+MP_TEST(cancel_mid_pack_p5z) {
+    clean();
+    if (make_big()) return;
+    const char *dst = TMP "/mid_pack.p5z";
+    mpt_clear(dst);
+    rec r = {0};
+    r.cancel_mid = 1;
+    set_hook(&r);
+    mp_err e = {{0}};
+    mp_pack_opts o;
+    mp_pack_opts_default(&o);
+    o.threads = 4;
+    o.progress = 0;
+    mp_pack_out out;
+    MP_CHECK(mp_pack_out_p5z(dst, 4, &out, &e) == 0);
+    mp_pack_result res;
+    int rc = mp_pack_run(BIG, &out, &o, &res, &e);
+    out.destroy(out.ctx);
+    clean();
+    MP_CHECK(rc == -1);
+    MP_CHECK_CONTAINS(e.msg, "cancelado");
+    MP_CHECK_EQ_U64(mp_path_kind(dst), 0);
+    check_mid(&r);
+}
+
+MP_TEST(cancel_mid_unpack_and_verify) {
+    clean();
+    if (make_big()) return;
+    const char *p5z = TMP "/mid_src.p5z";
+    if (mpt_pack(BIG, p5z, 1, NULL)) return;
+    mp_p5z *p = NULL;
+    mp_err e = {{0}};
+    MP_CHECK(mp_p5z_open(p5z, &p, &e) == 0);
+    if (!p) return;
+    mpt_clear(TMP "/mid_out");
+    rec r = {0};
+    r.cancel_mid = 1;
+    set_hook(&r);
+    MP_CHECK(mp_unpack_original(p, TMP "/mid_out", 4, 0, &e) == -1);
+    MP_CHECK_CONTAINS(e.msg, "cancelado");
+    mp_p5z_close(p);
+    clean();
+    check_mid(&r);
+
+    memset(&r, 0, sizeof r);
+    r.cancel_mid = 1;
+    set_hook(&r);
+    memset(&e, 0, sizeof e);
+    mp_verify_result vr;
+    MP_CHECK(mp_verify_p5z(p5z, 4, 0, &vr, &e) == -1);
+    MP_CHECK_CONTAINS(e.msg, "cancelado");
+    clean();
+    check_mid(&r);
+}
+
 int main(void) {
     MP_RUN(hook_reports_progress);
     MP_RUN(cancel_pack_p5z);
     MP_RUN(cancel_unpack_and_verify);
+    MP_RUN(cancel_mid_pack_p5z);
+    MP_RUN(cancel_mid_unpack_and_verify);
     MP_RUN(no_hook_unchanged);
     MP_TEST_MAIN_END();
 }

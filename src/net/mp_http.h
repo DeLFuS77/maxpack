@@ -16,6 +16,7 @@ typedef struct {
     const char *body;
     size_t body_len;
     const char *content_type, *host;   // cabeceras ("" si no vienen; NULL fuera del servidor)
+    int loopback;                      // 1 si la petición viene de 127.0.0.0/8 (0 si no se sabe)
 } mp_http_req;
 
 typedef struct {

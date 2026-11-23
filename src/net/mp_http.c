@@ -156,7 +156,7 @@ struct mp_http_server {
     uint16_t port;
 };
 
-static void serve_one(mp_http_server *srv, sock_t c) {
+static void serve_one(mp_http_server *srv, sock_t c, int loopback) {
     set_timeouts(c, 5000);
     char *buf = malloc(MAX_HEADER + 1);
     if (!buf) return;
@@ -217,7 +217,7 @@ static void serve_one(mp_http_server *srv, sock_t c) {
         *q = 0;
         query = q + 1;
     }
-    mp_http_req rq = {method, target, query, body, (size_t)len, ctype, host};
+    mp_http_req rq = {method, target, query, body, (size_t)len, ctype, host, loopback};
     mp_http_resp rs = {200, NULL, NULL, 0};
     srv->h(srv->ctx, &rq, &rs);
     send_response(c, rs.status, rs.content_type ? rs.content_type : "application/json", rs.body ? rs.body : "",
@@ -235,9 +235,13 @@ static void accept_loop(void *arg) {
         struct timeval tv = {0, 200000};
         int k = select((int)srv->ls + 1, &rd, NULL, NULL, &tv);
         if (k <= 0 || srv->stop) continue;
-        sock_t c = accept(srv->ls, NULL, NULL);
+        struct sockaddr_in peer;
+        socklen_t pl = sizeof peer;
+        memset(&peer, 0, sizeof peer);
+        sock_t c = accept(srv->ls, (struct sockaddr *)&peer, &pl);
         if (c == BAD_SOCK) continue;
-        serve_one(srv, c);
+        int lo = pl >= sizeof peer && peer.sin_family == AF_INET && (ntohl(peer.sin_addr.s_addr) >> 24) == 127;
+        serve_one(srv, c, lo);
         close_sock(c);
     }
 }

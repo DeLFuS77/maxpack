@@ -51,6 +51,8 @@ struct mp_api {
     const unsigned char *page;
     size_t page_len;
     volatile int quit;
+    void (*quit_cb)(void *);   // POST /api/quit
+    void *quit_ctx;
     mp_thread *worker, *smp_thread;
 };
 
@@ -878,6 +880,16 @@ void mp_api_handle(void *ctx, const mp_http_req *rq, mp_http_resp *rs) {
         respond_err(rs, 404, "not_found", rq->path);
         return;
     }
+    if (!strcmp(rq->path, "/api/quit")) {
+        // Solo desde esta misma consola: otra copia de MaxPack pide que se deje el puerto libre.
+        if (!rq->loopback || !a->quit_cb) {
+            respond_err(rs, 403, "forbidden", "solo se acepta desde la propia consola");
+            return;
+        }
+        respond_ok(rs);
+        a->quit_cb(a->quit_ctx);
+        return;
+    }
     mp_json *in = mp_json_parse(rq->body_len ? rq->body : "{}", rq->body_len ? rq->body_len : 2, NULL);
     if (!in) {
         respond_err(rs, 400, "bad_json", "el cuerpo no es JSON válido");
@@ -957,6 +969,11 @@ int mp_api_wait_idle(mp_api *a, unsigned timeout_ms) {
 void mp_api_set_page(mp_api *a, const unsigned char *html, size_t len) {
     a->page = html;
     a->page_len = len;
+}
+
+void mp_api_set_quit(mp_api *a, mp_api_quit_cb cb, void *ctx) {
+    a->quit_cb = cb;
+    a->quit_ctx = ctx;
 }
 
 void mp_api_free(mp_api *a) {

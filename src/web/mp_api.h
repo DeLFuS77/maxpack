@@ -9,6 +9,7 @@
 //   POST /api/verify       {"title_id"}
 //   POST /api/uninstall    {"title_id","confirm":true}
 //   GET  /api/icon?p5z=    sce_sys/icon0.png del .p5z
+//   POST /api/quit {}      pide salir a quien la alberga (solo desde loopback; 403 si no)
 // Un error de la aplicación es 200 {"ok":false,"code","detail"}; un JSON mal formado, 400; una ruta
 // desconocida, 404.
 #ifndef MP_API_H
@@ -27,6 +28,9 @@ mp_api *mp_api_new(const mp_inst_env *env, const mp_smp_cfg *smp, unsigned smp_r
 void mp_api_handle(void *api, const mp_http_req *rq, mp_http_resp *rs);   // para mp_http_start
 int mp_api_wait_idle(mp_api *a, unsigned timeout_ms);                    // 0 si la cola se vació
 void mp_api_set_page(mp_api *a, const unsigned char *html, size_t len);
+// Con mp_api_set_quit, POST /api/quit (solo loopback) llama a cb(ctx) una vez y responde 200.
+typedef void (*mp_api_quit_cb)(void *ctx);
+void mp_api_set_quit(mp_api *a, mp_api_quit_cb cb, void *ctx);
 void mp_api_free(mp_api *a);
 
 #endif

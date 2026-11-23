@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"math"
 	"sync"
 	"time"
 
@@ -20,12 +21,13 @@ type extras struct {
 	Notify  func(title, body string)
 }
 
-// the progress of a queue is told in this many parts for each game
-const taskbarPart = 1000
+// the progress of a queue is told in this many parts
+const taskbarParts = 10000
 
 // run does the plans with the Runner and the extras: the PC stays awake meanwhile, the taskbar
-// shows the progress of the whole queue (never going back), the page is told how each game
-// goes (job:item, job:progress), and one notice tells the summary at the end.
+// shows the progress of the whole queue as the page counts it (see share; never going back), the
+// page is told how each game goes (job:item, job:progress), and one notice tells the summary at
+// the end.
 func (a *App) run(ctx context.Context, plans []jobs.Plan, o jobs.Options) jobs.Summary {
 	x := a.extras
 	if x.Awake == nil {
@@ -40,22 +42,22 @@ func (a *App) run(ctx context.Context, plans []jobs.Plan, o jobs.Options) jobs.S
 	release := x.Awake()
 	defer release()
 
-	total := uint64(len(plans)) * taskbarPart
+	const total = taskbarParts
+	queue := newShare(plans, o.Mode)
 	var mutex sync.Mutex
-	var shown uint64
-	show := func(done uint64) {
-		mutex.Lock()
-		defer mutex.Unlock()
-		if done > total {
-			done = total
-		}
-		if done < shown {
+	shown, told := uint64(0), false
+	// show tells the taskbar how far the queue is, when that changed; with the mutex held
+	show := func() {
+		done := min(total, uint64(math.Round(queue.value()*total)))
+		if told && done == shown {
 			return
 		}
-		shown = done
+		shown, told = done, true
 		x.Taskbar("normal", done, total)
 	}
-	show(0)
+	mutex.Lock()
+	show()
+	mutex.Unlock()
 
 	path := a.core
 	if path == "" {
@@ -67,7 +69,10 @@ func (a *App) run(ctx context.Context, plans []jobs.Plan, o jobs.Options) jobs.S
 		Core: path,
 		OnEvent: func(i int, e core.Event) {
 			if e.Total > 0 {
-				show(uint64(i)*taskbarPart + min(e.Done, e.Total)*taskbarPart/e.Total)
+				mutex.Lock()
+				queue.progress(i, e.Phase, min(e.Done, e.Total), e.Total)
+				show()
+				mutex.Unlock()
 				page.progress(i, e, time.Now())
 			}
 			if a.onEvent != nil {
@@ -75,10 +80,10 @@ func (a *App) run(ctx context.Context, plans []jobs.Plan, o jobs.Options) jobs.S
 			}
 		},
 		OnItem: func(i int, state, detail string) {
-			switch state {
-			case jobs.StateOK, jobs.StateError, jobs.StateSkipped, jobs.StateCancelled:
-				show(uint64(i+1) * taskbarPart)
-			}
+			mutex.Lock()
+			queue.item(i, state)
+			show()
+			mutex.Unlock()
 			page.item(i, state, detail)
 			if a.onItem != nil {
 				a.onItem(i, state, detail)

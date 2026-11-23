@@ -105,3 +105,109 @@ func (t *teller) progress(i int, e core.Event, now time.Time) {
 		t.app.send("job:progress", progressEvent{I: i, Phase: e.Phase, Done: e.Done, Total: e.Total, Rate: rate})
 	}
 }
+
+// share is how far a queue is, from 0 to 1, counted as the page counts it for its bars (stepsOf,
+// stepShare, rowShare and progressOf in frontend/app.js): each game weighs its size as many times
+// as it has steps; the step at work goes by the bytes of its phases one after the other (copying
+// the loose files, then packing the rest) over the size of the game, or over what the
+// verification reads; a game that ended counts whole. What it gives never goes back.
+type share struct {
+	rows  []shareRow
+	shown float64
+}
+
+type shareRow struct {
+	size                uint64
+	steps               []string
+	step, phase         string
+	offset, done, total uint64
+	ended               bool
+}
+
+// stepsOf are the steps of a game in a queue of a mode, as the Runner does them.
+func stepsOf(mode jobs.Mode, replacing bool) []string {
+	switch {
+	case mode == jobs.ModeP5z || mode == jobs.ModeFolder:
+		return []string{jobs.StatePacking, jobs.StateVerifying}
+	case mode == jobs.ModeVerify:
+		return []string{jobs.StateVerifying}
+	case mode == jobs.ModeConsole && replacing:
+		return []string{jobs.StateUnpacking, jobs.StateVerifying}
+	}
+	return []string{jobs.StateUnpacking}
+}
+
+func newShare(plans []jobs.Plan, mode jobs.Mode) *share {
+	s := &share{rows: make([]shareRow, len(plans))}
+	for i, p := range plans {
+		s.rows[i] = shareRow{size: p.Item.OriginalSize, steps: stepsOf(mode, len(p.Replace) > 0)}
+	}
+	return s
+}
+
+// item is a state of game i, from the Runner: a new step starts from nothing, and an end counts
+// it whole.
+func (s *share) item(i int, state string) {
+	if i < 0 || i >= len(s.rows) {
+		return
+	}
+	r := &s.rows[i]
+	switch state {
+	case jobs.StatePacking, jobs.StateVerifying, jobs.StateUnpacking:
+		if state != r.step {
+			r.step, r.phase, r.offset, r.done, r.total = state, "", 0, 0, 0
+		}
+	case jobs.StateOK, jobs.StateError, jobs.StateSkipped, jobs.StateCancelled:
+		r.ended = true
+	}
+}
+
+// progress is a line of progress of the engine for game i: a new phase of the same step counts
+// the bytes of the one before as done.
+func (s *share) progress(i int, phase string, done, total uint64) {
+	if i < 0 || i >= len(s.rows) || total == 0 {
+		return
+	}
+	r := &s.rows[i]
+	if r.phase != "" && phase != r.phase {
+		r.offset += r.total
+	}
+	r.phase, r.done, r.total = phase, done, total
+}
+
+func (r shareRow) stepShare() float64 {
+	if r.total == 0 {
+		return 0
+	}
+	whole := r.offset + r.total
+	if r.step != jobs.StateVerifying && r.size > whole {
+		whole = r.size
+	}
+	return math.Min(1, float64(r.offset+r.done)/float64(whole))
+}
+
+func (r shareRow) share() float64 {
+	if r.ended {
+		return 1
+	}
+	for index, step := range r.steps {
+		if step == r.step {
+			return (float64(index) + r.stepShare()) / float64(len(r.steps))
+		}
+	}
+	return 0
+}
+
+// value is how far the queue is.
+func (s *share) value() float64 {
+	var whole, done float64
+	for _, r := range s.rows {
+		weight := float64(len(r.steps)) * float64(max(1, r.size))
+		whole += weight
+		done += r.share() * weight
+	}
+	if whole > 0 {
+		s.shown = math.Max(s.shown, done/whole)
+	}
+	return s.shown
+}

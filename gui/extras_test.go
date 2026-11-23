@@ -4,12 +4,14 @@ package main
 
 import (
 	"context"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 
+	"github.com/DeLFuS77/maxpack/gui/core"
 	"github.com/DeLFuS77/maxpack/gui/jobs"
 )
 
@@ -151,5 +153,106 @@ func TestSizeText(t *testing.T) {
 		if got := sizeText("en", c.bytes); got != c.en {
 			t.Errorf("en %d: %q, esperaba %q", c.bytes, got, c.en)
 		}
+	}
+}
+
+// The taskbar counts a game as the page does: its steps, and the phases of a step one after the
+// other over the size of the game. It is still below half when packing starts after copying the
+// loose files, and it gets to the end only once the game ends.
+func TestTaskbarFollowsThePhases(t *testing.T) {
+	near := func(got, want float64) bool { return math.Abs(got-want) < 1e-9 }
+	q := newShare([]jobs.Plan{{Item: jobs.Item{OriginalSize: 1000}}}, jobs.ModeP5z)
+	steps := []struct {
+		state, phase string
+		done, total  uint64
+		want         float64
+	}{
+		{jobs.StatePacking, "", 0, 0, 0},
+		{"", "copying", 50, 100, 0.025},
+		{"", "copying", 100, 100, 0.05},
+		{"", "packing", 0, 900, 0.05},
+		{"", "packing", 450, 900, 0.275},
+		{"", "packing", 900, 900, 0.5},
+		{jobs.StateVerifying, "", 0, 0, 0.5},
+		{"", "verifying", 300, 600, 0.75},
+		{"", "verifying", 599, 600, 0.5 + 0.5*599/600},
+		{jobs.StateOK, "", 0, 0, 1},
+	}
+	for n, s := range steps {
+		if s.state != "" {
+			q.item(0, s.state)
+		} else {
+			q.progress(0, s.phase, s.done, s.total)
+		}
+		if got := q.value(); !near(got, s.want) {
+			t.Fatalf("paso %d (%s %s %d/%d): %v, esperaba %v", n, s.state, s.phase, s.done, s.total, got, s.want)
+		}
+	}
+	// two games: each weighs its size, and what was shown never goes back
+	q = newShare([]jobs.Plan{{Item: jobs.Item{OriginalSize: 1000}}, {Item: jobs.Item{OriginalSize: 3000}}}, jobs.ModeFolder)
+	q.item(0, jobs.StatePacking)
+	q.item(0, jobs.StateOK)
+	if got := q.value(); !near(got, 0.25) {
+		t.Fatalf("el primero de dos: %v", got)
+	}
+	q.item(1, jobs.StatePacking)
+	if got := q.value(); !near(got, 0.25) {
+		t.Fatalf("el segundo empieza: %v", got)
+	}
+}
+
+// With the engine: when the loose files are copied and packing starts, the taskbar is still
+// below half; it is at half when the verification starts, and at the end only at the end.
+func TestRunTaskbarPhases(t *testing.T) {
+	engine, fixtures := needCore(t)
+	item, err := jobs.Describe(engine, filepath.Join(fixtures, "basic.exfat"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	o := jobs.Options{Mode: jobs.ModeP5z, Dest: t.TempDir(), Level: 3}
+	plans := jobs.PlanCompress([]jobs.Item{item}, o, realFS{})
+	var mu sync.Mutex
+	var last, total uint64
+	var copied, atVerifying []uint64
+	a := &App{core: engine, lang: func() string { return "es" }, extras: extras{
+		Awake: func() func() { return func() {} },
+		Taskbar: func(state string, done, tot uint64) {
+			mu.Lock()
+			defer mu.Unlock()
+			if state == "normal" {
+				last, total = done, tot
+			}
+		},
+		Notify: func(string, string) {},
+	}}
+	// told after the taskbar: what it shows with that line counted
+	a.onEvent = func(i int, e core.Event) {
+		mu.Lock()
+		defer mu.Unlock()
+		if e.Phase == "copying" && e.Done == e.Total {
+			copied = append(copied, last)
+		}
+	}
+	a.onItem = func(i int, state, detail string) {
+		mu.Lock()
+		defer mu.Unlock()
+		if state == jobs.StateVerifying {
+			atVerifying = append(atVerifying, last)
+		}
+	}
+	if sum := a.run(context.Background(), plans, o); sum.Done != 1 {
+		t.Fatalf("%+v", sum)
+	}
+	if len(copied) != 1 || len(atVerifying) != 1 || total == 0 {
+		t.Fatalf("copiado %v, verificar %v, de %d", copied, atVerifying, total)
+	}
+	if copied[0] >= total/2 {
+		t.Errorf("copiados los sueltos, al empezar a empaquetar, ya va por %d de %d", copied[0], total)
+	}
+	if atVerifying[0] > total/2 {
+		t.Errorf("al empezar a verificar ya va por %d de %d", atVerifying[0], total)
+	}
+	if last != total {
+		t.Errorf("al final: %d de %d", last, total)
 	}
 }

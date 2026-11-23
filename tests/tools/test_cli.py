@@ -182,6 +182,139 @@ open(bad, "wb").write(bytes(data))
 rc, so, err = run("verify", bad)
 check("verify_danado_sale_1", rc == 1 and ("FALLO" in err or "error" in err), (so + err)[-300:])
 
+# ---- --progress json, --control stdin, --max-file-size y limpieza al fallar ----------------------
+def json_lines(text):
+    evs = []
+    for l in text.splitlines():
+        if l.strip():
+            evs.append(json.loads(l))
+    return evs
+
+
+def last_result(evs):
+    return evs[-1] if evs and evs[-1].get("event") == "result" else {}
+
+
+def has_final_progress(evs):
+    return any(e.get("event") == "progress" and e["total"] > 0 and e["done"] == e["total"] for e in evs)
+
+
+pj = os.path.join(TMP, "pj.p5z")
+if os.path.exists(pj):
+    os.remove(pj)
+rc, so, err = run("pack", BASIC, "-o", pj, "--p5z", "--threads", "2", "--progress", "json")
+try:
+    evs = json_lines(so)
+    res = last_result(evs)
+    check("progress_json_pack",
+          rc == 0 and res.get("ok") is True and res.get("output_size") == os.path.getsize(pj)
+          and has_final_progress(evs) and all(e["event"] in ("progress", "result") for e in evs)
+          and sum(1 for e in evs if e["event"] == "result") == 1
+          and {"original_size", "loose_bytes", "packed_bytes", "stored_bytes", "volumes",
+               "runtime_without_zstd"} <= set(res),
+          "rc=%d %s %s" % (rc, so[-300:], err[-200:]))
+except Exception as ex:  # noqa: BLE001
+    check("progress_json_pack", False, repr(ex) + so[-200:])
+
+pjo = os.path.join(TMP, "pj_orig")
+rmtree(pjo)
+rc, so, err = run("unpack", pj, "--original", "-o", pjo, "--progress", "json")
+try:
+    evs = json_lines(so)
+    res = last_result(evs)
+    check("progress_json_unpack",
+          rc == 0 and res.get("ok") is True and res.get("bytes", 0) > 0 and has_final_progress(evs),
+          "rc=%d %s" % (rc, so[-300:]))
+except Exception as ex:  # noqa: BLE001
+    check("progress_json_unpack", False, repr(ex) + so[-200:])
+rc, so, err = run("verify", pj, "--progress", "json")
+try:
+    evs = json_lines(so)
+    res = last_result(evs)
+    check("progress_json_verify",
+          rc == 0 and res.get("ok") is True and res.get("files_bad") == 0 and res.get("files_ok", 0) > 0
+          and has_final_progress(evs), "rc=%d %s" % (rc, so[-300:]))
+except Exception as ex:  # noqa: BLE001
+    check("progress_json_verify", False, repr(ex) + so[-200:])
+
+# Entrada de varios MiB para que la cancelación caiga a mitad del trabajo.
+BIG = os.path.join(TMP, "big_src")
+rmtree(BIG)
+os.makedirs(os.path.join(BIG, "data"))
+os.makedirs(os.path.join(BIG, "sce_sys"))
+for i in range(6):
+    with open(os.path.join(BIG, "data", "f%d.bin" % i), "wb") as f:
+        f.write(os.urandom(2 << 20))
+with open(os.path.join(BIG, "sce_sys", "param.json"), "w") as f:
+    f.write('{"titleId":"TEST00002"}')
+
+cdst = os.path.join(TMP, "cancel_out")
+rmtree(cdst)
+p = subprocess.Popen([EXE, "pack", BIG, "-o", cdst, "--threads", "2", "--progress", "json", "--control", "stdin"],
+                     stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+first = p.stdout.readline()
+p.stdin.write(b"cancel\n")
+p.stdin.flush()
+rest = p.stdout.read()
+errtxt = p.stderr.read().decode("utf-8", "replace")
+p.wait()
+try:
+    evs = json_lines((first + rest).decode("utf-8", "replace"))
+    res = last_result(evs)
+    check("control_stdin_cancel",
+          p.returncode == 130 and res.get("ok") is False and res.get("error") == "cancelled"
+          and json.loads(first)["event"] == "progress" and not os.path.exists(cdst),
+          "rc=%s %s %s" % (p.returncode, (first + rest)[-300:], errtxt[-200:]))
+except Exception as ex:  # noqa: BLE001
+    check("control_stdin_cancel", False, repr(ex))
+
+# Cerrar stdin también cancela.
+cdst2 = os.path.join(TMP, "cancel_out2")
+rmtree(cdst2)
+p = subprocess.Popen([EXE, "pack", BIG, "-o", cdst2, "--threads", "2", "--progress", "json", "--control", "stdin"],
+                     stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+first = p.stdout.readline()
+p.stdin.close()
+p.stdout.read()
+p.stderr.read()
+p.wait()
+check("control_stdin_eof_cancela", p.returncode == 130 and not os.path.exists(cdst2), str(p.returncode))
+
+mx = os.path.join(TMP, "max.p5z")
+if os.path.exists(mx):
+    os.remove(mx)
+rc, so, err = run("pack", BASIC, "-o", mx, "--p5z", "--max-file-size", "100000", "--progress", "json")
+try:
+    res = last_result(json_lines(so))
+    check("max_file_size", rc == 1 and res.get("ok") is False and res.get("error") == "too_big"
+          and not os.path.exists(mx), "rc=%d %s %s" % (rc, so[-200:], err[-200:]))
+except Exception as ex:  # noqa: BLE001
+    check("max_file_size", False, repr(ex))
+rc, _, _ = run("pack", BASIC, "-o", os.path.join(TMP, "mx_folder"), "--max-file-size", "100000")
+check("max_file_size_solo_p5z_sale_2", rc == 2, str(rc))
+
+# Un byte cambiado en los datos: unpack falla a mitad y la carpeta de salida no queda.
+dam = os.path.join(TMP, "dam.p5z")
+shutil.copyfile(pj, dam)
+data = bytearray(open(dam, "rb").read())
+data[len(data) // 2] ^= 0x55
+open(dam, "wb").write(bytes(data))
+fc = os.path.join(TMP, "fail_clean")
+rmtree(fc)
+rc, so, err = run("unpack", dam, "--original", "-o", fc)
+check("failure_cleans_folder", rc == 1 and not os.path.exists(fc), "rc=%d %s" % (rc, err[-200:]))
+fc2 = os.path.join(TMP, "fail_clean_empty")
+rmtree(fc2)
+os.makedirs(fc2)
+rc, so, err = run("unpack", dam, "--original", "-o", fc2, "--progress", "json")
+res = last_result(json_lines(so)) if so.strip() else {}
+check("failure_keeps_empty_folder", rc == 1 and os.path.isdir(fc2) and not os.listdir(fc2)
+      and res.get("ok") is False, "rc=%d %s" % (rc, so[-200:]))
+
+# Sin --progress la salida es la de siempre: stdout sin JSON y el texto en stderr.
+rc, so, err = run("verify", pj)
+check("human_output_unchanged", rc == 0 and so.startswith("verify:") and '"event"' not in so + err, so + err)
+
 rc, so, _ = run("--help")
 check("help_tiene_todas_las_ordenes", rc == 0 and all(w in so for w in ("analyze", "pack", "unpack", "verify", "info")), so[:300])
 

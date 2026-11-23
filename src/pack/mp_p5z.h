@@ -21,6 +21,9 @@
 
 // Salida .p5z (el archivo no debe existir). threads: hilos para comprimir los sueltos.
 int mp_pack_out_p5z(const char *path, unsigned threads, mp_pack_out *out, mp_err *e);
+// Igual, con tope: si el .p5z va a pasar de max_size bytes, la escritura falla con el mensaje
+// "el .p5z pasaría de N bytes" y se borra lo escrito (0 = sin tope).
+int mp_pack_out_p5z_ex(const char *path, unsigned threads, uint64_t max_size, mp_pack_out *out, mp_err *e);
 
 // ---- Lectura (Task 7) -------------------------------------------------------------------
 

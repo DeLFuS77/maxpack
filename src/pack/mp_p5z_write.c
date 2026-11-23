@@ -49,6 +49,7 @@ typedef struct {
     // si no se llega a terminar (un .p5z sin pie no sirve).
     char *path;
     int created, finished;
+    uint64_t max_size;         // tope del .p5z (0 = sin tope)
 } p5out;
 
 static void wr32(uint8_t *p, uint32_t v) {
@@ -64,6 +65,15 @@ static int ensure_open(p5out *o, mp_err *e) {
     if (mp_wfile_create(o->path, &o->f, e) != 0) return -1;
     o->created = 1;   // CREATE_NEW: lo hemos creado nosotros, así que podemos borrarlo si falla
     return mp_wfile_write(o->f, zero, sizeof zero, e);
+}
+
+// Falla si el .p5z ya pasa del tope; el escritor lo borra al destruirse.
+static int check_max(const p5out *o, mp_err *e) {
+    if (o->max_size && o->f && mp_wfile_size(o->f) > o->max_size) {
+        mp_err_set(e, "el .p5z pasaría de %llu bytes", (unsigned long long)o->max_size);
+        return -1;
+    }
+    return 0;
 }
 
 static p5file *new_file(p5out *o, const char *rel, int role, int storage, uint64_t size, int64_t mtime,
@@ -111,7 +121,8 @@ static int v_begin(void *ctx, uint32_t vol, mp_err *e) {
 static int v_write(void *ctx, const void *p, size_t n, mp_err *e) {
     p5out *o = ctx;
     mp_sha256_update(&o->vsha, p, n);
-    return mp_wfile_write(o->f, p, n, e);
+    if (mp_wfile_write(o->f, p, n, e) != 0) return -1;
+    return check_max(o, e);
 }
 
 static int v_end(void *ctx, uint32_t vol, mp_err *e) {
@@ -177,6 +188,7 @@ static int flush_frames(p5out *o, int last, mp_err *e) {
         fr->csize = (uint32_t)o->jobs[j].olen;
         fr->usize = (uint32_t)o->jobs[j].ilen;
         if (mp_wfile_write(o->f, o->jobs[j].out, o->jobs[j].olen, e) != 0) return -1;
+        if (check_max(o, e) != 0) return -1;
     }
     memmove(o->pend, o->pend + off, o->npend - off);
     o->npend -= off;
@@ -344,6 +356,7 @@ static int f_finish(void *ctx, const mp_pack_manifest *m, mp_err *e) {
         wr32(ft + 28, mp_crc32(ft, 28, 0));
         rc = mp_wfile_write(o->f, ft, sizeof ft, e);
     }
+    if (!rc) rc = check_max(o, e);
     if (!rc) {
         uint8_t h[P5Z_HEADER] = {0};
         memcpy(h, "MAXPKP5Z", 8);
@@ -384,12 +397,17 @@ static void f_destroy(void *ctx) {
 }
 
 int mp_pack_out_p5z(const char *path, unsigned threads, mp_pack_out *out, mp_err *e) {
+    return mp_pack_out_p5z_ex(path, threads, 0, out, e);
+}
+
+int mp_pack_out_p5z_ex(const char *path, unsigned threads, uint64_t max_size, mp_pack_out *out, mp_err *e) {
     memset(out, 0, sizeof *out);
     p5out *o = calloc(1, sizeof *o);
     if (!o) {
         mp_err_set(e, "sin memoria");
         return -1;
     }
+    o->max_size = max_size;
     o->threads = threads == 0 ? 1 : threads > MP_LONG_MAX_THREADS ? MP_LONG_MAX_THREADS : threads;
     o->out_cap = ZSTD_compressBound(MP_LONG_FRAME);
     o->pend = malloc((size_t)o->threads * MP_LONG_FRAME);

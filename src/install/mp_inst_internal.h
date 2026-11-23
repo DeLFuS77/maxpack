@@ -22,5 +22,19 @@ void mpi_dir_title(const char *dir, char id[16]);
 uint64_t mpi_tree_size(const char *path);                 // archivo o carpeta entera
 int mpi_has_ext(const char *name, const char *ext);       // ext con punto, sin distinguir mayúsculas
 int mpi_record_path(const mp_inst_env *env, const char *title_id, char *out, size_t cap);
+// SHA-256 de un archivo desde el byte skip (64 en un volumen); size = tamaño total.
+int mpi_file_sha(const char *path, uint64_t skip, uint8_t sha[32], uint64_t *size, mp_err *e);
+
+// Estado de una instalación a medias (mp_inst_state.c).
+typedef struct mpi_state mpi_state;
+// Si hay un estado del mismo archive_id y destino (y la temporal existe), *resumed = 1 y done
+// recibe las rutas apuntadas; si no, se borran el estado y la temporal y se empieza de cero.
+int mpi_state_begin(const mp_inst_env *env, const char *title_id, const uint8_t aid[16], const char *p5z,
+                    const char *dest_root, const char *tmp, int *resumed, char ***done, size_t *ndone,
+                    mpi_state **st, mp_err *e);
+int mpi_state_add(mpi_state *st, const char *rel, mp_err *e);
+void mpi_state_close(mpi_state *st);
+void mpi_state_remove(const mp_inst_env *env, const char *title_id);
+void mpi_done_free(char **v, size_t n);
 
 #endif

@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "mp_hash.h"
 #include "mp_inst_internal.h"
 #include "mp_json.h"
 #include "mp_platform.h"
@@ -151,6 +152,43 @@ int mpi_has_ext(const char *name, const char *ext) {
         if (c != ext[i]) return 0;
     }
     return 1;
+}
+
+int mpi_file_sha(const char *path, uint64_t skip, uint8_t sha[32], uint64_t *size, mp_err *e) {
+    mp_file *f = NULL;
+    uint64_t total = 0;
+    if (mp_file_open_read(path, &f, e) != 0) return -1;
+    if (mp_file_size(f, &total, e) != 0) {
+        mp_file_close(f);
+        return -1;
+    }
+    enum { PIECE = 4u << 20 };
+    uint8_t *buf = malloc(PIECE);
+    if (!buf) {
+        mp_file_close(f);
+        mp_err_set(e, "sin memoria");
+        return -1;
+    }
+    mp_sha256 s;
+    mp_sha256_init(&s);
+    int rc = 0;
+    for (uint64_t off = skip < total ? skip : total; off < total && rc == 0;) {
+        size_t k = total - off < PIECE ? (size_t)(total - off) : PIECE, got = 0;
+        rc = mp_file_pread(f, buf, k, off, &got, e);
+        if (rc == 0 && got != k) {
+            mp_err_set(e, "%s: lectura incompleta", path);
+            rc = -1;
+        }
+        if (rc == 0) mp_sha256_update(&s, buf, k);
+        off += k;
+    }
+    free(buf);
+    mp_file_close(f);
+    if (rc == 0) {
+        mp_sha256_final(&s, sha);
+        if (size) *size = total;
+    }
+    return rc;
 }
 
 int mpi_record_path(const mp_inst_env *env, const char *title_id, char *out, size_t cap) {

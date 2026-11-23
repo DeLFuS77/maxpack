@@ -7,6 +7,7 @@
 #include <time.h>
 
 #include "mp_hash.h"
+#include "mp_parallel.h"
 #include "mp_idx3.h"
 #include "mp_inst_internal.h"
 #include "mp_p5z_internal.h"
@@ -92,9 +93,10 @@ typedef struct {
     const size_t *todo;
     size_t ntodo, next;
     mp_mutex *mu;
-    uint64_t written, total;
+    uint64_t written, total, base;   // base: lo ya hecho antes de reanudar
     int stop, fail, fail_io;
     mp_err err;
+    mpi_state *st;
 } job;
 
 typedef struct {
@@ -113,7 +115,7 @@ static int sink_write(void *ctx, const void *p, size_t n, mp_err *e) {
     int rc = 0;
     mp_mutex_lock(j->mu);
     j->written += n;
-    if (j->env->progress) j->env->progress(j->env->ctx, "copiando", j->written, j->total);
+    if (j->env->progress) j->env->progress(j->env->ctx, "copiando", j->base + j->written, j->total);
     if (j->stop || j->fail) rc = -1;
     else if (j->env->io_check) {
         int k = j->env->io_check(j->env->ctx, j->written, e);
@@ -144,6 +146,7 @@ static void write_one(job *j, size_t i) {
     mp_err e = {{0}};
     char *path = mpi_join(j->tmp, f->path);
     wctx c = {j, NULL, 0};
+    if (path) mp_remove_file(path);   // lo que dejó a medias un corte
     int rc = path ? mp_wfile_create(path, &c.w, &e) : -1;
     if (!path) mp_err_set(&e, "sin memoria");
     int io = rc != 0;
@@ -164,6 +167,12 @@ static void write_one(job *j, size_t i) {
         io = 1;
     }
     free(path);
+    if (rc == 0) {
+        mp_mutex_lock(j->mu);
+        if (j->st) rc = mpi_state_add(j->st, f->path, &e);
+        mp_mutex_unlock(j->mu);
+        io = 1;
+    }
     if (rc) {
         mp_mutex_lock(j->mu);
         int stopped = j->stop;
@@ -275,6 +284,7 @@ static int write_buffer(const char *dir, const char *rel, const uint8_t *p, size
     int rc = mp_make_dirs(path, e);
     *s = '/';
     mp_wfile *w = NULL;
+    mp_remove_file(path);
     if (rc == 0) rc = mp_wfile_create(path, &w, e);
     if (rc == 0) rc = mp_wfile_write(w, p, n, e);
     if (rc == 0) rc = mp_wfile_sync(w, e);
@@ -294,6 +304,81 @@ static int install_runtime(const mp_inst_env *env, mp_p5z *p, const rt_plan *rp,
     free(fixed);
     if (rc == 0) rc = write_buffer(tmp, RUNTIME_PATH, env->runtime.data, env->runtime.len, env->runtime.mtime, e);
     return rc;
+}
+
+// ---- reanudar: releer lo apuntado como hecho ------------------------------------------------
+
+typedef struct {
+    mp_p5z *p;
+    const char *tmp;
+    const size_t *cand;   // índices en p->files
+    uint8_t *ok;
+} recheck_ctx;
+
+static int recheck_one(void *ctx, size_t k, unsigned tid) {
+    recheck_ctx *c = ctx;
+    (void)tid;
+    const p5z_file *f = &c->p->files[c->cand[k]];
+    char *path = mpi_join(c->tmp, f->path);
+    uint8_t sha[32];
+    uint64_t size = 0;
+    uint64_t skip = f->role == MP_ROLE_VOLUME ? MP_ZPK_VOL_HEADER : 0;
+    c->ok[k] = path && mp_path_kind(path) == 1 && mpi_file_sha(path, skip, sha, &size, NULL) == 0 &&
+               size == f->size && !memcmp(sha, f->sha, 32);
+    free(path);
+    return 0;
+}
+
+static const mp_p5z *sort_p5z;
+
+static int cmp_by_path(const void *a, const void *b) {
+    return strcmp(sort_p5z->files[*(const size_t *)a].path, sort_p5z->files[*(const size_t *)b].path);
+}
+
+static int recheck_done(const mp_inst_env *env, mp_p5z *p, const char *tmp, char **done, size_t ndone,
+                        uint8_t *skip, uint64_t *base, mp_err *e) {
+    size_t *byp = malloc(p->nfiles * sizeof *byp + 1), n = 0;
+    size_t *cand = malloc(ndone * sizeof *cand + 1), nc = 0;
+    uint8_t *ok = calloc(ndone + 1, 1);
+    if (!byp || !cand || !ok) {
+        free(byp);
+        free(cand);
+        free(ok);
+        mp_err_set(e, "sin memoria");
+        return -1;
+    }
+    for (size_t i = 0; i < p->nfiles; i++)
+        if (p->files[i].role != MP_ROLE_ORIGINAL) byp[n++] = i;
+    sort_p5z = p;   // solo se usa aquí, en un hilo
+    qsort(byp, n, sizeof *byp, cmp_by_path);
+    for (size_t d = 0; d < ndone; d++) {
+        size_t lo = 0, hi = n;
+        while (lo < hi) {
+            size_t mid = lo + (hi - lo) / 2;
+            int c = strcmp(p->files[byp[mid]].path, done[d]);
+            if (c == 0) {
+                cand[nc++] = byp[mid];
+                break;
+            }
+            if (c < 0) lo = mid + 1;
+            else hi = mid;
+        }
+    }
+    if (env->progress) env->progress(env->ctx, "comprobando", 0, nc);
+    recheck_ctx c = {p, tmp, cand, ok};
+    mp_progress prog;
+    mp_progress_init(&prog, "comprobando", nc, 0);
+    mp_parallel_run(env->threads ? env->threads : 1, nc, recheck_one, &c, &prog);
+    mp_progress_free(&prog);
+    for (size_t k = 0; k < nc; k++)
+        if (ok[k]) {
+            skip[cand[k]] = 1;
+            *base += p->files[cand[k]].size;
+        }
+    free(byp);
+    free(cand);
+    free(ok);
+    return 0;
 }
 
 // ---- instalar -------------------------------------------------------------------------------
@@ -379,18 +464,29 @@ int mp_inst_install(const mp_inst_env *env, const mp_inst_req *req, mp_inst_resu
         return -1;
     }
 
-    // Carpeta temporal desde cero (la reanudación llega en la Task 6).
+    // Estado: reanudar lo del mismo .p5z o empezar de cero.
     size_t *todo = malloc((p->nfiles + 1) * sizeof *todo), ntodo = 0;
-    int rc = todo ? 0 : -1;
-    if (!todo) mp_err_set(e, "sin memoria");
-    if (rc == 0) rc = mp_remove_tree(tmp, e);
+    uint8_t *skip = calloc(p->nfiles + 1, 1);
+    int rc = todo && skip ? 0 : -1;
+    if (rc) mp_err_set(e, "sin memoria");
+    mpi_state *st = NULL;
+    int resumed = 0;
+    char **done = NULL;
+    size_t ndone = 0;
+    uint64_t base = 0;
+    if (rc == 0)
+        rc = mpi_state_begin(env, f.title_id, f.archive_id, req->p5z_path, req->dest_root, tmp, &resumed, &done,
+                             &ndone, &st, e);
     if (rc == 0) rc = mp_make_dirs(tmp, e);
+    if (rc == 0 && resumed && ndone) rc = recheck_done(env, p, tmp, done, ndone, skip, &base, e);
+    mpi_done_free(done, ndone);
     for (size_t i = 0; rc == 0 && i < p->nfiles; i++) {
         const p5z_file *pf = &p->files[i];
-        if (pf->role == MP_ROLE_ORIGINAL) continue;
+        if (pf->role == MP_ROLE_ORIGINAL || skip[i]) continue;
         if (rp.replace && (i == rp.rt_index || i == rp.idx3_index)) continue;
         todo[ntodo++] = i;
     }
+    free(skip);
     if (rc == 0) rc = make_parents(tmp, p, todo, ntodo, e);
     const char *fail_code = "io_error";
     int stopped = 0;
@@ -403,6 +499,8 @@ int mp_inst_install(const mp_inst_env *env, const mp_inst_req *req, mp_inst_resu
         j.todo = todo;
         j.ntodo = ntodo;
         j.total = f.install_size;
+        j.base = base;
+        j.st = st;
         j.mu = mp_mutex_new();
         if (!j.mu) {
             mp_err_set(e, "sin memoria");
@@ -432,6 +530,7 @@ int mp_inst_install(const mp_inst_env *env, const mp_inst_req *req, mp_inst_resu
     }
     mp_p5z_close(p);
     free(todo);
+    mpi_state_close(st);
     if (rc == 0 && stopped) {
         free(f.path);
         set_result(r, MP_INST_STOPPED, "stopped");
@@ -461,6 +560,7 @@ int mp_inst_install(const mp_inst_env *env, const mp_inst_req *req, mp_inst_resu
         rec.installed_at = (int64_t)time(NULL);
         rc = mp_inst_record_save(env, &rec, e);
     }
+    if (rc == 0) mpi_state_remove(env, f.title_id);
     r->runtime_replaced = rp.replace;
     if (rc != 0) {
         free(f.path);

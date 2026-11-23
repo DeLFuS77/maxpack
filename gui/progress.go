@@ -12,13 +12,15 @@ import (
 )
 
 // itemEvent is "job:item": game i of the queue is in state now, and why when it failed or was
-// skipped. Once done, out is what it made and size what that takes.
+// skipped. Once done, out is what it made and size what that takes; a folder for the console
+// says whether it is in homebrew/ at the root of its drive, where ShadowMountPlus sees it.
 type itemEvent struct {
-	I      int    `json:"i"`
-	State  string `json:"state"`
-	Detail string `json:"detail"`
-	Out    string `json:"out,omitempty"`
-	Size   uint64 `json:"size,omitempty"`
+	I        int    `json:"i"`
+	State    string `json:"state"`
+	Detail   string `json:"detail"`
+	Out      string `json:"out,omitempty"`
+	Size     uint64 `json:"size,omitempty"`
+	Homebrew bool   `json:"homebrew,omitempty"`
 }
 
 // progressEvent is "job:progress": how far the step of game i is (its phase, from the engine),
@@ -70,12 +72,13 @@ func (r *rater) add(i int, phase string, done uint64, now time.Time) uint64 {
 // teller tells the page how a queue goes: each state of a game, and its progress with the speed,
 // at most every progressEvery and always at the end of a step.
 type teller struct {
-	app   *App
-	plans []jobs.Plan
-	mode  jobs.Mode
-	mutex sync.Mutex
-	speed rater
-	sent  time.Time
+	app    *App
+	plans  []jobs.Plan
+	mode   jobs.Mode
+	drives jobs.FS
+	mutex  sync.Mutex
+	speed  rater
+	sent   time.Time
 }
 
 func (t *teller) item(i int, state, detail string) {
@@ -83,6 +86,9 @@ func (t *teller) item(i int, state, detail string) {
 	if state == jobs.StateOK && t.mode != jobs.ModeVerify && i < len(t.plans) {
 		e.Out = t.plans[i].Out
 		e.Size = sizeOn(e.Out)
+		if t.mode == jobs.ModeFolder || t.mode == jobs.ModeConsole {
+			e.Homebrew = inHomebrew(e.Out, t.drives)
+		}
 	}
 	t.app.send("job:item", e)
 }

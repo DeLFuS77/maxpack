@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 
 	"github.com/DeLFuS77/maxpack/gui/core"
 	"github.com/DeLFuS77/maxpack/gui/internal/system"
@@ -24,7 +25,12 @@ type App struct {
 	mutex     sync.Mutex
 	pending   FilesAdd // files that came before the page asked for them
 	pageReady bool
-	cancelJob context.CancelFunc // the queue running (see Start), nil when there is none
+	queue     *queue // the queue running (see Start), nil when there is none
+
+	// closing while a queue runs (see closing.go): the words the page told for the question,
+	// and whether the user said to cancel and close
+	closeAsk, closeYes, closeNo string
+	closeConfirmed              atomic.Bool
 
 	// what the tests stand in for; the zero values are the real ones
 	emit    func(event string, data any)

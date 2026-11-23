@@ -54,10 +54,9 @@ func runWindow(start launch) int {
 		AssetServer:      &assetserver.Options{Assets: frontend},
 		OnStartup:        app.startup,
 		OnDomReady:       func(ctx context.Context) { windowplace.PlaceWindow(ctx) },
-		OnBeforeClose: func(ctx context.Context) bool {
-			windowplace.KeepWindowPlace(ctx)
-			return false
-		},
+		// closing with a queue running is asked first, and the queue is waited for (closing.go)
+		OnBeforeClose:      app.beforeClose,
+		OnShutdown:         app.closed,
 		DragAndDrop:        &wailsoptions.DragAndDrop{EnableFileDrop: true, DisableWebViewDrop: true},
 		SingleInstanceLock: single,
 		// files opened on, or dropped on, the Dock icon go where the ones of a second MaxPack go

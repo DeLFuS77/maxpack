@@ -62,7 +62,7 @@ func (a *App) run(ctx context.Context, plans []jobs.Plan, o jobs.Options) jobs.S
 		path, _ = core.Locate()
 	}
 	// the page is told each state and the progress, with the speed
-	page := &teller{app: a, plans: plans, mode: o.Mode}
+	page := &teller{app: a, plans: plans, mode: o.Mode, drives: a.drives()}
 	runner := &jobs.Runner{
 		Core: path,
 		OnEvent: func(i int, e core.Event) {

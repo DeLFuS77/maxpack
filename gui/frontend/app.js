@@ -107,7 +107,7 @@ const pathKey = path => (windows ? String(path).toLowerCase() : String(path));
 
 function newRow(path, section) {
   const tr = $("row-template").content.firstElementChild.cloneNode(true);
-  const row = { path, section, game: null, error: "", state: "", detail: "", step: "", phase: "", offset: 0, done: 0, total: 0, out: "", outSize: 0, warnings: [], replacing: false, tr };
+  const row = { path, section, game: null, error: "", state: "", detail: "", step: "", phase: "", offset: 0, done: 0, total: 0, out: "", outSize: 0, homebrew: false, warnings: [], replacing: false, tr };
   tr.querySelector(".remove button").addEventListener("click", () => removeRow(row));
   return row;
 }
@@ -294,6 +294,7 @@ function paintFacts(row) {
   fact(facts, t("factInstalled"), size(game.InstallSize));
   if (game.P5zSize) fact(facts, ".p5z", size(game.P5zSize));
   fact(facts, t("factPacked"), game.Packed ? t("yes") : t("no"));
+  if (game.Packed) fact(facts, t("factPacks"), t("packsOf")(game.PackedFiles || 0, game.Volumes || 0));
   fact(facts, "ampr-emu-ng", game.HasZstdRuntime ? t("runtimeZstd") : game.HasRuntime ? t("runtimeOld") : t("runtimeNone"));
   const where = document.createElement("dd");
   where.className = "path-fact";
@@ -732,7 +733,7 @@ function onItem(event) {
   if (working.includes(event.state) && event.state !== row.step) Object.assign(row, { step: event.state, phase: "", offset: 0, done: 0, total: 0 });
   row.state = event.state;
   row.detail = event.detail || "";
-  if (event.out) { row.out = event.out; row.outSize = event.size || 0; }
+  if (event.out) Object.assign(row, { out: event.out, outSize: event.size || 0, homebrew: !!event.homebrew });
   paintRow(row);
   paintSummary();
 }
@@ -783,9 +784,8 @@ function showDone(job, summary) {
   });
   $("done-top").replaceChildren(...top);
   $("done-top-block").hidden = !top.length;
-  const next = { p5z: t("nextP5z"), folder: t("nextFolder"), console: t("nextFolder"), original: t("nextOriginal")(job.dest) }[job.mode];
   $("done-next-block").hidden = !summary.Done;
-  $("done-next").textContent = next || "";
+  $("done-next").textContent = nextStep(job);
   // the games made without the runtime they need are said again, at the end
   const lacking = job.section === "compress" && !job.runtime
     ? job.rows.filter(row => row.state === "ok" && row.game && !row.game.HasZstdRuntime).length : 0;
@@ -794,6 +794,32 @@ function showDone(job, summary) {
   const dialog = $("done-dialog");
   dialog.classList.toggle("failed", !summary.Done);
   if (!dialog.open) dialog.showModal();
+}
+
+// what to do now with the games made, by where they are: a folder for the console is seen by
+// ShadowMountPlus only in homebrew/ at the root of its drive, which the window tells of each one
+// (homebrew in job:item); one made elsewhere has to be moved there
+function nextStep(job) {
+  if (job.mode === "p5z") return t("nextP5z");
+  if (job.mode === "original") return t("nextOriginal")(job.dest);
+  const made = job.rows.filter(row => row.state === "ok" && row.out);
+  const away = made.filter(row => !row.homebrew);
+  if (!away.length) return t("nextFolder");
+  const folders = [...new Set(away.map(row => row.out.replace(/[\\/]+[^\\/]+[\\/]*$/, "")))];
+  return t("nextMove")(folders.length === 1 ? folders[0] : job.dest);
+}
+
+// closing the window while a queue runs, asked by the window: the game at work is cancelled and
+// the window closes, or it goes on
+function askClose() {
+  const dialog = $("close-dialog");
+  if (dialog.open) return;
+  ask(dialog).then(answer => { if (answer === "close") go.call("ConfirmClose").catch(error => toast(message(error))); });
+}
+// the words of the question the window asks with the dialog of the system when the page cannot
+// ask, in the language of the page
+function tellCloseTexts() {
+  go.call("CloseTexts", t("closeQuestion"), t("closeYes"), t("closeNo")).catch(() => { });
 }
 
 // ---- dropping files ----------------------------------------------------------------------------
@@ -854,7 +880,7 @@ function wire() {
     button.setAttribute("role", "radio");
     button.dataset.lang = code;
     button.textContent = name;
-    button.addEventListener("click", () => { state.lang = code; keep({ Lang: code }); render(); });
+    button.addEventListener("click", () => { state.lang = code; keep({ Lang: code }); tellCloseTexts(); render(); });
     return button;
   }));
   for (const button of document.querySelectorAll("button[data-theme]")) button.addEventListener("click", () => { keep({ Theme: button.dataset.theme }); applyTheme(); render(); });
@@ -871,6 +897,7 @@ async function main() {
   go.on("job:item", onItem);
   go.on("job:progress", onProgress);
   go.on("job:done", onDone);
+  go.on("close:ask", askClose);
   go.onDrop((x, y, paths) => dropped(paths));
   try {
     state.setup = await go.call("Setup");
@@ -879,6 +906,7 @@ async function main() {
     banner(message(error));
   }
   state.lang = state.settings.Lang === "en" ? "en" : "es";
+  tellCloseTexts();
   applyTheme();
   banner(state.setup && state.setup.coreError ? t("coreMissing") + " " + state.setup.coreError : "");
   render();

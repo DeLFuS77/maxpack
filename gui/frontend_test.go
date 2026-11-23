@@ -157,6 +157,24 @@ func TestPageTexts(t *testing.T) {
 			t.Errorf("falta el texto %s en algún idioma", key)
 		}
 	}
+	// the end of a queue for the console says where its games are: in homebrew/, where
+	// ShadowMountPlus sees them, or in the folder they have to be moved from to homebrew/, by
+	// what the window tells of each game made (homebrew in job:item)
+	for _, lang := range []string{"es", "en"} {
+		source := readPage(t, "i18n/"+lang+".js")
+		for _, key := range []string{"nextFolder", "nextMove"} {
+			found := regexp.MustCompile(`(?m)^  ` + key + `: (.*)$`).FindStringSubmatch(source)
+			if found == nil || !strings.Contains(found[1], "homebrew/") {
+				t.Errorf("%s.%s no dice homebrew/", lang, key)
+			}
+		}
+		if !regexp.MustCompile(`(?m)^  nextMove: folder => .*\+ folder \+`).MatchString(source) {
+			t.Errorf("%s.nextMove no dice dónde están los juegos", lang)
+		}
+	}
+	if app := readPage(t, "app.js"); !strings.Contains(app, `t("nextMove")`) || !strings.Contains(app, "row.homebrew") {
+		t.Error("el final de una cola para la consola no mira dónde quedó cada juego")
+	}
 
 	node, err := exec.LookPath("node")
 	if err != nil {
@@ -354,7 +372,7 @@ func TestPageSections(t *testing.T) {
 	if cancel := ids["cancel"]; cancel == nil || cancel.Data != "button" {
 		t.Error("falta el botón cancel")
 	}
-	for _, id := range []string{"settings", "options", "files", "done-dialog", "replace-dialog", "fat32-dialog", "runtime-dialog", "block-dialog", "warn-dialog"} {
+	for _, id := range []string{"settings", "options", "files", "done-dialog", "replace-dialog", "fat32-dialog", "runtime-dialog", "block-dialog", "warn-dialog", "close-dialog"} {
 		if ids[id] == nil {
 			t.Errorf("falta #%s", id)
 		}

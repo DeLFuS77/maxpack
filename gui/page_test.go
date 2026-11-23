@@ -210,9 +210,87 @@ func TestDetails(t *testing.T) {
 		packed.Files == 0 || packed.OriginalSize == 0 || packed.InstallSize == 0 || packed.Path != p5z || packed.Name != "b" {
 		t.Fatalf("%+v", packed)
 	}
+	// its packs: the files in them and their volumes
+	if packed.PackedFiles == 0 || packed.PackedFiles >= uint64(packed.Files) || packed.Volumes < 1 {
+		t.Fatalf("packs: %d files in %d volumes", packed.PackedFiles, packed.Volumes)
+	}
 	plain, err := a.Details(image)
-	if err != nil || plain.Kind != "exfat" || plain.Packed || plain.P5zSize != 0 || plain.HasZstdRuntime || plain.Version != "01.000.000" {
+	if err != nil || plain.Kind != "exfat" || plain.Packed || plain.P5zSize != 0 || plain.HasZstdRuntime || plain.Version != "01.000.000" ||
+		plain.PackedFiles != 0 || plain.Volumes != 0 {
 		t.Fatalf("%+v %v", plain, err)
+	}
+}
+
+// rootFS is a drive whose root is root, with room and NTFS.
+type rootFS struct{ root string }
+
+func (rootFS) Free(string) (uint64, error) { return 1 << 40, nil }
+func (rootFS) Type(string) (string, error) { return "NTFS", nil }
+func (f rootFS) Root(path string) string   { return f.root }
+
+// A game for the console is where ShadowMountPlus looks only in homebrew/ at the root of its
+// drive.
+func TestInHomebrew(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "USB")
+	cases := []struct {
+		out  string
+		want bool
+	}{
+		{filepath.Join(root, "homebrew", "PPSA00001"), true},
+		{filepath.Join(root, "HomeBrew", "PPSA00001") + string(filepath.Separator), true},
+		{filepath.Join(root, "juegos", "PPSA00001"), false},
+		{filepath.Join(root, "juegos", "homebrew", "PPSA00001"), false},
+		{filepath.Join(root, "PPSA00001"), false},
+		{filepath.Join(root, "homebrew"), false},
+	}
+	for _, c := range cases {
+		if got := inHomebrew(c.out, rootFS{root: root}); got != c.want {
+			t.Errorf("%s: %v", c.out, got)
+		}
+	}
+	if inHomebrew(filepath.Join(root, "homebrew", "PPSA00001"), realFS{}) {
+		t.Error("with no root known, nothing is in homebrew/")
+	}
+}
+
+// The page is told, of each game made for the console, whether it went to homebrew/ at the root
+// of its drive, where ShadowMountPlus sees it, or somewhere it has to be moved from.
+func TestFolderTellsHomebrew(t *testing.T) {
+	engine, fixtures := needCore(t)
+	image, err := (&App{core: engine}).Describe(filepath.Join(fixtures, "basic.exfat"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, rooted := range []bool{true, false} {
+		dest := t.TempDir()
+		events := newPageEvents()
+		a := pageApp(engine, events)
+		want := filepath.Join(dest, "TEST00001")
+		if rooted {
+			a.fs = rootFS{root: dest}
+			want = filepath.Join(dest, "homebrew", "TEST00001")
+		}
+		if err := a.Start("compress", []jobs.Item{image.Item}, Choices{Options: jobs.Options{Mode: jobs.ModeFolder, Dest: dest, Level: 1}}); err != nil {
+			t.Fatal(err)
+		}
+		if sum := events.wait(t); sum.Done != 1 {
+			t.Fatalf("%+v %+v", sum, events.items)
+		}
+		if last := events.last(0); last.Out != want || last.Homebrew != rooted || last.Size == 0 {
+			t.Fatalf("root %v: %+v", rooted, last)
+		}
+	}
+	// a .p5z is not a folder for the console: nothing to say
+	dest := t.TempDir()
+	events := newPageEvents()
+	a := pageApp(engine, events)
+	a.fs = rootFS{root: dest}
+	if err := a.Start("compress", []jobs.Item{image.Item}, Choices{Options: jobs.Options{Mode: jobs.ModeP5z, Dest: dest, Level: 1}}); err != nil {
+		t.Fatal(err)
+	}
+	events.wait(t)
+	if last := events.last(0); last.Homebrew {
+		t.Fatalf("%+v", last)
 	}
 }
 

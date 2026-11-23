@@ -30,11 +30,13 @@ type Game struct {
 	Packed bool
 }
 
-// GameDetails is all the engine says of a game, for Detalles.
+// GameDetails is all the engine says of a game, for Detalles: with its packs, the files stored
+// in them and their volumes (0 when it is not compressed).
 type GameDetails struct {
 	Game
 	InstallSize, P5zSize uint64
 	Files                int
+	PackedFiles, Volumes uint64
 	HasRuntime           bool
 }
 
@@ -194,7 +196,7 @@ func (a *App) Describe(path string) (Game, error) {
 }
 
 // Details gives all the engine says of a game: Describe, and its sizes installed and as a .p5z,
-// its files and its runtime of ampr-emu-ng.
+// its files, its packs and its runtime of ampr-emu-ng.
 func (a *App) Details(path string) (GameDetails, error) {
 	game, info, err := a.describe(path)
 	if err != nil {
@@ -203,7 +205,8 @@ func (a *App) Details(path string) (GameDetails, error) {
 	number := func(key string) uint64 { n, _ := info[key].(float64); return uint64(n) }
 	carries, _ := info["has_runtime"].(bool)
 	return GameDetails{Game: game, InstallSize: number("install_size"), P5zSize: number("p5z_size"),
-		Files: int(number("files")), HasRuntime: carries}, nil
+		Files: int(number("files")), PackedFiles: number("packed_files"), Volumes: number("volumes"),
+		HasRuntime: carries}, nil
 }
 
 // sectionOptions are the options of a queue of a section: its mode, whatever the page sent.
@@ -225,16 +228,29 @@ func sectionOptions(section string, o jobs.Options) (jobs.Options, error) {
 	return o, nil
 }
 
+// drives are the drives the plans ask: the ones of the system, or the stand-in of the tests.
+func (a *App) drives() jobs.FS {
+	if a.fs != nil {
+		return a.fs
+	}
+	return jobs.SystemFS()
+}
+
+// inHomebrew tells whether a game made for the console is where ShadowMountPlus looks for it:
+// a folder in homebrew/ at the root of its drive. Elsewhere (the destination was not the root
+// of a drive) it has to be moved there.
+func inHomebrew(out string, drives jobs.FS) bool {
+	parent := filepath.Dir(filepath.Clean(out))
+	return strings.EqualFold(filepath.Base(parent), "homebrew") && pathKey(filepath.Dir(parent)) == pathKey(drives.Root(out))
+}
+
 // plans are the plans of a queue of a section.
 func (a *App) plans(section string, items []jobs.Item, o jobs.Options) ([]jobs.Plan, jobs.Options, error) {
 	o, err := sectionOptions(section, o)
 	if err != nil {
 		return nil, o, err
 	}
-	drives := a.fs
-	if drives == nil {
-		drives = jobs.SystemFS()
-	}
+	drives := a.drives()
 	switch o.Mode {
 	case jobs.ModeVerify:
 		return jobs.PlanVerify(items), o, nil
@@ -302,24 +318,34 @@ func (a *App) Start(section string, items []jobs.Item, opts Choices) error {
 		}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
+	q := &queue{ctx: ctx, cancel: cancel, done: make(chan struct{})}
 	a.mutex.Lock()
-	if a.cancelJob != nil {
+	if a.queue != nil {
 		a.mutex.Unlock()
 		cancel()
 		return errors.New("ya hay un trabajo en marcha")
 	}
-	a.cancelJob = cancel
+	a.queue = q
 	a.mutex.Unlock()
 	go func() {
 		sum := a.run(ctx, plans, o)
 		a.mutex.Lock()
-		a.cancelJob = nil
+		a.queue = nil
 		a.mutex.Unlock()
 		cancel()
+		close(q.done)
 		// told once the next queue can start
 		a.send("job:done", sum)
 	}()
 	return nil
+}
+
+// queue is the queue running: its context, how to stop it, and when the Runner returned (with
+// what it made and did not verify taken away).
+type queue struct {
+	ctx    context.Context
+	cancel context.CancelFunc
+	done   chan struct{}
 }
 
 // Cancel stops the queue running: the game at work stops without leaving anything half made,
@@ -327,9 +353,16 @@ func (a *App) Start(section string, items []jobs.Item, opts Choices) error {
 func (a *App) Cancel() {
 	a.mutex.Lock()
 	defer a.mutex.Unlock()
-	if a.cancelJob != nil {
-		a.cancelJob()
+	if a.queue != nil {
+		a.queue.cancel()
 	}
+}
+
+// working tells whether a queue is running.
+func (a *App) working() bool {
+	a.mutex.Lock()
+	defer a.mutex.Unlock()
+	return a.queue != nil
 }
 
 // ChooseFiles asks for files of a section, and gives its games among them.

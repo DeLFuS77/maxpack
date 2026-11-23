@@ -213,6 +213,14 @@
   <form method="dialog" class="dialog-actions"><button value="cancel" class="quiet" data-t="cancel" autofocus></button><button value="go" class="primary" data-t="startAnyway"></button></form>
 </dialog>
 
+<!-- closing the window while a queue runs: the game at work is cancelled without leaving anything
+     half made, or the window stays open; Escape keeps working -->
+<dialog id="close-dialog" class="warn-dialog" aria-labelledby="close-title" aria-describedby="close-text">
+  <h2 id="close-title"><svg class="warn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 2.8 19.5h18.4z"/><path d="M12 9.5v4.5M12 16.8v.2"/></svg><span data-t="closeTitle"></span></h2>
+  <p class="muted" id="close-text" data-t="closeText"></p>
+  <form method="dialog" class="dialog-actions"><button value="close" class="danger" data-t="closeYes"></button><button value="stay" class="primary" data-t="closeNo" autofocus></button></form>
+</dialog>
+
 <!-- the end of a queue that wrote games: what it saved, what saved most, and what to do now -->
 <dialog id="done-dialog" aria-labelledby="done-title">
   <h2 id="done-title" data-t="doneTitle"></h2>

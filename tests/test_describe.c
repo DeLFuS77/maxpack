@@ -202,7 +202,53 @@ MP_TEST(describe_name_truncated_on_boundary) {
     MP_CHECK((unsigned char)d.name[n - 1] == 0xa9 && (unsigned char)d.name[n - 2] == 0xc3);
 }
 
+// Un param.json con BOM de UTF-8, o con espacios y NUL al final (como sale de algunas
+// herramientas), se lee igual: describe da su TITLE_ID y pack lo guarda en el .p5z, que sin él
+// el instalador rechaza.
+MP_TEST(describe_param_bom_and_padding) {
+    static const char body[] = "{\"titleId\":\"BOMS00001\",\"contentVersion\":\"01.000.000\",\"titleName\":\"Con BOM\"}";
+    struct {
+        const char *name;
+        char text[256];
+        size_t len;
+    } cases[3];
+    size_t n = sizeof body - 1;
+    cases[0].name = "bom";
+    memcpy(cases[0].text, "\xef\xbb\xbf", 3);
+    memcpy(cases[0].text + 3, body, n);
+    cases[0].len = n + 3;
+    cases[1].name = "nul";
+    memcpy(cases[1].text, body, n);
+    memset(cases[1].text + n, 0, 16);
+    cases[1].len = n + 16;
+    cases[2].name = "todo";
+    memcpy(cases[2].text, "\xef\xbb\xbf", 3);
+    memcpy(cases[2].text + 3, body, n);
+    memcpy(cases[2].text + 3 + n, "\r\n \t\0\0\0", 7);
+    cases[2].len = n + 10;
+    for (size_t i = 0; i < 3; i++) {
+        char dir[256], file[300], p5z[300];
+        snprintf(dir, sizeof dir, TMP "/pad_%s", cases[i].name);
+        snprintf(file, sizeof file, "%s/sce_sys/param.json", dir);
+        snprintf(p5z, sizeof p5z, "%s.p5z", dir);
+        mpt_clear(dir);
+        mpt_put(file, cases[i].text, cases[i].len);
+        mp_err e = {{0}};
+        mp_describe d;
+        MP_CHECK(mp_describe_path(dir, &d, &e) == 0);
+        if (strcmp(d.title_id, "BOMS00001") || strcmp(d.name, "Con BOM"))
+            MP_FAIL_("%s: describe da \"%s\" \"%s\"", cases[i].name, d.title_id, d.name);
+        mpt_pack(dir, p5z, 1, NULL);
+        mp_p5z *p = open_p5z(p5z);
+        if (!p) continue;
+        if (strcmp(mp_p5z_manifest(p)->title_id, "BOMS00001") || strcmp(mp_p5z_manifest(p)->content_version, "01.000.000"))
+            MP_FAIL_("%s: el .p5z guarda \"%s\"", cases[i].name, mp_p5z_manifest(p)->title_id);
+        mp_p5z_close(p);
+    }
+}
+
 int main(void) {
+    MP_RUN(describe_param_bom_and_padding);
     MP_RUN(describe_kinds);
     MP_RUN(describe_runtime_old);
     MP_RUN(describe_icon);

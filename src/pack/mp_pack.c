@@ -231,6 +231,7 @@ int mp_pack_run(const char *src_path, mp_pack_out *out, const mp_pack_opts *o, m
             mp_param_read((const char *)pj, pl, man.title_id, man.content_version, man.title_name);
             free(pj);
         }
+        memcpy(r->title_id, man.title_id, sizeof r->title_id);
         if (e) e->msg[0] = 0;   // un param.json ilegible no impide empaquetar
     }
     int64_t gen_mtime = 0;   // fecha de los archivos que se generan: la más reciente del juego

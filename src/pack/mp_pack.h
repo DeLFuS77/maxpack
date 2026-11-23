@@ -64,6 +64,7 @@ typedef struct mp_pack_out {
 typedef struct {
     uint64_t loose_files, loose_bytes, packed_files, packed_bytes, stored_bytes, volumes;
     int runtime_without_zstd;   // el libSceAmpr.sprx final no parece leer packs zstd
+    char title_id[16];          // el TITLE_ID de sce_sys/param.json ("" si no lo da)
 } mp_pack_result;
 
 int mp_pack_run(const char *src_path, mp_pack_out *out, const mp_pack_opts *o, mp_pack_result *r,

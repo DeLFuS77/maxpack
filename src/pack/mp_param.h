@@ -6,8 +6,9 @@
 #include <stddef.h>
 
 // Lee titleId, contentVersion y el nombre: el titleName de localizedParameters[defaultLanguage] y,
-// si no está, el de primer nivel. Los textos se cortan en un límite de carácter UTF-8. Devuelve 0, o
-// -1 si no es JSON válido (con los tres vacíos).
+// si no está, el de primer nivel. Los textos se cortan en un límite de carácter UTF-8. Un BOM de
+// UTF-8 al principio y los espacios y NUL del final no cuentan. Devuelve 0, o -1 si no es JSON
+// válido (con los tres vacíos).
 int mp_param_read(const char *json, size_t n, char id[16], char ver[16], char name[128]);
 
 #endif

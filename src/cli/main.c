@@ -527,6 +527,9 @@ static int run_pack(int argc, char **argv) {
     if (r.runtime_without_zstd)
         fprintf(stderr, "aviso: el runtime de fakelib/libSceAmpr.sprx no parece leer packs zstd: usa el "
                         "libSceAmpr.sprx de ampr-emu-ng (--runtime)\n");
+    if (!r.title_id[0])
+        fprintf(stderr, "aviso: sce_sys/param.json no da el TITLE_ID del juego (titleId)%s\n",
+                p5z ? ": el instalador de MaxPack no aceptará este .p5z" : "");
     return 0;
 }
 

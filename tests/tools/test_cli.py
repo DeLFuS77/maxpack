@@ -308,6 +308,34 @@ for cap, want in ((full, 0), (full - 1, 1), (64, 1)):
     except Exception as ex:  # noqa: BLE001
         check("max_file_size_borde_%d" % cap, False, repr(ex))
 
+# Un param.json sin titleId (o que no se lee) da un .p5z sin TITLE_ID: pack lo avisa.
+noid = os.path.join(TMP, "noid_game")
+rmtree(noid)
+os.makedirs(os.path.join(noid, "sce_sys"))
+with open(os.path.join(noid, "sce_sys", "param.json"), "w") as f:
+    f.write('{"titleName":"Sin ID"}')
+noid_p5z = os.path.join(TMP, "noid.p5z")
+if os.path.exists(noid_p5z):
+    os.remove(noid_p5z)
+rc, so, err = run("pack", noid, "-o", noid_p5z, "--p5z")
+check("pack_sin_title_id_avisa", rc == 0 and "aviso:" in err and "TITLE_ID" in err, "rc=%d %s" % (rc, err[-300:]))
+bomd = os.path.join(TMP, "bom_game")
+rmtree(bomd)
+os.makedirs(os.path.join(bomd, "sce_sys"))
+with open(os.path.join(bomd, "sce_sys", "param.json"), "wb") as f:
+    f.write(b'\xef\xbb\xbf{"titleId":"BOMS00001","titleName":"Con BOM"}\r\n\x00\x00')
+rc, so, err = run("info", "--json", bomd)
+try:
+    check("info_json_param_bom", rc == 0 and json.loads(so)["title_id"] == "BOMS00001", so[-200:])
+except Exception as ex:  # noqa: BLE001
+    check("info_json_param_bom", False, repr(ex))
+bom_p5z = os.path.join(TMP, "bom.p5z")
+if os.path.exists(bom_p5z):
+    os.remove(bom_p5z)
+rc, so, err = run("pack", bomd, "-o", bom_p5z, "--p5z")
+_, human, _ = run("info", bom_p5z)
+check("pack_param_bom_guarda_title_id", rc == 0 and "TITLE_ID" not in err and "BOMS00001" in human, err[-200:] + human[-200:])
+
 # Un byte cambiado en los datos: unpack falla a mitad y la carpeta de salida no queda.
 dam = os.path.join(TMP, "dam.p5z")
 shutil.copyfile(pj, dam)

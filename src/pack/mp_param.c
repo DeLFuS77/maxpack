@@ -18,6 +18,14 @@ static void copy_str(char *dst, size_t cap, const char *s) {
 
 int mp_param_read(const char *json, size_t n, char id[16], char ver[16], char name[128]) {
     id[0] = ver[0] = name[0] = 0;
+    // un BOM de UTF-8 al principio, o espacios y NUL de relleno al final, no cambian el JSON
+    if (n >= 3 && !memcmp(json, "\xef\xbb\xbf", 3)) {
+        json += 3;
+        n -= 3;
+    }
+    while (n > 0 && (json[n - 1] == 0 || json[n - 1] == ' ' || json[n - 1] == '\t' || json[n - 1] == '\r' ||
+                     json[n - 1] == '\n'))
+        n--;
     mp_json *j = mp_json_parse(json, n, NULL);
     if (!j) return -1;
     copy_str(id, 16, mp_json_str(mp_json_get(j, "titleId")));

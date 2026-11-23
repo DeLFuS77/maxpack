@@ -22,6 +22,11 @@ void mpi_dir_title(const char *dir, char id[16]);
 uint64_t mpi_tree_size(const char *path);                 // archivo o carpeta entera
 int mpi_has_ext(const char *name, const char *ext);       // ext con punto, sin distinguir mayúsculas
 int mpi_record_path(const mp_inst_env *env, const char *title_id, char *out, size_t cap);
+// Temporal de title_id en dest_root: <internal>/maxpack/tmp/<ID> o <unidad>/maxpack-tmp/<ID>.
+void mpi_tmp_path(const mp_inst_env *env, const char *dest_root, const char *title_id, char *out, size_t cap);
+// 1 si path es una raíz que nunca es "una copia de un juego": las unidades, sus homebrew/,
+// etaHEN/, etaHEN/games/ y las carpetas de MaxPack.
+int mpi_reserved_path(const mp_inst_env *env, const char *path);
 // SHA-256 de un archivo desde el byte skip (64 en un volumen); size = tamaño total.
 int mpi_file_sha(const char *path, uint64_t skip, uint8_t sha[32], uint64_t *size, mp_err *e);
 

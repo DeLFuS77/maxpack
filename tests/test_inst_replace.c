@@ -12,6 +12,7 @@ typedef struct {
     const char *corrupt;   // archivo que se estropea al empezar "comprobando"
     uint64_t fail_at;
     int done_corrupt;
+    const char *appear;    // archivo que aparece en cuanto se empieza a escribir
 } hook;
 
 static void on_progress(void *ctx, const char *stage, uint64_t done, uint64_t total) {
@@ -32,6 +33,10 @@ static void on_progress(void *ctx, const char *stage, uint64_t done, uint64_t to
 
 static int on_io(void *ctx, uint64_t written, mp_err *e) {
     hook *h = ctx;
+    if (h && h->appear) {
+        mpt_put_text(h->appear, "apareció durante la instalación");
+        h->appear = NULL;
+    }
     if (h && h->fail_at && written > h->fail_at) {
         mp_err_set(e, "fallo inyectado");
         return -1;
@@ -170,7 +175,7 @@ MP_TEST(replace_old_kept_on_failure) {
         total = f.install_size;
         free(f.path);
     }
-    hook h = {NULL, total / 2, 0};
+    hook h = {NULL, total / 2, 0, NULL};
     mp_inst_result r;
     mp_err e;
     MP_CHECK(install(TMP "/d", TMP "/rt.p5z", rep, 1, 0, &h, &r, &e) == -1);
@@ -209,7 +214,7 @@ MP_TEST(delete_p5z_after_check) {
 
     fresh(TMP "/g");
     mpt_copy_file(TMP "/rt.p5z", TMP "/f_src/keep.p5z");
-    hook h = {TMP "/g/maxpack/tmp/TEST00001/eboot.bin", 0, 0};
+    hook h = {TMP "/g/maxpack/tmp/TEST00001/eboot.bin", 0, 0, NULL};
     MP_CHECK(install(TMP "/g", TMP "/f_src/keep.p5z", NULL, 0, 1, &h, &r, &e) == -1);
     MP_CHECK(h.done_corrupt == 1);
     MP_CHECK(r.status == MP_INST_FAILED);
@@ -238,6 +243,73 @@ MP_TEST(check_dir_counts) {
     mp_p5z_close(p);
 }
 
+MP_TEST(homebrew_param_not_a_copy) {
+    setup();
+    fresh(TMP "/j");
+    // Un dump descomprimido directamente en homebrew/: homebrew/sce_sys/param.json existe.
+    mpt_put_text(TMP "/usb0/homebrew/sce_sys/param.json", "{\"titleId\":\"TEST00001\"}");
+    mpt_put_text(TMP "/usb0/homebrew/Otro/eboot.bin", "otro juego");
+    mp_inst_env env = env_for(TMP "/j", NULL);
+    mp_inst_existing *v = NULL;
+    size_t n = 0;
+    mp_err e = {{0}};
+    MP_CHECK(mp_inst_find_existing(&env, "TEST00001", NULL, 0, &v, &n, &e) == 0);
+    for (size_t i = 0; i < n; i++)
+        if (!strcmp(v[i].path, TMP "/usb0/homebrew")) MP_FAIL_("homebrew entera como copia del juego");
+    mp_inst_existing_free(v, n);
+    mp_inst_result r;
+    mp_inst_req q;
+    memset(&q, 0, sizeof q);
+    q.p5z_path = TMP "/rt.p5z";
+    q.dest_root = TMP "/usb0";
+    MP_CHECK(mp_inst_install(&env, &q, &r, &e) == 0);
+    if (r.status == MP_INST_NEEDS_CONFIRM) {   // confirmar todo lo que proponga
+        const char *rep[16];
+        size_t k = 0;
+        for (size_t i = 0; i < r.nexisting && k < 16; i++) rep[k++] = r.existing[i].path;
+        q.replace = rep;
+        q.nreplace = k;
+        mp_inst_result r2;
+        MP_CHECK(mp_inst_install(&env, &q, &r2, &e) == 0);
+        mp_inst_result_free(&r2);
+    }
+    mp_inst_result_free(&r);
+    MP_CHECK(mp_path_kind(TMP "/usb0/homebrew/Otro/eboot.bin") == 1);
+    MP_CHECK(mp_path_kind(TMP "/usb0/homebrew/TEST00001") == 2);
+}
+
+MP_TEST(dest_appears_during_install) {
+    setup();
+    fresh(TMP "/k");
+    hook h = {NULL, 0, 0, TMP "/k/homebrew/TEST00001/nuevo.txt"};
+    mp_inst_result r;
+    mp_err e;
+    MP_CHECK(install(TMP "/k", TMP "/rt.p5z", NULL, 0, 0, &h, &r, &e) == -1);
+    MP_CHECK(r.status == MP_INST_FAILED);
+    MP_CHECK(mp_path_kind(TMP "/k/homebrew/TEST00001/nuevo.txt") == 1);
+    mp_inst_result_free(&r);
+}
+
+MP_TEST(alias_same_dir) {
+    setup();
+    fresh(TMP "/l");
+    mpt_put_text(TMP "/l/homebrew/test00001/sce_sys/param.json", "{\"titleId\":\"TEST00001\"}");
+    if (mp_path_kind(TMP "/l/homebrew/TEST00001") != 2) return;   // sistema de archivos que distingue mayúsculas
+    mp_inst_result r;
+    mp_err e;
+    MP_CHECK(install(TMP "/l", TMP "/rt.p5z", NULL, 0, 0, NULL, &r, &e) == 0 && r.status == MP_INST_NEEDS_CONFIRM);
+    MP_CHECK_EQ_U64(r.nexisting, 1);
+    const char *rep[1] = {r.nexisting ? r.existing[0].path : ""};
+    char keep[1024];
+    snprintf(keep, sizeof keep, "%s", rep[0]);
+    rep[0] = keep;
+    mp_inst_result_free(&r);
+    MP_CHECK(install(TMP "/l", TMP "/rt.p5z", rep, 1, 0, NULL, &r, &e) == 0);
+    MP_CHECK_STR(r.code, "done");
+    MP_CHECK(mpt_dirs_equal(TMP "/unpacked_rt", TMP "/l/homebrew/TEST00001", "*.pak"));
+    mp_inst_result_free(&r);
+}
+
 int main(void) {
     MP_RUN(replace_needs_confirm);
     MP_RUN(replace_same_place);
@@ -246,5 +318,8 @@ int main(void) {
     MP_RUN(replace_list_changed);
     MP_RUN(delete_p5z_after_check);
     MP_RUN(check_dir_counts);
+    MP_RUN(homebrew_param_not_a_copy);
+    MP_RUN(dest_appears_during_install);
+    MP_RUN(alias_same_dir);
     MP_TEST_MAIN_END();
 }

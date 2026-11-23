@@ -12,7 +12,17 @@ typedef struct {
     uint64_t stop_at;     // parar (1) al pasar de aquí; 0 = nunca
     uint64_t fail_at;     // fallar (-1) al pasar de aquí; 0 = nunca
     uint64_t last;        // último bytes_written visto
+    uint64_t disk;        // si no es 0: espacio libre = disk - lo que ocupe tmpdir
+    const char *tmpdir;
 } hook;
+
+static int fs_hook(void *ctx, const char *path, uint64_t *out) {
+    hook *h = ctx;
+    (void)path;
+    uint64_t used = h->tmpdir ? mpt_dir_size(h->tmpdir) : 0;
+    *out = h->disk > used ? h->disk - used : 0;
+    return 0;
+}
 
 static int io_hook(void *ctx, uint64_t written, mp_err *e) {
     hook *h = ctx;
@@ -36,6 +46,7 @@ static mp_inst_env env_for(const char *internal, hook *h, int clear) {
     env.runtime.mtime = 1700000000;
     env.io_check = io_hook;
     env.ctx = h;
+    if (h && h->disk) env.free_space = fs_hook;
     if (clear) {
         mp_err e = {{0}};
         mpt_clear(internal);
@@ -87,7 +98,7 @@ static void setup(void) {
 MP_TEST(stop_then_resume) {
     setup();
     uint64_t total = install_size(TMP "/rt.p5z");
-    hook h = {total * 4 / 10, 0, 0};
+    hook h = {total * 4 / 10, 0, 0, 0, NULL};
     mp_inst_result r;
     mp_err e;
     MP_CHECK(run(TMP "/d1", TMP "/rt.p5z", &h, 1, &r, &e) == 0);
@@ -96,7 +107,7 @@ MP_TEST(stop_then_resume) {
     MP_CHECK(mp_path_kind(FINAL(TMP "/d1")) == 0);
     MP_CHECK(mp_path_kind(TMP "/d1/maxpack/state/TEST00001.json") == 1);
     MP_CHECK(mp_path_kind(TMP "/d1/maxpack/tmp/TEST00001") == 2);
-    hook h2 = {0, 0, 0};
+    hook h2 = {0, 0, 0, 0, NULL};
     MP_CHECK(run(TMP "/d1", TMP "/rt.p5z", &h2, 0, &r, &e) == 0);
     if (e.msg[0]) fprintf(stderr, "  %s\n", e.msg);
     MP_CHECK(r.status == MP_INST_DONE);
@@ -132,7 +143,7 @@ static int first_done(const char *done_path, const char *dir, char *out, size_t 
 MP_TEST(resume_rehashes_done) {
     setup();
     uint64_t total = install_size(TMP "/rt.p5z");
-    hook h = {total * 4 / 10, 0, 0};
+    hook h = {total * 4 / 10, 0, 0, 0, NULL};
     mp_inst_result r;
     mp_err e;
     MP_CHECK(run(TMP "/d2", TMP "/rt.p5z", &h, 1, &r, &e) == 0 && r.status == MP_INST_STOPPED);
@@ -146,7 +157,7 @@ MP_TEST(resume_rehashes_done) {
     b[n - 1] ^= 0xFF;   // mismo tamaño, contenido distinto
     mpt_put(path, b, n);
     free(b);
-    hook h2 = {0, 0, 0};
+    hook h2 = {0, 0, 0, 0, NULL};
     MP_CHECK(run(TMP "/d2", TMP "/rt.p5z", &h2, 0, &r, &e) == 0 && r.status == MP_INST_DONE);
     MP_CHECK(mpt_dirs_equal(TMP "/unpacked_rt", FINAL(TMP "/d2"), "*.pak"));
     mp_inst_result_free(&r);
@@ -155,7 +166,7 @@ MP_TEST(resume_rehashes_done) {
 MP_TEST(write_error_keeps_state) {
     setup();
     uint64_t total = install_size(TMP "/rt.p5z");
-    hook h = {0, total / 2, 0};
+    hook h = {0, total / 2, 0, 0, NULL};
     mp_inst_result r;
     mp_err e;
     MP_CHECK(run(TMP "/d3", TMP "/rt.p5z", &h, 1, &r, &e) == -1);
@@ -171,7 +182,7 @@ MP_TEST(source_vanishes_then_resume) {
     setup();
     mpt_copy_file(TMP "/rt.p5z", TMP "/copia.p5z");
     uint64_t total = install_size(TMP "/copia.p5z");
-    hook h = {total * 4 / 10, 0, 0};
+    hook h = {total * 4 / 10, 0, 0, 0, NULL};
     mp_inst_result r;
     mp_err e;
     MP_CHECK(run(TMP "/d4", TMP "/copia.p5z", &h, 1, &r, &e) == 0 && r.status == MP_INST_STOPPED);
@@ -179,14 +190,14 @@ MP_TEST(source_vanishes_then_resume) {
     uint8_t *b = mpt_slurp(TMP "/copia.p5z", &n);
     if (!b) return;
     mpt_put(TMP "/copia.p5z", b, n / 2);
-    hook h2 = {0, 0, 0};
+    hook h2 = {0, 0, 0, 0, NULL};
     MP_CHECK(run(TMP "/d4", TMP "/copia.p5z", &h2, 0, &r, &e) == -1);
     MP_CHECK(r.status == MP_INST_FAILED);
     MP_CHECK(mp_path_kind(FINAL(TMP "/d4")) == 0);
     MP_CHECK(mp_path_kind(TMP "/d4/maxpack/state/TEST00001.json") == 1);
     mpt_put(TMP "/copia.p5z", b, n);
     free(b);
-    hook h3 = {0, 0, 0};
+    hook h3 = {0, 0, 0, 0, NULL};
     MP_CHECK(run(TMP "/d4", TMP "/copia.p5z", &h3, 0, &r, &e) == 0 && r.status == MP_INST_DONE);
     MP_CHECK(h3.last < total);
     MP_CHECK(mpt_dirs_equal(TMP "/unpacked_rt", FINAL(TMP "/d4"), "*.pak"));
@@ -196,12 +207,12 @@ MP_TEST(source_vanishes_then_resume) {
 MP_TEST(other_archive_restarts) {
     setup();
     uint64_t total = install_size(TMP "/rt.p5z");
-    hook h = {total * 4 / 10, 0, 0};
+    hook h = {total * 4 / 10, 0, 0, 0, NULL};
     mp_inst_result r;
     mp_err e;
     MP_CHECK(run(TMP "/d5", TMP "/rt.p5z", &h, 1, &r, &e) == 0 && r.status == MP_INST_STOPPED);
     uint64_t total2 = install_size(TMP "/nort.p5z");
-    hook h2 = {0, 0, 0};
+    hook h2 = {0, 0, 0, 0, NULL};
     MP_CHECK(run(TMP "/d5", TMP "/nort.p5z", &h2, 0, &r, &e) == 0 && r.status == MP_INST_DONE);
     MP_CHECK(h2.last >= total2 * 9 / 10);
     MP_CHECK(mpt_dirs_equal(TMP "/folder_rt", FINAL(TMP "/d5"), "*.pak|ampr_emu.index"));
@@ -211,16 +222,106 @@ MP_TEST(other_archive_restarts) {
 MP_TEST(state_corrupt_restarts) {
     setup();
     uint64_t total = install_size(TMP "/rt.p5z");
-    hook h = {total * 4 / 10, 0, 0};
+    hook h = {total * 4 / 10, 0, 0, 0, NULL};
     mp_inst_result r;
     mp_err e;
     MP_CHECK(run(TMP "/d6", TMP "/rt.p5z", &h, 1, &r, &e) == 0 && r.status == MP_INST_STOPPED);
     mpt_put_text(TMP "/d6/maxpack/state/TEST00001.json", "{\"archive_id\":");
-    hook h2 = {0, 0, 0};
+    hook h2 = {0, 0, 0, 0, NULL};
     MP_CHECK(run(TMP "/d6", TMP "/rt.p5z", &h2, 0, &r, &e) == 0 && r.status == MP_INST_DONE);
     MP_CHECK(h2.last >= total * 9 / 10);
     MP_CHECK(mpt_dirs_equal(TMP "/unpacked_rt", FINAL(TMP "/d6"), "*.pak"));
     mp_inst_result_free(&r);
+}
+
+MP_TEST(resume_with_little_space) {
+    setup();
+    mp_inst_env probe_env;
+    mp_inst_env_default(&probe_env);
+    uint64_t total = install_size(TMP "/rt.p5z");
+    // Cabe justo (con 1 MiB de sobra) con la temporal vacía; lo copiado ocupa ya parte del disco.
+    hook h = {total * 4 / 10, 0, 0, total + probe_env.space_margin + (1u << 20), TMP "/d7/maxpack/tmp/TEST00001"};
+    mp_inst_result r;
+    mp_err e;
+    MP_CHECK(run(TMP "/d7", TMP "/rt.p5z", &h, 1, &r, &e) == 0 && r.status == MP_INST_STOPPED);
+    hook h2 = {0, 0, 0, h.disk, h.tmpdir};
+    MP_CHECK(run(TMP "/d7", TMP "/rt.p5z", &h2, 0, &r, &e) == 0);
+    MP_CHECK_STR(r.code, "done");
+    MP_CHECK(mpt_dirs_equal(TMP "/unpacked_rt", FINAL(TMP "/d7"), "*.pak"));
+    mp_inst_result_free(&r);
+}
+
+MP_TEST(pending_and_discard) {
+    setup();
+    uint64_t total = install_size(TMP "/rt.p5z");
+    hook h = {total * 4 / 10, 0, 0, 0, NULL};
+    mp_inst_result r;
+    mp_err e;
+    MP_CHECK(run(TMP "/d8", TMP "/rt.p5z", &h, 1, &r, &e) == 0 && r.status == MP_INST_STOPPED);
+    mp_inst_env env = env_for(TMP "/d8", NULL, 0);
+    mp_inst_pending_item *v = NULL;
+    size_t n = 0;
+    MP_CHECK(mp_inst_pending(&env, &v, &n, &e) == 0);
+    MP_CHECK_EQ_U64(n, 1);
+    if (n == 1) {
+        MP_CHECK_STR(v[0].title_id, "TEST00001");
+        MP_CHECK_STR(v[0].source, TMP "/rt.p5z");
+        MP_CHECK_STR(v[0].dest, TMP "/d8");
+        MP_CHECK(v[0].bytes > 0);
+    }
+    free(v);
+    MP_CHECK(mp_inst_discard(&env, "TEST00001", &e) == 0);
+    MP_CHECK(mp_path_kind(TMP "/d8/maxpack/tmp/TEST00001") == 0);
+    MP_CHECK(mp_path_kind(TMP "/d8/maxpack/state/TEST00001.json") == 0);
+    MP_CHECK(mp_path_kind(TMP "/d8/maxpack/state/TEST00001.done") == 0);
+    MP_CHECK(mp_inst_pending(&env, &v, &n, &e) == 0 && n == 0);
+    free(v);
+    MP_CHECK(mp_inst_discard(&env, "../x", &e) == -1);
+}
+
+MP_TEST(other_dest_cleans_old_temp) {
+    setup();
+    mp_err e0 = {{0}};
+    mp_make_dirs(TMP "/usb1", &e0);   // la unidad existe en esta prueba
+    uint64_t total = install_size(TMP "/rt.p5z");
+    hook h = {total * 4 / 10, 0, 0, 0, NULL};
+    mp_inst_env env = env_for(TMP "/d9", &h, 1);
+    mp_inst_req q;
+    memset(&q, 0, sizeof q);
+    q.p5z_path = TMP "/rt.p5z";
+    q.dest_root = TMP "/usb1";
+    mp_inst_result r;
+    mp_err e = {{0}};
+    MP_CHECK(mp_inst_install(&env, &q, &r, &e) == 0 && r.status == MP_INST_STOPPED);
+    MP_CHECK(mp_path_kind(TMP "/usb1/maxpack-tmp/TEST00001") == 2);
+    hook h2 = {0, 0, 0, 0, NULL};
+    MP_CHECK(run(TMP "/d9", TMP "/rt.p5z", &h2, 0, &r, &e) == 0 && r.status == MP_INST_DONE);
+    MP_CHECK(mp_path_kind(TMP "/usb1/maxpack-tmp/TEST00001") == 0);
+    mp_inst_result_free(&r);
+    mpt_clear(TMP "/usb1");
+}
+
+MP_TEST(recover_old_after_cut) {
+    setup();
+    mpt_clear(TMP "/d10");
+    // Un corte entre apartar el juego viejo y poner el nuevo: el viejo está en <tmp>.old.
+    mpt_put_text(TMP "/d10/maxpack/tmp/TEST00001.old/eboot.bin", "juego viejo");
+    mpt_put_text(TMP "/d10/maxpack/tmp/TEST00001.old.dest", TMP "/d10/homebrew/TEST00001");
+    mp_inst_env env = env_for(TMP "/d10", NULL, 0);
+    mp_inst_recover(&env);
+    MP_CHECK(mp_path_kind(TMP "/d10/homebrew/TEST00001/eboot.bin") == 1);
+    MP_CHECK(mp_path_kind(TMP "/d10/maxpack/tmp/TEST00001.old") == 0);
+    MP_CHECK(mp_path_kind(TMP "/d10/maxpack/tmp/TEST00001.old.dest") == 0);
+    // Si el destino ya está (el nuevo se puso bien), lo viejo se borra.
+    mpt_put_text(TMP "/d10/maxpack/tmp/TEST00002.old/eboot.bin", "otro viejo");
+    mpt_put_text(TMP "/d10/maxpack/tmp/TEST00002.old.dest", TMP "/d10/homebrew/TEST00002");
+    mpt_put_text(TMP "/d10/homebrew/TEST00002/eboot.bin", "nuevo");
+    mp_inst_recover(&env);
+    MP_CHECK(mp_path_kind(TMP "/d10/maxpack/tmp/TEST00002.old") == 0);
+    size_t n = 0;
+    uint8_t *b = mpt_slurp(TMP "/d10/homebrew/TEST00002/eboot.bin", &n);
+    MP_CHECK(b && n == 5 && !memcmp(b, "nuevo", 5));
+    free(b);
 }
 
 int main(void) {
@@ -230,5 +331,9 @@ int main(void) {
     MP_RUN(source_vanishes_then_resume);
     MP_RUN(other_archive_restarts);
     MP_RUN(state_corrupt_restarts);
+    MP_RUN(resume_with_little_space);
+    MP_RUN(pending_and_discard);
+    MP_RUN(other_dest_cleans_old_temp);
+    MP_RUN(recover_old_after_cut);
     MP_TEST_MAIN_END();
 }

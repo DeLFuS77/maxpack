@@ -191,6 +191,35 @@ int mpi_file_sha(const char *path, uint64_t skip, uint8_t sha[32], uint64_t *siz
     return rc;
 }
 
+void mpi_tmp_path(const mp_inst_env *env, const char *dest_root, const char *title_id, char *out, size_t cap) {
+    int internal = !strcmp(dest_root, env->internal);
+    snprintf(out, cap, internal ? "%s/maxpack/tmp/%s" : "%s/maxpack-tmp/%s", dest_root, title_id);
+}
+
+static int same_path(const char *a, const char *b) { return !strcmp(a, b) || mp_same_file(a, b); }
+
+static int reserved_under(const char *base, const char *path, int internal) {
+    static const char *const subs[] = {"homebrew", "etaHEN", "etaHEN/games"};
+    if (same_path(path, base)) return 1;
+    for (size_t i = 0; i < sizeof subs / sizeof *subs; i++) {
+        char p[1200];
+        snprintf(p, sizeof p, "%s/%s", base, subs[i]);
+        if (same_path(path, p)) return 1;
+    }
+    char m[1200];
+    snprintf(m, sizeof m, internal ? "%s/maxpack" : "%s/maxpack-tmp", base);
+    return same_path(path, m);
+}
+
+int mpi_reserved_path(const mp_inst_env *env, const char *path) {
+    if (reserved_under(env->internal, path, 1)) return 1;
+    const char *d[16];
+    size_t n = mp_inst_drives(env, d, 16);
+    for (size_t i = 0; i < n; i++)
+        if (reserved_under(d[i], path, 0)) return 1;
+    return 0;
+}
+
 int mpi_record_path(const mp_inst_env *env, const char *title_id, char *out, size_t cap) {
     if (!mp_inst_title_ok(title_id)) return -1;
     int k = snprintf(out, cap, "%s/maxpack/installed/%s.json", env->internal, title_id);

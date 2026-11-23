@@ -123,6 +123,34 @@ typedef struct {
 int mp_inst_install(const mp_inst_env *env, const mp_inst_req *req, mp_inst_result *r, mp_err *e);
 void mp_inst_result_free(mp_inst_result *r);
 
+// Lo que haría mp_inst_install antes de escribir nada: origen, destino, copias que hay que confirmar
+// y espacio. La API lo usa para contestar enseguida y el motor, para decidir; así nunca discrepan.
+typedef struct {
+    mp_inst_found f;
+    char final_path[1024];   // carpeta del juego, o archivo de la imagen
+    char tmp_root[1024], tmp[1100];
+    mp_inst_existing *ex;    // copias que se borrarán (ya sin el origen, las raíces ni las que lo contienen)
+    size_t nex;
+    int status;              // MP_INST_DONE (se puede seguir), MP_INST_NEEDS_CONFIRM o MP_INST_NO_SPACE
+    uint64_t need, avail;    // avail cuenta también lo que ya ocupa la temporal de este juego
+} mp_inst_plan;
+
+// 0 con status; -1 si no se puede instalar (code: "bad_p5z", "bad_source", "bad_dest", "io_error").
+int mp_inst_plan_make(const mp_inst_env *env, const mp_inst_req *req, mp_inst_plan *pl, const char **code,
+                      mp_err *e);
+void mp_inst_plan_free(mp_inst_plan *pl);
+
+// Instalaciones a medias (estado guardado) y descartarlas.
+typedef struct {
+    char title_id[16];
+    char source[1024], dest[1024];
+    uint64_t bytes;   // lo que ya hay escrito en su temporal
+} mp_inst_pending_item;
+int mp_inst_pending(const mp_inst_env *env, mp_inst_pending_item **out, size_t *n, mp_err *e);
+int mp_inst_discard(const mp_inst_env *env, const char *title_id, mp_err *e);   // borra estado y temporal
+// Tras un corte entre apartar el juego viejo y poner el nuevo, vuelve a dejar el viejo en su sitio.
+void mp_inst_recover(const mp_inst_env *env);
+
 // Relee la carpeta y compara cada archivo que viene del .p5z con su SHA-256 (skip_runtime: no
 // compara ampr_emu.index ni el runtime, que cambió el instalador). Fallos, o -1 si no pudo.
 typedef struct mp_p5z mp_p5z;

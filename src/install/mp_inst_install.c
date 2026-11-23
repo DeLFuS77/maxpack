@@ -383,6 +383,8 @@ static int recheck_done(const mp_inst_env *env, mp_p5z *p, const char *tmp, char
 
 // ---- poner en su sitio ----------------------------------------------------------------------
 
+static int same_path(const char *a, const char *b) { return !strcmp(a, b) || mp_same_file(a, b); }
+
 int mpi_place(const mp_inst_env *env, const char *item, const char *final_path, const mp_inst_existing *ex,
               size_t nex, mp_err *e) {
     char dir[1200];
@@ -390,12 +392,21 @@ int mpi_place(const mp_inst_env *env, const char *item, const char *final_path, 
     char *s = strrchr(dir, '/');
     if (s) *s = 0;
     if (mp_make_dirs(dir, e) != 0) return -1;
-    char old[1300];
+    char old[1300], mark[1320];
     snprintf(old, sizeof old, "%s.old", item);
+    snprintf(mark, sizeof mark, "%s.dest", old);
     int moved_old = 0, rc = 0;
-    if (mp_path_kind(final_path) != 0) {   // el destino está ocupado (confirmado)
+    if (mp_path_kind(final_path) != 0) {   // el destino está ocupado: solo si se confirmó
+        int confirmed = 0;
+        for (size_t i = 0; i < nex && !confirmed; i++) confirmed = same_path(ex[i].path, final_path);
+        if (!confirmed) {
+            mp_err_set(e, "%s apareció mientras se instalaba y nadie confirmó reemplazarlo: no se toca", final_path);
+            return -1;
+        }
         mp_remove_tree(old, NULL);
-        rc = mp_rename(final_path, old, e);
+        // Si se corta aquí, mp_inst_recover vuelve a poner lo viejo en su sitio.
+        rc = mp_write_file(mark, final_path, strlen(final_path), e);
+        if (rc == 0) rc = mp_rename(final_path, old, e);
         moved_old = rc == 0;
     }
     if (rc == 0) rc = mp_rename(item, final_path, e);
@@ -404,107 +415,188 @@ int mpi_place(const mp_inst_env *env, const char *item, const char *final_path, 
         mp_err e2 = {{0}};
         if (moved_old && mp_remove_tree(old, &e2) != 0 && env->notify) env->notify(env->ctx, e2.msg);
         for (size_t i = 0; i < nex; i++) {
-            if (!strcmp(ex[i].path, final_path)) continue;
+            if (same_path(ex[i].path, final_path)) continue;
             if (mp_remove_tree(ex[i].path, &e2) != 0 && env->notify) env->notify(env->ctx, e2.msg);
         }
     }
+    mp_remove_file(mark);
     return rc;
+}
+
+// Marcas <x>.old.dest que dejó un corte en las temporales (las escribe mpi_place).
+typedef struct {
+    const char *root;
+} rec_ctx;
+
+static int rec_cb(void *ctx, const char *rel, int is_dir, uint64_t size, int64_t mtime) {
+    rec_ctx *c = ctx;
+    (void)size;
+    (void)mtime;
+    size_t n = strlen(rel);
+    if (is_dir || n < 9 || strcmp(rel + n - 9, ".old.dest") != 0) return 0;
+    char mark[1400], old[1400], *target = NULL;
+    size_t tl = 0;
+    snprintf(mark, sizeof mark, "%s/%s", c->root, rel);
+    snprintf(old, sizeof old, "%.*s", (int)(strlen(mark) - 5), mark);
+    if (mpi_read_small(mark, 4096, &target, &tl, NULL) == 0) {
+        if (mp_path_kind(target) == 0 && mp_path_kind(old) != 0) {
+            char parent[1200];
+            snprintf(parent, sizeof parent, "%s", target);
+            char *s = strrchr(parent, '/');
+            if (s) *s = 0;
+            mp_make_dirs(parent, NULL);
+            mp_rename(old, target, NULL);
+        } else if (mp_path_kind(target) != 0 && mp_path_kind(old) != 0) {
+            mp_remove_tree(old, NULL);   // el nuevo quedó bien puesto: lo viejo sobra
+        }
+    }
+    free(target);
+    if (mp_path_kind(old) == 0) mp_remove_file(mark);
+    return 0;
+}
+
+void mp_inst_recover(const mp_inst_env *env) {
+    char root[1200];
+    rec_ctx c = {root};
+    snprintf(root, sizeof root, "%s/maxpack/tmp", env->internal);
+    if (mp_path_kind(root) == 2) mp_dir_walk(root, rec_cb, &c, NULL);
+    const char *d[16];
+    size_t n = mp_inst_drives(env, d, 16);
+    for (size_t i = 0; i < n; i++) {
+        snprintf(root, sizeof root, "%s/maxpack-tmp", d[i]);
+        if (mp_path_kind(root) == 2) mp_dir_walk(root, rec_cb, &c, NULL);
+    }
+}
+
+// ---- plan: lo que se haría ---------------------------------------------------------------------
+
+void mp_inst_plan_free(mp_inst_plan *pl) {
+    free(pl->f.path);
+    mp_inst_existing_free(pl->ex, pl->nex);
+    pl->f.path = NULL;
+    pl->ex = NULL;
+    pl->nex = 0;
+}
+
+static void drop_existing(mp_inst_plan *pl, size_t i) {
+    free(pl->ex[i].path);
+    pl->ex[i] = pl->ex[--pl->nex];
+}
+
+int mp_inst_plan_make(const mp_inst_env *env, const mp_inst_req *req, mp_inst_plan *pl, const char **code,
+                      mp_err *e) {
+    memset(pl, 0, sizeof *pl);
+    *code = NULL;
+    if (mp_inst_probe_any(req->p5z_path, &pl->f, e) != 0) {
+        *code = mpi_has_ext(req->p5z_path, ".p5z") ? "bad_p5z" : "bad_source";
+        return -1;
+    }
+    if (!dest_ok(env, req->dest_root)) {
+        mp_err_set(e, "la unidad de destino no está disponible: %s", req->dest_root ? req->dest_root : "(ninguna)");
+        *code = "bad_dest";
+        mp_inst_plan_free(pl);
+        return -1;
+    }
+    int internal = !strcmp(req->dest_root, env->internal);
+    const char *src_name = strrchr(pl->f.path, '/');
+    src_name = src_name ? src_name + 1 : pl->f.path;
+    if (pl->f.kind == MP_SRC_IMAGE)
+        snprintf(pl->final_path, sizeof pl->final_path, "%s/homebrew/%s", req->dest_root, src_name);
+    else
+        snprintf(pl->final_path, sizeof pl->final_path, "%s/homebrew/%s", req->dest_root, pl->f.title_id);
+    snprintf(pl->tmp_root, sizeof pl->tmp_root, internal ? "%s/maxpack/tmp" : "%s/maxpack-tmp", req->dest_root);
+    snprintf(pl->tmp, sizeof pl->tmp, "%s/%s", pl->tmp_root, pl->f.title_id);
+
+    // Copias que ya hay. Nunca cuentan: el origen, lo que lo contiene, y lo que contiene el destino
+    // o las temporales (borrarlo se llevaría por delante el juego nuevo u otros juegos).
+    if (mp_inst_find_existing(env, pl->f.title_id, req->known, req->nknown, &pl->ex, &pl->nex, e) != 0) {
+        *code = "io_error";
+        mp_inst_plan_free(pl);
+        return -1;
+    }
+    for (size_t i = 0; i < pl->nex;) {
+        const char *p = pl->ex[i].path;
+        int is_final = same_path(p, pl->final_path);
+        int bad = same_path(p, pl->f.path) || mp_path_is_inside(pl->f.path, p) ||
+                  (!is_final && mp_path_is_inside(pl->final_path, p)) || mp_path_is_inside(pl->tmp_root, p);
+        if (bad) drop_existing(pl, i);
+        else i++;
+    }
+    // El destino ocupado cuenta siempre como copia (aunque no se reconozca como este juego).
+    int listed = 0;
+    for (size_t i = 0; i < pl->nex; i++) listed |= same_path(pl->ex[i].path, pl->final_path);
+    if (!listed && mp_path_kind(pl->final_path) != 0) {
+        mp_inst_existing *nx = realloc(pl->ex, (pl->nex + 1) * sizeof *nx);
+        char *dup = mp_strdup(pl->final_path);
+        if (!nx || !dup) {
+            if (nx) pl->ex = nx;
+            free(dup);
+            mp_err_set(e, "sin memoria");
+            *code = "io_error";
+            mp_inst_plan_free(pl);
+            return -1;
+        }
+        pl->ex = nx;
+        memset(&pl->ex[pl->nex], 0, sizeof pl->ex[pl->nex]);
+        pl->ex[pl->nex].path = dup;
+        pl->ex[pl->nex].is_file = mp_path_kind(pl->final_path) == 1;
+        pl->ex[pl->nex].size = mpi_tree_size(pl->final_path);
+        pl->nex++;
+    }
+    for (size_t i = 0; i < pl->nex; i++) {
+        int ok = 0;
+        for (size_t k = 0; k < req->nreplace && !ok; k++) ok = same_path(pl->ex[i].path, req->replace[k]);
+        if (!ok) {
+            pl->status = MP_INST_NEEDS_CONFIRM;
+            return 0;
+        }
+    }
+    // Espacio: lo que ya ocupa la temporal de este juego en este destino se reutiliza o se borra.
+    uint64_t avail = 0;
+    int frc = env->free_space ? env->free_space(env->ctx, req->dest_root, &avail)
+                              : mp_disk_free(req->dest_root, &avail, e);
+    if (frc != 0) {
+        *code = "io_error";
+        mp_inst_plan_free(pl);
+        return -1;
+    }
+    pl->need = pl->f.install_size + env->space_margin;
+    pl->avail = avail + (mp_path_kind(pl->tmp) != 0 ? mpi_tree_size(pl->tmp) : 0);
+    pl->status = pl->need > pl->avail ? MP_INST_NO_SPACE : MP_INST_DONE;
+    return 0;
 }
 
 // ---- instalar -------------------------------------------------------------------------------
 
 int mp_inst_install(const mp_inst_env *env, const mp_inst_req *req, mp_inst_result *r, mp_err *e) {
     memset(r, 0, sizeof *r);
-    mp_inst_found f;
-    if (mp_inst_probe_any(req->p5z_path, &f, e) != 0) {
-        set_result(r, MP_INST_FAILED, mpi_has_ext(req->p5z_path, ".p5z") ? "bad_p5z" : "bad_source");
+    mp_inst_plan pl;
+    const char *code = NULL;
+    if (mp_inst_plan_make(env, req, &pl, &code, e) != 0) {
+        set_result(r, MP_INST_FAILED, code);
         return -1;
     }
-    snprintf(r->title_id, sizeof r->title_id, "%s", f.title_id);
-    if (!dest_ok(env, req->dest_root)) {
-        free(f.path);
-        mp_err_set(e, "la unidad de destino no está disponible: %s", req->dest_root ? req->dest_root : "(ninguna)");
-        set_result(r, MP_INST_FAILED, "bad_dest");
-        return -1;
-    }
-    int internal = !strcmp(req->dest_root, env->internal);
-    char final_dir[1024], tmp_root[1024], tmp[1100];
-    const char *src_name = strrchr(f.path, '/');
-    src_name = src_name ? src_name + 1 : f.path;
-    if (f.kind == MP_SRC_IMAGE) snprintf(final_dir, sizeof final_dir, "%s/homebrew/%s", req->dest_root, src_name);
-    else snprintf(final_dir, sizeof final_dir, "%s/homebrew/%s", req->dest_root, f.title_id);
-    snprintf(tmp_root, sizeof tmp_root, internal ? "%s/maxpack/tmp" : "%s/maxpack-tmp", req->dest_root);
-    snprintf(tmp, sizeof tmp, "%s/%s", tmp_root, f.title_id);
-    snprintf(r->final_dir, sizeof r->final_dir, "%s", final_dir);
-
-    // Copias que ya hay: sin confirmar cada una, no se sigue.
-    mp_inst_existing *ex = NULL;
-    size_t nex = 0;
-    if (mp_inst_find_existing(env, f.title_id, req->known, req->nknown, &ex, &nex, e) != 0) {
-        free(f.path);
-        set_result(r, MP_INST_FAILED, "io_error");
-        return -1;
-    }
-    // El origen nunca es una copia que reemplazar: no se toca (spec 5.4 bis).
-    for (size_t i = 0; i < nex;) {
-        if (!strcmp(ex[i].path, f.path) || mp_same_file(ex[i].path, f.path)) {
-            free(ex[i].path);
-            ex[i] = ex[--nex];
-        } else {
-            i++;
-        }
-    }
-    // El destino ocupado cuenta siempre como copia (aunque no se reconozca como este juego).
-    int listed = 0;
-    for (size_t i = 0; i < nex; i++) listed |= !strcmp(ex[i].path, final_dir);
-    if (!listed && mp_path_kind(final_dir) != 0) {
-        mp_inst_existing *nx = realloc(ex, (nex + 1) * sizeof *nx);
-        char *dup = mp_strdup(final_dir);
-        if (nx && dup) {
-            ex = nx;
-            memset(&ex[nex], 0, sizeof ex[nex]);
-            ex[nex].path = dup;
-            ex[nex].is_file = mp_path_kind(final_dir) == 1;
-            ex[nex].size = mpi_tree_size(final_dir);
-            nex++;
-        } else {
-            if (nx) ex = nx;
-            free(dup);
-        }
-    }
-    int unconfirmed = 0;
-    for (size_t i = 0; i < nex; i++) {
-        int ok = 0;
-        for (size_t k = 0; k < req->nreplace && !ok; k++) ok = !strcmp(ex[i].path, req->replace[k]);
-        unconfirmed |= !ok;
-    }
-    if (nex && unconfirmed) {
-        free(f.path);
-        r->existing = ex;
-        r->nexisting = nex;
+    snprintf(r->title_id, sizeof r->title_id, "%s", pl.f.title_id);
+    snprintf(r->final_dir, sizeof r->final_dir, "%s", pl.final_path);
+    r->need = pl.need;
+    r->avail = pl.avail;
+    if (pl.status == MP_INST_NEEDS_CONFIRM) {
+        free(pl.f.path);
+        r->existing = pl.ex;
+        r->nexisting = pl.nex;
         set_result(r, MP_INST_NEEDS_CONFIRM, "needs_confirm");
         return 0;
     }
-    // Las copias confirmadas (ex) se borran solo al final, con lo nuevo ya verificado en su sitio.
-
-    // Espacio.
-    uint64_t avail = 0;
-    int frc = env->free_space ? env->free_space(env->ctx, req->dest_root, &avail)
-                              : mp_disk_free(req->dest_root, &avail, e);
-    r->need = f.install_size + env->space_margin;
-    r->avail = avail;
-    if (frc != 0) {
-        free(f.path);
-        mp_inst_existing_free(ex, nex);
-        set_result(r, MP_INST_FAILED, "io_error");
-        return -1;
-    }
-    if (r->need > avail) {
-        free(f.path);
-        mp_inst_existing_free(ex, nex);
+    if (pl.status == MP_INST_NO_SPACE) {
+        mp_inst_plan_free(&pl);
         set_result(r, MP_INST_NO_SPACE, "no_space");
         return 0;
     }
+    // Las copias confirmadas (ex) se borran solo al final, con lo nuevo ya verificado en su sitio.
+    mp_inst_found f = pl.f;
+    mp_inst_existing *ex = pl.ex;
+    size_t nex = pl.nex;
+    char *final_dir = pl.final_path, *tmp = pl.tmp;
 
     if (f.kind != MP_SRC_P5Z) {   // tal cual (spec 5.4 bis)
         int crc = mpi_copy_install(env, req, &f, tmp, final_dir, ex, nex, r, e);

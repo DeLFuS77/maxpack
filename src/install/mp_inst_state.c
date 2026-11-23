@@ -28,6 +28,25 @@ void mpi_state_remove(const mp_inst_env *env, const char *title_id) {
     mp_remove_file(d);
 }
 
+// p5z y dest_root de una cabecera de estado. 0 si se pudo leer.
+static int read_header(const char *path, char *src, size_t scap, char *dest, size_t dcap, char *aid_hex, size_t acap) {
+    char *buf = NULL;
+    size_t n = 0;
+    if (mp_path_kind(path) != 1 || mpi_read_small(path, 1u << 20, &buf, &n, NULL) != 0) return -1;
+    mp_json *j = mp_json_parse(buf, n, NULL);
+    free(buf);
+    const char *a = mp_json_str(mp_json_get(j, "archive_id")), *d = mp_json_str(mp_json_get(j, "dest_root")),
+               *s = mp_json_str(mp_json_get(j, "p5z"));
+    int ok = a && d && s;
+    if (ok) {
+        snprintf(src, scap, "%s", s);
+        snprintf(dest, dcap, "%s", d);
+        snprintf(aid_hex, acap, "%s", a);
+    }
+    mp_json_free(j);
+    return ok ? 0 : -1;
+}
+
 static int header_matches(const char *path, const char *aid_hex, const char *dest_root) {
     char *buf = NULL;
     size_t n = 0;
@@ -106,6 +125,13 @@ int mpi_state_begin(const mp_inst_env *env, const char *title_id, const uint8_t 
         }
         *resumed = 1;
     } else {
+        // Lo de un intento anterior (otro .p5z u otro destino): su temporal también sobra.
+        char osrc[1024], odest[1024], oaid[80];
+        if (read_header(jp, osrc, sizeof osrc, odest, sizeof odest, oaid, sizeof oaid) == 0 && mp_path_kind(odest) == 2) {
+            char otmp[1200];
+            mpi_tmp_path(env, odest, title_id, otmp, sizeof otmp);
+            if (strcmp(otmp, tmp) != 0) mp_remove_tree(otmp, NULL);
+        }
         mpi_state_remove(env, title_id);
         if (mp_remove_tree(tmp, e) != 0) return -1;
         mp_jbuf b = {0};
@@ -132,6 +158,77 @@ int mpi_state_begin(const mp_inst_env *env, const char *title_id, const uint8_t 
         return -1;
     }
     *st = s;
+    return 0;
+}
+
+typedef struct {
+    char (*ids)[16];
+    size_t n, cap;
+} id_list;
+
+static int state_cb(void *ctx, const char *name, int is_dir, uint64_t size) {
+    id_list *l = ctx;
+    (void)size;
+    if (is_dir || strlen(name) != 14 || strcmp(name + 9, ".json") != 0) return 0;
+    if (l->n == l->cap) {
+        size_t cap = l->cap ? 2 * l->cap : 8;
+        char (*v)[16] = realloc(l->ids, cap * sizeof *v);
+        if (!v) return -1;
+        l->ids = v;
+        l->cap = cap;
+    }
+    memcpy(l->ids[l->n], name, 9);
+    l->ids[l->n][9] = 0;
+    if (mp_inst_title_ok(l->ids[l->n])) l->n++;
+    return 0;
+}
+
+int mp_inst_pending(const mp_inst_env *env, mp_inst_pending_item **out, size_t *n, mp_err *e) {
+    *out = NULL;
+    *n = 0;
+    char dir[1200];
+    snprintf(dir, sizeof dir, "%s/maxpack/state", env->internal);
+    id_list l = {0};
+    if (mp_path_kind(dir) == 2) mp_dir_list(dir, state_cb, &l, NULL);
+    mp_inst_pending_item *v = calloc(l.n + 1, sizeof *v);
+    if (!v) {
+        free(l.ids);
+        mp_err_set(e, "sin memoria");
+        return -1;
+    }
+    size_t k = 0;
+    for (size_t i = 0; i < l.n; i++) {
+        char jp[1200], dp[1200], aid[80], tmp[1200];
+        state_paths(env, l.ids[i], jp, dp, sizeof jp);
+        if (read_header(jp, v[k].source, sizeof v[k].source, v[k].dest, sizeof v[k].dest, aid, sizeof aid) != 0)
+            continue;
+        snprintf(v[k].title_id, sizeof v[k].title_id, "%s", l.ids[i]);
+        mpi_tmp_path(env, v[k].dest, l.ids[i], tmp, sizeof tmp);
+        v[k].bytes = mpi_tree_size(tmp);
+        k++;
+    }
+    free(l.ids);
+    *out = v;
+    *n = k;
+    return 0;
+}
+
+int mp_inst_discard(const mp_inst_env *env, const char *title_id, mp_err *e) {
+    if (!mp_inst_title_ok(title_id)) {
+        mp_err_set(e, "TITLE_ID no válido: %s", title_id);
+        return -1;
+    }
+    char jp[1200], dp[1200], src[1024], dest[1024], aid[80], tmp[1200];
+    state_paths(env, title_id, jp, dp, sizeof jp);
+    if (mp_path_kind(jp) != 1) {
+        mp_err_set(e, "no hay ninguna instalación a medias de %s", title_id);
+        return -1;
+    }
+    if (read_header(jp, src, sizeof src, dest, sizeof dest, aid, sizeof aid) == 0) {
+        mpi_tmp_path(env, dest, title_id, tmp, sizeof tmp);
+        if (mp_remove_tree(tmp, e) != 0) return -1;
+    }
+    mpi_state_remove(env, title_id);
     return 0;
 }
 

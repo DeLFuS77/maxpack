@@ -295,11 +295,12 @@ typedef struct {
     mp_inst_existing *v;
     size_t n, cap;
     int oom;
+    const mp_inst_env *env;
 } ex_list;
 
 static void add_existing(ex_list *x, const char *path) {
     int kind = mp_path_kind(path);
-    if (kind == 0) return;
+    if (kind == 0 || mpi_reserved_path(x->env, path)) return;   // nunca una raíz (homebrew/ entera, etc.)
     for (size_t i = 0; i < x->n; i++)
         if (!strcmp(x->v[i].path, path) || mp_same_file(x->v[i].path, path)) return;
     if (x->n == x->cap) {
@@ -394,6 +395,7 @@ int mp_inst_find_existing(const mp_inst_env *env, const char *title_id, const ch
         return -1;
     }
     ex_list x = {0};
+    x.env = env;
     scan_base(&x, env->internal, 0, title_id);
     const char *drives[16];
     size_t nd = mp_inst_drives(env, drives, 16);

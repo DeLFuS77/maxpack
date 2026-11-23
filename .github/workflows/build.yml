@@ -5,7 +5,7 @@ name: build
 
 on:
   push:
-    branches: [main, "fase*", "interfaz-*"]
+    branches: [main, "fase*", "interfaz-*", "consola-*"]
   pull_request:
 
 permissions:

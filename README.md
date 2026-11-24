@@ -293,12 +293,16 @@ line does is there, without typing a command.
   or **Play from the USB** (a folder in `homebrew/<TITLE_ID>`, ready for ShadowMountPlus or Kraken
   Mount).
 - **Compression level** 1 to 22 (19 by default), with the shortcuts Light, Medium and Maximum.
+  **Compare the levels on this PC** compresses a sample of a game at levels 3, 9, 15 and 19 and shows
+  the size, the saving and the time of each here, to choose one from the table.
 - **Folders and `.exfat` images** as input; **Add folder** takes several folders at once, and each one
   can be a game or a folder full of games. Games added to a section while its queue runs join the
   queue.
 - **File names by a template** (Settings > File names): `{title} [{id}]` by default, or with the
   version and the region (`{title} [{id}] [{region}] [v{version}]`), with a preview.
 - **Low priority** (Settings): the engine runs below the other programs, so the PC stays usable.
+- **Measure this PC** (Settings): about half a minute, with no game, to find the fewest threads that
+  compress as fast as all of them, and the speed of the destination's disk; Compress then uses them.
 - **Copy report** (Details, the end of a queue, Settings > About): a text for an issue with the
   versions, the system and the settings, and no game names.
 - **Eleven languages** (English, Russian, Chinese, German, Spanish, French, Japanese, Portuguese,
@@ -348,10 +352,12 @@ The same engine, for scripts and for measuring a game before you pack it.
 | Command | What it does |
 |---|---|
 | `maxpack analyze <dump>` | Measures, from a sample or the whole game, what each zstd level, deduplication, small-file grouping and the `.p5z` would save, without writing anything. [How to read it](docs/analyze-report.md). |
+| `maxpack analyze <dump> --levels` | Compares levels (3, 9, 15 and 19, or the ones given) on this PC: a sample packed with `pack`'s own code tells the `.p5z` and folder sizes and the time to pack the whole game. |
 | `maxpack pack <dump> -o <out>` | Packs into a folder (`--folder`, the default) or a single file (`--p5z`). Options for the level, threads, the runtime to put in `fakelib/`, files to keep loose and a size cap for FAT32. |
 | `maxpack unpack <game.p5z>` | `--folder` gives the folder for the console; `--original` rebuilds the original dump bit for bit and checks every SHA-256. |
 | `maxpack verify <game.p5z or folder>` | Checks every file; `--against <dump>` also compares a folder with the original. |
-| `maxpack info`, `info --json`, `icon` | Title, ID, version, files, packs and sizes, for people or as JSON; extracts the game's icon. |
+| `maxpack info`, `info --json`, `icon` | Title, ID, version, files, packs and sizes, for people or as JSON (which also says the content ID); extracts the game's icon. |
+| `maxpack measure [<folder>]` | Measures this PC with no game: packing speed at 25, 50, 75 and 100 % of its threads, the threads to use, and the disk of a folder (a temporary file, deleted). |
 | `--version`, `--capabilities` | The engine and library versions; what this build can do, as JSON. |
 
 - **Deterministic:** the same input and options give the same bytes with any number of threads.

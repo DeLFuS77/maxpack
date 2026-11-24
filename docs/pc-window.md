@@ -66,8 +66,20 @@ With command-line options (`MaxPack pack ...`, `MaxPack --version`) it behaves l
 2. Choose **Made for**.
 3. Choose the compression **level**, 1 to 22 (19 by default), or one of the shortcuts **Light**,
    **Medium** and **Maximum**. 20 to 22 use a lot of memory and take much longer to gain little.
+   **Compare the levels on this PC** (under the level, for the first game of the list) or **Compare
+   levels** (under each game) shows what each level gives that game here (see below).
 4. Choose the **Destination** and press **Compress**. Each game is verified when it finishes.
 5. If you want, tick **Delete the originals once checked** (see below).
+
+**Compare the levels on this PC.** A card compresses a sample of the game (2 % of what is packed, at
+least 1 GiB, read once) at levels 3, 9, 15 and 19, with the same code and the same threads as Compress,
+and fills a table as each level is measured: the level, the size of the `.p5z` (or of the folder, when
+**Made for** is "Play from the USB"), what it saves and how long compressing the whole game takes on
+this PC. The level in use is highlighted, and **Use** on a row sets that level once all are measured.
+Nothing is written. **Cancel**, Escape or closing the card stops it; nothing else starts meanwhile. The
+sizes are estimates from the sample; the times assume the game is read about as fast as its sample was,
+so a game on a hard drive may compress faster than they say. It is `maxpack analyze --levels` (see
+the [guide](guide.md#analyze---levels-compare-the-levels-on-this-pc)).
 
 Before anything starts, MaxPack adds up what the games may take on each drive (each one at most its
 original size) and, if the queue may not fit, says so with the numbers: "up to 322.4 GB needed, 118.2
@@ -195,16 +207,26 @@ Afterwards:
 
 - **While working.** **Low priority** runs `maxpack-core` below the other programs, so the PC stays
   usable while it works (below normal on Windows, `nice` on macOS and Linux); it goes a little slower
-  when the other programs need the processor. **Delete the originals once checked** is the default of
-  the box next to Compress, and **Delete them for good, not to the recycle bin** skips the recycle bin.
+  when the other programs need the processor. **Threads to compress** says how many threads Compress
+  gives `maxpack-core`: all of the processor's (the default), or the ones **Measure this PC** found.
+  The measure takes about half a minute and needs no game: a card shows how fast generated data
+  compresses with a quarter, half, three quarters and all the threads, at the level of Compress, then
+  the speed of the disk of the destination (a temporary file is written there, read back and deleted;
+  with no destination chosen, only the processor is measured), and keeps the fewest threads that are
+  less than 5 % slower than the fastest: on a PC whose last threads add little, Compress goes as fast
+  and leaves the PC freer. **Use them all** goes back to all of them. Decompress and Verify always use
+  all of them. **Cancel**, Escape or closing the card stops it, and the threads stay as they were.
+  **Delete the originals once checked** is the default of the box next to Compress, and **Delete them
+  for good, not to the recycle bin** skips the recycle bin.
 - **File names.** The name of each `.p5z` and of each original dump unpacked comes from a template:
   `{title}`, `{id}`, `{version}` (the one of `param.json`, such as 01.000.021) and `{region}` (USA,
   EUR, JPN, ASIA or KOR, from the first two letters of the content ID). A bracket whose placeholders
   are all empty goes. The default, `{title} [{id}]`, gives the names of before; the other two add the
   version, and the region and the version. You can write your own; the preview shows what it gives with
   a game of your lists, or with an invented one. A folder for the console keeps its `TITLE_ID`, which
-  the console looks for. The region is known for a dump folder (its `param.json`); a `.p5z` or an
-  `.exfat` image does not tell it to the window yet, so for them the bracket of the region goes.
+  the console looks for. The region is known for every kind of game: `maxpack-core` reads the content
+  ID of its `param.json`, also inside a `.p5z` or an `.exfat` image; a game whose `param.json` gives
+  none has no region, and its bracket goes.
 - **Internet.** MaxPack's window goes on the internet for nothing; see
   [What goes on the internet](../README.md#what-goes-on-the-internet).
 - **About** has **Copy report** and the links to report a bug or a game.
@@ -212,8 +234,8 @@ Afterwards:
 ### Copy report
 
 A plain text for an issue on GitHub: MaxPack's version, the engine's, the system and its version, the
-CPU threads, the memory, the settings that matter (mode, level, runtime built in or your own, low
-priority, the originals, the template of the names) and, for the games it is about, what each one is,
+CPU threads, the memory, the settings that matter (mode, level, threads, runtime built in or your own,
+low priority, the originals, the template of the names) and, for the games it is about, what each one is,
 its sizes, its volumes and how it ended. It never has a game's name, its title ID or a path. For a
 `.p5z` (or a game just compressed) it ends with the row for the
 [compatibility list](https://github.com/DeLFuS77/maxpack-ps5/blob/main/docs/compatibility.md), with the

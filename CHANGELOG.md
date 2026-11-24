@@ -43,6 +43,21 @@ All notable changes to MaxPack are listed here. The format follows
 - **Games added while a queue runs join it** (PC window): in the same section they show as queued, are
   done with the same options and count in the progress, the time left, the space check and the card at
   the end; one taken out before its turn leaves the queue.
+- **Compare the levels on this PC** (PC window, under the level and under each game in Compress;
+  `maxpack analyze <dump> --levels [L,L,...]`): a sample of the game (the one of `analyze`, 2 % of what
+  is packed and at least 1 GiB) is packed at levels 3, 9, 15 and 19 with the same code and threads as
+  `pack`, and the loose files are compressed as a `.p5z` compresses them, to tell for each level the
+  size of the `.p5z` and of the folder, what it saves, and the time to pack the whole game on this PC.
+  A card fills its table as each level is measured, and a level is chosen from it. Nothing is
+  written; it can be cancelled. Text, `--json FILE`, and `level` lines with `--progress json`.
+- **Measure this PC** (PC window, Settings > While working; `maxpack measure [<folder>]`): with no
+  game, generated data is packed with the code of `pack` at 25, 50, 75 and 100 % of the CPU's threads,
+  and the fewest threads less than 5 % slower than the fastest are recommended; the disk of the
+  destination is written and read with a temporary file that is deleted, also on a cancel. The window
+  keeps those threads (**Threads to compress**) and gives them to the engine when compressing; **Use
+  them all** goes back to the default. About half a minute.
+- **The content ID in `info --json`** (`content_id`, from `param.json`) for folders, `.exfat` images
+  and `.p5z` files, made before 1.0.2 too: the `{region}` of the names now works for every game.
 
 ### Changed
 

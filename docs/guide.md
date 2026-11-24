@@ -188,7 +188,11 @@ The sidebar has four work sections and Settings. Everything is explained, with s
 3. Pick the **Destination**.
 4. If you want, change the **Compression level**: 1 to 22, 19 by default, with the shortcuts
    **Light**, **Medium** and **Maximum**. 20 to 22 use a lot of memory and take much longer, to save
-   little more.
+   little more. To choose with numbers, **Compare the levels on this PC** (under the level, or
+   **Compare levels** under a game) compresses a sample of the game at levels 3, 9, 15 and 19 and
+   shows, for each, the size of the `.p5z` (or of the folder), what it saves and how long compressing
+   the whole game takes on this PC; **Use** on a row sets that level. It writes nothing, and **Cancel**
+   or closing the card stops it.
 5. Press **Compress**.
 
 What it does by itself:
@@ -234,8 +238,12 @@ that lack one: the ampr-emu-ng that comes with MaxPack ("Built in: ampr-emu-ng v
 only accepts a `libSceAmpr.sprx` that reads zstd.
 
 - **While working:** **Low priority** (the engine runs below the other programs, so the PC stays
-  usable), **Delete the originals once checked** (off by default) and **Delete them for good, not to
-  the recycle bin**. What is removed is written in `maxpack.log`, in the settings folder.
+  usable), **Threads to compress** with **Measure this PC** (about half a minute: it compresses
+  generated data with a quarter, half, three quarters and all of the processor's threads at the level
+  of Compress, measures the disk of the destination with a temporary file it deletes, and keeps the
+  fewest threads that go as fast as the most, which Compress then uses; **Use them all** goes back to
+  the default), **Delete the originals once checked** (off by default) and **Delete them for good, not
+  to the recycle bin**. What is removed is written in `maxpack.log`, in the settings folder.
 - **File names:** the template of the names of the `.p5z` files and the originals unpacked, with
   `{title}`, `{id}`, `{version}` and `{region}`, three ready-made ones and a preview. `{title} [{id}]`
   is the default, the names of before. A folder for the console keeps its `TITLE_ID`.
@@ -385,8 +393,9 @@ Transfer type, Binary). Otherwise files with no extension, such as `sce_sys/keys
 
 ## 6. The command line
 
-The window does everything most people need. The command line is for scripts, for measuring a game
-before compressing it (`analyze`, which the window does not have) or if you prefer typing commands.
+The window does everything most people need. The command line is for scripts, for measuring in detail
+how each way of compressing a game would do (`analyze`, which the window does not have; the window does
+compare the levels and measure the PC) or if you prefer typing commands.
 
 **Where it is:**
 - **Windows:** `MaxPack.exe` with arguments acts as `maxpack`. It is in
@@ -401,6 +410,7 @@ arguments, `MaxPack` opens the window; `maxpack --help` shows the usage.
 
 ```
 maxpack analyze <folder|image.exfat> [options]
+maxpack analyze <folder|image.exfat> --levels [L,L,...] [options]
 maxpack pack <folder|image.exfat> -o <output> [options]
 maxpack unpack <game.p5z> --folder|--original -o <folder> [--threads N]
 maxpack info <game.p5z>
@@ -408,6 +418,7 @@ maxpack info --json <folder|image.exfat|game.p5z>
 maxpack info --play <game.p5z>
 maxpack icon <folder|image.exfat|game.p5z> -o <icon.png>
 maxpack verify <game.p5z | folder> [--against <source>] [--threads N]
+maxpack measure [<folder>] [options]
 maxpack --version
 maxpack --capabilities
 ```
@@ -499,8 +510,9 @@ Packs:      zstd level 19, 3.14 MB -> 2.07 MB in 1 volumes
 ```
 
 The `info --json` line carries `kind` (`folder`, `exfat` or `p5z`), `title_id`, `version`, `name`,
-`original_size`, `install_size`, `p5z_size`, `files`, `packed_files`, `volumes`, `has_runtime`,
-`has_zstd_runtime` and `packed`.
+`content_id` (from `param.json`, also of a `.p5z` or an image; its first two letters are the region,
+and it is `""` when `param.json` gives none), `original_size`, `install_size`, `p5z_size`, `files`,
+`packed_files`, `volumes`, `has_runtime`, `has_zstd_runtime` and `packed`.
 
 ### `analyze`: measure before compressing
 
@@ -523,6 +535,62 @@ maxpack analyze "D:\dumps\MyGame.exfat" --json report.json
 
 Progress goes to stderr and the report to stdout. How to read it:
 [analyze-report.md](analyze-report.md).
+
+### `analyze --levels`: compare the levels on this PC
+
+Tells, for a few zstd levels, the size the game would take and how long compressing it takes on this
+PC, without writing anything:
+
+```
+maxpack analyze "D:\dumps\MyGame.exfat" --levels
+maxpack analyze "D:\dumps\MyGame.exfat" --levels 1,6,12,19 --json levels.json
+```
+
+It reads the sample of `analyze` (2 % of what is packed, at least 1 GiB) once, as `pack` reads a game,
+to know how fast the game is read; compresses the loose files as a `.p5z` does (zstd 19, long window,
+frames of up to 32 MiB; at least 256 MiB of them); and then packs the sample at each level with the
+same code and the same threads as `pack`, into nothing. For each level it says the size of the `.p5z`,
+what it saves, the size of the folder for the console, and the time to compress the whole game: the
+loose files, then the packs at the speed the sample was packed or read at, whichever is slower. At
+level 19 the size is exactly what `analyze` estimates for `v1-l19` (the same sample, extrapolated the
+same way); with `--full` it is exactly what `pack` makes of the packs.
+
+| Option | What it does | Example |
+|---|---|---|
+| `--levels [LIST]` | The levels, 1 to 22 separated by commas (3, 9, 15 and 19 by default). | `--levels 1,6,12,19` |
+| `--sample N%`, `--full` | As in `analyze`. A bigger sample is more exact and takes longer. | `--sample 5%` |
+| `--threads N` | Threads (by default, all the CPU's): the times are for this many. | `--threads 16` |
+| `--keep-loose GLOB` | As in `pack`. | `--keep-loose "**/*.bnk"` |
+| `--json FILE` | Also saves the table as JSON (`levels`, with `level`, `p5z_size`, `folder_size`, `p5z_seconds`, `folder_seconds` and `rate` in bytes a second). | `--json levels.json` |
+| `--progress json`, `--control stdin` | As in `pack`: one `level` line per level as it is measured, and the table in the `result` line. | |
+
+The sizes are estimates from the sample; the times assume the game is read about as fast as its sample
+was (a game on a hard drive reads faster whole than its scattered sample, so its times may come out
+longer than they are).
+
+### `measure`: measure this PC
+
+Measures how fast this PC compresses, with no game, and the disk of a folder:
+
+```
+maxpack measure "E:\games"
+```
+
+It compresses generated data (like a game's: noise, text, structured records and zeros) with the same
+code as `pack` at 25, 50, 75 and 100 % of the CPU's threads, each for about 3 seconds, and recommends the
+fewest threads that are less than 5 % slower than the fastest (`--threads` for `pack`). With a folder
+(the destination), it writes a temporary file there (`.maxpack-measure.tmp`, synced to the disk as it
+goes), reads it back past the system's cache and deletes it, each for at most 3 seconds; that file is
+the only thing it writes, and it goes even when cancelled or when something fails. It takes about half
+a minute.
+
+| Option | What it does | Example |
+|---|---|---|
+| `<folder>` | Also measures its disk (writes, then reads). | `"E:\games"` |
+| `--level N` | zstd level (19 by default). | `--level 12` |
+| `--seconds S` | About how long each part lasts, 0.1 to 60 (3 by default). | `--seconds 5` |
+| `--json FILE` | Also saves the result as JSON (`trials`, `recommended_threads`, `fastest_threads`, `disk`). | `--json measure.json` |
+| `--progress json`, `--control stdin` | As in `pack`: one `trial` line per count of threads. | |
 
 ### Others
 

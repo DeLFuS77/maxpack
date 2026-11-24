@@ -178,7 +178,7 @@ func TestLeftoversOffered(t *testing.T) {
 // matter and how the game is, never its name, title ID or path, whatever its detail says.
 func TestReportHasNoNames(t *testing.T) {
 	useSettings(t, t.TempDir())
-	saveSettings(t, func(s *settings.Settings) { s.LowPriority, s.Level = true, 12 })
+	saveSettings(t, func(s *settings.Settings) { s.LowPriority, s.Level, s.Threads = true, 12, 24 })
 	// the engine of the test knows no game: the report says what the page told
 	t.Setenv(fakecore.Env, "info")
 	t.Setenv(fakecore.InfoEnv, filepath.Join(t.TempDir(), "none.json"))
@@ -201,7 +201,7 @@ func TestReportHasNoNames(t *testing.T) {
 	}
 	for _, want := range []string{
 		"MaxPack: " + version, "Engine: maxpack", "System: ", runtime.GOARCH, "CPU threads: ", "RAM: ",
-		"level 12", "low priority on", "originals kept", "{title} [{id}]",
+		"level 12", "threads 24", "low priority on", "originals kept", "{title} [{id}]",
 		"dump folder", "exFAT image", "8.0 GiB", "2.3 GiB", "Volumes: 1", "Volumes: 9",
 		"Result: ok (old_not_deleted, original_trashed)", "Result: error (verify_failed, files_bad:2, tmp_not_deleted)",
 		"| 8.0 → 2.3 GiB (−71 %) | p5z | 1 | ? | ? | ? | ? | ? | ? |  |",

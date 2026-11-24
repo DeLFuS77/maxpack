@@ -132,7 +132,8 @@ func FromInfo(path string, info map[string]any) Item {
 	if it.Name == "" {
 		it.Name = baseName(path)
 	}
-	// the engine does not say the content ID: a dump folder has it in its param.json
+	// the engine says the content ID of every game (1.0.2 on); with one of before, a dump folder
+	// has it in its param.json
 	if it.ContentID == "" && it.Kind == "folder" {
 		it.ContentID = paramContentID(path)
 	}

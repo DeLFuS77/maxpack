@@ -71,6 +71,29 @@ func TestSettingsCorruptFallsBack(t *testing.T) {
 	}
 }
 
+// The threads a measure found are kept; 0 is all the CPU's (the default), and a count the engine
+// does not take goes back to it.
+func TestSettingsThreads(t *testing.T) {
+	folder := useFolder(t)
+	if got, _ := Load(); got.Threads != 0 {
+		t.Fatalf("default: %+v", got)
+	}
+	s := Defaults()
+	s.Threads = 24
+	if err := Save(s); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := Load(); got.Threads != 24 {
+		t.Fatalf("kept: %+v", got)
+	}
+	for _, bad := range []string{`{"Threads":-3}`, `{"Threads":5000}`, `{"Threads":"many"}`} {
+		os.WriteFile(filepath.Join(folder, "settings.json"), []byte(bad), 0o644)
+		if got, _ := Load(); got.Threads != 0 {
+			t.Errorf("%s: %+v", bad, got)
+		}
+	}
+}
+
 func TestSettingsAtomicSave(t *testing.T) {
 	folder := useFolder(t)
 	if err := Save(Defaults()); err != nil {

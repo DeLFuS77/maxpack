@@ -259,9 +259,9 @@ func inHomebrew(out string, drives jobs.FS) bool {
 
 // plans are the plans of a queue of a section. To compress, a game that does not carry a runtime
 // that reads zstd is given the one chosen in Settings (o.Runtime) or, when none was chosen, the
-// ampr-emu-ng that comes with MaxPack. The names of the files and the priority of the engine are
-// the ones of Settings; the originals go only when compressing and when the page asked: to the
-// recycle bin, or for good when Settings says so.
+// ampr-emu-ng that comes with MaxPack. The names of the files, the priority of the engine and the
+// threads it compresses with are the ones of Settings; the originals go only when compressing and
+// when the page asked: to the recycle bin, or for good when Settings says so.
 func (a *App) plans(section string, items []jobs.Item, choices Choices) ([]jobs.Plan, jobs.Options, error) {
 	o, err := sectionOptions(section, choices.Options)
 	if err != nil {
@@ -272,6 +272,11 @@ func (a *App) plans(section string, items []jobs.Item, choices Choices) ([]jobs.
 	}
 	saved, _ := settings.Load()
 	o.NameTemplate, o.LowPriority = saved.NameTemplate, saved.LowPriority
+	// the threads a measure of this PC found, only to compress (0: all the CPU's)
+	o.Threads = 0
+	if section == "compress" {
+		o.Threads = saved.Threads
+	}
 	o.Originals, o.OriginalsNoBin = jobs.OriginalsKeep, false
 	if section == "compress" && choices.DeleteOriginals {
 		o.Originals, o.OriginalsNoBin = jobs.OriginalsTrash, choices.DeleteNoBin
@@ -360,9 +365,13 @@ func (a *App) Start(section string, items []jobs.Item, opts Choices) error {
 	ctx, cancel := context.WithCancelCause(context.Background())
 	q := &queue{ctx: ctx, cancel: cancel, done: make(chan struct{}), section: section, o: o, jobs: jobs.NewQueue(plans)}
 	a.mutex.Lock()
-	if a.queue != nil {
+	if a.queue != nil || a.toolCancel != nil {
+		measuring := a.toolCancel != nil
 		a.mutex.Unlock()
 		cancel(nil)
+		if measuring {
+			return errBusy
+		}
 		return errors.New("a job is already running")
 	}
 	a.queue = q

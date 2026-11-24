@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"runtime"
 	"sync"
 	"sync/atomic"
 
@@ -28,6 +29,8 @@ type App struct {
 	pending   FilesAdd // files that came before the page asked for them
 	pageReady bool
 	queue     *queue // the queue running (see Start), nil when there is none
+	// stops the comparison of levels or the measure at work (see tools.go), nil when none is
+	toolCancel context.CancelCauseFunc
 
 	// closing while a queue runs (see closing.go): the words the page told for the question,
 	// and whether the user said to cancel and close
@@ -82,6 +85,9 @@ type Setup struct {
 	LogFile string `json:"logFile"`
 	// Templates are the templates of the names Settings offers, the default first
 	Templates []string `json:"templates"`
+	// CPUThreads are the threads of this PC, which Compress gives the engine unless a measure
+	// found fewer to be as fast (Settings.Threads)
+	CPUThreads int `json:"cpuThreads"`
 }
 
 func (a *App) startup(ctx context.Context) {
@@ -101,7 +107,7 @@ func (a *App) startup(ctx context.Context) {
 // reported in CoreError and the window opens all the same.
 func (a *App) Setup() Setup {
 	saved, _ := settings.Load()
-	setup := Setup{Version: version, Lang: saved.EffectiveLang(), Theme: saved.Theme, LogFile: logFile(), Templates: jobs.Templates}
+	setup := Setup{Version: version, Lang: saved.EffectiveLang(), Theme: saved.Theme, LogFile: logFile(), Templates: jobs.Templates, CPUThreads: runtime.NumCPU()}
 	if builtIn := a.builtInRuntime(); builtIn != "" {
 		setup.BuiltInRuntime, setup.BuiltInRuntimeVersion = builtIn, bundled.Version()
 	}

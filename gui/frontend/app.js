@@ -49,7 +49,7 @@ const takes = {
   rename: [["", "typeDump"], [".exfat", ""], [".p5z", ""]],
 };
 const defaultTemplate = "{title} [{id}]";
-const defaults = { Lang: "", Theme: "system", Runtime: "", LastDest: "", Mode: "p5z", Level: 19, DeleteOriginals: false, DeletePermanently: false, LowPriority: false, NameTemplate: defaultTemplate };
+const defaults = { Lang: "", Theme: "system", Runtime: "", LastDest: "", Mode: "p5z", Level: 19, DeleteOriginals: false, DeletePermanently: false, LowPriority: false, NameTemplate: defaultTemplate, Threads: 0 };
 
 const $ = id => document.getElementById(id);
 const windows = /win/i.test(navigator.platform || navigator.userAgent || "");
@@ -73,6 +73,8 @@ const state = {
   cancelling: false,
   // the runtime of ampr-emu-ng is asked once: after "Go on without it" (runtimeWithout) the window does not insist
   askedRuntime: false,
+  // Compare the levels or Measure this PC, at work or the last one: see compareLevels and measurePC
+  tool: null,
 };
 
 // whether a queue is running: the window took it, and has not said its end yet
@@ -132,6 +134,7 @@ function newRow(path, section) {
   const row = { path, section, game: null, error: "", state: "", detail: "", step: "", phase: "", offset: 0, done: 0, total: 0, out: "", outSize: 0, homebrew: false, warnings: [], renameTo: "", renameBlock: "", tr };
   tr.querySelector(".remove button").addEventListener("click", () => removeRow(row));
   tr.querySelector(".report").addEventListener("click", () => copyReport([row], row.section));
+  tr.querySelector(".compare").addEventListener("click", () => compareLevels(row));
   // the entrance of a row and the pop of what it saved play once: a row put back in the list
   // (every render puts them all back) does not play them again
   tr.addEventListener("animationend", event => {
@@ -393,6 +396,10 @@ function paintRow(row) {
   const report = tr.querySelector(".report");
   report.hidden = row.section !== "details" || !game;
   report.textContent = t("copyReport");
+  const compare = tr.querySelector(".compare");
+  compare.hidden = !canCompare(row) || (running() && state.job.rows.includes(row));
+  compare.textContent = t("compareRow");
+  compare.disabled = state.busy;
 
   const warnings = rowWarnings(row), warn = tr.querySelector(".list-warn");
   warn.hidden = !warnings.length;
@@ -563,6 +570,12 @@ function paintSettings() {
   $("pref-runtime-clear").textContent = builtIn ? t("runtimeUseBuiltIn") : t("forget");
   $("pref-runtime-clear").hidden = !s.Runtime;
   $("pref-low").checked = !!s.LowPriority;
+  // the threads Compress gives the engine: all of them, or the ones a measure found
+  const cpu = cpuThreads();
+  $("pref-threads").textContent = s.Threads > 0 ? t("threadsSome")(s.Threads, cpu) : t("threadsAll")(cpu);
+  $("pref-threads-all").hidden = !(s.Threads > 0);
+  $("pref-threads-all").disabled = state.busy;
+  $("pref-measure").disabled = state.busy || !go.has() || !!(setup && setup.coreError);
   $("pref-delete").checked = !!s.DeleteOriginals;
   $("pref-forgood").checked = !!s.DeletePermanently;
   $("pref-forgood").disabled = !s.DeleteOriginals;
@@ -1141,6 +1154,187 @@ function copyReport(rows, section, mode) {
     .then(() => toast(t("reportCopied")), error => toast(message(error)));
 }
 
+// ---- Compare the levels on this PC, and Measure this PC --------------------------------------------
+
+// the threads of this PC, as the window says them (the page alone knows the browser's guess)
+const cpuThreads = () => (state.setup && state.setup.cpuThreads) || navigator.hardwareConcurrency || 1;
+// a game of Compress whose levels can be compared: read, and not compressed already
+const canCompare = row => row.section === "compress" && !!row.game && !row.game.Packed && !row.error;
+// what the window says of a comparison or a measure that did not end well
+function toolError(error) {
+  if (error === "cancelled") return t("state_cancelled");
+  if (/^busy/.test(error)) return t("toolBusy");
+  return detailText(error);
+}
+
+// toolDialog opens the card of a comparison or a measure; closing it (Close, or Escape) while it
+// works cancels it
+function toolDialog(dialog) {
+  if (!dialog.open) dialog.showModal();
+}
+function cancelTool() {
+  const tool = state.tool;
+  if (!tool || !tool.running || tool.cancelling) return;
+  tool.cancelling = true;
+  paintTool();
+  go.call("CancelTool").catch(error => toast(message(error)));
+}
+
+// compareLevels packs a sample of the game at levels 3, 9, 15 and 19 (CompareLevels), and shows each
+// level as the engine tells it: the size of what Compress makes of it, what that saves and how long
+// it takes on this PC. A level of the table is chosen with its button, once all are measured.
+async function compareLevels(row) {
+  if (!row || state.busy || !canCompare(row)) return;
+  state.tool = { kind: "levels", row, rows: [], done: 0, total: 0, running: true, cancelling: false, result: null, error: "" };
+  state.busy = true;
+  render();
+  toolDialog($("levels-dialog"));
+  paintTool();
+  try {
+    const result = await go.call("CompareLevels", itemOf(row));
+    Object.assign(state.tool, { result, rows: result.Rows || [] });
+  } catch (error) {
+    state.tool.error = message(error);
+  } finally {
+    state.tool.running = false;
+    state.busy = false;
+    paintTool();
+    render();
+  }
+}
+
+// the level chosen in the table: kept, as the slider keeps it
+function useLevel(level) {
+  keep({ Level: level });
+  paintLevel(level);
+  $("levels-dialog").close();
+  toast(t("levelChosen")(level));
+}
+
+// measurePC packs generated data at a quarter, half, three quarters and all the threads of the PC
+// and measures the disk of the destination (MeasurePC); the window keeps the threads it recommends,
+// which Compress then uses
+async function measurePC() {
+  if (state.busy) return;
+  const dest = state.settings.LastDest || "";
+  state.tool = { kind: "measure", dest, trials: [], done: 0, total: 0, running: true, cancelling: false, result: null, error: "" };
+  state.busy = true;
+  render();
+  toolDialog($("measure-dialog"));
+  paintTool();
+  try {
+    const result = await go.call("MeasurePC", dest);
+    Object.assign(state.tool, { result, trials: result.Trials || [] });
+    // what the window kept: the next settings the page writes keep it too
+    state.settings = Object.assign({}, state.settings, { Threads: result.Threads || 0 });
+  } catch (error) {
+    state.tool.error = message(error);
+  } finally {
+    state.tool.running = false;
+    state.busy = false;
+    paintTool();
+    render();
+  }
+}
+
+function paintTool() {
+  const tool = state.tool;
+  if (!tool) return;
+  const share = tool.total ? Math.min(1, tool.done / tool.total) : 0;
+  const status = tool.running ? (tool.cancelling ? t("cancelling") : t(tool.kind === "levels" ? "levelsWorking" : "measureWorking")(Math.floor(share * 100)))
+    : tool.error ? toolError(tool.error) : "";
+  const prefix = tool.kind === "levels" ? "levels" : "measure";
+  $(prefix + "-bar").hidden = !tool.running;
+  $(prefix + "-bar").firstElementChild.style.transform = "scaleX(" + share + ")";
+  $(prefix + "-status").textContent = status;
+  $(prefix + "-status").hidden = !status;
+  $(prefix + "-cancel").hidden = !tool.running;
+  $(prefix + "-cancel").disabled = tool.cancelling;
+  $(prefix + "-close").hidden = tool.running;
+  if (tool.kind === "levels") paintLevels(tool);
+  else paintMeasure(tool);
+}
+
+function paintLevels(tool) {
+  const game = tool.row.game, folder = modeOf("compress") === "folder";
+  const original = (tool.result && tool.result.OriginalSize) || game.OriginalSize || 0;
+  $("levels-game").textContent = [game.Name, game.TitleID, size(game.OriginalSize)].filter(Boolean).join(" · ");
+  $("levels-for").textContent = t("madeFor") + ": " + t(folder ? "forUsb" : "forInstaller");
+  $("levels-size-head").textContent = folder ? t("levelsFolder") : ltr(".p5z");
+  const rows = tool.rows.slice().sort((a, b) => a.Level - b.Level).map(level => {
+    const tr = $("level-row-template").content.firstElementChild.cloneNode(true);
+    const made = folder ? level.FolderSize : level.P5zSize, seconds = folder ? level.FolderSeconds : level.P5zSeconds;
+    const saved = Math.max(0, original - made);
+    tr.querySelector(".level").textContent = String(level.Level);
+    tr.querySelector(".size-cell").textContent = size(made);
+    tr.querySelector(".saved-cell").textContent = original ? size(saved) + " · " + isolate(t("smallerBy")(Math.round(saved / original * 100))) : "—";
+    tr.querySelector(".time-cell").textContent = time(seconds || 0);
+    tr.classList.toggle("current", Number(state.settings.Level) === level.Level);
+    const use = tr.querySelector(".use");
+    use.textContent = t("levelsUse");
+    use.hidden = tool.running || !!tool.error;
+    use.addEventListener("click", () => useLevel(level.Level));
+    return tr;
+  });
+  $("levels-rows").replaceChildren(...rows);
+  const result = tool.result;
+  $("levels-about").textContent = result ? t("levelsAbout")(size(result.SampleBytes), Math.round((result.SampleRate || 0) * 100), result.Threads || cpuThreads()) : t("compareHint");
+}
+
+function paintMeasure(tool) {
+  const result = tool.result, s = state.settings;
+  $("measure-intro").textContent = t("measureIntro")(cpuThreads(), Number(s.Level) || 19) + " " + (tool.dest ? t("measureDiskOf")(ltr(tool.dest)) : t("measureNoDest"));
+  const fastest = Math.max(1, ...tool.trials.map(trial => trial.Rate || 0));
+  const rows = tool.trials.map(trial => {
+    const tr = $("trial-row-template").content.firstElementChild.cloneNode(true);
+    const used = !!result && trial.Threads === result.Recommended;
+    tr.classList.toggle("best", used);
+    tr.querySelector(".threads").textContent = String(trial.Threads);
+    tr.querySelector(".speed span").textContent = t("speed")(size(trial.Rate || 0));
+    tr.querySelector(".speed .bar div").style.transform = "scaleX(" + ((trial.Rate || 0) / fastest) + ")";
+    tr.querySelector(".used").textContent = used ? t("measureUsed") : "";
+    return tr;
+  });
+  $("measure-rows").replaceChildren(...rows);
+  let disk = "";
+  if (result && result.DiskMeasured) disk = t("measureDisk")(ltr(tool.dest), t("speed")(size(result.WriteRate)), t("speed")(size(result.ReadRate)));
+  else if (result && result.DiskError === "dest_missing") disk = t("detail_dest_missing");
+  else if (result && result.DiskError) disk = t("measureDiskFailed")(result.DiskError);
+  $("measure-disk").textContent = disk;
+  $("measure-disk").hidden = !disk;
+  let said = "";
+  if (result) {
+    if (!result.Threads) said = t("measureResultAll")(result.CPUThreads || cpuThreads());
+    else if (result.Threads === result.Fastest) said = t("measureResultFastest")(result.Threads);
+    else said = t("measureResultFewer")(result.Threads, result.Fastest);
+  } else if (tool.error && !tool.running) {
+    said = t("measureNotKept");
+  }
+  $("measure-result").textContent = said;
+  $("measure-result").hidden = !said;
+}
+
+// what the window tells while a comparison or a measure works
+function onToolProgress(event) {
+  const tool = state.tool;
+  if (!tool || !tool.running) return;
+  tool.done = Math.max(tool.done, event.done || 0);
+  tool.total = event.total || tool.total;
+  paintTool();
+}
+function onToolLevel(row) {
+  const tool = state.tool;
+  if (!tool || !tool.running || tool.kind !== "levels") return;
+  tool.rows.push(row);
+  paintTool();
+}
+function onToolTrial(trial) {
+  const tool = state.tool;
+  if (!tool || !tool.running || tool.kind !== "measure") return;
+  tool.trials.push(trial);
+  paintTool();
+}
+
 // ---- Rename ----------------------------------------------------------------------------------------
 
 // planRenames asks the window the new name of each game of Rename, by the template of Settings
@@ -1255,6 +1449,17 @@ function wire() {
     if (preview && !preview.Error) setTemplate(template);
   });
   $("rename-settings").addEventListener("click", () => setSection("settings"));
+  // Compare the levels: the first game of Compress that can be, or the one whose link was clicked
+  $("compare-levels").addEventListener("click", () => {
+    const row = state.lists.compress.find(canCompare);
+    if (row) compareLevels(row); else toast(t("compareNeedsGame"));
+  });
+  $("pref-measure").addEventListener("click", measurePC);
+  $("pref-threads-all").addEventListener("click", () => { keep({ Threads: 0 }); render(); });
+  for (const name of ["levels", "measure"]) {
+    $(name + "-cancel").addEventListener("click", cancelTool);
+    $(name + "-dialog").addEventListener("close", cancelTool);
+  }
   $("pref-report").addEventListener("click", () => copyReport([], ""));
   $("done-report").addEventListener("click", () => { const job = state.job; if (job) copyReport(inQueue(job), job.section, job.mode); });
   $("link-bug").addEventListener("click", () => go.call("OpenLink", "bug").catch(error => toast(message(error))));
@@ -1301,6 +1506,9 @@ async function main() {
   go.on("job:progress", onProgress);
   go.on("job:done", onDone);
   go.on("close:ask", askClose);
+  go.on("tool:progress", onToolProgress);
+  go.on("tool:level", onToolLevel);
+  go.on("tool:trial", onToolTrial);
   go.onDrop((x, y, paths) => dropped(paths));
   try {
     state.setup = await go.call("Setup");

@@ -2,7 +2,7 @@
 
 // Package settings keeps what the user chose between runs: language, theme, mode, level, the
 // runtime of ampr-emu-ng, the last destination, what becomes of the originals, the priority of the
-// engine and the names of the files.
+// engine, the names of the files and the threads it compresses with.
 package settings
 
 import (
@@ -64,6 +64,8 @@ type Settings struct {
 	LowPriority bool
 	// NameTemplate names a .p5z and an unpacked original (jobs.NameOf)
 	NameTemplate string
+	// Threads are the threads Compress gives the engine, from Measure this PC; 0 is all the CPU's
+	Threads int
 }
 
 const fileName = "settings.json"
@@ -113,6 +115,9 @@ func (s Settings) Normalize() Settings {
 	if jobs.ValidTemplate(s.NameTemplate) != nil {
 		s.NameTemplate = d.NameTemplate
 	}
+	if s.Threads < 0 || s.Threads > 1024 {
+		s.Threads = d.Threads
+	}
 	return s
 }
 
@@ -159,6 +164,7 @@ func Load() (Settings, error) {
 	read("DeletePermanently", &s.DeletePermanently)
 	read("LowPriority", &s.LowPriority)
 	read("NameTemplate", &s.NameTemplate)
+	read("Threads", &s.Threads)
 	return s.Normalize(), nil
 }
 

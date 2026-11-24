@@ -34,6 +34,12 @@ import (
 //   - "bad-verify": as "writes", but verify finds a damaged file.
 //   - "info": info --json says of a game what the JSON file InfoEnv has under the name of its file
 //     or folder, and fails for any other; icon finds none.
+//   - "levels": analyze --levels tells two levels (3 and 19) as it goes and in its result, with the
+//     threads it was given (8 without --threads).
+//   - "measure": measure tries 2, 4, 6 and 8 threads of 8, recommends 6 (8 is the fastest) at the
+//     level given, and says the disk of the folder given (none without one).
+//   - "waits": tells some progress and waits for cancel (the line "cancel", or its input closed),
+//     then ends as cancelled.
 const Env = "MP_FAKE_CORE"
 
 // InfoEnv is the file of what "info" says of each game: {"<name>": {<info --json>}, ...}.
@@ -105,6 +111,50 @@ func run(mode string, args []string) int {
 		progress()
 		time.Sleep(time.Minute)
 		return 0
+	case "levels":
+		threads := "8"
+		for i := 0; i+1 < len(args); i++ {
+			if args[i] == "--threads" {
+				threads = args[i+1]
+			}
+		}
+		const low = `"level":3,"packed":500,"p5z_size":520,"folder_size":530,"rate":400,"p5z_seconds":2,"folder_seconds":2`
+		const high = `"level":19,"packed":380,"p5z_size":400,"folder_size":410,"rate":50,"p5z_seconds":9,"folder_seconds":8`
+		fmt.Println(`{"event":"progress","phase":"working","done":1,"total":2}`)
+		fmt.Println(`{"event":"level",` + low + `}`)
+		fmt.Println(`{"event":"progress","phase":"working","done":2,"total":2}`)
+		fmt.Println(`{"event":"level",` + high + `}`)
+		fmt.Printf("{\"event\":\"result\",\"ok\":true,\"threads\":%s,\"original_size\":1000,\"sample_bytes\":700,\"sample_rate\":1,"+
+			"\"levels\":[{%s},{%s}]}\n", threads, low, high)
+		return 0
+	case "measure":
+		level, disk := "19", "null"
+		for i := 1; i < len(args); i++ {
+			if args[i] == "--level" && i+1 < len(args) {
+				level = args[i+1]
+			}
+		}
+		if len(args) > 1 && args[1] != "" && args[1][0] != '-' {
+			disk = `{"written":4096,"write_rate":1000,"read":4096,"read_rate":2000}`
+		}
+		trials := ""
+		for n, rate := range []int{100, 200, 300, 310} {
+			trial := fmt.Sprintf(`{"threads":%d,"bytes":1000,"seconds":1,"rate":%d}`, 2*(n+1), rate)
+			fmt.Printf("{\"event\":\"progress\",\"phase\":\"working\",\"done\":%d,\"total\":4}\n", n+1)
+			fmt.Println(`{"event":"trial",` + trial[1:])
+			if n > 0 {
+				trials += ","
+			}
+			trials += trial
+		}
+		fmt.Printf("{\"event\":\"result\",\"ok\":true,\"cpu_threads\":8,\"level\":%s,\"trials\":[%s],\"recommended_threads\":6,"+
+			"\"fastest_threads\":8,\"disk\":%s}\n", level, trials, disk)
+		return 0
+	case "waits":
+		progress()
+		waitCancel()
+		fmt.Println(`{"event":"result","ok":false,"error":"cancelled"}`)
+		return 130
 	case "exists":
 		out := output(args)
 		if out == "" {

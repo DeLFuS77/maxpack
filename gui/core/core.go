@@ -32,7 +32,7 @@ var ErrClosing = errors.New("the window is closing")
 
 // Required is what the window needs of the engine, as `maxpack --capabilities` says it: an engine
 // that does not say one of them is of another version.
-var Required = []string{"progress_json", "control_stdin", "max_file_size", "info_json", "icon", "packs"}
+var Required = []string{"progress_json", "control_stdin", "max_file_size", "info_json", "icon", "packs", "content_id", "levels", "measure"}
 
 // Event is a line of the engine: "progress" or the final "result".
 type Event struct {

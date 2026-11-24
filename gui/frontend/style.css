@@ -323,7 +323,26 @@ input.switch:disabled { opacity: .45; cursor: default; }
 .hint.plain { margin: 0; }
 label.check.top { margin-top: 0; align-items: flex-start; }
 label.check.top input { margin-top: 2px; }
-.game button.link.report { margin-top: 6px; font-size: 12px; }
+.game button.link.report, .game button.link.compare { margin-top: 6px; font-size: 12px; }
+/* Compare the levels and Measure this PC: a table that fills as the engine tells each row */
+.tool-dialog { max-width: 580px; border-top: 3px solid var(--accent); }
+.tool-dialog .bar.total { max-width: none; margin: 10px 0 4px; }
+.tool-dialog .bar.total[hidden] { display: none; }
+.tool-table { margin-top: 6px; font-variant-numeric: tabular-nums; }
+.tool-table th { position: static; background: none; padding: 6px 10px; }
+.tool-table td { padding: 8px 10px; vertical-align: middle; }
+.tool-table .num { text-align: end; white-space: nowrap; }
+.tool-table td.level, .tool-table td.threads { font-weight: 700; }
+.tool-table tr.current td { background: var(--accent-soft); }
+.tool-table tr.best td { background: var(--ok-soft); }
+.tool-table button.link { margin-top: 0; }
+.tool-table .speed { display: flex; align-items: center; gap: 10px; }
+.tool-table .speed span { min-width: 96px; white-space: nowrap; }
+.tool-table .speed .bar { flex: 1; margin-top: 0; }
+.tool-table .speed .bar div { animation: none; }
+.tool-table .speed .used { font-size: 12px; color: var(--ok); white-space: nowrap; }
+.tool-result { padding: 9px 12px; border-radius: var(--radius-small); background: var(--accent-soft); }
+.tool-dialog .dialog-actions #levels-cancel, .tool-dialog .dialog-actions #measure-cancel { margin-inline-end: auto; }
 .done-tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 12px 0 4px; }
 .done-tiles div { display: flex; flex-direction: column; gap: 2px; padding: 9px 12px; border-radius: var(--radius-small); background: color-mix(in srgb, var(--text) 6%, transparent); }
 .done-tiles small { font-size: 11px; color: var(--muted); font-weight: 600; }

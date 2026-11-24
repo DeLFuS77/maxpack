@@ -175,7 +175,11 @@ func (a *App) reportText(r ReportRequest) string {
 	if modeText == "" {
 		modeText = mode
 	}
-	line("Settings: %s, level %d, runtime %s, low priority %s, %s, names %s", modeText, saved.Level, runtimeWords, priority, originals, saved.NameTemplate)
+	threads := "all"
+	if saved.Threads > 0 {
+		threads = fmt.Sprint(saved.Threads)
+	}
+	line("Settings: %s, level %d, threads %s, runtime %s, low priority %s, %s, names %s", modeText, saved.Level, threads, runtimeWords, priority, originals, saved.NameTemplate)
 	if len(r.Games) > 0 && r.Section != "" {
 		line("Section: %s", r.Section)
 	}

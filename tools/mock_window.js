@@ -16,8 +16,11 @@
 //   ?low=1              low priority on
 //   ?template=<t>       the template of the names (the NameTemplate setting)
 //   ?section=rename     the section open at the start (compress, rename, details, settings...)
+//   ?threads=24         the threads a measure found (the Threads setting); default all of them
+//   ?nodest=1           no destination chosen yet (Measure this PC then measures no disk)
 // Start runs a queue made up here: each game packs and verifies in a few seconds, the games added
-// meanwhile join it, and the card of the end shows. Settings are kept in memory (they are lost
+// meanwhile join it, and the card of the end shows. Compare levels and Measure this PC tell made-up
+// rows over a few seconds. Settings are kept in memory (they are lost
 // when the page is reloaded). Nothing here is part of MaxPack.
 "use strict";
 const fs = require("fs"), http = require("http"), path = require("path");
@@ -37,7 +40,9 @@ const mock = `
   }
   const templates = ["{title} [{id}]", "{title} [{id}] [v{version}]", "{title} [{id}] [{region}] [v{version}]"];
   const settings = { Lang: query.get("lang") || "", Theme: "system", Runtime: query.get("runtime") || "", LastDest: "E:\\\\", Mode: query.get("mode") === "folder" ? "folder" : "p5z", Level: 19,
-    DeleteOriginals: !!query.get("delete"), DeletePermanently: query.get("delete") === "good", LowPriority: !!query.get("low"), NameTemplate: query.get("template") || templates[0] };
+    DeleteOriginals: !!query.get("delete"), DeletePermanently: query.get("delete") === "good", LowPriority: !!query.get("low"), NameTemplate: query.get("template") || templates[0],
+    Threads: Number(query.get("threads")) || 0 };
+  if (query.get("nodest")) settings.LastDest = "";
   const builtIn = query.get("nobuiltin") ? {} : { builtInRuntime: "C:\\\\Users\\\\user\\\\AppData\\\\Roaming\\\\MaxPack\\\\ampr-emu-ng\\\\libSceAmpr.sprx", builtInRuntimeVersion: "v0.5.1-maxpack.1" };
   const games = {
     "D:\\\\dumps\\\\Starfall.Odyssey-PPSA10001": { TitleID: "PPSA10001", Name: "Starfall Odyssey", Version: "01.000.010", ContentID: "EP0001-PPSA10001_00-STARFALL00000000", Kind: "folder", OriginalSize: 8390000000, HasZstdRuntime: false, Icon: "", Packed: false },
@@ -99,9 +104,43 @@ const mock = `
     q.items.forEach((item, i) => emit("job:item", { i, state: "waiting", detail: "" }));
     setTimeout(step, 300);
   }
+  // Compare the levels and Measure this PC: a few steps told as the engine tells them, then the result;
+  // a cancel ends them as cancelled
+  let tool = null;
+  const toolRun = (steps, each, done) => new Promise((resolve, reject) => {
+    const mine = { cancelled: false };
+    tool = mine;
+    let n = 0;
+    const tick = () => {
+      if (mine.cancelled) { tool = null; reject(new Error("cancelled")); return; }
+      if (n >= steps.length) { tool = null; resolve(done()); return; }
+      each(steps[n], n);
+      n++;
+      setTimeout(tick, 650);
+    };
+    setTimeout(tick, 300);
+  });
   const App = {
     Setup: async () => Object.assign({ version: "1.0.2-mock", coreVersion: "maxpack 1.0.2", lang: settings.Lang || "en", theme: "system", coreError: "", builtInRuntime: "", builtInRuntimeVersion: "",
-      logFile: "C:\\\\Users\\\\user\\\\AppData\\\\Roaming\\\\MaxPack\\\\maxpack.log", templates }, builtIn),
+      logFile: "C:\\\\Users\\\\user\\\\AppData\\\\Roaming\\\\MaxPack\\\\maxpack.log", templates, cpuThreads: 32 }, builtIn),
+    CompareLevels: async item => {
+      const original = item.OriginalSize || 1e10, sample = Math.max(1 << 30, original * 0.02);
+      const rows = [[3, 0.664, 0.671, 1480], [9, 0.627, 0.634, 610], [15, 0.604, 0.611, 205], [19, 0.588, 0.595, 118]].map(([level, p5z, folder, mb]) => {
+        const packs = original / (mb * 1048576);
+        return { Level: level, P5zSize: Math.round(original * p5z), FolderSize: Math.round(original * folder), Rate: mb * 1048576,
+          P5zSeconds: Math.round(packs + 6), FolderSeconds: Math.round(packs + 1) };
+      });
+      return toolRun(rows, (row, n) => { emit("tool:progress", { done: n + 1, total: rows.length }); emit("tool:level", row); },
+        () => ({ Rows: rows, OriginalSize: original, SampleBytes: sample, SampleRate: sample / original, Threads: settings.Threads || 32 }));
+    },
+    MeasurePC: async folder => {
+      const trials = [[8, 93], [16, 171], [24, 236], [32, 241]].map(([threads, mb]) => ({ Threads: threads, Rate: mb * 1048576 }));
+      return toolRun(trials.concat([null]), (trial, n) => { emit("tool:progress", { done: n + 1, total: trials.length + 1 }); if (trial) emit("tool:trial", trial); }, () => {
+        settings.Threads = 24;
+        return { CPUThreads: 32, Level: settings.Level, Trials: trials, Recommended: 24, Fastest: 32, DiskMeasured: !!folder, WriteRate: 1.9e9, ReadRate: 3.1e9, DiskError: "", Threads: 24 };
+      });
+    },
+    CancelTool: async () => { if (tool) tool.cancelled = true; },
     GetSettings: async () => Object.assign({}, settings),
     SetSettings: async next => { Object.assign(settings, next); if (!validTemplate(settings.NameTemplate)) settings.NameTemplate = templates[0]; },
     PendingFiles: async () => (query.get("empty") ? null : { compress: first, decompress: [] }),

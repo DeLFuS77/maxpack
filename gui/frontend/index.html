@@ -87,6 +87,8 @@
       <div class="ends muted"><span data-t="faster"></span><span data-t="smaller"></span></div>
       <div class="segmented levels" role="group" aria-labelledby="level-name"><button data-level="3"><span data-t="light"></span><small>1–6</small></button><button data-level="12"><span data-t="medium"></span><small>7–14</small></button><button data-level="19"><span data-t="maximum"></span><small>15–22</small></button></div>
       <p class="hint" id="level-hint"></p>
+      <button id="compare-levels" class="link" data-t="compareLevels"></button>
+      <p class="hint" data-t="compareHint"></p>
     </section>
 
     <section class="block" data-for="decompress">
@@ -158,6 +160,10 @@
           <input id="pref-low" class="switch" type="checkbox" role="switch" aria-labelledby="low-name">
         </div>
         <div class="pref-item">
+          <div class="pref-text"><b data-t="threadsTitle"></b><small class="pref-path" id="pref-threads"></small><small data-t="measureHint"></small></div>
+          <div class="pref-buttons"><button id="pref-measure" data-t="measurePc"></button><button id="pref-threads-all" class="quiet" data-t="threadsUseAll"></button></div>
+        </div>
+        <div class="pref-item">
           <div class="pref-text"><b id="delete-name" data-t="deleteOriginals"></b><small data-t="deleteSettingHint"></small></div>
           <input id="pref-delete" class="switch" type="checkbox" role="switch" aria-labelledby="delete-name">
         </div>
@@ -210,6 +216,7 @@
           <dl class="facts" hidden></dl>
           <div class="note" hidden></div>
           <button class="link report" hidden></button>
+          <button class="link compare" hidden></button>
         </div>
       </div>
     </td>
@@ -318,6 +325,40 @@
   <p class="warning" id="done-runtime" hidden></p>
   <form method="dialog" class="dialog-actions"><button type="button" id="done-report" class="quiet" data-t="copyReport"></button><button value="close" class="primary" data-t="close" autofocus></button></form>
 </dialog>
+
+<!-- Compare the levels on this PC: the engine packs a sample of the game at each level and tells
+     each one as it is measured; a level of the table is chosen with its button. Escape cancels -->
+<dialog id="levels-dialog" class="tool-dialog" aria-labelledby="levels-title">
+  <h2 id="levels-title" data-t="levelsTitle"></h2>
+  <p class="muted" id="levels-game"></p>
+  <p class="muted" id="levels-for"></p>
+  <div class="bar total" id="levels-bar"><div></div></div>
+  <p class="muted" id="levels-status" aria-live="polite"></p>
+  <table class="tool-table">
+    <thead><tr><th data-t="levelsLevel"></th><th class="num" id="levels-size-head"></th><th class="num" data-t="levelsSaved"></th><th class="num" data-t="levelsTime"></th><th></th></tr></thead>
+    <tbody id="levels-rows"></tbody>
+  </table>
+  <p class="hint" id="levels-about"></p>
+  <form method="dialog" class="dialog-actions"><button type="button" id="levels-cancel" class="quiet" data-t="cancel"></button><button value="close" id="levels-close" class="primary" data-t="close"></button></form>
+</dialog>
+<template id="level-row-template"><tr><td class="level"></td><td class="num size-cell"></td><td class="num saved-cell"></td><td class="num time-cell"></td><td class="num"><button class="link use"></button></td></tr></template>
+
+<!-- Measure this PC: each count of threads as the engine tries it, the disk of the destination,
+     and the threads Compress uses from now on. Escape cancels -->
+<dialog id="measure-dialog" class="tool-dialog" aria-labelledby="measure-title">
+  <h2 id="measure-title" data-t="measureTitle"></h2>
+  <p class="muted" id="measure-intro"></p>
+  <div class="bar total" id="measure-bar"><div></div></div>
+  <p class="muted" id="measure-status" aria-live="polite"></p>
+  <table class="tool-table">
+    <thead><tr><th data-t="measureThreads"></th><th data-t="measureSpeed"></th></tr></thead>
+    <tbody id="measure-rows"></tbody>
+  </table>
+  <p class="muted" id="measure-disk"></p>
+  <p class="tool-result" id="measure-result" hidden></p>
+  <form method="dialog" class="dialog-actions"><button type="button" id="measure-cancel" class="quiet" data-t="cancel"></button><button value="close" id="measure-close" class="primary" data-t="close"></button></form>
+</dialog>
+<template id="trial-row-template"><tr><td class="threads"></td><td><div class="speed"><span></span><div class="bar"><div></div></div><b class="used"></b></div></td></tr></template>
 
 <div id="drop-overlay" hidden><div class="drop-card"><svg class="drop-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 19h14"/></svg><b data-t="dropHere"></b></div></div>
 <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>

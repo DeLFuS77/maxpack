@@ -98,7 +98,7 @@ func (a *App) closeQuestion() (question, yes, no string) {
 }
 
 // closed (OnShutdown) stops the queue running as MaxPack closes, and waits for it, closeWait at
-// most: the Runner takes away what the game at work made and did not verify, or the copy that
+// most (a comparison of levels or a measure is only stopped): the Runner takes away what the game at work made and did not verify, or the copy that
 // was to replace an old one. MaxPack ends right after; the engine is not killed (core.ErrClosing),
 // and once cancelled it takes away what it wrote itself.
 func (a *App) closed(context.Context) {
@@ -106,6 +106,7 @@ func (a *App) closed(context.Context) {
 	q := a.queue
 	a.mutex.Unlock()
 	a.stop(core.ErrClosing)
+	a.stopTool(core.ErrClosing)
 	if q == nil {
 		return
 	}

@@ -182,6 +182,24 @@
         <p class="warning" id="template-bad" data-t="namesBad" hidden></p>
         <dl class="about-list preview" id="name-preview"><dt data-t="forInstaller"></dt><dd id="preview-p5z"></dd><dt data-t="toOriginal"></dt><dd id="preview-original"></dd><dt data-t="toConsole"></dt><dd id="preview-folder"></dd></dl>
       </section>
+      <!-- MaxPack in the Explorer of Windows: only there, each place off until it is turned on -->
+      <section class="pref-group" id="pref-explorer" hidden>
+        <h2 data-t="prefExplorer"></h2>
+        <p class="warning" id="explorer-portable" data-t="explorerPortable" hidden></p>
+        <div class="pref-item">
+          <div class="pref-text"><b id="menu-name" data-t="explorerMenu"></b><small data-t="explorerMenuHint"></small><small class="pref-status" id="menu-status"></small></div>
+          <input id="pref-menu" class="switch" type="checkbox" role="switch" aria-labelledby="menu-name">
+        </div>
+        <div class="pref-item">
+          <div class="pref-text"><b id="sendto-name" data-t="explorerSendTo"></b><small data-t="explorerSendToHint"></small><small class="pref-status" id="sendto-status"></small></div>
+          <input id="pref-sendto" class="switch" type="checkbox" role="switch" aria-labelledby="sendto-name">
+        </div>
+        <div class="pref-item">
+          <div class="pref-text"><b id="files-name" data-t="explorerFiles"></b><small data-t="explorerFilesHint"></small><small class="pref-status" id="files-status"></small></div>
+          <input id="pref-files" class="switch" type="checkbox" role="switch" aria-labelledby="files-name">
+        </div>
+        <p class="hint" id="explorer-for" data-t="explorerFor"></p>
+      </section>
       <section class="pref-group">
         <h2 data-t="prefInternet"></h2>
         <p class="hint plain" data-t="internetText"></p>
@@ -214,6 +232,7 @@
           <div class="where" hidden></div>
           <div class="list-warn" hidden></div>
           <dl class="facts" hidden></dl>
+          <div class="card-actions" hidden><button class="to-verify"></button><button class="to-decompress"></button></div>
           <div class="note" hidden></div>
           <button class="link report" hidden></button>
           <button class="link compare" hidden></button>

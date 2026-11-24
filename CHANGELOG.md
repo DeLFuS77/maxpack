@@ -4,7 +4,24 @@ All notable changes to MaxPack are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.0.3] - 2026-11-25
+
+### Added
+
+- **MaxPack in the Windows Explorer** (PC window, Settings › Windows Explorer, and the installer; each
+  off until you turn it on, for this user only, no administrator): a right-click menu with **Compress
+  with MaxPack** on folders and `.exfat` images and **Verify with MaxPack** and **Details** on `.p5z`
+  files (on Windows 11, under Show more options); **Send to › MaxPack**; and **Open .p5z files with
+  MaxPack**, a double click that shows the game's card in Details, with MaxPack's icon, in Open with and
+  in Default apps, never taking `.p5z` from a program the user chose. The menu speaks the language of
+  the window. The uninstaller takes all of it away; the portable version writes nothing in Windows and
+  says so in Settings.
+- **Files from the Explorer go to their place** (PC window): a second MaxPack started from the menu,
+  Send to or a double click hands its files to the window open, which comes to the front; folders and
+  images go to Compress, a `.p5z` to Details, or to the section the menu asked for. With no window open,
+  it opens with them. The command line works as before.
+- **The card of a `.p5z` in Details** (PC window): what it saved against the original, its volumes, and
+  **Verify** and **Decompress**, which take it to those sections.
 
 ### Changed
 
@@ -44,6 +61,7 @@ All notable changes to MaxPack are listed here. The format follows
 - `tools/bench_pack.py` also generates an `.exfat` image (`gen-exfat`), takes an image as input, and
   can drop the input from the system's cache before every run (`--cold`, `evict`); `mp_readbench`
   (built with the tests) measures the reading alone, the 1.0.2 way or through the read-ahead.
+
 
 ## [1.0.2] - 2026-11-24
 
@@ -246,6 +264,7 @@ risk. The authors are not responsible for data loss, lost saves, damage to the c
 bans or any other problem. MaxPack is not affiliated with or endorsed by Sony Interactive
 Entertainment. Full text: [Legal and disclaimer](README.md#legal-and-disclaimer).
 
+[1.0.3]: https://github.com/DeLFuS77/maxpack/releases/tag/v1.0.3
 [1.0.2]: https://github.com/DeLFuS77/maxpack/releases/tag/v1.0.2
 [1.0.1]: https://github.com/DeLFuS77/maxpack/releases/tag/v1.0.1
 [1.0.0]: https://github.com/DeLFuS77/maxpack/releases/tag/v1.0.0

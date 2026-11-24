@@ -361,6 +361,33 @@ for cap, want in ((full, 0), (full - 1, 1), (64, 1)):
     except Exception as ex:  # noqa: BLE001
         check("max_file_size_borde_%d" % cap, False, repr(ex))
 
+# --volume-limit (para pruebas): con volúmenes de 512 KiB, el fixture pequeño da varios, con id 0..n-1.
+vl = os.path.join(TMP, "vl.p5z")
+if os.path.exists(vl):
+    os.remove(vl)
+rc, so, err = run("pack", BASIC, "-o", vl, "--p5z", "--volume-limit", str(512 << 10))
+rc2, pjs, err2 = run("info", "--play", vl) if rc == 0 else (rc, "", "")
+try:
+    vols = json.loads(pjs)["volumes"]
+    check("volume_limit_varios_volumenes", rc == 0 and rc2 == 0 and len(vols) >= 3
+          and [v["id"] for v in vols] == list(range(len(vols)))
+          and all(0 < v["length"] <= 512 << 10 for v in vols)
+          and all(vols[k]["offset"] + vols[k]["length"] <= vols[k + 1]["offset"] for k in range(len(vols) - 1)),
+          "rc=%d/%d %s %s" % (rc, rc2, pjs[-300:], (err + err2)[-200:]))
+except Exception as ex:  # noqa: BLE001
+    check("volume_limit_varios_volumenes", False, repr(ex) + (err + err2)[-200:])
+_, human, _ = run("info", vl)
+m = re.search(r"en (\d+) volúmenes", human)
+check("volume_limit_info", m is not None and int(m.group(1)) >= 3, human[-300:])
+# El más pequeño que admite: la cabecera del volumen más un bloque entero.
+vmin = os.path.join(TMP, "vl_min")
+rmtree(vmin)
+rc, _, err = run("pack", BASIC, "-o", vmin, "--volume-limit", str(64 + (256 << 10)))
+check("volume_limit_minimo", rc == 0 and os.path.isfile(os.path.join(vmin, "ampr_zstd-002.pak")), "rc=%d %s" % (rc, err[-200:]))
+for bad in ("0", str(64 + (256 << 10) - 1), "4294901761", "abc", "-1", "512k", ""):
+    rc, _, _ = run("pack", BASIC, "-o", os.path.join(TMP, "vl_bad"), "--volume-limit", bad)
+    check("volume_limit_%s_sale_2" % (bad or "vacio"), rc == 2 and not os.path.exists(os.path.join(TMP, "vl_bad")), str(rc))
+
 # Un param.json sin titleId (o que no se lee) da un .p5z sin TITLE_ID: pack lo avisa.
 noid = os.path.join(TMP, "noid_game")
 rmtree(noid)
@@ -414,6 +441,7 @@ check("human_output_unchanged", rc == 0 and so.startswith("verify:") and '"event
 rc, so, _ = run("--help")
 check("help_tiene_todas_las_ordenes", rc == 0 and all(w in so for w in ("analyze", "pack", "unpack", "verify", "info",
                                                                         "info --json", "icon", "--capabilities")), so[:300])
+check("help_volume_limit_para_pruebas", re.search(r"--volume-limit N .*pruebas", so) is not None, so[:2000])
 
 # --capabilities: lo que esta versión sabe hacer, para que la ventana sepa si es la suya.
 rc, so, err = run("--capabilities")

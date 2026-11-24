@@ -222,6 +222,90 @@ MP_TEST(play_open_refuses_damaged) {
     free(b);
 }
 
+// Varios volúmenes, como cualquier juego de más de unos 4 GiB empaquetados: con volúmenes de 512 KiB
+// como mucho, el fixture pequeño ya da varios.
+#define MULTI TMP "/multi.p5z"
+#define MREF TMP "/mref"
+#define MULTI_LIMIT (512u << 10)
+
+MP_TEST(play_json_several_volumes) {
+    if (mpt_pack_vol(MPT_BASIC, MULTI, 1, NULL, MULTI_LIMIT) != 0) return;
+    mpt_clear(MREF);
+    mp_err e = {{0}};
+    mp_p5z *z = NULL;
+    if (mp_p5z_open(MULTI, &z, &e) != 0) {
+        MP_FAIL_("p5z_open: %s", e.msg);
+        return;
+    }
+    if (mp_unpack_folder(z, MREF, 2, 0, &e) != 0) {
+        MP_FAIL_("unpack: %s", e.msg);
+        mp_p5z_close(z);
+        return;
+    }
+    mp_play *p = open_play(MULTI);
+    char *j = p ? mp_play_json(p) : NULL;
+    MP_CHECK(j != NULL);
+    size_t hl = 0;
+    uint8_t *h = mpt_slurp(MULTI, &hl);
+    MP_CHECK(h != NULL);
+    if (!j || !h) goto out;
+
+    // los .pak de la carpeta, de 000 en adelante sin huecos
+    uint32_t n = 0;
+    for (;; n++) {
+        char rel[2048];
+        snprintf(rel, sizeof rel, MREF "/ampr_zstd-%03u.pak", n);
+        if (mp_path_kind(rel) != 1) break;
+    }
+    if (n < 3) MP_FAIL_("solo %u volúmenes", n);
+
+    // "volumes": id 0..n-1 en orden, cada uno en su sitio del .p5z y con el tamaño de su .pak,
+    // y nada más detrás
+    size_t cap = 64 + (size_t)n * 96;
+    char *want = malloc(cap);
+    MP_CHECK(want != NULL);
+    if (!want) goto out;
+    size_t w = (size_t)snprintf(want, cap, "\"volumes\":[");
+    uint64_t prev_end = 0;
+    for (uint32_t k = 0; k < n; k++) {
+        char pak[2048];
+        snprintf(pak, sizeof pak, MREF "/ampr_zstd-%03u.pak", k);
+        uint64_t len = 0;
+        MP_CHECK(mp_stat(pak, &len, NULL) == 0);
+        uint64_t off = mp_p5z_volume_offset(z, k);
+        w += (size_t)snprintf(want + w, cap - w, "%s{\"id\":%u,\"offset\":%llu,\"length\":%llu}",
+                              k ? "," : "", k, (unsigned long long)off, (unsigned long long)len);
+        if (len > MULTI_LIMIT) MP_FAIL_("volumen %u: %llu bytes", k, (unsigned long long)len);
+        if (off < prev_end) MP_FAIL_("volumen %u: empieza antes de que acabe el anterior", k);
+        prev_end = off + len;
+        // la región del .p5z es el .pak, byte a byte
+        size_t pl = 0;
+        uint8_t *pb = mpt_slurp(pak, &pl);
+        if (!pb || pl != len || off + len > hl || memcmp(h + off, pb, pl))
+            MP_FAIL_("volumen %u: la región no es su .pak", k);
+        free(pb);
+    }
+    snprintf(want + w, cap - w, "]}");
+    MP_CHECK_CONTAINS(j, want);
+    if (prev_end + P5Z_FOOTER > hl) MP_FAIL_("el último volumen pisa el pie");
+    free(want);
+
+    // los sueltos salen igual que con un volumen
+    char err[256] = {0};
+    mpt_clear(TMP "/mx");
+    MP_CHECK(mp_play_extract(p, "eboot.bin", TMP "/mx/eboot.bin", err, sizeof err) == 0);
+    size_t la = 0, lb = 0;
+    uint8_t *a = mpt_slurp(TMP "/mx/eboot.bin", &la), *b = mpt_slurp(MREF "/eboot.bin", &lb);
+    MP_CHECK(a && b && la == lb && memcmp(a, b, la) == 0);
+    free(a);
+    free(b);
+out:
+    free(h);
+    mp_play_free_str(j);
+    if (p) mp_play_close(p);
+    mp_p5z_close(z);
+}
+
 int main(void) {
     mpt_clear(TMP);
     MP_RUN(play_json_matches_folder);
@@ -229,5 +313,6 @@ int main(void) {
     MP_RUN(play_extract_replaces_existing);
     MP_RUN(play_extract_refuses_non_loose);
     MP_RUN(play_open_refuses_damaged);
+    MP_RUN(play_json_several_volumes);
     MP_TEST_MAIN_END();
 }

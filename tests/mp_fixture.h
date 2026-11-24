@@ -67,7 +67,9 @@ static inline void mpt_copy_file(const char *src, const char *dst) {
 }
 
 // Empaqueta src (carpeta o .exfat) a dst: .p5z si p5z, si no carpeta. runtime puede ser NULL.
-static inline int mpt_pack(const char *src, const char *dst, int p5z, const char *runtime) {
+// volume_limit: tamaño máximo de cada volumen (MP_ZPK_VOLUME_LIMIT, o menos para tener varios).
+static inline int mpt_pack_vol(const char *src, const char *dst, int p5z, const char *runtime,
+                               uint64_t volume_limit) {
     mp_err e = {{0}};
     mpt_clear(dst);
     mpt_parent_dirs(dst);
@@ -76,6 +78,7 @@ static inline int mpt_pack(const char *src, const char *dst, int p5z, const char
     o.threads = 4;
     o.progress = 0;
     o.runtime = runtime;
+    o.volume_limit = volume_limit;
     mp_pack_out out;
     if ((p5z ? mp_pack_out_p5z(dst, 4, &out, &e) : mp_pack_out_dir(dst, &out, &e)) != 0) {
         MP_FAIL_("salida de pack: %s", e.msg);
@@ -86,6 +89,10 @@ static inline int mpt_pack(const char *src, const char *dst, int p5z, const char
     out.destroy(out.ctx);
     if (rc) MP_FAIL_("pack: %s", e.msg);
     return rc;
+}
+
+static inline int mpt_pack(const char *src, const char *dst, int p5z, const char *runtime) {
+    return mpt_pack_vol(src, dst, p5z, runtime, MP_ZPK_VOLUME_LIMIT);
 }
 
 typedef struct {

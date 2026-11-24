@@ -277,6 +277,7 @@ maxpack pack "D:\dumps\MiJuego.exfat" -o "D:\juegos\MiJuego [PPSA00000].p5z" --p
 | `--runtime ARCHIVO` | El `libSceAmpr.sprx` de ampr-emu-ng, que se pone en `fakelib/`. | `--runtime "D:\ampr-emu-ng\libSceAmpr.sprx"` |
 | `--keep-loose GLOB` | Deja suelto también lo que case. Se puede repetir. `*` y `?` valen dentro de una carpeta; `**`, para cualquier número de carpetas. | `--keep-loose "**/*.bnk"` |
 | `--max-file-size N` | Solo con `--p5z`: si el `.p5z` va a pasar de N bytes, para y lo borra. | `--max-file-size 4294967295` (FAT32) |
+| `--volume-limit N` | Para pruebas: cada volumen de los packs ocupa como mucho N bytes (de 262208 a 4294901760, que es el valor por defecto). Sirve para tener varios volúmenes con un juego pequeño; para jugar no hace falta. | `--volume-limit 524288` |
 | `--progress json` | Una línea JSON por evento en stdout; el texto para personas sigue en stderr. | `--progress json` |
 | `--control stdin` | Lee la entrada: la línea `cancel`, o cerrar la entrada, cancela y borra lo escrito. | `--control stdin` |
 

@@ -48,6 +48,8 @@ static void usage(FILE *out) {
             "  --runtime ARCHIVO  libSceAmpr.sprx de ampr-emu-ng para fakelib/\n"
             "  --keep-loose GLOB  dejar suelto también lo que case (se puede repetir)\n"
             "  --max-file-size N  con --p5z: parar y borrar el .p5z si pasa de N bytes\n"
+            "  --volume-limit N   para pruebas: volúmenes de N bytes como mucho (262208 a 4294901760,\n"
+            "                     por defecto 4294901760), para tener varios con un juego pequeño\n"
             "\n"
             "Opciones de pack, unpack y verify (para una interfaz):\n"
             "  --progress json    una línea JSON por evento en stdout (el texto sigue en stderr)\n"
@@ -444,7 +446,8 @@ static int run_pack(int argc, char **argv) {
         } else if (!strcmp(a, "--p5z")) {
             p5z = 1;
         } else if (!strcmp(a, "-o") || !strcmp(a, "--level") || !strcmp(a, "--threads") ||
-                   !strcmp(a, "--runtime") || !strcmp(a, "--keep-loose") || !strcmp(a, "--max-file-size")) {
+                   !strcmp(a, "--runtime") || !strcmp(a, "--keep-loose") || !strcmp(a, "--max-file-size") ||
+                   !strcmp(a, "--volume-limit")) {
             if (!has_value) return bad_usage("falta el valor de", a);
             const char *v = argv[++i];
             char *end = NULL;
@@ -452,6 +455,12 @@ static int run_pack(int argc, char **argv) {
                 unsigned long long m = strtoull(v, &end, 10);
                 if (end == v || *end || m == 0 || v[0] == '-') return bad_usage("--max-file-size debe ser un número de bytes mayor que 0", v);
                 max_size = m;
+            } else if (!strcmp(a, "--volume-limit")) {
+                // para pruebas: volúmenes pequeños, para tener varios con un juego pequeño
+                unsigned long long m = strtoull(v, &end, 10);
+                if (end == v || *end || v[0] == '-' || m < MP_ZPK_VOL_HEADER + MP_BLOCK_V1 || m > MP_ZPK_VOLUME_LIMIT)
+                    return bad_usage("--volume-limit debe estar entre 262208 y 4294901760 bytes", v);
+                o.volume_limit = m;
             } else if (!strcmp(a, "-o")) {
                 dst = v;
             } else if (!strcmp(a, "--runtime")) {

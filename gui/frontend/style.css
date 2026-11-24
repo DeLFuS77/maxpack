@@ -104,14 +104,14 @@ nav { position: relative; width: 196px; flex: none; border-right: 1px solid var(
 nav .icon { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
 nav .group { font-size: 12px; font-weight: 600; color: var(--muted); padding: 12px 12px 4px; }
 nav div.group:first-of-type { padding-top: 2px; }
-nav button { position: relative; text-align: left; border-color: transparent; background: transparent; padding: 6px 10px 6px 8px; display: flex; gap: 11px; align-items: center; border-radius: var(--radius); }
+nav button { position: relative; text-align: left; border-color: transparent; background: transparent; padding: 5px 10px 5px 8px; display: flex; gap: 10px; align-items: center; border-radius: var(--radius); }
 nav button > span { min-width: 0; }
 nav button b { display: block; font-weight: 600; }
 nav button small { display: block; font-size: 11px; color: var(--muted); }
 nav button:hover:not(:disabled) { background: var(--hover); }
 nav button.on, nav button.on:hover:not(:disabled) { background: transparent; }
 /* the icon of a section on a tile in the color of its group, filled when the section is open */
-.tile { width: 32px; height: 32px; flex: none; display: grid; place-items: center; border-radius: 10px; color: var(--tone); background: color-mix(in srgb, var(--tone) 15%, transparent); transition: transform .3s var(--ease); }
+.tile { width: 30px; height: 30px; flex: none; display: grid; place-items: center; border-radius: 10px; color: var(--tone); background: color-mix(in srgb, var(--tone) 15%, transparent); transition: transform .3s var(--ease); }
 .tone-space { --tone: var(--tone-space); --tone-grad: var(--grad); }
 .tone-check { --tone: var(--tone-check); --tone-grad: var(--grad-check); }
 .tone-neutral { --tone: var(--tone-neutral); --tone-grad: linear-gradient(135deg, #64748b, #93a0b8); }

@@ -111,6 +111,10 @@ En la consola, las dos acaban igual: la misma carpeta, comprimida, en `homebrew/
      «Predeterminado (Completo)»: así ShadowMountPlus carga el `libSceAmpr.sprx` del juego y, si hace
      falta, añade su backport (aviso «Backport aplicado: <TITLE_ID>»). Comprobado en una PS5
      ([sección 8](#8-qué-está-probado-y-qué-falta)). Los pasos: [probar-en-ps5.md](probar-en-ps5.md).
+     Deja apagada la actualización automática de AMPR de ShadowMountPlus (`auto_update_ampr`, que ya
+     viene apagada): si la enciendes, cambia ampr-emu-ng por el `ampr_emu` antiguo de drakmor y los
+     juegos comprimidos dejan de arrancar
+     ([issue #214](https://github.com/drakmor/ShadowMountPlus/issues/214)).
    - **Con Kraken Mount:** no hay que hacer nada más.
 
 ## 3. Descargar e instalar el programa del PC
@@ -215,6 +219,9 @@ Los dos montan los juegos de `homebrew/`. Elige uno:
 | ampr-emu-ng | El juego tiene que llevarlo en `fakelib/` (MaxPack lo pone). Con el modo de fakelib predeterminado («Completo»), ShadowMountPlus usa el del juego. | Trae el suyo. |
 | Con el instalador | Si está en marcha, el instalador registra el juego y le fija el modo de fakelib. Si no lo está, o aplaza el escaneo, el juego sale como «Pendiente en ShadowMountPlus» y el instalador lo reintenta cada minuto. | Explora las mismas rutas. No hay que hacer nada más. |
 | Sin el instalador | Añade el juego y deja su modo de fakelib en «Predeterminado (Completo)». | Nada más que hacer. |
+
+Con ShadowMountPlus, deja apagada su actualización automática de AMPR (`auto_update_ampr`): cambiaría
+ampr-emu-ng por un `ampr_emu` que no lee los packs zstd.
 
 Kraken Mount se usa sin ShadowMountPlus en marcha. Más detalles:
 [instalador-ps5.md](instalador-ps5.md#3-shadowmountplus-y-kraken-mount).

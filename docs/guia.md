@@ -54,10 +54,12 @@ En la consola, las dos acaban igual: la misma carpeta, comprimida, en `homebrew/
   WebKitGTK 4.1.
 - Tu juego: un dump de PS5 en carpeta o en imagen `.exfat`. Los PKG, `.ffpkg`, `.ffpfs` y `.ffpfsc`
   todavía no se pueden comprimir.
-- El `libSceAmpr.sprx` de [ampr-emu-ng](https://github.com/quer3q/ampr-emu-ng), que se descarga de sus
-  Releases. Sin él, el juego comprimido no arranca con ShadowMountPlus. Algunos dumps traen un
-  `libSceAmpr.sprx` antiguo que no lee zstd: MaxPack pone el de ampr-emu-ng en `fakelib/` de los
-  juegos que no lo traen.
+- El `libSceAmpr.sprx` de ampr-emu-ng: el de la copia de MaxPack,
+  [DeLFuS77/ampr-emu-ng](https://github.com/DeLFuS77/ampr-emu-ng), que se descarga de sus Releases
+  (mientras no haya versiones publicadas, es el artefacto `sprx` de su GitHub Actions). Sin él, el
+  juego comprimido no arranca con ShadowMountPlus. La v0.5.0 original de quer3q también lee los packs
+  zstd. Algunos dumps traen un `libSceAmpr.sprx` antiguo que no lee zstd: MaxPack pone el de
+  ampr-emu-ng en `fakelib/` de los juegos que no lo traen.
 - Espacio en el destino. MaxPack avisa si hay menos libre de lo que ocupa el juego original.
 
 **En la PS5**
@@ -76,8 +78,8 @@ En la consola, las dos acaban igual: la misma carpeta, comprimida, en `homebrew/
 
 1. **Descarga** MaxPack para tu sistema y `maxpack.elf` para la PS5
    ([sección 3](#3-descargar-e-instalar-el-programa-del-pc)). Instala MaxPack y ábrelo.
-2. **Pon ampr-emu-ng.** Descarga `libSceAmpr.sprx` de las Releases de
-   [ampr-emu-ng](https://github.com/quer3q/ampr-emu-ng). En MaxPack, abre **Ajustes** y, en «Runtime
+2. **Pon ampr-emu-ng.** Descarga `libSceAmpr.sprx` de las Releases de la
+   [copia de ampr-emu-ng de MaxPack](https://github.com/DeLFuS77/ampr-emu-ng). En MaxPack, abre **Ajustes** y, en «Runtime
    para los juegos que no lo traen», pulsa **Elegir libSceAmpr.sprx…**. MaxPack lo recuerda.
    - Si te lo saltas, MaxPack lo pide una vez antes de empezar, con los juegos que lo necesitan.
    - Hoy este paso es obligatorio para el instalador: `maxpack.elf` no lleva ningún ampr-emu-ng dentro
@@ -105,10 +107,10 @@ En la consola, las dos acaban igual: la misma carpeta, comprimida, en `homebrew/
    USB (por ejemplo `E:\`): cada juego va a `E:\homebrew\<TITLE_ID>`. Si eliges otra carpeta, cada
    juego va dentro de ella y luego tendrás que moverlo a `homebrew/`.
 3. Conecta el USB a la PS5.
-   - **Con ShadowMountPlus:** añade o vuelve a escanear el juego y, en su perfil, fija el modo de
-     fakelib para que no le cambie ampr-emu-ng por su `ampr_emu` antiguo. Qué modo funciona está por
-     comprobar (P1, [sección 8](#8-qué-está-probado-y-qué-falta)). Los pasos:
-     [probar-en-ps5.md](probar-en-ps5.md).
+   - **Con ShadowMountPlus:** añade o vuelve a escanear el juego y deja su modo de fakelib en
+     «Predeterminado (Completo)»: así ShadowMountPlus carga el `libSceAmpr.sprx` del juego y, si hace
+     falta, añade su backport (aviso «Backport aplicado: <TITLE_ID>»). Comprobado en una PS5
+     ([sección 8](#8-qué-está-probado-y-qué-falta)). Los pasos: [probar-en-ps5.md](probar-en-ps5.md).
    - **Con Kraken Mount:** no hay que hacer nada más.
 
 ## 3. Descargar e instalar el programa del PC
@@ -210,9 +212,9 @@ Los dos montan los juegos de `homebrew/`. Elige uno:
 
 | | ShadowMountPlus | Kraken Mount |
 |---|---|---|
-| ampr-emu-ng | El juego tiene que llevarlo en `fakelib/` (MaxPack lo pone) y ShadowMountPlus no debe cambiarlo por su `ampr_emu` antiguo. | Trae el suyo. |
+| ampr-emu-ng | El juego tiene que llevarlo en `fakelib/` (MaxPack lo pone). Con el modo de fakelib predeterminado («Completo»), ShadowMountPlus usa el del juego. | Trae el suyo. |
 | Con el instalador | Si está en marcha, el instalador registra el juego y le fija el modo de fakelib. Si no lo está, o aplaza el escaneo, el juego sale como «Pendiente en ShadowMountPlus» y el instalador lo reintenta cada minuto. | Explora las mismas rutas. No hay que hacer nada más. |
-| Sin el instalador | Añade el juego y fija su modo de fakelib a mano (P1, por comprobar). | Nada más que hacer. |
+| Sin el instalador | Añade el juego y deja su modo de fakelib en «Predeterminado (Completo)». | Nada más que hacer. |
 
 Kraken Mount se usa sin ShadowMountPlus en marcha. Más detalles:
 [instalador-ps5.md](instalador-ps5.md#3-shadowmountplus-y-kraken-mount).
@@ -425,8 +427,8 @@ Lo que ves:
   con --runtime.»
 
 Qué hacer:
-1. Descarga `libSceAmpr.sprx` de las Releases de [ampr-emu-ng](https://github.com/quer3q/ampr-emu-ng)
-   y elígelo en **Ajustes**.
+1. Descarga `libSceAmpr.sprx` de las Releases de la
+   [copia de ampr-emu-ng de MaxPack](https://github.com/DeLFuS77/ampr-emu-ng) y elígelo en **Ajustes**.
 2. Vuelve a comprimir el juego. En la ventana, «empaquetar con `--runtime`» es esto mismo: comprimir con
    el runtime elegido en Ajustes.
 3. Si ya no tienes el dump, **Descomprimir** el `.p5z` a «Dump original (bit a bit)» lo recupera, y
@@ -474,7 +476,7 @@ MaxPack o descomprimir otra vez el zip portable entero.
 
 Si aparece pero **no arranca**:
 - Lo más probable es el runtime: mira [la sección del runtime](#el-runtime-no-lee-zstd-falta-ampr-emu-ng)
-  y el modo de fakelib del juego en ShadowMountPlus (P1). Si ampr-emu-ng funciona, al arrancar el
+  y que el modo de fakelib del juego en ShadowMountPlus sea «Predeterminado (Completo)». Si ampr-emu-ng funciona, al arrancar el
   juego debería salir su aviso «ampr-emu-ng: v… (zstd) running».
 - Un archivo que el juego abre con `mmap` no puede ir empaquetado. Se deja suelto volviendo a
   empaquetar con `--keep-loose "<ruta o patrón>"` (solo en la línea de comandos).
@@ -541,17 +543,24 @@ La lista completa de avisos de la ventana está en [ventana-pc.md](ventana-pc.md
 - En macOS no se pasan las pruebas del motor (`ctest`): allí el motor solo se prueba a través de las
   de la ventana.
 
+**Probado en una PS5** (firmware 13.60, ShadowMountPlus 1.7beta12, 24/11/2026):
+- Silksong empaquetado por MaxPack, en carpeta, arranca con ampr-emu-ng
+  («ampr-emu-ng: v0.5.0… (zstd) running»), carga, guarda y vuelve a cargar partida
+  ([probar-en-ps5.md](probar-en-ps5.md)).
+- ShadowMountPlus, con el modo de fakelib predeterminado («Completo»), carga el `libSceAmpr.sprx` del
+  juego y añade su backport.
+
 **Sin probar todavía:**
-- **Nada se ha probado en una PS5 real.** Ni que un juego empaquetado arranque con ampr-emu-ng
-  ([probar-en-ps5.md](probar-en-ps5.md)), ni el instalador
+- El instalador en una PS5 real
   ([lista de comprobación](instalador-ps5.md#6-lista-de-comprobación-en-consola)).
 - El instalador de Windows con doble clic y el asistente en pantalla. Si algo no va, usa el zip
   portable y cuéntalo.
 
 **Pendiente de comprobar en la consola**
 ([detalles](instalador-ps5.md#7-pendiente-de-comprobar-en-consola)):
-- **P1. El modo de fakelib de ShadowMountPlus.** Qué modo (`full`, `emulators` o `disabled`) deja que
-  el juego cargue su ampr-emu-ng. Hasta entonces, el instalador usa `full`, de forma provisional.
+- **P1. El modo de fakelib de ShadowMountPlus.** Comprobado: con `full` (el «Predeterminado
+  (Completo)» de ShadowMountPlus 1.7) el juego carga su ampr-emu-ng, así que el instalador sigue
+  usando `full`.
 - **P2. Desinstalar.** Que, después de desinstalar, el juego desaparezca de ShadowMountPlus.
 - **P3. Modo reposo.** Si el instalador sigue cargado después del reposo. Si no, se vuelve a cargar y
   la instalación sigue donde iba.
@@ -582,8 +591,10 @@ mismo autor; lo que viene de NXPress se publica aquí con la licencia de MaxPack
 
 **Proyectos con los que funciona MaxPack** (no van dentro):
 - [ampr-emu-ng](https://github.com/quer3q/ampr-emu-ng), de quer3q (GPL-3.0): el runtime que lee los
-  packs zstd en la consola. Lo descargas tú. Si compilas `maxpack.elf` con un ampr-emu-ng dentro, ese
-  `libSceAmpr.sprx` sigue con su licencia GPL-3.0.
+  packs zstd en la consola. MaxPack usa su propia copia,
+  [DeLFuS77/ampr-emu-ng](https://github.com/DeLFuS77/ampr-emu-ng), derivada de la v0.5.0 de quer3q.
+  Lo descargas tú. Si compilas `maxpack.elf` con un ampr-emu-ng dentro, ese `libSceAmpr.sprx` sigue
+  con su licencia GPL-3.0.
 - [ampr_emu](https://github.com/drakmor/ampr_emu), de drakmor (GPL-3.0): de él viene el formato del
   índice `ampr_emu.index`, que MaxPack genera para cada juego.
 - [ShadowMountPlus](https://github.com/drakmor/ShadowMountPlus), de drakmor (GPL-3.0).

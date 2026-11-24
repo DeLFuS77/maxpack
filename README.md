@@ -1,69 +1,84 @@
 # MaxPack
 
-MaxPack hace que un juego de PS5 (dump propio o homebrew) ocupe lo mínimo posible y siga siendo
-jugable en la consola. Comprime el juego en packs zstd que se leen directamente en la PS5, sin
-descomprimir nada en ella: en un RE Engine de 90 GB, por ejemplo, el juego baja a menos de la mitad.
-El diseño completo está en [docs/diseno/maxpack.md](docs/diseno/maxpack.md).
+MaxPack lets you play compressed PS5 game dumps. It packs a game you own into zstd packs that the
+console reads while you play, so nothing is decompressed on the PS5: Hollow Knight: Silksong goes from
+8.4 GB to 2.3 GB, and RESIDENT EVIL requiem from 133 GB to 79 GB, as a single `.p5z` file. You can
+keep the `.p5z` on a USB drive and play it directly on the console, with no install step.
 
-**Guía completa, de la descarga a jugar en la PS5: [docs/guia.md](docs/guia.md).**
+![The MaxPack window](docs/img/window-light.jpg)
 
-## Las tres piezas
+**Full guide, from download to playing on the PS5: [docs/guide.md](docs/guide.md).**
+Games tested so far:
+[compatibility list](https://github.com/DeLFuS77/maxpack-ps5/blob/main/docs/compatibility.md).
 
-| Pieza | Qué es | Dónde |
+## The three repositories
+
+| Piece | What it is | Where |
 |---|---|---|
-| **MaxPack** (este repositorio) | El motor de línea de comandos (`maxpack`) y la ventana para Windows, macOS y Linux | https://github.com/DeLFuS77/maxpack |
-| **MaxPack para la consola** | El payload que instala los juegos en la PS5 y los registra | https://github.com/DeLFuS77/maxpack-ps5 |
-| **ampr-emu-ng** | El runtime (`libSceAmpr.sprx`) que lee los packs zstd en la consola | https://github.com/DeLFuS77/ampr-emu-ng |
+| **MaxPack** (this repository) | The PC app (Windows, macOS, Linux), the `maxpack` command line and the guide | https://github.com/DeLFuS77/maxpack |
+| **MaxPack for the console** | The PS5 payload: mounts games, plays a `.p5z` as it is and installs games | https://github.com/DeLFuS77/maxpack-ps5 |
+| **ampr-emu-ng** | The runtime (`libSceAmpr.sprx`) that reads the zstd packs on the console | https://github.com/DeLFuS77/ampr-emu-ng |
 
-El PC comprime y verifica (este repositorio); la consola instala y juega (maxpack-ps5 con ampr-emu-ng).
-La versión de este repositorio es la del motor, la de la ventana y la de sus paquetes: **1.0.0**.
+The PC compresses and verifies (this repository); the console plays and installs (maxpack-ps5, with
+ampr-emu-ng inside). The version of this repository is the version of the engine, the window and their
+packages: **1.0.0**.
 
-## Descargar
+## Download
 
-Los paquetes están en **[Releases](https://github.com/DeLFuS77/maxpack/releases)**, con un
-`SHA256SUMS` para comprobarlos:
+Packages are in **[Releases](https://github.com/DeLFuS77/maxpack/releases)**, with a `SHA256SUMS` file
+to check them:
 
-- Windows: `maxpack-windows-x64-setup.exe` (instalador) o `maxpack-windows-x64-portable.zip`.
-- macOS: `maxpack-macos-apple-silicon.dmg` (M1 o posterior) o `maxpack-macos-intel.dmg`.
-- Linux: `maxpack-linux-x64.tar.gz`, con un `install.sh`.
+- Windows: `maxpack-windows-x64-setup.exe` (installer) or `maxpack-windows-x64-portable.zip`.
+- macOS: `maxpack-macos-apple-silicon.dmg` (M1 or later) or `maxpack-macos-intel.dmg`.
+- Linux: `maxpack-linux-x64.tar.gz`, with an `install.sh`.
 
-Los programas no están firmados (Windows lo avisa con SmartScreen, y en macOS se abren la primera vez
-con clic derecho, Abrir); la guía lo explica. La del instalador de la consola está en el README de
-maxpack-ps5.
+The programs are not signed (Windows warns you with SmartScreen, and on macOS you open them the first
+time with a right click, Open); the guide explains it. For the console, download `maxpack.elf` from the
+[maxpack-ps5 Releases](https://github.com/DeLFuS77/maxpack-ps5/releases).
 
-## Qué hace
+## Quick start
 
-- `maxpack analyze` mide cuánto gana cada técnica de compresión en un juego concreto.
-- `maxpack pack` lo empaqueta en packs zstd que ampr-emu-ng sirve en la consola: en una carpeta
-  lista para copiar a la PS5 o en un único `.p5z` para guardar en el PC.
-- `unpack`, `verify` e `info` completan el ciclo: el `.p5z` devuelve el dump original bit a bit.
-- La ventana del PC hace todo eso soltando los juegos encima (más abajo).
+1. Download MaxPack for your system and `maxpack.elf` (see above).
+2. Open MaxPack and drop your game dumps on **Compress**. Leave **Made for** on **MaxPack installer**.
+3. Choose the **Destination** (the root of an exFAT USB drive is fine) and press **Compress**. Each game
+   is verified when it finishes and ends up as `<Title> [<TITLE_ID>].p5z`.
+4. Plug the USB drive into the PS5 and send `maxpack.elf` to your ELF loader (port 9021).
+5. Open `http://<PS5 IP>:8095` in a browser, open the game and press **Play**.
 
-`maxpack` nunca escribe en el juego de origen y no toca claves, cifrado ni DRM.
+Details for each step, ShadowMountPlus and Kraken Mount, and troubleshooting: [the guide](docs/guide.md).
 
-## La ventana para el PC
+## What it does
 
-MaxPack tiene una ventana para Windows, macOS y Linux: sueltas los juegos, eliges «Instalador
-MaxPack» (un `.p5z`) o «Jugar desde el USB» (una carpeta en `homebrew/`), y los comprime y verifica.
-La guía de la ventana, con capturas, está en [docs/ventana-pc.md](docs/ventana-pc.md). El código está
-en [gui/](gui/) y usa `maxpack-core` (este mismo motor) junto a ella.
+- `maxpack analyze` measures how much each compression technique saves on a given game.
+- `maxpack pack` packs it into zstd packs that ampr-emu-ng serves on the console: into a folder ready to
+  copy to the PS5, or into a single `.p5z` file to keep on the PC.
+- `unpack`, `verify` and `info` complete the cycle: the `.p5z` gives back the original dump bit for bit.
+- The PC window does all of that by dropping the games on it. Its guide, with screenshots, is
+  [docs/pc-window.md](docs/pc-window.md); the code is in [gui/](gui/) and it uses `maxpack-core` (this
+  same engine) next to it.
 
-## Compilar
+`maxpack` never writes to the source game and does not touch keys, encryption or DRM.
 
-Hace falta git, CMake 3.20 o posterior y un compilador de C. zstd 1.5.6 y zlib 1.3.1 vienen como
-submódulos, así que hay que clonar con `--recursive` (o ejecutar `git submodule update --init`
-después de clonar).
+The format of the `.p5z` is in [docs/p5z-format.md](docs/p5z-format.md), the design in
+[docs/design/maxpack.md](docs/design/maxpack.md) and how to read the `analyze` report in
+[docs/analyze-report.md](docs/analyze-report.md). The command line is explained in
+[the guide](docs/guide.md#6-the-command-line).
+
+## Build from source
+
+You need git, CMake 3.20 or later and a C compiler. zstd 1.5.6 and zlib 1.3.1 come as submodules, so
+clone with `--recursive` (or run `git submodule update --init` after cloning).
 
 ```
-git clone --recursive <url-del-repositorio> maxpack
+git clone --recursive https://github.com/DeLFuS77/maxpack.git
 cd maxpack
 ```
 
 ### Windows
 
-Visual Studio 2022/2026 (o Build Tools) con la carga de trabajo **Desarrollo para el escritorio con
-C++**, **incluido el componente Windows 11 SDK**: sin el SDK, CMake dice "No CMAKE_C_COMPILER could be
-found". También hace falta Python 3 para las pruebas.
+Visual Studio 2022/2026 (or Build Tools) with the **Desktop development with C++** workload,
+**including the Windows 11 SDK component**: without the SDK, CMake says "No CMAKE_C_COMPILER could be
+found". Python 3 is also needed for the tests.
 
 ```
 cmake -S . -B build
@@ -71,7 +86,7 @@ cmake --build build --config Release
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-El ejecutable queda en `build\Release\maxpack.exe`.
+The executable ends up in `build\Release\maxpack.exe`.
 
 ### Linux
 
@@ -92,146 +107,51 @@ cmake --build build -j
 ctest --test-dir build --output-on-failure
 ```
 
-> GitHub Actions, en cada cambio:
-> - en Windows y Linux compila el motor y pasa todas sus pruebas (`ctest`);
-> - en Windows, Linux y macOS (Apple silicon e Intel) compila `maxpack` y la ventana, pasa las
->   pruebas de la ventana (Go) con ese motor y hace los paquetes;
-> - con una etiqueta `vX.Y.Z`, deja todo eso en un borrador de release con su `SHA256SUMS`.
+> GitHub Actions, on every change:
+> - on Windows and Linux, builds the engine and runs all its tests (`ctest`);
+> - on Windows, Linux and macOS (Apple silicon and Intel), builds `maxpack` and the window, runs the
+>   window's tests (Go) with that engine and makes the packages;
+> - with a `vX.Y.Z` tag, puts all that in a draft release with its `SHA256SUMS`.
 >
-> En macOS no se pasan las pruebas del motor (`ctest`): allí el motor solo se prueba a través de las
-> pruebas de la ventana.
+> The engine tests (`ctest`) are not run on macOS: there the engine is only tested through the window's
+> tests.
 
-## Uso
+## Tests
 
-```
-maxpack analyze <carpeta|imagen.exfat> [opciones]
+`ctest` generates synthetic exFAT images (`tests/tools/make_exfat.py`) with long and emoji names,
+fragmented files, ValidDataLength smaller than the size, truncated images and a looping FAT.
+`tools/exfat_ref.py` is an independent exFAT reader in Python, to cross-check the C reader against real
+images (`tests/tools/compare_ranges.py`).
 
-  --sample N%        porcentaje de la muestra (por defecto 2 %, mínimo 1 GiB)
-  --full             medir todo el juego, sin muestra
-  --json ARCHIVO     guardar el informe en JSON
-  --threads N        hilos (por defecto, todos los de la CPU)
-  --keep-loose GLOB  dejar suelto también lo que case (se puede repetir); '*' y '?' dentro de una
-                     carpeta, '**' cualquier número de carpetas. Ej.: --keep-loose "**/*.bnk"
-  --no-dedup         no hacer el pase de deduplicación (que lee todo el juego)
-  --no-transport     no medir el .p5z de transporte (zstd 19 con ventana larga)
-  --list             solo listar los archivos y si irían sueltos o empaquetados
-```
+## Reporting problems
 
-`--json` nunca sobrescribe el juego que se analiza ni escribe dentro de su carpeta: si apunta ahí, o
-a una carpeta que no existe, `maxpack` se niega antes de empezar.
+Open an issue: a bug, a game report for the compatibility list, or a feature request. You can write in
+English or Spanish. Security problems: see [SECURITY.md](SECURITY.md). Changes between versions are in
+[CHANGELOG.md](CHANGELOG.md).
 
-Ejemplo:
+## Legal
 
-```
-maxpack analyze "D:\juegos\MiJuego-PPSA00000.exfat" --json informe.json
-```
+MaxPack is for backing up the games you own. It does not include, and does not distribute, any
+copyrighted content: no games, no keys and nothing to get around protections. It never touches keys,
+encryption or DRM. MaxPack is not affiliated with or endorsed by Sony Interactive Entertainment.
 
-El progreso sale por stderr y el informe por stdout. Si el origen es un PKG, de momento lo rechaza
-con un aviso: los PKG llegarán en la fase 4.
+## Licence
 
-## Empaquetar, guardar y verificar
+GPL-3.0-or-later. See [LICENSE](LICENSE). The third-party software that the packages include (zstd,
+zlib, Wails and the window's Go libraries) and its licences are in
+[THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES), which is regenerated with
+`python tools/gen_third_party.py`.
 
-```
-maxpack pack <carpeta|imagen.exfat> -o <carpeta> [--level N] [--runtime libSceAmpr.sprx] [--threads N]
-maxpack pack <carpeta|imagen.exfat> -o <juego.p5z> --p5z [--level N] [--runtime ...]
-maxpack unpack <juego.p5z> --folder -o <carpeta>      # la carpeta para la consola
-maxpack unpack <juego.p5z> --original -o <carpeta>    # el dump original, bit a bit
-maxpack info <juego.p5z>
-maxpack info --json <carpeta|imagen.exfat|juego.p5z>   # lo que la ventana lee de un juego
-maxpack icon <carpeta|imagen.exfat|juego.p5z> -o <icono.png>
-maxpack verify <juego.p5z | carpeta> [--against <origen>]
-maxpack --capabilities                                 # lo que sabe hacer esta versión, en JSON
-```
+## Credits
 
-- **`pack --folder`** (por defecto) produce la carpeta que se copia a la consola:
-  - los sueltos tal cual;
-  - los packs `ampr_zstd-NNN.pak` y `ampr_zstd.index` (formato `AMPRZPK1` de ampr-emu-ng, bloques de
-    256 KiB, nivel 19 por defecto);
-  - un `ampr_emu.index` nuevo.
-- **`pack --p5z`** guarda lo mismo en un solo archivo:
-  - los packs, tal cual;
-  - lo suelto, comprimido con zstd 19 y ventana larga;
-  - el SHA-256 de cada archivo original.
-
-  Formato en [docs/formato-p5z.md](docs/formato-p5z.md).
-- **El runtime de la consola** tiene que ser el `libSceAmpr.sprx` de **ampr-emu-ng**: el ampr_emu
-  antiguo no lee packs zstd. Con `--runtime` se coloca en `fakelib/`. Si el runtime final no parece
-  leer zstd, `pack` lo avisa. También avisa si `sce_sys/param.json` no da el TITLE_ID: el instalador no
-  acepta un `.p5z` sin él.
-- **Garantías de seguridad:**
-  - nunca escribe en el origen;
-  - no acepta una salida que no esté vacía;
-  - se niega con juegos ya empaquetados o con rutas que solo se diferencian en mayúsculas;
-  - `ampr_zstd.index` se escribe el último, así que un empaquetado cortado no se monta;
-  - un `.p5z` cortado o dañado se detecta al abrirlo.
-- **Misma entrada, mismos bytes:** con las mismas opciones, el resultado es idéntico byte a byte
-  con cualquier número de hilos.
-- **Comprobaciones:**
-  - `verify` comprueba cada archivo por SHA-256 (`.p5z`), o los packs y los índices (carpeta);
-  - con `--against <origen>` compara además la carpeta con el juego original;
-  - `unpack --original` vuelve a comprobar cada SHA-256 al reconstruir.
-
-Para probar un juego empaquetado en la consola: [docs/probar-en-ps5.md](docs/probar-en-ps5.md). Para
-instalarlo desde la propia consola, con el payload de maxpack-ps5:
-[docs/instalador-ps5.md](docs/instalador-ps5.md).
-
-## Cómo leer el informe
-
-- **Suelto** es lo que la consola necesita como archivo normal: ejecutables y módulos (`eboot.bin`,
-  `*.elf`, `*.self`, `*.prx`, `*.sprx`), `*.ini`, `sce_sys/`, `sce_module/`, `fakelib*/` y los archivos
-  de AMPR. **Empaquetable** es el resto.
-- **Muestra**: se comprime una muestra determinista de ventanas de 1 MiB (por defecto el 2 %, mínimo
-  1 GiB) y se extrapola por tipo de archivo (extensión). Con `--full` se mide todo y el resultado es
-  exacto. Misma entrada y mismas opciones dan las mismas cifras con cualquier número de hilos.
-- **Configuraciones**:
-  - *v1 nivel 5 / 9 / 19 / 22*: packs compatibles con ampr-emu-ng (`AMPRZPK1`), bloques de 256 KiB.
-    El nivel 5 es el que usa Dump Forge por defecto. Se aplica la regla de Forge: un bloque que no
-    mejora va en bruto (como Forge, ya no se guarda en bruto el archivo entero si ahorra poco).
-  - *v2 bloque de 1 MiB* y *v2 diccionario*: mejoras que necesitarían un runtime nuevo (M7 y M6 del
-    diseño). El diccionario se entrena con una mitad de los datos y se mide con la otra. Con
-    cualquier diccionario, zstd renuncia a la doble pasada del primer bloque que hace en el nivel 19
-    (cuesta un 0,75–0,9 %); es un coste real de usar diccionario y por eso está incluido.
-  - *zlib 64 KiB*: referencia aproximada de `.ffpfsc` (no cuenta su tabla de bloques).
-- **Total en consola** = sueltos + empaquetado (+ índices `AMPRZPK1`/`AMPRIDX3` en v1).
-  **Ahorro** = 1 − total en consola / tamaño original.
-- **MB/s/hilo** y **Tiempo est.** son la velocidad de compresión medida y el tiempo estimado de
-  empaquetar todo el juego con los hilos usados.
-- **Deduplicación** (M4): bloques de 256 KiB y archivos idénticos, por XXH64, sobre todo el juego.
-- **Archivos < 64 KiB** (M5): comprimidos uno a uno (como v1), agrupados en bloques sólidos de
-  256 KiB, o uno a uno con diccionario.
-- **.p5z estimado**: lo que ocuparía el archivo único para el PC con v1 nivel 19 y los sueltos
-  comprimidos con zstd 19 y ventana larga. Se instala copiando los packs tal cual.
-- **Transporte**: lo que ocuparía un `.p5z` pensado solo para guardar en el PC, con todo lo
-  empaquetable comprimido como los sueltos (zstd 19, ventana larga, frames de 32 MiB). Ocupa menos,
-  pero al instalar la PS5 tendría que descomprimirlo y volver a comprimirlo en v1, lo que alarga
-  mucho la instalación. Se mide sobre una muestra de tramos de 32 MiB.
-
-Los informes de los juegos analizados están en [docs/informes/](docs/informes/).
-
-## Pruebas
-
-`ctest` genera imágenes exFAT sintéticas (`tests/tools/make_exfat.py`) con nombres largos y con emoji,
-archivos fragmentados, ValidDataLength menor que el tamaño, imágenes truncadas y una FAT con bucle.
-`tools/exfat_ref.py` es un lector exFAT independiente, en Python, para contrastar el lector en C con
-imágenes reales (`tests/tools/compare_ranges.py`).
-
-## Licencia
-
-GPL-3.0-or-later. Ver [LICENSE](LICENSE). El software de terceros que incluyen los paquetes (zstd,
-zlib, Wails y las bibliotecas de Go de la ventana) y sus licencias están en
-[THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES), que se regenera con `python tools/gen_third_party.py`.
-
-## Créditos
-
-- [zstd](https://github.com/facebook/zstd) (Meta) y [zlib](https://github.com/madler/zlib) (Jean-loup
-  Gailly y Mark Adler), la compresión.
-- [Wails](https://wails.io) y las bibliotecas de Go de la ventana (lista completa en
-  `THIRD_PARTY_NOTICES`).
-- [ampr-emu-ng](https://github.com/DeLFuS77/ampr-emu-ng), el runtime que lee los packs en la consola,
-  basado en el trabajo de quer3q y de drakmor (ampr_emu); y ShadowMountPlus y
-  [Kraken Mount](https://github.com/quer3q/kraken-mount), que montan el juego en la consola.
-- La ventana del PC sigue el diseño de [NXPress](https://github.com/DeLFuS77/NXPress).
-
-MaxPack no está afiliado ni respaldado por Sony Interactive Entertainment. No incluye juegos, claves
-ni nada para saltarse protecciones: es para comprimir tus propios dumps y homebrew, y nunca toca claves,
-cifrado ni DRM.
+- **quer3q**: [Kraken Mount](https://github.com/quer3q/kraken-mount) (the base of MaxPack for the
+  console), [ampr-emu-ng](https://github.com/quer3q/ampr-emu-ng) (the runtime that DeLFuS77/ampr-emu-ng
+  builds on) and [PS5 Dump Forge](https://github.com/quer3q/ps5-dump-forge) (whose zstd packs MaxPack
+  writes).
+- **drakmor**: [ShadowMountPlus](https://github.com/drakmor/ShadowMountPlus) and
+  [ampr_emu](https://github.com/drakmor/ampr_emu), where the ampr-emu-ng runtime and the
+  `ampr_emu.index` format come from.
+- [zstd](https://github.com/facebook/zstd) (Meta) and [zlib](https://github.com/madler/zlib)
+  (Jean-loup Gailly and Mark Adler), the compression.
+- [Wails](https://wails.io) and the window's Go libraries (full list in `THIRD_PARTY_NOTICES`).
+- The PC window follows the design of [NXPress](https://github.com/DeLFuS77/NXPress).

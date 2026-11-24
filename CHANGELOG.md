@@ -8,15 +8,22 @@ All notable changes to MaxPack are listed here. The format follows
 
 ### Changed
 
-- **Packing is about twice as fast.** The engine used to read a batch of blocks and compute their
-  SHA-256 on one thread, then start threads to compress the batch and wait for the slowest one, and
-  then write it on one thread, so most cores sat idle most of the time. Now the three overlap: one
-  thread reads ahead and hashes, a pool of threads that lives for the whole pack compresses, and the
-  blocks are written in order as they are ready. The loose files of a `.p5z` (zstd frames of up to
-  32 MiB) go the same way, and one file's frames no longer wait for the previous file's. On a
-  32-thread PC, a generated 3 GB game packs to a `.p5z` in 21.6 s instead of 43.1 s at level 19
-  (139 MB/s instead of 70; the packs alone at 183 MB/s instead of 89) and in 16.0 s instead of
-  29.7 s at level 3.
+- **Packing is more than twice as fast.** The engine used to read a batch of blocks and compute
+  their SHA-256 on one thread, then start threads to compress the batch and wait for the slowest
+  one, and then write it on one thread, so most cores sat idle most of the time. Now the three
+  overlap: one thread reads ahead and hashes, a pool of threads that lives for the whole pack
+  compresses, and the blocks are written in order as they are ready. The loose files of a `.p5z`
+  (zstd frames of up to 32 MiB) go the same way, and one file's frames no longer wait for the
+  previous file's.
+- **SHA-256 uses the CPU's SHA instructions** where there are any (64-bit x86 PCs: AMD since Zen,
+  Intel since Ice Lake and the Atom cores since Goldmont), about five times faster than before; the
+  other CPUs, and the console, keep the portable code. With the pipeline the hashing had become what
+  held the packing back. It also speeds up `verify`, `unpack` and every other check.
+- Together, on a 32-thread PC, a generated 3 GB game packs to a `.p5z` in 15.9 s instead of 35.5 s
+  at level 19 (the packs alone at 258 MB/s instead of 106, with the CPU 90 % busy instead of 39 %)
+  and in 7.4 s instead of 25.7 s at level 3. The loose files of a `.p5z` are always compressed at
+  level 19 in frames of up to 32 MiB, and no frame can be cut into parts without changing the
+  bytes, so a game with large loose files gains less.
 - **The output is the same, byte for byte.** Same chunks in the same order, same volumes, same
   index and same SHA-256s as 1.0.1, with any number of threads: new tests pack the test images and a
   synthetic game (many small files, a few large ones, frames of exactly 32 MiB and several volumes)

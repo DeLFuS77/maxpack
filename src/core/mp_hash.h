@@ -19,6 +19,11 @@ void mp_sha256_init(mp_sha256 *s);
 void mp_sha256_update(mp_sha256 *s, const void *p, size_t n);
 void mp_sha256_final(mp_sha256 *s, uint8_t out[32]);
 void mp_sha256_hex(const uint8_t d[32], char out[65]);
+// 1 if SHA-256 runs on the CPU's SHA instructions (64-bit x86 PCs that have them), 0 if on the
+// portable code; the digests are the same. mp_sha256_use_accel(0) forces the portable code (for the
+// tests) and mp_sha256_use_accel(1) goes back to the instructions where there are any.
+int mp_sha256_accel(void);
+void mp_sha256_use_accel(int on);
 
 // 64-bit FNV-1a. Careful: AMPRZPK1 uses the standard basis and AMPRIDX3 the one from build_ampr_index.py;
 // mixing them already broke games in exFAT2AMPR.

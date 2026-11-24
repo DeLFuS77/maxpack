@@ -18,6 +18,14 @@
 //   ?section=rename     the section open at the start (compress, rename, details, settings...)
 //   ?threads=24         the threads a measure found (the Threads setting); default all of them
 //   ?nodest=1           no destination chosen yet (Measure this PC then measures no disk)
+//   ?places=menu,files  the places of MaxPack in the Explorer already there (menu, sendto, files)
+//   ?moved=sendto       places there for another copy of MaxPack
+//   ?other=1            another program still opens .p5z files
+//   ?portable=1         the portable version: Settings › Windows Explorer says it writes nothing
+//   ?explorer=none      a system without the Explorer (macOS, Linux): no Windows Explorer in Settings
+//   ?opened=1           MaxPack opened by a double click on a .p5z: its card in Details
+//   ?handoff=details    a .p5z handed over by another MaxPack a moment after the page opens, as a
+//                       double click while the window is open does (or verify, from the menu)
 // Start runs a queue made up here: each game packs and verifies in a few seconds, the games added
 // meanwhile join it, and the card of the end shows. Compare levels and Measure this PC tell made-up
 // rows over a few seconds. Settings are kept in memory (they are lost
@@ -51,6 +59,20 @@ const mock = `
     "D:\\\\more\\\\Lost Signal-PPSA10004": { TitleID: "PPSA10004", Name: "Lost Signal", Version: "01.000.002", ContentID: "JP0004-PPSA10004_00-LOSTSIGNAL000000", Kind: "folder", OriginalSize: 21400000000, HasZstdRuntime: true, Icon: "", Packed: false },
   };
   const first = Object.keys(games).slice(0, 3);
+  // a .p5z, for Details, Verify and Decompress
+  const p5z = "E:\\\\Starfall Odyssey [PPSA10001].p5z";
+  games[p5z] = { TitleID: "PPSA10001", Name: "Starfall Odyssey", Version: "01.000.010", ContentID: "EP0001-PPSA10001_00-STARFALL00000000", Kind: "p5z", OriginalSize: 8390000000, HasZstdRuntime: true, Icon: "", Packed: true,
+    InstallSize: 412000000, P5zSize: 3618000000, Files: 2165, PackedFiles: 2119, Volumes: 2, HasRuntime: true };
+  // MaxPack in the Explorer: each place "" (not there), "here" or "moved"
+  const listed = name => (query.get(name) || "").split(",");
+  const explorer = { available: query.get("explorer") !== "none", menu: "", sendTo: "", files: "", filesOther: !!query.get("other") };
+  for (const [place, field] of [["menu", "menu"], ["sendto", "sendTo"], ["files", "files"]]) {
+    if (listed("places").includes(place)) explorer[field] = "here";
+    if (listed("moved").includes(place)) explorer[field] = "moved";
+  }
+  if (!explorer.available) Object.assign(explorer, { menu: "", sendTo: "", files: "", filesOther: false });
+  const handoff = query.get("handoff") === "verify" ? "verify" : "details";
+  if (query.get("handoff")) setTimeout(() => emit("files:add", { compress: [], verify: handoff === "verify" ? [p5z] : [], details: handoff === "details" ? [p5z] : [], show: handoff }), 1500);
   // the events of the window, and a queue made up: each game packs, verifies and ends well
   const handlers = {};
   const emit = (event, data) => (handlers[event] || []).forEach(handler => handler(data));
@@ -122,7 +144,16 @@ const mock = `
   });
   const App = {
     Setup: async () => Object.assign({ version: "1.0.2-mock", coreVersion: "maxpack 1.0.2", lang: settings.Lang || "en", theme: "system", coreError: "", builtInRuntime: "", builtInRuntimeVersion: "",
-      logFile: "C:\\\\Users\\\\user\\\\AppData\\\\Roaming\\\\MaxPack\\\\maxpack.log", templates, cpuThreads: 32 }, builtIn),
+      logFile: "C:\\\\Users\\\\user\\\\AppData\\\\Roaming\\\\MaxPack\\\\maxpack.log", templates, cpuThreads: 32, explorer: explorer.available, portable: !!query.get("portable") }, builtIn),
+    ExplorerPlaces: async () => Object.assign({}, explorer),
+    SetExplorerPlace: async (place, on, texts) => {
+      if (query.get("portable")) throw new Error("the portable MaxPack writes nothing in Windows: install MaxPack to add it to the Explorer");
+      const field = { menu: "menu", sendto: "sendTo", files: "files" }[place];
+      explorer[field] = on ? "here" : "";
+      if (place === "menu" && on) console.log("menu", texts);
+      return Object.assign({}, explorer);
+    },
+    RelabelExplorerMenu: async texts => { console.log("menu relabelled", texts); },
     CompareLevels: async item => {
       const original = item.OriginalSize || 1e10, sample = Math.max(1 << 30, original * 0.02);
       const rows = [[3, 0.664, 0.671, 1480], [9, 0.627, 0.634, 610], [15, 0.604, 0.611, 205], [19, 0.588, 0.595, 118]].map(([level, p5z, folder, mb]) => {
@@ -143,7 +174,7 @@ const mock = `
     CancelTool: async () => { if (tool) tool.cancelled = true; },
     GetSettings: async () => Object.assign({}, settings),
     SetSettings: async next => { Object.assign(settings, next); if (!validTemplate(settings.NameTemplate)) settings.NameTemplate = templates[0]; },
-    PendingFiles: async () => (query.get("empty") ? null : { compress: first, decompress: [] }),
+    PendingFiles: async () => (query.get("opened") ? { compress: [], verify: [], details: [p5z], show: "details" } : query.get("empty") ? null : { compress: first, verify: [], details: [], show: "" }),
     Expand: async paths => paths,
     Describe: async file => Object.assign({ Path: file }, games[file] || { TitleID: "PPSA00000", Name: file.split(/[\\\\/]/).pop(), Version: "01.000.000", Kind: "folder", OriginalSize: 1e9, Packed: false }),
     Details: async file => Object.assign({ Path: file, InstallSize: 7900000000, P5zSize: 2400000000, Files: 2165, PackedFiles: 2119, Volumes: 1, HasRuntime: true }, games[file] || {}),

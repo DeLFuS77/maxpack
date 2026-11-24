@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"sort"
 	"strings"
@@ -514,7 +515,8 @@ func TestPageSections(t *testing.T) {
 		t.Error("the cancel button is missing")
 	}
 	for _, id := range []string{"settings", "options", "files", "done-dialog", "replace-dialog", "fat32-dialog", "runtime-dialog", "block-dialog", "warn-dialog", "close-dialog",
-		"delete-dialog", "space-dialog", "leftover-dialog", "delete-originals", "pref-low", "pref-delete", "pref-forgood", "template", "pref-report", "done-report"} {
+		"delete-dialog", "space-dialog", "leftover-dialog", "delete-originals", "pref-low", "pref-delete", "pref-forgood", "template", "pref-report", "done-report",
+		"pref-explorer", "explorer-portable", "explorer-for", "pref-menu", "pref-sendto", "pref-files", "menu-status", "sendto-status", "files-status"} {
 		if ids[id] == nil {
 			t.Errorf("#%s is missing", id)
 		}
@@ -540,4 +542,24 @@ func TestPageSections(t *testing.T) {
 			}
 		}
 	})
+}
+
+// TestPageCallsWindow: every method the page calls (go.call("…") in app.js) is one the window binds,
+// a method of App, so none fails only once the window runs.
+func TestPageCallsWindow(t *testing.T) {
+	app := reflect.TypeOf(&App{})
+	calls := regexp.MustCompile(`go\.call\("([A-Za-z]+)"`).FindAllStringSubmatch(readPage(t, "app.js"), -1)
+	if len(calls) < 20 {
+		t.Fatalf("the page calls only %d methods", len(calls))
+	}
+	for _, call := range calls {
+		if _, ok := app.MethodByName(call[1]); !ok {
+			t.Errorf("the page calls %s, which App does not have", call[1])
+		}
+	}
+	for _, name := range []string{"ExplorerPlaces", "SetExplorerPlace", "RelabelExplorerMenu"} {
+		if !strings.Contains(readPage(t, "app.js"), `go.call("`+name+`"`) {
+			t.Errorf("the page does not call %s", name)
+		}
+	}
 }

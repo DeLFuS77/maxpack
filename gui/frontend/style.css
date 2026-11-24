@@ -324,6 +324,13 @@ input.switch:disabled { opacity: .45; cursor: default; }
 label.check.top { margin-top: 0; align-items: flex-start; }
 label.check.top input { margin-top: 2px; }
 .game button.link.report, .game button.link.compare { margin-top: 6px; font-size: 12px; }
+/* the card of a .p5z in Details, as a double click on one opens it: Verify and Decompress */
+.card-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.card-actions button { font-size: 12px; padding: 5px 12px; }
+.card-actions button:first-child { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+/* Settings › Windows Explorer: what needs a look under a place */
+.pref-text small.pref-status { color: var(--warn); margin-top: 4px; }
+.pref-text small.pref-status:empty { display: none; }
 /* Compare the levels and Measure this PC: a table that fills as the engine tells each row */
 .tool-dialog { max-width: 580px; border-top: 3px solid var(--accent); }
 .tool-dialog .bar.total { max-width: none; margin: 10px 0 4px; }

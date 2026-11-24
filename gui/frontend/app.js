@@ -75,6 +75,11 @@ const state = {
   askedRuntime: false,
   // Compare the levels or Measure this PC, at work or the last one: see compareLevels and measurePC
   tool: null,
+  // MaxPack in the Explorer of Windows, as ExplorerPlaces tells it: each place "" (not there),
+  // "here" (for this copy) or "moved" (for another copy), and whether .p5z opens with another program
+  explorer: { available: false, menu: "", sendTo: "", files: "", filesOther: false },
+  // a place of the Explorer is being added or removed: its switches wait
+  explorerBusy: false,
 };
 
 // whether a queue is running: the window took it, and has not said its end yet
@@ -135,6 +140,8 @@ function newRow(path, section) {
   tr.querySelector(".remove button").addEventListener("click", () => removeRow(row));
   tr.querySelector(".report").addEventListener("click", () => copyReport([row], row.section));
   tr.querySelector(".compare").addEventListener("click", () => compareLevels(row));
+  tr.querySelector(".to-verify").addEventListener("click", () => takeTo(row, "verify"));
+  tr.querySelector(".to-decompress").addEventListener("click", () => takeTo(row, "decompress"));
   // the entrance of a row and the pop of what it saved play once: a row put back in the list
   // (every render puts them all back) does not play them again
   tr.addEventListener("animationend", event => {
@@ -197,21 +204,42 @@ async function expandAndAdd(paths, section) {
   return addPaths(section, found);
 }
 
-// the section open shows what came; when it took nothing and another did, that one opens
-function showAdded(compress, decompress) {
-  const took = { compress, decompress };
+// the section open shows what came; when it took nothing and another did, that one opens; the one
+// the Explorer asked for (its menu, a double click on a .p5z) opens whatever was open, with its game
+function showAdded(took, asked, paths) {
+  const count = Object.values(took).reduce((sum, n) => sum + n, 0);
+  if (asked && state.lists[asked]) {
+    if (state.section !== asked) setSection(asked);
+    const wanted = new Set((paths || []).map(pathKey));
+    const row = state.lists[asked].find(row => wanted.has(pathKey(row.path)));
+    if (row && row.tr.scrollIntoView) row.tr.scrollIntoView({ block: "nearest" });
+    return;
+  }
   if (took[state.section]) return;
-  if (compress) setSection("compress");
-  else if (decompress) setSection("decompress");
-  if (compress + decompress) toast(t("added")(compress + decompress));
+  const section = ["compress", "decompress", "verify", "details"].find(name => took[name]);
+  if (section) setSection(section);
+  if (count) toast(t("added")(count));
 }
 
-// files that reach the window: given to MaxPack, or to another MaxPack while this one was open
+// the spaces the files given to MaxPack go to (see routing.go)
+const given = ["compress", "verify", "details"];
+
+// files that reach the window: given to MaxPack (dropped on it, sent to it, from the menu of the
+// Explorer or a .p5z opened with a double click), or to another MaxPack while this one was open
 async function addSent(files) {
   if (!files) return;
-  const compress = await expandAndAdd(files.compress, "compress");
-  const decompress = await expandAndAdd(files.decompress, "decompress");
-  showAdded(compress, decompress);
+  const took = {};
+  for (const section of given) took[section] = await expandAndAdd(files[section], section);
+  showAdded(took, files.show, files.show ? files[files.show] : null);
+}
+
+// the Verify and Decompress of the card of a .p5z in Details: the game goes to that section, which
+// opens with it
+function takeTo(row, section) {
+  addPaths(section, [row.path]);
+  setSection(section);
+  const there = state.lists[section].find(other => pathKey(other.path) === pathKey(row.path));
+  if (there && there.tr.scrollIntoView) there.tr.scrollIntoView({ block: "nearest" });
 }
 
 // files dropped on the window: to the section open in Verify and Details; else to
@@ -225,7 +253,7 @@ async function dropped(paths) {
   const compress = await expandAndAdd(paths, "compress");
   const decompress = await expandAndAdd(paths, "decompress");
   if (!compress && !decompress) toast(t("dropNothing"));
-  else showAdded(compress, decompress);
+  else showAdded({ compress, decompress });
 }
 
 function removeRow(row) {
@@ -354,6 +382,9 @@ function paintFacts(row) {
   fact(facts, t("factOriginal"), size(game.OriginalSize));
   fact(facts, t("factInstalled"), size(game.InstallSize));
   if (game.P5zSize) fact(facts, ".p5z", size(game.P5zSize));
+  // what it saves: the .p5z, or the compressed folder installed, against the original
+  const made = game.P5zSize || (game.Packed ? game.InstallSize : 0);
+  if (made && game.OriginalSize > made) fact(facts, t("factSaved"), t("smallerBy")(Math.round((1 - made / game.OriginalSize) * 100)) + " · " + size(game.OriginalSize - made));
   fact(facts, t("factPacked"), game.Packed ? t("yes") : t("no"));
   if (game.Packed) fact(facts, t("factPacks"), t("packsOf")(game.PackedFiles || 0, game.Volumes || 0));
   fact(facts, "ampr-emu-ng", game.HasZstdRuntime ? t("runtimeZstd") : game.HasRuntime ? t("runtimeOld") : t("runtimeNone"));
@@ -396,6 +427,11 @@ function paintRow(row) {
   const report = tr.querySelector(".report");
   report.hidden = row.section !== "details" || !game;
   report.textContent = t("copyReport");
+  // the card of a .p5z in Details (as a double click on one opens it): Verify and Decompress
+  const card = tr.querySelector(".card-actions");
+  card.hidden = !(row.section === "details" && game && game.Kind === "p5z");
+  card.querySelector(".to-verify").textContent = t("verify");
+  card.querySelector(".to-decompress").textContent = t("decompress");
   const compare = tr.querySelector(".compare");
   compare.hidden = !canCompare(row) || (running() && state.job.rows.includes(row));
   compare.textContent = t("compareRow");
@@ -603,6 +639,54 @@ function paintSettings() {
   $("about-core").classList.toggle("bad", !!(setup && setup.coreError));
   const tile = $("settings-tile");
   if (!tile.firstChild) tile.append(document.querySelector('nav button[data-section="settings"] svg').cloneNode(true));
+  paintExplorer();
+}
+
+// ---- MaxPack in the Explorer of Windows (Settings › Windows Explorer) -------------------------------
+
+// the switches of the places, the names the window gives them, and where ExplorerPlaces tells each
+const explorerPlaces = [["menu", "menu", "menu"], ["sendto", "sendto", "sendTo"], ["files", "files", "files"]];
+
+// each switch is on while its place is there for this copy of MaxPack; one there for another copy
+// (or for this one before it was moved) says so, and turning it on writes it for this one. The
+// portable version writes nothing in Windows: its switches stay off, and it says why
+function paintExplorer() {
+  const setup = state.setup, places = state.explorer, portable = !!(setup && setup.portable);
+  $("pref-explorer").hidden = !(setup && setup.explorer);
+  $("explorer-portable").hidden = !portable;
+  $("explorer-for").hidden = portable;
+  for (const [id, , field] of explorerPlaces) {
+    const where = places[field] || "";
+    $("pref-" + id).checked = where === "here";
+    $("pref-" + id).disabled = portable || !go.has() || !!state.explorerBusy;
+    $(id + "-status").textContent = where === "moved" ? t("explorerMoved") : id === "files" && where === "here" && places.filesOther ? t("explorerOther") : "";
+  }
+}
+// the entries of the menu of the Explorer, in the language of the page
+const menuTexts = () => ({ compress: t("menuCompress"), verify: t("menuVerify"), details: t("menuDetails") });
+async function setExplorer(place, on) {
+  state.explorerBusy = true;
+  paintExplorer();
+  try {
+    state.explorer = await go.call("SetExplorerPlace", place, on, menuTexts());
+  } catch (error) {
+    toast(message(error));
+    state.explorer = await go.call("ExplorerPlaces").catch(() => state.explorer);
+  } finally {
+    state.explorerBusy = false;
+  }
+  render();
+}
+// the menu speaks the language of the page: the installer wrote it in its own, and the language
+// may change
+function relabelMenu() {
+  if (state.explorer.menu === "here") go.call("RelabelExplorerMenu", menuTexts()).catch(() => { });
+}
+async function loadExplorer() {
+  if (!state.setup || !state.setup.explorer) return;
+  state.explorer = await go.call("ExplorerPlaces").catch(() => state.explorer);
+  relabelMenu();
+  render();
 }
 
 function paintStart() {
@@ -1456,6 +1540,7 @@ function wire() {
   });
   $("pref-measure").addEventListener("click", measurePC);
   $("pref-threads-all").addEventListener("click", () => { keep({ Threads: 0 }); render(); });
+  for (const [id, place] of explorerPlaces) $("pref-" + id).addEventListener("change", () => setExplorer(place, $("pref-" + id).checked));
   for (const name of ["levels", "measure"]) {
     $(name + "-cancel").addEventListener("click", cancelTool);
     $(name + "-dialog").addEventListener("close", cancelTool);
@@ -1487,7 +1572,7 @@ function wire() {
     button.dataset.lang = code;
     if (code) button.textContent = name; else button.dataset.t = "themeSystem";
     if (code) button.lang = languageInfo(code)[2] || code;
-    button.addEventListener("click", () => { keep({ Lang: code }); state.lang = chooseLanguage(code); tellCloseTexts(); render(); });
+    button.addEventListener("click", () => { keep({ Lang: code }); state.lang = chooseLanguage(code); tellCloseTexts(); relabelMenu(); render(); });
     return button;
   }));
   for (const button of document.querySelectorAll("button[data-theme]")) button.addEventListener("click", () => { keep({ Theme: button.dataset.theme }); applyTheme(); render(); });
@@ -1524,6 +1609,7 @@ async function main() {
   banner(setup && setup.coreError ? (setup.coreOtherVersion ? coreText(setup) : t("coreMissing") + " " + setup.coreError) : "");
   render();
   addSent(await go.call("PendingFiles").catch(() => null));
+  loadExplorer();
   offerLeftovers();
 }
 

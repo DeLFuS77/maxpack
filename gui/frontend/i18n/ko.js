@@ -42,7 +42,7 @@ texts.ko = {
 
   madeFor: "용도",
   forInstaller: "MaxPack 설치 프로그램",
-  forInstallerHint: ".p5z: 가장 작은 형태로, MaxPack 설치 프로그램으로 PS5에 설치합니다.",
+  forInstallerHint: ".p5z: 가장 작은 형태입니다. 콘솔용 MaxPack으로 PS5에서 그대로 플레이하거나, 그 설치 프로그램으로 설치합니다.",
   forUsb: "USB에서 실행",
   forUsbHint: "homebrew/ 안의 폴더로, ShadowMountPlus에서 바로 사용할 수 있습니다.",
   level: "압축 수준",
@@ -65,6 +65,8 @@ texts.ko = {
   destOriginalHint: "각 게임은 제목과 ID가 붙은 폴더에 저장됩니다.",
   runtimeChoose: "libSceAmpr.sprx 선택…",
   runtimeChange: "변경…",
+  runtimeChooseOther: "다른 파일 선택…",
+  runtimeBuiltIn: version => "내장: ampr-emu-ng " + version,
   runtimeUnset: "선택 안 함: 런타임이 없는 게임은 실행되지 않습니다",
   runtimeHint: "zstd를 읽을 수 있는 ampr-emu-ng의 libSceAmpr.sprx입니다. 런타임이 없는 게임의 fakelib/에 들어갑니다.",
   verifyHint: "모든 파일을 읽어 SHA-256과 대조합니다.",
@@ -77,6 +79,7 @@ texts.ko = {
   themeDark: "다크",
   runtimeTitle: "런타임이 없는 게임용 런타임",
   forget: "제거",
+  runtimeUseBuiltIn: "내장된 것 사용",
   prefAbout: "정보",
   legal: "MaxPack은 DeLFuS77이 만든 자유 소프트웨어(GPL-3.0 이상)이며 어떠한 보증도 제공하지 않습니다.",
 

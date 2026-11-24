@@ -7,6 +7,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/DeLFuS77/maxpack/gui/bundled"
 	"github.com/DeLFuS77/maxpack/gui/core"
 	"github.com/DeLFuS77/maxpack/gui/internal/system"
 	"github.com/DeLFuS77/maxpack/gui/jobs"
@@ -32,8 +33,8 @@ type App struct {
 	// and whether the user said to cancel and close
 	closeAsk, closeYes, closeNo string
 	// the language the page speaks (TellLanguage), for what the Go side says
-	pageLang string
-	closeConfirmed              atomic.Bool
+	pageLang       string
+	closeConfirmed atomic.Bool
 
 	// what the tests stand in for; the zero values are the real ones
 	emit    func(event string, data any)
@@ -48,6 +49,11 @@ type App struct {
 
 	notices      sync.Once
 	noticesReady bool
+
+	// the ampr-emu-ng that comes with MaxPack, written once to the folder of the settings (see
+	// builtInRuntime): its path, "" when it could not be written
+	runtimeOnce sync.Once
+	runtimePath string
 }
 
 // Setup is what the page shows before anything is chosen.
@@ -60,10 +66,17 @@ type Setup struct {
 	CoreOtherVersion bool   `json:"coreOtherVersion"`
 	Lang             string `json:"lang"`
 	Theme            string `json:"theme"`
+	// BuiltInRuntime is the libSceAmpr.sprx of the ampr-emu-ng that comes with MaxPack, in the
+	// folder of the settings, and BuiltInRuntimeVersion its release; both "" when it could not be
+	// written there (then a game needs one chosen in Settings, as before)
+	BuiltInRuntime        string `json:"builtInRuntime"`
+	BuiltInRuntimeVersion string `json:"builtInRuntimeVersion"`
 }
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	// the ampr-emu-ng that comes with MaxPack is written now, before anything asks for it
+	a.builtInRuntime()
 	// what the window was started with waits for the page, as what other MaxPack send does
 	a.receive(a.files)
 	a.files = nil
@@ -78,6 +91,9 @@ func (a *App) startup(ctx context.Context) {
 func (a *App) Setup() Setup {
 	saved, _ := settings.Load()
 	setup := Setup{Version: version, Lang: saved.EffectiveLang(), Theme: saved.Theme}
+	if builtIn := a.builtInRuntime(); builtIn != "" {
+		setup.BuiltInRuntime, setup.BuiltInRuntimeVersion = builtIn, bundled.Version()
+	}
 	path, err := core.Locate()
 	if err != nil {
 		setup.CoreError = err.Error()
@@ -92,6 +108,18 @@ func (a *App) Setup() Setup {
 		setup.CoreError, setup.CoreOtherVersion = "maxpack-core is of another version", true
 	}
 	return setup
+}
+
+// builtInRuntime is the path of the ampr-emu-ng that comes with MaxPack: it is written to the folder
+// of the settings once a run, only when it is not there or is not this one (bundled.Install), so
+// the engine can be given it. "" when it could not be written.
+func (a *App) builtInRuntime() string {
+	a.runtimeOnce.Do(func() {
+		if folder, err := settings.Dir(); err == nil {
+			a.runtimePath, _ = bundled.Install(folder)
+		}
+	})
+	return a.runtimePath
 }
 
 // GetSettings gives what the user chose in earlier runs.

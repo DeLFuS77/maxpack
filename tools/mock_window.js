@@ -6,6 +6,9 @@
 //   ?system=pt-BR,en    the languages the "system" has (navigator.languages); default the browser's
 //   ?lang=ja            a language already chosen in Settings (the Lang setting); default none
 //   ?empty=1            no games in the list
+//   ?mode=folder        "Play from the USB" chosen (the Mode setting); default the installer (.p5z)
+//   ?runtime=<path>     a libSceAmpr.sprx chosen in Settings (the Runtime setting); default none
+//   ?nobuiltin=1        the window could not write the ampr-emu-ng that comes with MaxPack
 // Settings are kept in memory (they are lost when the page is reloaded), so a choice made in
 // Settings is looked at in the same page. Nothing here is part of MaxPack.
 "use strict";
@@ -24,14 +27,15 @@ const mock = `
     Object.defineProperty(navigator, "languages", { get: () => languages });
     Object.defineProperty(navigator, "language", { get: () => languages[0] });
   }
-  const settings = { Lang: query.get("lang") || "", Theme: "system", Runtime: "", LastDest: "", Mode: "p5z", Level: 19 };
+  const settings = { Lang: query.get("lang") || "", Theme: "system", Runtime: query.get("runtime") || "", LastDest: "", Mode: query.get("mode") === "folder" ? "folder" : "p5z", Level: 19 };
+  const builtIn = query.get("nobuiltin") ? {} : { builtInRuntime: "C:\\\\Users\\\\user\\\\AppData\\\\Roaming\\\\MaxPack\\\\ampr-emu-ng\\\\libSceAmpr.sprx", builtInRuntimeVersion: "v0.5.1-maxpack.1" };
   const games = {
     "D:\\\\dumps\\\\Starfall.Odyssey-PPSA10001": { TitleID: "PPSA10001", Name: "Starfall Odyssey", Version: "01.000.010", Kind: "folder", OriginalSize: 8390000000, HasZstdRuntime: false, Icon: "", Packed: false },
     "D:\\\\dumps\\\\Iron.Harbor-PPSA10002.exfat": { TitleID: "PPSA10002", Name: "Iron Harbor", Version: "01.000.021", Kind: "image", OriginalSize: 180400000000, HasZstdRuntime: true, Icon: "", Packed: false },
     "D:\\\\dumps\\\\Neon Meridian-PPSA10003": { TitleID: "PPSA10003", Name: "Neon Meridian", Version: "01.000.000", Kind: "folder", OriginalSize: 133590000000, HasZstdRuntime: false, Icon: "", Packed: false },
   };
   const App = {
-    Setup: async () => ({ version: "1.0.0-mock", coreVersion: "maxpack 1.0.0", lang: settings.Lang || "en", theme: "system", coreError: "" }),
+    Setup: async () => Object.assign({ version: "1.0.1-mock", coreVersion: "maxpack 1.0.1", lang: settings.Lang || "en", theme: "system", coreError: "", builtInRuntime: "", builtInRuntimeVersion: "" }, builtIn),
     GetSettings: async () => Object.assign({}, settings),
     SetSettings: async next => { Object.assign(settings, next); },
     PendingFiles: async () => (query.get("empty") ? null : { compress: Object.keys(games), decompress: [] }),

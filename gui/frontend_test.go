@@ -285,6 +285,71 @@ func literalEnd(s string) (int, bool) {
 	return len(s), false
 }
 
+// runtimeChecks runs in node over the folder of the page: it loads base.js, en.js and app.js without
+// a window (no DOM: the page does not start), puts stand-ins for the window and the dialogs, and
+// prints one line for each case where the list warns of the runtime, or the dialog that asks for it
+// opens, when it should not, or the other way round. argv: the folder.
+const runtimeChecks = `
+"use strict";
+const fs = require("fs"), path = require("path"), vm = require("vm");
+const dir = process.argv[1];
+const element = () => ({ replaceChildren() {}, append() {}, classList: { toggle() {}, add() {}, remove() {} }, style: {},
+  dataset: {}, content: { firstElementChild: { cloneNode: () => element() } }, querySelector: () => element() });
+const context = { navigator: {}, console, Promise };
+context.window = context;
+context.document = { readyState: "loading", addEventListener() {}, getElementById: () => element(), querySelectorAll: () => [], querySelector: () => element() };
+vm.createContext(context);
+let source = "";
+for (const name of ["i18n/base.js", "i18n/en.js", "app.js"]) source += fs.readFileSync(path.join(dir, name), "utf8") + "\n;\n";
+vm.runInContext(source, context);
+vm.runInContext(` + "`" + `(async () => {
+  const problems = [];
+  const game = { Name: "A", TitleID: "PPSA10001", Kind: "folder", Packed: false, HasZstdRuntime: false, OriginalSize: 10 };
+  const row = () => ({ section: "compress", game, warnings: [], state: "", detail: "" });
+  let asked = 0;
+  ask = () => { asked++; return Promise.resolve("without"); };
+  line = () => ({});
+  // the plans say needs_runtime whatever the mode: what the page does with them is what is checked
+  window.go = { main: { App: { Plan: async () => [{ Item: { Name: "A", TitleID: "PPSA10001" }, Warnings: ["needs_runtime"], Block: "" }] } } };
+  // mode, the runtime chosen in Settings, the built-in one, and whether the list warns and the dialog opens
+  for (const [mode, chosen, builtIn, want] of [
+    ["p5z", "", "", false], ["p5z", "", "B", false], ["p5z", "C", "", false],
+    ["folder", "", "", true], ["folder", "", "B", false], ["folder", "C", "", false], ["folder", "C", "B", false],
+  ]) {
+    state.settings = Object.assign({}, state.settings, { Mode: mode, Runtime: chosen });
+    state.setup = { builtInRuntime: builtIn, builtInRuntimeVersion: builtIn ? "v0.5.1-maxpack.1" : "" };
+    state.askedRuntime = false;
+    const warned = rowWarnings(row()).includes(t("warn_needs_runtime"));
+    asked = 0;
+    await plan("compress", [row()], { Mode: mode, Runtime: chosen });
+    const say = "mode " + mode + ", chosen " + JSON.stringify(chosen) + ", built-in " + JSON.stringify(builtIn) + ": ";
+    if (warned !== want) problems.push(say + (warned ? "the list warns of the runtime" : "the list does not warn of the runtime"));
+    if ((asked > 0) !== want) problems.push(say + (asked ? "the dialog asks for ampr-emu-ng" : "the dialog does not ask for ampr-emu-ng"));
+  }
+  return problems.join("\\n");
+})()` + "`" + `, context).then(out => console.log(out), error => console.log("fails: " + error.stack));
+`
+
+// TestPageRuntimeWarnings: the list warns that a game lacks ampr-emu-ng, and the dialog asks for it,
+// only for a folder ("Play from the USB") with no runtime at all: never for a .p5z, which MaxPack for
+// the console gives its own when it plays it, and never while the built-in one or one chosen in
+// Settings is there.
+func TestPageRuntimeWarnings(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("no node: the page's script cannot be run")
+	}
+	out, err := exec.Command(node, "-e", runtimeChecks, "frontend").CombinedOutput()
+	if err != nil {
+		t.Fatalf("%v: %s", err, out)
+	}
+	for _, problem := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if problem != "" {
+			t.Error(problem)
+		}
+	}
+}
+
 // TestPageSafe: the page never writes data as HTML. innerHTML takes only fixed templates (a
 // string literal, with nothing put in it), as NXPress does; nothing else that parses HTML is
 // used; names and paths go in with textContent. And it loads nothing from the network.

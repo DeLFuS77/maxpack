@@ -45,7 +45,7 @@ texts.ar = {
 
   madeFor: "مخصّص لـ",
   forInstaller: "مثبّت MaxPack",
-  forInstallerHint: "\u200E.p5z\u200E: الأصغر حجمًا، لتثبيته على PS5 بواسطة مثبّت MaxPack.",
+  forInstallerHint: "\u200E.p5z\u200E: الأصغر حجمًا. يُشغَّل كما هو على PS5 باستخدام MaxPack لجهاز اللعب، أو يُثبَّت بواسطة مثبّته.",
   forUsb: "اللعب من USB",
   forUsbHint: "مجلد داخل homebrew/\u200E جاهز لـ ShadowMountPlus.",
   level: "مستوى الضغط",
@@ -68,6 +68,8 @@ texts.ar = {
   destOriginalHint: "تُحفظ كل لعبة في مجلد يحمل عنوانها ومعرّفها.",
   runtimeChoose: "اختيار libSceAmpr.sprx…",
   runtimeChange: "تغيير…",
+  runtimeChooseOther: "اختيار ملف آخر…",
+  runtimeBuiltIn: version => "مدمج: ampr-emu-ng " + version,
   runtimeUnset: "لم يُحدَّد: الألعاب التي ليس لها Runtime لن تعمل",
   runtimeHint: "ملف libSceAmpr.sprx من ampr-emu-ng الذي يقرأ zstd. يوضع في fakelib/\u200E للألعاب التي لا تحمل واحدًا.",
   verifyHint: "يقرأ كل ملف ويقارنه بـ SHA-256 الخاص به.",
@@ -80,6 +82,7 @@ texts.ar = {
   themeDark: "داكنة",
   runtimeTitle: "Runtime للألعاب التي ليس لها واحد",
   forget: "إزالة",
+  runtimeUseBuiltIn: "استخدام المدمج",
   prefAbout: "حول",
   legal: "MaxPack برنامج حر (GPL-3.0 أو أحدث) من تطوير DeLFuS77، ويأتي دون أي ضمان.",
 

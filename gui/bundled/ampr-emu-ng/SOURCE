@@ -1,0 +1,10 @@
+# Where gui/bundled/ampr-emu-ng/libSceAmpr.sprx comes from (Corresponding Source for THIRD_PARTY_NOTICES).
+# Not listed in SHA256SUMS, which is the release's own: it also lists libSceAmpr-debug.sprx, which is
+# not kept here, so check it with `sha256sum -c --ignore-missing SHA256SUMS`. The test of gui/bundled
+# checks the embedded file against it.
+repository: https://github.com/DeLFuS77/ampr-emu-ng
+release: https://github.com/DeLFuS77/ampr-emu-ng/releases/tag/v0.5.1-maxpack.1 (libSceAmpr.sprx and SHA256SUMS, as published)
+commit: 73b2973891e6482c232867dab2508c57324f97b0 (tag v0.5.1-maxpack.1)
+upstream: https://github.com/quer3q/ampr-emu-ng v0.5.1 (e1789c1); the commits above add the p5z mode (a game served from a .p5z file) and, before it, a CI change that publishes nothing
+ci-run: https://github.com/DeLFuS77/ampr-emu-ng/actions/runs/45435074348 (workflow build, tag v0.5.1-maxpack.1, success)
+version: v0.5.1-maxpack.1 (VERSION)

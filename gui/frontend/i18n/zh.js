@@ -42,7 +42,7 @@ texts.zh = {
 
   madeFor: "用途",
   forInstaller: "MaxPack 安装器",
-  forInstallerHint: ".p5z：体积最小，用于通过 MaxPack 安装器安装到 PS5。",
+  forInstallerHint: ".p5z：体积最小。可在 PS5 上用主机版 MaxPack 直接游玩，或用它的安装器安装。",
   forUsb: "从 U 盘运行",
   forUsbHint: "homebrew/ 中的文件夹，可直接供 ShadowMountPlus 使用。",
   level: "压缩级别",
@@ -65,6 +65,8 @@ texts.zh = {
   destOriginalHint: "每个游戏会放入一个带标题和 ID 的文件夹。",
   runtimeChoose: "选择 libSceAmpr.sprx…",
   runtimeChange: "更改…",
+  runtimeChooseOther: "选择其他…",
+  runtimeBuiltIn: version => "内置：ampr-emu-ng " + version,
   runtimeUnset: "未选择：缺少运行库的游戏将无法启动",
   runtimeHint: "ampr-emu-ng 中能读取 zstd 的 libSceAmpr.sprx。它会放入没有自带运行库的游戏的 fakelib/ 中。",
   verifyHint: "读取每个文件并与其 SHA-256 比对。",
@@ -77,6 +79,7 @@ texts.zh = {
   themeDark: "深色",
   runtimeTitle: "为缺少运行库的游戏提供的运行库",
   forget: "移除",
+  runtimeUseBuiltIn: "使用内置的",
   prefAbout: "关于",
   legal: "MaxPack 是自由软件（GPL-3.0 或更高版本），作者 DeLFuS77，不提供任何担保。",
 

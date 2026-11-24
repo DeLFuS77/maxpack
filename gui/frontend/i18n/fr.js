@@ -42,7 +42,7 @@ texts.fr = {
 
   madeFor: "Destiné à",
   forInstaller: "l'installateur MaxPack",
-  forInstallerHint: ".p5z : le plus petit, à installer sur la PS5 avec l'installateur MaxPack.",
+  forInstallerHint: ".p5z : le plus petit. Se joue tel quel sur la PS5 avec MaxPack pour la console, ou s'installe avec son installateur.",
   forUsb: "Jouer depuis la clé USB",
   forUsbHint: "Un dossier dans homebrew/, prêt pour ShadowMountPlus.",
   level: "Niveau de compression",
@@ -65,6 +65,8 @@ texts.fr = {
   destOriginalHint: "Chaque jeu va dans un dossier avec son titre et son ID.",
   runtimeChoose: "Choisir libSceAmpr.sprx…",
   runtimeChange: "Changer…",
+  runtimeChooseOther: "En choisir un autre…",
+  runtimeBuiltIn: version => "Intégré : ampr-emu-ng " + version,
   runtimeUnset: "Non choisi : les jeux qui n'en ont pas ne démarreront pas",
   runtimeHint: "Le libSceAmpr.sprx d'ampr-emu-ng qui lit le zstd. Il va dans fakelib/ des jeux qui n'en ont pas.",
   verifyHint: "Lit chaque fichier et le vérifie avec son SHA-256.",
@@ -77,6 +79,7 @@ texts.fr = {
   themeDark: "Sombre",
   runtimeTitle: "Runtime pour les jeux qui n'en ont pas",
   forget: "Retirer",
+  runtimeUseBuiltIn: "Utiliser celui intégré",
   prefAbout: "À propos",
   legal: "MaxPack est un logiciel libre (GPL-3.0 ou ultérieure), de DeLFuS77, fourni sans aucune garantie.",
 

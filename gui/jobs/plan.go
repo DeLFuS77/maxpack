@@ -46,9 +46,9 @@ type Options struct {
 
 // Plan is what will be done with one game: where it goes, what it replaces, what to tell the
 // user and, if it cannot be done, why not. Block is "same_as_source", "no_space" or
-// "fat32_too_big" ("" when it can go). Warnings are "fat32", "needs_runtime", "may_not_fit",
-// "duplicate_target" and "no_title_id". A Plan with Replace is one the user accepted to replace: not going
-// on with it is a matter of dropping the plan.
+// "fat32_too_big" ("" when it can go). Warnings are "fat32", "needs_runtime" (only for a folder),
+// "may_not_fit", "duplicate_target" and "no_title_id". A Plan with Replace is one the user accepted
+// to replace: not going on with it is a matter of dropping the plan.
 type Plan struct {
 	Item     Item
 	Out      string
@@ -235,7 +235,9 @@ func PlanCompress(items []Item, o Options, fs FS) []Plan {
 	}
 	plans := plan(items, o, fs, out, args, o.Mode == ModeP5z)
 	for i := range plans {
-		if !plans[i].Item.HasZstdRuntime && o.Runtime == "" {
+		// a folder plays with the runtime in its fakelib/; a .p5z is given ampr-emu-ng by MaxPack
+		// for the console when it plays it, so it never needs one
+		if o.Mode == ModeFolder && !plans[i].Item.HasZstdRuntime && o.Runtime == "" {
 			plans[i].Warnings = append(plans[i].Warnings, "needs_runtime")
 		}
 		// the installer of the PS5 refuses a .p5z with no TITLE_ID

@@ -93,7 +93,9 @@ and what to do next. If the system asks for less motion, the final numbers show 
 ### Made for: MaxPack installer
 
 This is the normal choice. Each game is saved in **one `.p5z` file** named `<Title> [<TITLE_ID>].p5z`.
-It is the smallest and keeps well on the PC or on a USB drive.
+It is the smallest and keeps well on the PC or on a USB drive. It needs no runtime from you: MaxPack for
+the console puts its own ampr-emu-ng in when it plays it, and the window puts the one that comes with it
+in the `.p5z` of a game that does not carry one.
 
 Afterwards:
 1. Copy the `.p5z` files to a USB drive.
@@ -134,16 +136,20 @@ Afterwards:
   if the window does not have it; **System** goes back to that. The window's notice and its question when
   you close it with games at work follow the language too.
 - **Runtime for the games that lack one.** The zstd packs are served by ampr-emu-ng, and some dumps
-  carry an old `libSceAmpr.sprx` that does not read them. For those games MaxPack puts the
-  `libSceAmpr.sprx` of ampr-emu-ng in their `fakelib/`. Download it from
-  https://github.com/DeLFuS77/ampr-emu-ng, choose it in Settings and MaxPack remembers it. **Remove**
-  forgets it.
+  carry none, or an old `libSceAmpr.sprx` that does not read them. For those games MaxPack puts the
+  `libSceAmpr.sprx` of ampr-emu-ng in their `fakelib/`, in both modes. MaxPack comes with its own
+  (Settings shows "Built in: ampr-emu-ng v0.5.1-maxpack.1"), which it writes to its settings folder and
+  uses by itself: there is nothing to download. **Choose another…** takes a `libSceAmpr.sprx` of your
+  own instead, which MaxPack remembers; **Use the built-in one** goes back to the one that comes with it.
+  - A `.p5z` is never warned about the runtime: MaxPack for the console puts its own ampr-emu-ng in
+    when it plays one. The warnings below are only for folders made for "Play from the USB".
   - MaxPack checks that the one you choose reads zstd (the one of ampr-emu-ng carries the mark
     `AMPRZPK1`). If it does not, it does not accept it and asks for another: with it, the game would be
     compressed and verified fine, but it would not start.
   - If a game still comes out with a runtime that does not read zstd, its row says so when it ends, and
     the summary counts how many games will not start until you give them the one of ampr-emu-ng.
-  - If a game needs one and Settings has none, MaxPack asks for it once before starting.
+  - If a folder needs one and there is none (the built-in one could not be written and Settings has
+    none), MaxPack asks for it once before starting.
   - If you go on without it, it warns you that the game will not start until it has ampr-emu-ng, and
     lets you go on.
 

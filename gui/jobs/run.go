@@ -43,8 +43,8 @@ type TopItem struct {
 	Saved         uint64
 }
 
-// Summary is what a queue did. NoZstdRuntime are the games done that will not start until given
-// a libSceAmpr.sprx that reads zstd (they have none, or one that does not).
+// Summary is what a queue did. NoZstdRuntime are the folders done that will not start until given
+// a libSceAmpr.sprx that reads zstd (they have none, or one that does not); a .p5z is never one.
 type Summary struct {
 	Done, Failed, Skipped, Cancelled int
 	NoZstdRuntime                    int
@@ -204,9 +204,10 @@ func (r *Runner) one(ctx context.Context, i int, p Plan, o Options) (saved uint6
 		}
 		return 0, endState(false, failure), discard(failure)
 	}
-	// made, but with a runtime that does not read zstd it will not start: said, and it goes on
+	// a folder made with a runtime that does not read zstd will not start: said, and it goes on. A
+	// .p5z is not: MaxPack for the console puts its own ampr-emu-ng in when it plays one
 	var notes []string
-	if bad, _ := result.Raw["runtime_without_zstd"].(bool); bad && compress {
+	if bad, _ := result.Raw["runtime_without_zstd"].(bool); bad && o.Mode == ModeFolder {
 		notes = append(notes, "runtime_without_zstd")
 	}
 	// "unpack --original" already checks every file against its SHA-256; "unpack --folder"

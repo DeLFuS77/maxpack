@@ -71,6 +71,12 @@ const state = {
 // whether a queue is running: the window took it, and has not said its end yet
 const running = () => !!(state.busy && state.job && state.job.running && !state.job.summary);
 
+// the ampr-emu-ng that comes with MaxPack, as Setup tells it: its path, "" when the window could not
+// put it in its folder; and the runtime a game that lacks one is given: the one chosen in Settings,
+// else that one (the window puts it in, see plans in page.go)
+const builtInRuntime = () => (state.setup && state.setup.builtInRuntime) || "";
+const runtimeInUse = () => state.settings.Runtime || builtInRuntime();
+
 // a text of the language chosen, else the English one
 const t = key => (texts[state.lang] && texts[state.lang][key] !== undefined ? texts[state.lang] : texts.en)[key];
 
@@ -264,7 +270,9 @@ function rowWarnings(row) {
   if (!game) return list;
   if (row.section === "compress" && game.Packed) list.push(t("detail_already_packed"));
   if (row.section === "verify" && game.Kind === "folder" && !game.Packed) list.push(t("detail_not_packed"));
-  const lacks = row.section === "compress" && !game.Packed && !game.HasZstdRuntime && !state.settings.Runtime;
+  // only a folder needs ampr-emu-ng in its fakelib/: MaxPack for the console puts its own in when it
+  // plays a .p5z. A folder that lacks one is given the one in use, when there is one
+  const lacks = row.section === "compress" && modeOf("compress") === "folder" && !game.Packed && !game.HasZstdRuntime && !runtimeInUse();
   // made without a runtime that reads zstd: its note says it already
   const told = row.state === "ok" && /(^|; )runtime_without_zstd($|; )/.test(row.detail);
   if ((lacks || row.warnings.includes("needs_runtime")) && !told) list.push(t("warn_needs_runtime"));
@@ -467,12 +475,13 @@ function paintOptions() {
   $("dest-hint").textContent = section === "decompress"
     ? t(state.unpackTo === "console" ? "destFolderHint" : "destOriginalHint")
     : t(mode === "folder" ? "destFolderHint" : "destP5zHint");
-  const runtime = $("runtime-state");
-  runtime.classList.toggle("ok", !!s.Runtime);
-  runtime.classList.toggle("bad", !s.Runtime);
-  runtime.textContent = s.Runtime ? s.Runtime : t("runtimeUnset");
-  runtime.title = s.Runtime || "";
-  $("choose-runtime").textContent = s.Runtime ? t("runtimeChange") : t("runtimeChoose");
+  // the runtime in use: the one chosen, else the built-in one; with neither, only a folder is at a loss
+  const runtime = $("runtime-state"), builtIn = !s.Runtime && builtInRuntime();
+  runtime.classList.toggle("ok", !!runtimeInUse());
+  runtime.classList.toggle("bad", !runtimeInUse() && mode === "folder");
+  runtime.textContent = s.Runtime || (builtIn ? t("runtimeBuiltIn")(state.setup.builtInRuntimeVersion) : t("runtimeUnset"));
+  runtime.title = runtimeInUse();
+  $("choose-runtime").textContent = s.Runtime ? t("runtimeChange") : builtIn ? t("runtimeChooseOther") : t("runtimeChoose");
   for (const element of document.querySelectorAll("#options input, #options button")) element.disabled = state.busy;
 }
 
@@ -499,8 +508,13 @@ function paintSettings() {
     button.classList.toggle("on", button.dataset.theme === s.Theme);
     button.setAttribute("aria-checked", button.dataset.theme === s.Theme);
   }
-  $("pref-runtime").textContent = s.Runtime || t("runtimeUnset");
-  $("pref-runtime").classList.toggle("bad", !s.Runtime);
+  // the built-in ampr-emu-ng, or the one chosen instead of it, which can be dropped to go back to it
+  const builtIn = builtInRuntime();
+  $("pref-runtime").textContent = s.Runtime || (builtIn ? t("runtimeBuiltIn")(state.setup.builtInRuntimeVersion) : t("runtimeUnset"));
+  $("pref-runtime").classList.toggle("bad", !runtimeInUse());
+  $("pref-runtime").title = runtimeInUse();
+  $("pref-runtime-choose").textContent = runtimeInUse() ? t("runtimeChooseOther") : t("choose");
+  $("pref-runtime-clear").textContent = builtIn ? t("runtimeUseBuiltIn") : t("forget");
   $("pref-runtime-clear").hidden = !s.Runtime;
   $("about-version").textContent = setup ? setup.version : "—";
   $("about-core").textContent = !setup ? "—" : coreText(setup) || setup.coreVersion;
@@ -664,9 +678,11 @@ async function plan(section, rows, opts) {
       if (answer === "anyway") { opts.ContinueFat32 = true; continue; }
       return null;
     }
-    // ampr-emu-ng, once: chosen and kept in the settings, or not given, and then said clearly
+    // ampr-emu-ng, once, only for a folder (a .p5z is given it by MaxPack for the console when it
+    // plays) and only without the built-in one: chosen and kept in the settings, or not given, and
+    // then said clearly
     const lacking = plans.map((p, n) => n).filter(n => (plans[n].Warnings || []).includes("needs_runtime"));
-    if (section === "compress" && lacking.length && !opts.Runtime && !state.askedRuntime) {
+    if (section === "compress" && opts.Mode === "folder" && lacking.length && !opts.Runtime && !builtInRuntime() && !state.askedRuntime) {
       $("runtime-list").replaceChildren(...lacking.map(n => line(names(n), plans[n].Item.TitleID || "")));
       const answer = await ask($("runtime-dialog"));
       if (answer === "choose") {
@@ -749,7 +765,7 @@ async function startQueue() {
     }
     // the games left out are said in the list; the others wait for their turn
     for (const [row, detail] of skipped) Object.assign(row, { state: "skipped", detail, out: "", outSize: 0, warnings: [] });
-    job = { section, mode: opts.Mode, dest: opts.Dest, runtime: opts.Runtime, rows: going.map(n => rows[n]), shown: 0, rate: 0 };
+    job = { section, mode: opts.Mode, dest: opts.Dest, runtime: opts.Runtime || builtInRuntime(), rows: going.map(n => rows[n]), shown: 0, rate: 0 };
     for (const n of going) {
       Object.assign(rows[n], { state: "waiting", detail: "", step: "", phase: "", offset: 0, done: 0, total: 0, out: "", outSize: 0,
         warnings: plans[n].Warnings || [], replacing: (plans[n].Replace || []).length > 0 });
@@ -831,8 +847,9 @@ function showDone(job, summary) {
   $("done-top-block").hidden = !top.length;
   $("done-next-block").hidden = !summary.Done;
   $("done-next").textContent = nextStep(job);
-  // the games made without a runtime that reads zstd are said again, at the end: none was given
-  // (the dump has none and Settings neither), or the one of Settings does not read zstd
+  // the folders made without a runtime that reads zstd are said again, at the end: none was given
+  // (the dump has none, Settings neither and the built-in one was missing), or the one of Settings
+  // does not read zstd; a .p5z is never one
   const lacking = job.section === "compress" ? summary.NoZstdRuntime || 0 : 0;
   $("done-runtime").hidden = !lacking;
   $("done-runtime").textContent = lacking ? (job.runtime ? t("doneRuntimeWrong")(lacking) : t("doneNoRuntime")(lacking)) : "";

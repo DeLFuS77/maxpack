@@ -43,9 +43,10 @@ MaxPack is three programs, each in its own repository (all GPL-3.0). You downloa
 |---|---|---|---|
 | **MaxPack for the PC** (the window and the `maxpack` command line) | PC | [DeLFuS77/maxpack](https://github.com/DeLFuS77/maxpack) | Compress, decompress, verify and inspect a game. |
 | **MaxPack for the console** (`maxpack.elf`) | PS5 | [DeLFuS77/maxpack-ps5](https://github.com/DeLFuS77/maxpack-ps5) | Mounts games like Kraken Mount, plays a `.p5z` as it is and has an installer. |
-| **ampr-emu-ng** (`libSceAmpr.sprx`) | PS5 | [DeLFuS77/ampr-emu-ng](https://github.com/DeLFuS77/ampr-emu-ng) | The runtime that reads the packs while you play. MaxPack for the console already has its own inside. |
+| **ampr-emu-ng** (`libSceAmpr.sprx`) | PS5 | [DeLFuS77/ampr-emu-ng](https://github.com/DeLFuS77/ampr-emu-ng) | The runtime that reads the packs while you play. MaxPack for the console and the PC window already carry it inside: you only download it for the `maxpack` command line. |
 
-All three share the version 1.0.0.
+MaxPack for the PC is version 1.0.1 and MaxPack for the console 1.0.0; both carry ampr-emu-ng
+v0.5.1-maxpack.1 inside.
 
 ### Two ways to take a game to the PS5
 
@@ -62,9 +63,9 @@ In the window, you choose in **Made for**:
 - Your game: a PS5 dump as a folder or as an `.exfat` image. PKG, `.ffpkg`, `.ffpfs` and `.ffpfsc`
   cannot be compressed yet.
 - Space at the destination. MaxPack warns you if there is less free space than the original game takes.
-- Only if you will use ShadowMountPlus or Kraken Mount: the `libSceAmpr.sprx` from
-  [MaxPack's copy of ampr-emu-ng](https://github.com/DeLFuS77/ampr-emu-ng/releases). MaxPack puts it
-  in the `fakelib/` of games that do not carry one that reads zstd.
+- Nothing else for the runtime: the window comes with
+  [MaxPack's copy of ampr-emu-ng](https://github.com/DeLFuS77/ampr-emu-ng) (`libSceAmpr.sprx`) and puts
+  it in the `fakelib/` of the games that do not carry one that reads zstd.
 
 **On the PS5**
 - A jailbroken PS5 and an ELF loader on port 9021 (elfldr, etaHEN or Payload Manager). kstuff must be
@@ -115,9 +116,9 @@ To have the game as a folder on the PS5 SSD (for example, to unplug the USB driv
 2. In **Made for**, choose **Play from the USB**.
 3. As the destination, pick the root of the USB drive (for example `E:\`). Each game goes to
    `E:\homebrew\<TITLE_ID>`.
-4. If you use ShadowMountPlus, download `libSceAmpr.sprx` from the
-   [ampr-emu-ng Releases](https://github.com/DeLFuS77/ampr-emu-ng/releases) and choose it in
-   **Settings**. Kraken Mount comes with its own ampr-emu-ng.
+4. There is no runtime to download: the window puts the ampr-emu-ng that comes with it
+   (`libSceAmpr.sprx`) in the `fakelib/` of each game that does not carry one. Kraken Mount comes with
+   its own ampr-emu-ng too.
 5. Press **Compress** and plug the USB drive into the PS5.
 6. With ShadowMountPlus: add or rescan the game and leave its fakelib mode on "Default (Full)". With
    Kraken Mount there is nothing more to do.
@@ -162,7 +163,10 @@ them to the window that is already open. More details for each system:
 2. Download `maxpack.elf`.
 3. You do not need to download ampr-emu-ng: `maxpack.elf` has its own copy inside.
 
-### ampr-emu-ng (only for ShadowMountPlus or Kraken Mount)
+### ampr-emu-ng (only for the command line)
+
+The window and `maxpack.elf` already carry it. You only need it to give it to the `maxpack` command
+line (`--runtime`), or to use another release in the window (**Settings**, **Choose another…**):
 
 1. Open the [ampr-emu-ng Releases](https://github.com/DeLFuS77/ampr-emu-ng/releases).
 2. Download `libSceAmpr.sprx`.
@@ -209,8 +213,10 @@ Shows the title, ID, version, sizes, files, packs and whether it carries a runti
 
 ### Settings ([details](pc-window.md#4-settings))
 
-Language (11 to choose from, or **System**), theme (System, Light or Dark) and the `libSceAmpr.sprx` of ampr-emu-ng for the games that
-lack one. MaxPack only accepts a `libSceAmpr.sprx` that reads zstd.
+Language (11 to choose from, or **System**), theme (System, Light or Dark) and the runtime for the games
+that lack one: the ampr-emu-ng that comes with MaxPack ("Built in: ampr-emu-ng v0.5.1-maxpack.1"), or a
+`libSceAmpr.sprx` you pick with **Choose another…**; **Use the built-in one** goes back to it. MaxPack
+only accepts a `libSceAmpr.sprx` that reads zstd.
 
 ## 5. MaxPack on the console
 
@@ -652,8 +658,11 @@ stays intact.
 
 ### The runtime does not read zstd (ampr-emu-ng is missing)
 
-This matters if you will play with ShadowMountPlus or Kraken Mount. MaxPack for the console carries its
-own ampr-emu-ng.
+This only matters for folders made for "Play from the USB" and played with ShadowMountPlus or Kraken
+Mount. A `.p5z` is never warned: MaxPack for the console puts its own ampr-emu-ng in when it plays
+one. And the window puts the ampr-emu-ng that comes with it in every game that lacks one, so you only
+see this if you chose in **Settings** a file that does not read zstd, or if the window could not write
+its copy to its folder (then Settings says "Not chosen").
 
 What you see:
 - In the window: "ampr-emu-ng is missing", or "carries no ampr-emu-ng that reads zstd: it will not
@@ -665,9 +674,9 @@ What you see:
 - On the command line: `warning: the fakelib/libSceAmpr.sprx runtime does not seem to read zstd packs`.
 
 What to do:
-1. Download `libSceAmpr.sprx` from the
-   [ampr-emu-ng Releases](https://github.com/DeLFuS77/ampr-emu-ng/releases) and choose it in
-   **Settings**.
+1. In **Settings**, press **Use the built-in one**. If Settings shows no built-in one, download
+   `libSceAmpr.sprx` from the [ampr-emu-ng Releases](https://github.com/DeLFuS77/ampr-emu-ng/releases)
+   and choose it there.
 2. Compress the game again.
 3. If you no longer have the dump, **Decompress** the `.p5z` to "Original dump (bit for bit)" to get it
    back.
@@ -776,6 +785,9 @@ based on [NXPress](https://github.com/DeLFuS77/NXPress), by the same author.
 **What is inside MaxPack for the PC:**
 - [zstd](https://github.com/facebook/zstd) 1.5.6 (Meta): BSD or GPLv2, your choice.
 - [zlib](https://github.com/madler/zlib) 1.3.1 (Jean-loup Gailly and Mark Adler): zlib licence.
+- [ampr-emu-ng](https://github.com/DeLFuS77/ampr-emu-ng) `v0.5.1-maxpack.1` (GPL-3.0-or-later): the
+  `libSceAmpr.sprx` that the window puts in `fakelib/`, MaxPack's own copy of quer3q's ampr-emu-ng with
+  the `.p5z` mode.
 - The window, in Go: [Wails](https://github.com/wailsapp/wails) v2 (MIT); on Windows, go-webview2
   (MIT), go-ole (MIT) and go-toast (MIT or Unlicense); on Linux, godbus (BSD); golang.org/x/net, x/sys
   and x/text (BSD); and other small libraries under MIT, BSD or Apache-2.0 licences. The list with

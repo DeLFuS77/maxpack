@@ -245,11 +245,16 @@ func inHomebrew(out string, drives jobs.FS) bool {
 	return strings.EqualFold(filepath.Base(parent), "homebrew") && pathKey(filepath.Dir(parent)) == pathKey(drives.Root(out))
 }
 
-// plans are the plans of a queue of a section.
+// plans are the plans of a queue of a section. To compress, a game that does not carry a runtime
+// that reads zstd is given the one chosen in Settings (o.Runtime) or, when none was chosen, the
+// ampr-emu-ng that comes with MaxPack.
 func (a *App) plans(section string, items []jobs.Item, o jobs.Options) ([]jobs.Plan, jobs.Options, error) {
 	o, err := sectionOptions(section, o)
 	if err != nil {
 		return nil, o, err
+	}
+	if section == "compress" && o.Runtime == "" {
+		o.Runtime = a.builtInRuntime()
 	}
 	drives := a.drives()
 	switch o.Mode {
@@ -412,9 +417,9 @@ func (a *App) ChooseDest() (string, error) {
 }
 
 // ChooseRuntime asks for the libSceAmpr.sprx of ampr-emu-ng that reads zstd, for the dumps that
-// do not carry one; "" when none is chosen. One that does not read zstd is refused (the error
-// starts with "runtime_not_zstd", which the page says in its language): a game given it would
-// pack, verify and not start.
+// do not carry one, in place of the one that comes with MaxPack; "" when none is chosen. One that
+// does not read zstd is refused (the error starts with "runtime_not_zstd", which the page says in
+// its language): a game given it would pack, verify and not start.
 func (a *App) ChooseRuntime() (string, error) {
 	if a.ctx == nil {
 		return "", errNoWindow

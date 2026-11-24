@@ -212,17 +212,52 @@ func TestNoSpace(t *testing.T) {
 	}
 }
 
+// A folder to play from the USB needs ampr-emu-ng in its fakelib/: one that lacks it is warned of
+// when no runtime is given. Given one, it goes to the engine in both modes.
 func TestNeedsRuntime(t *testing.T) {
 	dest := t.TempDir()
 	it := item("Juego", "TEST00001", 10)
 	it.HasZstdRuntime = false
-	p := PlanCompress([]Item{it}, Options{Mode: "p5z", Dest: dest}, newFS())[0]
+	p := PlanCompress([]Item{it}, Options{Mode: ModeFolder, Dest: dest}, newFS())[0]
 	if !hasWarning(p, "needs_runtime") || p.Block != "" || hasArg(p.Args, "--runtime") {
-		t.Errorf("without runtime: %v %q %v", p.Warnings, p.Block, p.Args)
+		t.Errorf("folder without runtime: %v %q %v", p.Warnings, p.Block, p.Args)
 	}
-	p = PlanCompress([]Item{it}, Options{Mode: "p5z", Dest: dest, Runtime: "ampr.sprx"}, newFS())[0]
-	if hasWarning(p, "needs_runtime") || !hasArg(p.Args, "--runtime") || !hasArg(p.Args, "ampr.sprx") {
-		t.Errorf("with runtime: %v %v", p.Warnings, p.Args)
+	for _, mode := range []Mode{ModeFolder, ModeP5z} {
+		p = PlanCompress([]Item{it}, Options{Mode: mode, Dest: dest, Runtime: "ampr.sprx"}, newFS())[0]
+		if hasWarning(p, "needs_runtime") || !hasArg(p.Args, "--runtime") || !hasArg(p.Args, "ampr.sprx") {
+			t.Errorf("%s with runtime: %v %v", mode, p.Warnings, p.Args)
+		}
+	}
+	// a dump that carries one that reads zstd keeps its own
+	it.HasZstdRuntime = true
+	p = PlanCompress([]Item{it}, Options{Mode: ModeFolder, Dest: dest, Runtime: "ampr.sprx"}, newFS())[0]
+	if hasWarning(p, "needs_runtime") || hasArg(p.Args, "--runtime") {
+		t.Errorf("with its own: %v %v", p.Warnings, p.Args)
+	}
+}
+
+// A .p5z is never warned of the runtime: MaxPack for the console puts its own ampr-emu-ng in when
+// it plays one. Not in the plan, without a runtime, nor once made, even when the engine says the
+// .p5z carries none that reads zstd; a folder made the same way is.
+func TestP5zNeverWarnsOfRuntime(t *testing.T) {
+	it := item("Juego", "TEST00001", 10)
+	it.HasZstdRuntime = false
+	p := PlanCompress([]Item{it}, Options{Mode: ModeP5z, Dest: t.TempDir()}, newFS())[0]
+	if hasWarning(p, "needs_runtime") || p.Block != "" {
+		t.Errorf("plan: %v %q", p.Warnings, p.Block)
+	}
+	t.Setenv(fakecore.Env, "no-zstd-runtime")
+	for _, c := range []struct {
+		mode   Mode
+		warned bool
+	}{{ModeP5z, false}, {ModeFolder, true}} {
+		o := Options{Mode: c.mode, Dest: t.TempDir()}
+		on, state, detail := lastDetail()
+		sum := (&Runner{Core: os.Args[0], OnItem: on}).Run(context.Background(), PlanCompress([]Item{it}, o, newFS()), o)
+		warned := hasPart(*detail, "runtime_without_zstd")
+		if sum.Done != 1 || *state != StateOK || warned != c.warned || (sum.NoZstdRuntime == 1) != c.warned {
+			t.Errorf("%s: %+v, %s %q", c.mode, sum, *state, *detail)
+		}
 	}
 }
 
@@ -725,8 +760,9 @@ func TestOutWithContentNeverTouched(t *testing.T) {
 	}
 }
 
-// A game packed with a runtime that does not read zstd (none, or a wrong one) is made, but says
+// A folder packed with a runtime that does not read zstd (none, or a wrong one) is made, but says
 // that it will not start; the summary counts it. With the runtime of ampr-emu-ng it says nothing.
+// (A .p5z never says it: TestP5zNeverWarnsOfRuntime.)
 func TestRuntimeWithoutZstdWarned(t *testing.T) {
 	engine, fixtures := needCore(t)
 	it := describe(t, engine, filepath.Join(fixtures, "basic.exfat"))
@@ -741,7 +777,7 @@ func TestRuntimeWithoutZstdWarned(t *testing.T) {
 		runtime string
 		warned  bool
 	}{{"", true}, {wrong, true}, {good, false}} {
-		o := Options{Mode: ModeP5z, Dest: t.TempDir(), Level: 1, Runtime: c.runtime}
+		o := Options{Mode: ModeFolder, Dest: t.TempDir(), Level: 1, Runtime: c.runtime}
 		on, state, detail := lastDetail()
 		sum := (&Runner{Core: engine, OnItem: on}).Run(context.Background(), PlanCompress([]Item{it}, o, newFS()), o)
 		warned := strings.Contains(*detail, "runtime_without_zstd")

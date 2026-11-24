@@ -23,6 +23,9 @@ import (
 //     batch of zstd on a slow disk does; then it leaves <output>.cleaned and ends as cancelled.
 //   - "exists": something that is not the engine's is at its output (-o) when it looks: it writes
 //     part of it and refuses with error "exists" (exit 1), as the real one does.
+//   - "no-zstd-runtime": pack writes its output and ends well, saying that what it made carries no
+//     runtime that reads zstd (runtime_without_zstd), as the real one does for a dump without one
+//     and no --runtime; verify ends well.
 const Env = "MP_FAKE_CORE"
 
 // Main acts as the engine and exits when Env says so; else it returns at once.
@@ -65,6 +68,22 @@ func run(mode string, args []string) int {
 		}
 		fmt.Println(`{"event":"result","ok":false,"error":"exists"}`)
 		return 1
+	case "no-zstd-runtime":
+		if len(args) > 0 && args[0] == "verify" {
+			fmt.Println(`{"event":"result","ok":true,"files_bad":0}`)
+			return 0
+		}
+		out := output(args)
+		if out == "" {
+			fmt.Fprintln(os.Stderr, "error: missing -o")
+			return 2
+		}
+		if err := writePart(out, hasArg(args, "--p5z")); err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			return 1
+		}
+		fmt.Println(`{"event":"result","ok":true,"original_size":10,"output_size":8,"runtime_without_zstd":true}`)
+		return 0
 	case "writes-stubborn", "writes-slow-clean":
 		out := output(args)
 		if out == "" {

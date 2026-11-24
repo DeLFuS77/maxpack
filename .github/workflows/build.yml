@@ -171,7 +171,7 @@ jobs:
           mkdir -p out/portable/MaxPack/settings
           cp out/MaxPack.exe out/maxpack-core.exe ../LICENSE out/portable/MaxPack/
           cp ../THIRD_PARTY_NOTICES out/portable/MaxPack/THIRD_PARTY_NOTICES.txt
-          printf '%s\r\n' "MaxPack keeps its settings, the window's size and position and its page's data here." "If you delete this folder, MaxPack keeps its own in your user folder." > out/portable/MaxPack/settings/README.txt
+          printf '%s\r\n' "MaxPack keeps its settings, its copy of ampr-emu-ng, the window's size and position and its page's data here." "If you delete this folder, MaxPack keeps its own in your user folder." > out/portable/MaxPack/settings/README.txt
           pwsh -NoProfile -Command "Compress-Archive -Path out/portable/MaxPack -DestinationPath ../dist/maxpack-${{ matrix.name }}-portable.zip"
           ls -l ../dist
 

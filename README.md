@@ -392,8 +392,8 @@ game tried is in the
 - Your own game dump, as a folder or an `.exfat` image. PKG, `.ffpkg`, `.ffpfs` and `.ffpfsc` cannot be
   compressed yet.
 - Free space at the destination. MaxPack warns you when there is less than the original game takes.
-- Only for ShadowMountPlus or Kraken Mount: the `libSceAmpr.sprx` of
-  [MaxPack's ampr-emu-ng](https://github.com/DeLFuS77/ampr-emu-ng/releases), which MaxPack puts in the
+- Nothing else for the runtime: the window comes with
+  [MaxPack's ampr-emu-ng](https://github.com/DeLFuS77/ampr-emu-ng) (`libSceAmpr.sprx`) and puts it in the
   `fakelib/` of games that do not carry one that reads zstd.
 
 **On the PS5**
@@ -513,7 +513,7 @@ or unpacking a game does not change them. Back up your saves anyway: see the
 <summary><b>Does it work with ShadowMountPlus or Kraken Mount?</b></summary>
 
 Yes, for **packed folders** ("Play from the USB"): the game must carry MaxPack's ampr-emu-ng in its
-`fakelib/` (MaxPack puts it there when you choose it in **Settings**), and with ShadowMountPlus you
+`fakelib/` (the window puts the one that comes with it there by itself), and with ShadowMountPlus you
 leave its `auto_update_ampr` option off ([why](docs/guide.md#shadowmountplus-replaces-ampr-emu-ng-and-the-game-does-not-start)).
 Playing a **`.p5z`** without unpacking it needs MaxPack for the console, which can also run next to
 them: it simply waits while another mounter is running.
@@ -667,8 +667,8 @@ Security problems go privately: see [SECURITY.md](SECURITY.md).
 ## Credits and licence
 
 MaxPack is free software by DeLFuS77 under the **GPL-3.0-or-later** licence ([LICENSE](LICENSE)). The
-third-party software that the packages include (zstd, zlib, Wails and the window's Go libraries) and
-its licences are in [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES), regenerated with
+third-party software that the packages include (zstd, zlib, ampr-emu-ng, Wails and the window's Go
+libraries) and its licences are in [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES), regenerated with
 `python tools/gen_third_party.py`.
 
 MaxPack stands on the work of others:

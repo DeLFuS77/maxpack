@@ -15,8 +15,11 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 
 	"github.com/DeLFuS77/maxpack/gui/core"
+	"github.com/DeLFuS77/maxpack/gui/internal/system"
+	"github.com/DeLFuS77/maxpack/gui/internal/trash"
 	"github.com/DeLFuS77/maxpack/gui/jobs"
 	"github.com/DeLFuS77/maxpack/gui/settings"
 
@@ -39,25 +42,36 @@ type GameDetails struct {
 	HasRuntime           bool
 }
 
-// Choices are the options of a queue as the page sends them: the ones jobs plans with, and the
-// destinations the user said may be replaced.
+// Choices are the options of a queue as the page sends them: the ones jobs plans with, the
+// destinations the user said may be replaced, and, when compressing, whether the originals go
+// once checked (to the recycle bin, or for good as Settings says) and whether the ones that cannot
+// go to the recycle bin are deleted for good. The names of the files and the priority of the
+// engine are the ones of Settings, whatever the page sends.
 type Choices struct {
 	jobs.Options
-	Replace []string
+	Replace         []string
+	DeleteOriginals bool
+	DeleteNoBin     bool
 }
 
 // PlanView is a plan as the page shows it before a queue starts: with what is in the way of it
-// takes, to say it when asking whether to replace it.
+// takes, to say it when asking whether to replace it; and, when the originals go once checked,
+// what the original takes and why it cannot go to the recycle bin ("no_bin", "too_big",
+// "too_long"; "" when it can, or when it is deleted for good).
 type PlanView struct {
 	jobs.Plan
 	ReplaceSize uint64
+	SourceSize  uint64
+	NoBin       string
 }
 
 // takes are the games a section works on.
 type takes struct{ dumps, images, p5z bool }
 
 var sectionTakes = map[string]takes{
-	"compress":   {dumps: true, images: true},
+	"compress": {dumps: true, images: true},
+	// Rename names .p5z files, dump folders and images by what they are
+	"rename":     {dumps: true, images: true, p5z: true},
 	"decompress": {p5z: true},
 	// .p5z and compressed folders; the page tells a folder that is not compressed
 	"verify":  {dumps: true, p5z: true},
@@ -70,6 +84,7 @@ var sectionPatterns = map[string]string{
 	"decompress": "*.p5z",
 	"verify":     "*.p5z",
 	"details":    "*.exfat;*.p5z",
+	"rename":     "*.exfat;*.p5z",
 }
 
 var errNoWindow = errors.New("no window")
@@ -244,29 +259,45 @@ func inHomebrew(out string, drives jobs.FS) bool {
 
 // plans are the plans of a queue of a section. To compress, a game that does not carry a runtime
 // that reads zstd is given the one chosen in Settings (o.Runtime) or, when none was chosen, the
-// ampr-emu-ng that comes with MaxPack.
-func (a *App) plans(section string, items []jobs.Item, o jobs.Options) ([]jobs.Plan, jobs.Options, error) {
-	o, err := sectionOptions(section, o)
+// ampr-emu-ng that comes with MaxPack. The names of the files and the priority of the engine are
+// the ones of Settings; the originals go only when compressing and when the page asked: to the
+// recycle bin, or for good when Settings says so.
+func (a *App) plans(section string, items []jobs.Item, choices Choices) ([]jobs.Plan, jobs.Options, error) {
+	o, err := sectionOptions(section, choices.Options)
 	if err != nil {
 		return nil, o, err
 	}
 	if section == "compress" && o.Runtime == "" {
 		o.Runtime = a.builtInRuntime()
 	}
-	drives := a.drives()
+	saved, _ := settings.Load()
+	o.NameTemplate, o.LowPriority = saved.NameTemplate, saved.LowPriority
+	o.Originals, o.OriginalsNoBin = jobs.OriginalsKeep, false
+	if section == "compress" && choices.DeleteOriginals {
+		o.Originals, o.OriginalsNoBin = jobs.OriginalsTrash, choices.DeleteNoBin
+		if saved.DeletePermanently {
+			o.Originals, o.OriginalsNoBin = jobs.OriginalsDelete, false
+		}
+	}
+	return planWith(items, o, a.drives()), o, nil
+}
+
+// planWith plans games with the options of a queue.
+func planWith(items []jobs.Item, o jobs.Options, drives jobs.FS) []jobs.Plan {
 	switch o.Mode {
 	case jobs.ModeVerify:
-		return jobs.PlanVerify(items), o, nil
+		return jobs.PlanVerify(items)
 	case jobs.ModeOriginal, jobs.ModeConsole:
-		return jobs.PlanDecompress(items, o, drives), o, nil
+		return jobs.PlanDecompress(items, o, drives)
 	}
-	return jobs.PlanCompress(items, o, drives), o, nil
+	return jobs.PlanCompress(items, o, drives)
 }
 
 // Plan gives what a queue of a section would do with the games, before it starts: where each
-// goes, what it replaces and how much that takes, what to warn of and what cannot go.
+// goes, what it replaces and how much that takes, what to warn of and what cannot go; with the
+// originals to go, what each takes and whether it can go to the recycle bin.
 func (a *App) Plan(section string, items []jobs.Item, opts Choices) ([]PlanView, error) {
-	plans, _, err := a.plans(section, items, opts.Options)
+	plans, o, err := a.plans(section, items, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -276,31 +307,58 @@ func (a *App) Plan(section string, items []jobs.Item, opts Choices) ([]PlanView,
 		for _, path := range p.Replace {
 			views[i].ReplaceSize += jobs.SizeOf(path)
 		}
+		if o.Originals != jobs.OriginalsKeep && p.Block == "" {
+			views[i].SourceSize = jobs.SizeOf(p.Item.Path)
+			if o.Originals == jobs.OriginalsTrash {
+				views[i].NoBin = a.binOf(p.Item.Path)
+			}
+		}
 	}
 	return views, nil
+}
+
+// binOf tells why an original cannot go to the recycle bin, "" when it can.
+func (a *App) binOf(path string) string {
+	if a.trashCheck != nil {
+		return a.trashCheck(path)
+	}
+	why, ok := trash.Why(trash.Check(path))
+	if !ok {
+		return ""
+	}
+	return map[string]string{trash.NoBin: "no_bin", trash.TooBig: "too_big", trash.TooLong: "too_long"}[why.Reason]
+}
+
+// Space tells, before a queue starts, the drives where what its games may take is more than is
+// free, with the numbers; none when it fits. The page asks it with the games that go. While a
+// queue of the section runs, the games it has not started yet count too.
+func (a *App) Space(section string, items []jobs.Item, opts Choices) ([]jobs.Drive, error) {
+	plans, o, err := a.plans(section, items, opts)
+	if err != nil {
+		return nil, err
+	}
+	a.mutex.Lock()
+	q := a.queue
+	a.mutex.Unlock()
+	if q != nil && q.section == section {
+		plans, o = append(q.jobs.Waiting(), plans...), q.o
+	}
+	return jobs.Space(plans, o, a.drives()), nil
 }
 
 // Start starts a queue of a section and returns at once: the page is told each state of a game
 // (job:item), its progress (job:progress) and, at the end, what the queue did (job:done). The
 // games are planned again, so what changed since Plan counts: something in the way that the
 // user did not say may be replaced (opts.Replace) stays as it is, and its game is skipped
-// ("exists"). One queue at a time.
+// ("exists"). One queue at a time; games are added to it with Append.
 func (a *App) Start(section string, items []jobs.Item, opts Choices) error {
-	plans, o, err := a.plans(section, items, opts.Options)
+	plans, o, err := a.plans(section, items, opts)
 	if err != nil {
 		return err
 	}
-	accepted := map[string]bool{}
-	for _, path := range opts.Replace {
-		accepted[pathKey(path)] = true
-	}
-	for i, p := range plans {
-		if len(p.Replace) > 0 && p.Block == "" && !accepted[pathKey(p.Out)] {
-			plans[i].Block = "exists"
-		}
-	}
+	consent(plans, opts.Replace)
 	ctx, cancel := context.WithCancelCause(context.Background())
-	q := &queue{ctx: ctx, cancel: cancel, done: make(chan struct{})}
+	q := &queue{ctx: ctx, cancel: cancel, done: make(chan struct{}), section: section, o: o, jobs: jobs.NewQueue(plans)}
 	a.mutex.Lock()
 	if a.queue != nil {
 		a.mutex.Unlock()
@@ -310,7 +368,7 @@ func (a *App) Start(section string, items []jobs.Item, opts Choices) error {
 	a.queue = q
 	a.mutex.Unlock()
 	go func() {
-		sum := a.run(ctx, plans, o)
+		sum := a.runQueue(ctx, q)
 		a.mutex.Lock()
 		a.queue = nil
 		a.mutex.Unlock()
@@ -322,12 +380,91 @@ func (a *App) Start(section string, items []jobs.Item, opts Choices) error {
 	return nil
 }
 
+// consent skips the games whose destination has something the user did not say may be replaced.
+func consent(plans []jobs.Plan, replace []string) {
+	accepted := map[string]bool{}
+	for _, path := range replace {
+		accepted[pathKey(path)] = true
+	}
+	for i, p := range plans {
+		if len(p.Replace) > 0 && p.Block == "" && !accepted[pathKey(p.Out)] {
+			plans[i].Block = "exists"
+		}
+	}
+}
+
+// Append adds games to the queue of a section that runs: they are planned with its options, told
+// to the page as queued (job:item) and done after the ones there. A game whose destination has
+// something in it is skipped when its turn comes, unless opts.Replace says it may be replaced;
+// with keepOriginals the originals of these games stay, whatever the queue does with the others.
+// It gives the index in the queue of the first one; an error when no queue of that section runs
+// or it is cancelled (the page then leaves them as they are).
+func (a *App) Append(section string, items []jobs.Item, replace []string, keepOriginals bool) (int, error) {
+	a.mutex.Lock()
+	q := a.queue
+	a.mutex.Unlock()
+	if q == nil || q.section != section || q.ctx.Err() != nil {
+		return 0, errors.New("no queue of this section is running")
+	}
+	plans := planWith(items, q.o, a.drives())
+	consent(plans, replace)
+	q.mutex.Lock()
+	defer q.mutex.Unlock()
+	for i := range plans {
+		plans[i].KeepOriginal = keepOriginals
+		// the same place as a game of the queue: the second meets the first
+		for n := 0; n < q.jobs.Len(); n++ {
+			if other, _ := q.jobs.Plan(n); other.Out != "" && pathKey(other.Out) == pathKey(plans[i].Out) {
+				plans[i].Warnings = append(plans[i].Warnings, "duplicate_target")
+				break
+			}
+		}
+	}
+	first, ok := q.jobs.Add(plans...)
+	if !ok {
+		return 0, errors.New("the queue has ended")
+	}
+	if q.share != nil {
+		q.share.add(plans, q.o.Mode)
+	}
+	for i := range plans {
+		a.send("job:item", itemEvent{I: first + i, State: jobs.StateQueued})
+	}
+	return first, nil
+}
+
+// Unqueue takes game i out of the queue of a section before its turn; false when it started
+// already, or no queue of that section runs.
+func (a *App) Unqueue(section string, i int) bool {
+	a.mutex.Lock()
+	q := a.queue
+	a.mutex.Unlock()
+	if q == nil || q.section != section {
+		return false
+	}
+	q.mutex.Lock()
+	defer q.mutex.Unlock()
+	if !q.jobs.Remove(i) {
+		return false
+	}
+	if q.share != nil {
+		q.share.remove(i)
+	}
+	return true
+}
+
 // queue is the queue running: its context, how to stop it (with why: core.ErrClosing when the
-// window closes), and when the Runner returned (with what it made and did not verify taken away).
+// window closes), when the Runner returned (with what it made and did not verify taken away), its
+// section and options, its games, and how far it is (share, with the mutex of its progress).
 type queue struct {
-	ctx    context.Context
-	cancel context.CancelCauseFunc
-	done   chan struct{}
+	ctx     context.Context
+	cancel  context.CancelCauseFunc
+	done    chan struct{}
+	section string
+	o       jobs.Options
+	jobs    *jobs.Queue
+	mutex   sync.Mutex
+	share   *share
 }
 
 // Cancel stops the queue running: the game at work stops without leaving anything half made,
@@ -366,16 +503,33 @@ func (a *App) ChooseFiles(section string) ([]string, error) {
 	return a.Expand(paths, section), nil
 }
 
-// ChooseFolder asks for a folder: a game, or a folder with games one level below.
+// ChooseFolder asks for folders, several at once where the dialog of the system takes them (on
+// Windows, macOS, and Linux with zenity; else one, with the dialog of the window): each one a
+// game, or a folder with games one level below.
 func (a *App) ChooseFolder(section string) ([]string, error) {
 	if a.ctx == nil {
 		return []string{}, errNoWindow
 	}
-	path, err := wailsruntime.OpenDirectoryDialog(a.ctx, wailsruntime.OpenDialogOptions{})
-	if err != nil || path == "" {
+	choose := a.chooseFolders
+	if choose == nil {
+		choose = func() ([]string, error) { return system.ChooseFolders("MaxPack") }
+	}
+	paths, err := choose()
+	if errors.Is(err, system.ErrNoMultiPicker) {
+		var path string
+		path, err = wailsruntime.OpenDirectoryDialog(a.ctx, wailsruntime.OpenDialogOptions{})
+		paths = []string{path}
+	}
+	if err != nil {
 		return []string{}, err
 	}
-	return a.Expand([]string{path}, section), nil
+	chosen := []string{}
+	for _, path := range paths {
+		if path != "" {
+			chosen = append(chosen, path)
+		}
+	}
+	return a.Expand(chosen, section), nil
 }
 
 // ChooseDest asks for the folder the games go to, from the last one chosen; "" when none is.

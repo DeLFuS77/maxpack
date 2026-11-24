@@ -71,3 +71,15 @@ func TestWindowsName(t *testing.T) {
 		}
 	}
 }
+
+// The folders a dialog gives, one a line: without empty lines, nor the slash at the end that
+// macOS gives a folder.
+func TestFolderLines(t *testing.T) {
+	got := lines("/Users/a/games/Starfall/\n\n/Volumes/USB/Iron Harbor/\r\n/\n")
+	if strings.Join(got, "|") != "/Users/a/games/Starfall|/Volumes/USB/Iron Harbor|/" {
+		t.Errorf("%q", got)
+	}
+	if len(lines("")) != 0 {
+		t.Error("nothing chosen gives folders")
+	}
+}

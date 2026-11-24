@@ -88,6 +88,9 @@ type Plan struct {
 	Warnings []string
 	Block    string
 	Args     []string // the arguments of the engine, without the ones for the progress
+	// KeepOriginal keeps the original of this game whatever Options.Originals says: a game added
+	// to a queue that runs, whose original the user said to keep
+	KeepOriginal bool
 }
 
 // FS is what the plans ask of the drives, so the tests can put their own.

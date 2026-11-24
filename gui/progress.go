@@ -73,7 +73,7 @@ func (r *rater) add(i int, phase string, done uint64, now time.Time) uint64 {
 // at most every progressEvery and always at the end of a step.
 type teller struct {
 	app    *App
-	plans  []jobs.Plan
+	plans  *jobs.Queue
 	mode   jobs.Mode
 	drives jobs.FS
 	mutex  sync.Mutex
@@ -83,8 +83,8 @@ type teller struct {
 
 func (t *teller) item(i int, state, detail string) {
 	e := itemEvent{I: i, State: state, Detail: detail}
-	if state == jobs.StateOK && t.mode != jobs.ModeVerify && i < len(t.plans) {
-		e.Out = t.plans[i].Out
+	if p, ok := t.plans.Plan(i); ok && state == jobs.StateOK && t.mode != jobs.ModeVerify {
+		e.Out = p.Out
 		e.Size = jobs.SizeOf(e.Out)
 		if t.mode == jobs.ModeFolder || t.mode == jobs.ModeConsole {
 			e.Homebrew = inHomebrew(e.Out, t.drives)
@@ -116,12 +116,26 @@ type share struct {
 	shown float64
 }
 
+// add counts games added to the queue (Append), at its end.
+func (s *share) add(plans []jobs.Plan, mode jobs.Mode) {
+	for _, p := range plans {
+		s.rows = append(s.rows, shareRow{size: p.Item.OriginalSize, steps: stepsOf(mode)})
+	}
+}
+
+// remove stops counting game i, taken out of the queue before its turn.
+func (s *share) remove(i int) {
+	if i >= 0 && i < len(s.rows) {
+		s.rows[i].removed = true
+	}
+}
+
 type shareRow struct {
 	size                uint64
 	steps               []string
 	step, phase         string
 	offset, done, total uint64
-	ended               bool
+	ended, removed      bool
 }
 
 // stepsOf are the steps of a game in a queue of a mode, as the Runner does them: what is made is
@@ -204,6 +218,9 @@ func (r shareRow) share() float64 {
 func (s *share) value() float64 {
 	var whole, done float64
 	for _, r := range s.rows {
+		if r.removed {
+			continue
+		}
 		weight := float64(len(r.steps)) * float64(max(1, r.size))
 		whole += weight
 		done += r.share() * weight

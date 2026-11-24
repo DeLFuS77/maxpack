@@ -5,7 +5,6 @@ package main
 import (
 	"context"
 	"math"
-	"sync"
 	"time"
 
 	"github.com/DeLFuS77/maxpack/gui/core"
@@ -26,8 +25,15 @@ const taskbarParts = 10000
 // run does the plans with the Runner and the extras: the PC stays awake meanwhile, the taskbar
 // shows the progress of the whole queue as the page counts it (see share; never going back), the
 // page is told how each game goes (job:item, job:progress), and one notice tells the summary at
-// the end.
+// the end. The original of a game removed once checked is written in the log, and what a game
+// writes apart in the journal of the leftovers.
 func (a *App) run(ctx context.Context, plans []jobs.Plan, o jobs.Options) jobs.Summary {
+	return a.runQueue(ctx, &queue{o: o, jobs: jobs.NewQueue(plans)})
+}
+
+// runQueue is run with a queue that may take more games while it runs (Append).
+func (a *App) runQueue(ctx context.Context, q *queue) jobs.Summary {
+	o := q.o
 	x := a.extras
 	if x.Awake == nil {
 		x.Awake = system.KeepAwake
@@ -42,8 +48,16 @@ func (a *App) run(ctx context.Context, plans []jobs.Plan, o jobs.Options) jobs.S
 	defer release()
 
 	const total = taskbarParts
-	queue := newShare(plans, o.Mode)
-	var mutex sync.Mutex
+	q.mutex.Lock()
+	q.share = newShare(q.jobs.All(), o.Mode)
+	for i := range q.share.rows {
+		if q.jobs.Removed(i) {
+			q.share.remove(i)
+		}
+	}
+	queue := q.share
+	q.mutex.Unlock()
+	mutex := &q.mutex
 	shown, told := uint64(0), false
 	// show tells the taskbar how far the queue is, when that changed; with the mutex held
 	show := func() {
@@ -63,9 +77,15 @@ func (a *App) run(ctx context.Context, plans []jobs.Plan, o jobs.Options) jobs.S
 		path, _ = core.Locate()
 	}
 	// the page is told each state and the progress, with the speed
-	page := &teller{app: a, plans: plans, mode: o.Mode, drives: a.drives()}
+	page := &teller{app: a, plans: q.jobs, mode: o.Mode, drives: a.drives()}
+	var journal jobs.Journal
+	if j := a.journal(); j != nil {
+		journal = j
+	}
 	runner := &jobs.Runner{
-		Core: path,
+		Core:    path,
+		Journal: journal,
+		Log:     a.log,
 		OnEvent: func(i int, e core.Event) {
 			if e.Total > 0 {
 				mutex.Lock()
@@ -89,7 +109,7 @@ func (a *App) run(ctx context.Context, plans []jobs.Plan, o jobs.Options) jobs.S
 			}
 		},
 	}
-	sum := runner.Run(ctx, plans, o)
+	sum := runner.RunQueue(ctx, q.jobs, o)
 
 	if sum.Failed > 0 {
 		x.Taskbar("error", total, total)

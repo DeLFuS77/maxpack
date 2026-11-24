@@ -29,6 +29,7 @@ var (
 // The states of a game in the queue.
 const (
 	StateWaiting   = "waiting"
+	StateQueued    = "queued" // added to a queue that runs, waiting for its turn
 	StatePacking   = "packing"
 	StateVerifying = "verifying"
 	StateUnpacking = "unpacking"
@@ -151,12 +152,22 @@ type outcome struct {
 // Replace, the place of the old one, which stays whole if anything fails or is cancelled). With
 // o.Originals, the original of a game compressed goes once its new one is in its place.
 func (r *Runner) Run(ctx context.Context, plans []Plan, o Options) Summary {
+	return r.RunQueue(ctx, NewQueue(plans), o)
+}
+
+// RunQueue is Run with a queue that may take more games while it runs (see Queue): each one goes
+// as the ones that were there, and one taken out before its turn is neither done nor counted.
+func (r *Runner) RunQueue(ctx context.Context, q *Queue, o Options) Summary {
 	started := time.Now()
 	var sum Summary
-	for i := range plans {
+	for i, n := 0, q.Len(); i < n; i++ {
 		r.item(i, StateWaiting, "")
 	}
-	for i, p := range plans {
+	for {
+		i, p, more := q.take()
+		if !more {
+			break
+		}
 		switch {
 		case p.Block != "":
 			sum.Skipped++
@@ -306,7 +317,7 @@ func (r *Runner) one(ctx context.Context, i int, p Plan, o Options) outcome {
 		return fail(StateError, discard("io: "+err.Error()))
 	}
 	end := outcome{saved: saved, state: StateOK}
-	if compress && o.Originals != OriginalsKeep {
+	if compress && o.Originals != OriginalsKeep && !p.KeepOriginal {
 		end.original = r.removeOriginal(p, o)
 		if end.original.note != "" {
 			notes = append(notes, end.original.note)

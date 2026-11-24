@@ -6,6 +6,7 @@ package fakecore
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -31,7 +32,12 @@ import (
 //   - "writes": pack and unpack write their output (in an empty folder that is there too), tell
 //     some progress and end well; verify ends well.
 //   - "bad-verify": as "writes", but verify finds a damaged file.
+//   - "info": info --json says of a game what the JSON file InfoEnv has under the name of its file
+//     or folder, and fails for any other; icon finds none.
 const Env = "MP_FAKE_CORE"
+
+// InfoEnv is the file of what "info" says of each game: {"<name>": {<info --json>}, ...}.
+const InfoEnv = "MP_FAKE_INFO"
 
 // Main acts as the engine and exits when Env says so; else it returns at once.
 func Main() {
@@ -60,6 +66,20 @@ func run(mode string, args []string) int {
 	case "priority":
 		fmt.Printf("{\"event\":\"result\",\"ok\":true,\"files_bad\":0,\"priority\":%q}\n", priority())
 		return 0
+	case "info":
+		if len(args) == 3 && args[0] == "info" && args[1] == "--json" {
+			var infos map[string]json.RawMessage
+			data, _ := os.ReadFile(os.Getenv(InfoEnv))
+			json.Unmarshal(data, &infos)
+			if info, ok := infos[filepath.Base(args[2])]; ok {
+				fmt.Println(string(info))
+				return 0
+			}
+			fmt.Fprintln(os.Stderr, "error: not a game:", args[2])
+			return 1
+		}
+		fmt.Fprintln(os.Stderr, "error: no icon")
+		return 1
 	case "writes", "bad-verify":
 		if len(args) > 0 && args[0] == "verify" {
 			if mode == "bad-verify" {

@@ -46,6 +46,13 @@ type App struct {
 	onItem  func(i int, state, detail string)
 	// the dialog that chooses a file, when not the one of the system
 	openFile func(ctx context.Context, options wailsruntime.OpenDialogOptions) (string, error)
+	// whether an original can go to the recycle bin ("" when it can, else why: "no_bin",
+	// "too_big", "too_long"), the clipboard and the browser, when not the ones of the system
+	trashCheck func(path string) string
+	clipboard  func(text string) error
+	openURL    func(url string)
+	// the dialog that chooses folders, when not the one of the system
+	chooseFolders func() ([]string, error)
 
 	notices      sync.Once
 	noticesReady bool
@@ -71,6 +78,10 @@ type Setup struct {
 	// written there (then a game needs one chosen in Settings, as before)
 	BuiltInRuntime        string `json:"builtInRuntime"`
 	BuiltInRuntimeVersion string `json:"builtInRuntimeVersion"`
+	// LogFile is where the window writes what it removed (the originals once checked)
+	LogFile string `json:"logFile"`
+	// Templates are the templates of the names Settings offers, the default first
+	Templates []string `json:"templates"`
 }
 
 func (a *App) startup(ctx context.Context) {
@@ -90,7 +101,7 @@ func (a *App) startup(ctx context.Context) {
 // reported in CoreError and the window opens all the same.
 func (a *App) Setup() Setup {
 	saved, _ := settings.Load()
-	setup := Setup{Version: version, Lang: saved.EffectiveLang(), Theme: saved.Theme}
+	setup := Setup{Version: version, Lang: saved.EffectiveLang(), Theme: saved.Theme, LogFile: logFile(), Templates: jobs.Templates}
 	if builtIn := a.builtInRuntime(); builtIn != "" {
 		setup.BuiltInRuntime, setup.BuiltInRuntimeVersion = builtIn, bundled.Version()
 	}

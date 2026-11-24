@@ -4,6 +4,34 @@ All notable changes to MaxPack are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/).
 
+## [1.0.1] - 2026-11-24
+
+MaxPack for the PC now brings its own ampr-emu-ng, and stops asking for it where it is not needed.
+
+### Fixed
+
+- A game made for the **MaxPack installer** (`.p5z`) no longer shows "carries no ampr-emu-ng that reads
+  zstd: it will not start until given one", and **Compress** no longer opens the "ampr-emu-ng is
+  missing" dialog for it. Neither was true: MaxPack for the console puts its own ampr-emu-ng in when it
+  plays a `.p5z`. The warning, the dialog and the note when it ends ("done, but its libSceAmpr.sprx does
+  not read zstd") are now only for folders made to **Play from the USB**.
+- The hint of **MaxPack installer** says what is true now, in the eleven languages: the `.p5z` plays as
+  it is on the PS5 with MaxPack for the console, or installs with its installer.
+
+### Changed
+
+- **ampr-emu-ng comes with the PC window.** The `libSceAmpr.sprx` of the release
+  [`v0.5.1-maxpack.1`](https://github.com/DeLFuS77/ampr-emu-ng/releases/tag/v0.5.1-maxpack.1) is inside
+  MaxPack (`gui/bundled/ampr-emu-ng`, checked against the release's SHA-256 by the tests). The window
+  writes it to its settings folder and puts it in the `fakelib/` of every game that does not carry one
+  that reads zstd, in both modes: there is nothing to download. Settings shows "Built in: ampr-emu-ng
+  v0.5.1-maxpack.1"; **Choose another…** takes a `libSceAmpr.sprx` of your own, which still wins, and
+  **Use the built-in one** goes back to it. The `maxpack` command line is unchanged: it takes
+  `--runtime` as before.
+- `THIRD_PARTY_NOTICES` names the bundled ampr-emu-ng, its licence (GPL-3.0-or-later) and its
+  Corresponding Source. The [guide](docs/guide.md), the [PC window](docs/pc-window.md) and the README
+  no longer tell you to download `libSceAmpr.sprx` for the window.
+
 ## [1.0.0] - 2026-11-24
 
 First public release of MaxPack for the PC.
@@ -83,4 +111,5 @@ risk. The authors are not responsible for data loss, lost saves, damage to the c
 bans or any other problem. MaxPack is not affiliated with or endorsed by Sony Interactive
 Entertainment. Full text: [Legal and disclaimer](README.md#legal-and-disclaimer).
 
+[1.0.1]: https://github.com/DeLFuS77/maxpack/releases/tag/v1.0.1
 [1.0.0]: https://github.com/DeLFuS77/maxpack/releases/tag/v1.0.0

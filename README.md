@@ -1,30 +1,52 @@
 # MaxPack
 
-Herramienta para que un juego de PS5 (dump propio o homebrew) ocupe lo mínimo posible y siga siendo
-jugable. El diseño completo está en
-[docs/diseno/maxpack.md](docs/diseno/maxpack.md).
+MaxPack hace que un juego de PS5 (dump propio o homebrew) ocupe lo mínimo posible y siga siendo
+jugable en la consola. Comprime el juego en packs zstd que se leen directamente en la PS5, sin
+descomprimir nada en ella: en un RE Engine de 90 GB, por ejemplo, el juego baja a menos de la mitad.
+El diseño completo está en [docs/diseno/maxpack.md](docs/diseno/maxpack.md).
 
 **Guía completa, de la descarga a jugar en la PS5: [docs/guia.md](docs/guia.md).**
 
-**Estado: fases 0, 1 y 2.**
+## Las tres piezas
+
+| Pieza | Qué es | Dónde |
+|---|---|---|
+| **MaxPack** (este repositorio) | El motor de línea de comandos (`maxpack`) y la ventana para Windows, macOS y Linux | https://github.com/DeLFuS77/maxpack |
+| **MaxPack para la consola** | El payload que instala los juegos en la PS5 y los registra | https://github.com/DeLFuS77/maxpack-ps5 |
+| **ampr-emu-ng** | El runtime (`libSceAmpr.sprx`) que lee los packs zstd en la consola | https://github.com/DeLFuS77/ampr-emu-ng |
+
+El PC comprime y verifica (este repositorio); la consola instala y juega (maxpack-ps5 con ampr-emu-ng).
+La versión de este repositorio es la del motor, la de la ventana y la de sus paquetes: **1.0.0**.
+
+## Descargar
+
+Los paquetes están en **[Releases](https://github.com/DeLFuS77/maxpack/releases)**, con un
+`SHA256SUMS` para comprobarlos:
+
+- Windows: `maxpack-windows-x64-setup.exe` (instalador) o `maxpack-windows-x64-portable.zip`.
+- macOS: `maxpack-macos-apple-silicon.dmg` (M1 o posterior) o `maxpack-macos-intel.dmg`.
+- Linux: `maxpack-linux-x64.tar.gz`, con un `install.sh`.
+
+Los programas no están firmados (Windows lo avisa con SmartScreen, y en macOS se abren la primera vez
+con clic derecho, Abrir); la guía lo explica. La del instalador de la consola está en el README de
+maxpack-ps5.
+
+## Qué hace
+
 - `maxpack analyze` mide cuánto gana cada técnica de compresión en un juego concreto.
 - `maxpack pack` lo empaqueta en packs zstd que ampr-emu-ng sirve en la consola: en una carpeta
   lista para copiar a la PS5 o en un único `.p5z` para guardar en el PC.
 - `unpack`, `verify` e `info` completan el ciclo: el `.p5z` devuelve el dump original bit a bit.
-- `maxpack.elf`, el instalador en la PS5, instala los `.p5z` (que siguen comprimidos en la consola) y
-  también, tal cual, carpetas e imágenes, con una página web en el puerto 8095:
-  [docs/instalador-ps5.md](docs/instalador-ps5.md).
+- La ventana del PC hace todo eso soltando los juegos encima (más abajo).
 
 `maxpack` nunca escribe en el juego de origen y no toca claves, cifrado ni DRM.
 
 ## La ventana para el PC
 
-MaxPack también tiene una ventana para Windows, macOS y Linux: sueltas los juegos, eliges «Instalador
+MaxPack tiene una ventana para Windows, macOS y Linux: sueltas los juegos, eliges «Instalador
 MaxPack» (un `.p5z`) o «Jugar desde el USB» (una carpeta en `homebrew/`), y los comprime y verifica.
-GitHub Actions la empaqueta en cada cambio (instalador y zip portable en Windows, `.dmg` en macOS,
-`.tar.gz` en Linux). La guía de la ventana, con capturas, está en
-[docs/ventana-pc.md](docs/ventana-pc.md). El código está en [gui/](gui/) y usa `maxpack-core` (este
-mismo motor) junto a ella.
+La guía de la ventana, con capturas, está en [docs/ventana-pc.md](docs/ventana-pc.md). El código está
+en [gui/](gui/) y usa `maxpack-core` (este mismo motor) junto a ella.
 
 ## Compilar
 
@@ -72,9 +94,9 @@ ctest --test-dir build --output-on-failure
 
 > GitHub Actions, en cada cambio:
 > - en Windows y Linux compila el motor y pasa todas sus pruebas (`ctest`);
-> - compila `maxpack.elf` para la PS5;
 > - en Windows, Linux y macOS (Apple silicon e Intel) compila `maxpack` y la ventana, pasa las
->   pruebas de la ventana (Go) con ese motor y hace los paquetes.
+>   pruebas de la ventana (Go) con ese motor y hace los paquetes;
+> - con una etiqueta `vX.Y.Z`, deja todo eso en un borrador de release con su `SHA256SUMS`.
 >
 > En macOS no se pasan las pruebas del motor (`ctest`): allí el motor solo se prueba a través de las
 > pruebas de la ventana.
@@ -150,7 +172,8 @@ maxpack --capabilities                                 # lo que sabe hacer esta 
   - `unpack --original` vuelve a comprobar cada SHA-256 al reconstruir.
 
 Para probar un juego empaquetado en la consola: [docs/probar-en-ps5.md](docs/probar-en-ps5.md). Para
-instalarlo desde la propia consola: [docs/instalador-ps5.md](docs/instalador-ps5.md).
+instalarlo desde la propia consola, con el payload de maxpack-ps5:
+[docs/instalador-ps5.md](docs/instalador-ps5.md).
 
 ## Cómo leer el informe
 
@@ -194,4 +217,21 @@ imágenes reales (`tests/tools/compare_ranges.py`).
 
 ## Licencia
 
-GPL-3.0-or-later. Ver [LICENSE](LICENSE).
+GPL-3.0-or-later. Ver [LICENSE](LICENSE). El software de terceros que incluyen los paquetes (zstd,
+zlib, Wails y las bibliotecas de Go de la ventana) y sus licencias están en
+[THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES), que se regenera con `python tools/gen_third_party.py`.
+
+## Créditos
+
+- [zstd](https://github.com/facebook/zstd) (Meta) y [zlib](https://github.com/madler/zlib) (Jean-loup
+  Gailly y Mark Adler), la compresión.
+- [Wails](https://wails.io) y las bibliotecas de Go de la ventana (lista completa en
+  `THIRD_PARTY_NOTICES`).
+- [ampr-emu-ng](https://github.com/DeLFuS77/ampr-emu-ng), el runtime que lee los packs en la consola,
+  basado en el trabajo de quer3q y de drakmor (ampr_emu); y ShadowMountPlus y
+  [Kraken Mount](https://github.com/quer3q/kraken-mount), que montan el juego en la consola.
+- La ventana del PC sigue el diseño de [NXPress](https://github.com/DeLFuS77/NXPress).
+
+MaxPack no está afiliado ni respaldado por Sony Interactive Entertainment. No incluye juegos, claves
+ni nada para saltarse protecciones: es para comprimir tus propios dumps y homebrew, y nunca toca claves,
+cifrado ni DRM.

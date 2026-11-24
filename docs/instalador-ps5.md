@@ -1,5 +1,12 @@
 # El instalador en la PS5 (`maxpack.elf`)
 
+> **El `maxpack.elf` de este repositorio ya no se publica.** El instalador de la consola es ahora el
+> payload de [DeLFuS77/maxpack-ps5](https://github.com/DeLFuS77/maxpack-ps5): se descarga de sus
+> **Releases**, usa este mismo motor (las bibliotecas de `src/install/` y `src/web/`) y tiene el mismo
+> nombre y el mismo puerto (8095), así que no pueden estar cargados a la vez. Esta página describe lo
+> que hace el instalador (cómo instala, reanuda y se recupera); para cargarlo, sigue el README de
+> maxpack-ps5.
+
 El instalador deja tus juegos listos para jugar en la consola. Instala los `.p5z` que hace
 `maxpack pack`, que siguen comprimidos en la consola. También instala tal cual juegos en los formatos
 de siempre: carpetas (dumps, o carpetas con packs de Dump Forge) e imágenes `.exfat`, `.ffpkg`,
@@ -13,7 +20,8 @@ jugar, ShadowMountPlus o Kraken Mount.
 
 ## 1. Cargar el instalador
 
-1. Descarga `maxpack.elf`. Lo genera GitHub Actions en cada cambio, como artefacto `maxpack-ps5`.
+1. Descarga `maxpack.elf` de los Releases de
+   [DeLFuS77/maxpack-ps5](https://github.com/DeLFuS77/maxpack-ps5).
 2. Envíalo al cargador de ELF, en el puerto 9021. Por ejemplo, desde Linux o macOS:
    `nc -q0 <IP de la PS5> 9021 < maxpack.elf`.
 3. La consola muestra el aviso "MaxPack … listo".
@@ -126,17 +134,10 @@ Lo que guarda el instalador, siempre fuera de las carpetas de los juegos:
   Forge o la de Kraken Mount, y qué versión. Mientras tanto se compila sin runtime dentro, y solo se
   instalan `.p5z` empaquetados con `--runtime` y carpetas que ya traen ampr-emu-ng.
 
-## Compilar `maxpack.elf`
+## Compilar
 
-Con el SDK [ps5-payload-dev/sdk](https://github.com/ps5-payload-dev/sdk) v0.45 en Linux o macOS:
-
-```
-/opt/ps5-payload-sdk/bin/prospero-cmake -B build-ps5 -DMAXPACK_PS5=ON -DCMAKE_BUILD_TYPE=Release
-cmake --build build-ps5
-```
-
-Con `-DMAXPACK_RUNTIME=<libSceAmpr.sprx>` (y `-DMAXPACK_RUNTIME_VERSION=<texto>`), el instalador lleva
-dentro ese ampr-emu-ng. El flujo `.github/workflows/build.yml` hace todo esto en cada cambio.
+El `maxpack.elf` se compila en DeLFuS77/maxpack-ps5, que lleva una copia de este motor. Aquí solo se
+compilan y se prueban (con `ctest`, en el PC) las bibliotecas que usa.
 
 Para probar sin consola, `maxpack-installer-pc` ejecuta el mismo motor y la misma página sobre
 carpetas del PC:

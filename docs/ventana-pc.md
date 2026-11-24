@@ -11,14 +11,11 @@ para qué los quieres y pulsas **Comprimir**.
 
 ## 1. Descargar y abrir
 
-Cuando haya versiones publicadas, estarán en **Releases** del repositorio. Mientras tanto, GitHub
-Actions construye la ventana en cada cambio, como un artefacto por sistema (`maxpack-windows-x64`,
-`maxpack-linux-x64`, `maxpack-macos-apple-silicon` y `maxpack-macos-intel`):
-1. En https://github.com/DeLFuS77/maxpack abre **Actions**, el último trabajo `build` en verde y, abajo,
-   **Artifacts**.
-2. Hace falta tener sesión iniciada en GitHub, y los artefactos caducan pasado un tiempo.
-3. Cada artefacto baja como un zip que envuelve el paquete de verdad: descomprímelo y dentro está lo que
-   sigue (el instalador, el `.dmg`, el `.tar.gz`...).
+Las versiones están en **Releases** de https://github.com/DeLFuS77/maxpack/releases. Baja el paquete
+de tu sistema (el instalador o el zip portable en Windows, el `.dmg` o el `.tar.gz` en macOS, el
+`.tar.gz` en Linux) y, si quieres comprobarlo, compara su SHA-256 con el de `SHA256SUMS`, que está en
+la misma página. Todos los paquetes llevan `LICENSE` y `THIRD_PARTY_NOTICES` (las licencias del
+software de terceros que incluyen).
 
 Después, sigue los pasos de tu sistema.
 
@@ -98,8 +95,9 @@ Es lo más pequeño y se guarda bien en el PC o en un USB.
 
 Después:
 1. Copia los `.p5z` a un USB.
-2. Conecta el USB a la PS5 y ábrelo con el instalador MaxPack (`maxpack.elf`):
-   [instalador-ps5.md](instalador-ps5.md). El instalador deja el juego en
+2. Conecta el USB a la PS5 y ábrelo con el instalador MaxPack de la consola, que es el payload de
+   [DeLFuS77/maxpack-ps5](https://github.com/DeLFuS77/maxpack-ps5) (`maxpack.elf`;
+   [cómo funciona su instalación](instalador-ps5.md)). El instalador deja el juego en
    `<unidad>/homebrew/<TITLE_ID>` y sigue comprimido en la consola.
 
 ### Hecho para: Jugar desde el USB

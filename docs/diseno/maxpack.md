@@ -80,7 +80,8 @@ Las mejoras de runtime (M4–M7) **solo se implementan si el analizador demuestr
    zstd va incluido como submódulo (facebook/zstd). Mismo código para PC y PS5.
 2. **CLI `maxpack` (PC)** — `analyze`, `pack`, `unpack`, `verify`, `info`.
 3. **Payload PS5 `maxpack.elf`** (C, ps5-payload-sdk + zstd de pacbrew-repo) — interfaz web,
-   instala `.p5z` y registra el juego en ShadowMountPlus.
+   instala `.p5z` y registra el juego en ShadowMountPlus. Hoy lo publica DeLFuS77/maxpack-ps5, que usa
+   las bibliotecas de este repositorio (`src/install/`, `src/web/`).
 4. **Runtime v2** — versión modificada de ampr-emu-ng (Rust, GPL-3) que lee también el formato v2.
 
 ### 6.2 Analizador (fase 0)

@@ -206,7 +206,7 @@ func TestReportHasNoNames(t *testing.T) {
 		"Result: ok (old_not_deleted, original_trashed)", "Result: error (verify_failed, files_bad:2, tmp_not_deleted)",
 		"| 8.0 → 2.3 GiB (−71 %) | p5z | 1 | ? | ? | ? | ? | ? | ? |  |",
 		"| 69.0 → 33.0 GiB (−52 %) | p5z | 9 | ? | ? | ? | ? | ? | ? |  |",
-		"github.com/DeLFuS77/maxpack-ps5/issues/new?template=bug_report.yml",
+		"github.com/DeLFuS77/maxpack/issues/new?template=bug_report.yml",
 		"github.com/DeLFuS77/maxpack-ps5/issues/new?template=game_report.yml",
 	} {
 		if !strings.Contains(text, want) {

@@ -27,7 +27,7 @@ import (
 // links are the pages the window opens in the browser of the system, by name: the forms of a bug
 // and of a game for the compatibility list. The page asks for them by name, never by address.
 var links = map[string]string{
-	"bug":  "https://github.com/DeLFuS77/maxpack-ps5/issues/new?template=bug_report.yml",
+	"bug":  "https://github.com/DeLFuS77/maxpack/issues/new?template=bug_report.yml",
 	"game": "https://github.com/DeLFuS77/maxpack-ps5/issues/new?template=game_report.yml",
 }
 

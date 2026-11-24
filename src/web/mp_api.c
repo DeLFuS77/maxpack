@@ -48,8 +48,6 @@ struct mp_api {
     char last_kind[16], last_title[16], last_code[32], last_detail[600];
     int smp_alive;
     char smp_version[32];
-    const unsigned char *page;
-    size_t page_len;
     volatile int quit;
     void (*quit_cb)(void *);   // POST /api/quit
     void *quit_ctx;
@@ -854,20 +852,6 @@ void mp_api_handle(void *ctx, const mp_http_req *rq, mp_http_resp *rs) {
         return;
     }
     int get = !strcmp(rq->method, "GET"), post = !strcmp(rq->method, "POST");
-    if (get && !strcmp(rq->path, "/")) {
-        if (!a->page) {
-            rs->status = 404;
-            return;
-        }
-        rs->status = 200;
-        rs->content_type = "text/html; charset=utf-8";
-        rs->body = malloc(a->page_len + 1);
-        if (rs->body) {
-            memcpy(rs->body, a->page, a->page_len);
-            rs->body_len = a->page_len;
-        }
-        return;
-    }
     if (get && !strcmp(rq->path, "/api/state")) {
         handle_state(a, rs);
         return;
@@ -968,11 +952,6 @@ int mp_api_wait_idle(mp_api *a, unsigned timeout_ms) {
         if (t >= timeout_ms) return -1;
         mp_sleep_ms(10);
     }
-}
-
-void mp_api_set_page(mp_api *a, const unsigned char *html, size_t len) {
-    a->page = html;
-    a->page_len = len;
 }
 
 void mp_api_set_quit(mp_api *a, mp_api_quit_cb cb, void *ctx) {

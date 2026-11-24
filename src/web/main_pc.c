@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// PC installer: the same engine and the same page as on the PS5, over folders on the PC.
+// PC installer: the same engine and API as on the PS5, over folders on the PC (no page: use a client of the API).
 // Only useful for testing without a console; it is not distributed.
 //   maxpack-installer-pc --internal DIR [--drive DIR]... [--port 8095] [--runtime FILE] [--smp-port 10101]
 #include <stdio.h>
@@ -8,7 +8,6 @@
 
 #include "mp_api.h"
 #include "mp_inst_internal.h"
-#include "mp_page.h"
 #include "mp_platform.h"
 
 static void say(void *ctx, const char *msg) {
@@ -75,7 +74,6 @@ int main(int argc, char **argv) {
         fprintf(stderr, "error: %s\n", e.msg);
         return 1;
     }
-    mp_api_set_page(api, mp_page_html, mp_page_html_len);
     mp_http_server *srv = mp_http_start("127.0.0.1", (uint16_t)port, mp_api_handle, api, &e);
     if (!srv) {
         fprintf(stderr, "error: %s\n", e.msg);

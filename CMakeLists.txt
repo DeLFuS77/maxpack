@@ -63,23 +63,12 @@ target_include_directories(maxpack_install PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/sr
 target_link_libraries(maxpack_install PUBLIC maxpack_pack maxpack_net)
 mp_warnings(maxpack_install)
 
-# The installer's web (phase 2): API and page.
+# The installer's web (phase 2): the JSON API.
 file(GLOB MP_WEB_SRC CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/web/mp_*.c)
 add_library(maxpack_web STATIC ${MP_WEB_SRC})
 target_include_directories(maxpack_web PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/web)
 target_link_libraries(maxpack_web PUBLIC maxpack_install)
 mp_warnings(maxpack_web)
-
-# The installer's page, embedded in the binary.
-set(MP_PAGE_C ${CMAKE_BINARY_DIR}/gen/mp_page.c)
-add_custom_command(OUTPUT ${MP_PAGE_C}
-  COMMAND ${CMAKE_COMMAND} -DIN=${CMAKE_CURRENT_SOURCE_DIR}/web/index.html -DOUT=${MP_PAGE_C} -DNAME=mp_page_html
-          -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed.cmake
-  DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/web/index.html ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed.cmake
-  COMMENT "Embedding web/index.html")
-add_library(maxpack_page STATIC ${MP_PAGE_C})
-target_include_directories(maxpack_page PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/web)
-target_link_libraries(maxpack_web PUBLIC maxpack_page)
 
 if(MAXPACK_PS5)
   # maxpack.elf: the phase 2 installer. It is no longer published nor built by this
@@ -110,7 +99,7 @@ if(MAXPACK_PS5)
   mp_warnings(maxpack_elf)
   set(MAXPACK_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 else()
-  # PC installer, only to test the engine and the page without a console.
+  # PC installer, only to test the engine and its JSON API without a console (the page is the console payload's).
   add_executable(maxpack-installer-pc src/web/main_pc.c)
   target_link_libraries(maxpack-installer-pc PRIVATE maxpack_web)
   mp_warnings(maxpack-installer-pc)
@@ -181,7 +170,6 @@ if(MAXPACK_BUILD_TESTS)
   mp_add_test(test_smp)
   mp_add_test(test_api FIXTURES)
   mp_add_test(test_api_call FIXTURES)
-  mp_add_test(test_page)
   mp_add_test(test_idx3 FIXTURES)
   set_tests_properties(test_idx3 PROPERTIES FIXTURES_SETUP idx3)
   add_test(NAME check_idx3 COMMAND ${Python3_EXECUTABLE} -I

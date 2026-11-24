@@ -8,7 +8,6 @@
 
 #include "mp_api.h"
 #include "mp_json.h"
-#include "mp_page.h"
 #include "mp_smp.h"
 #include "mp_version.h"
 
@@ -58,7 +57,6 @@ int main(void) {
         notify(NULL, e.msg);
         return 1;
     }
-    mp_api_set_page(api, mp_page_html, mp_page_html_len);
     mp_http_server *srv = mp_http_start("0.0.0.0", PORT, mp_api_handle, api, &e);
     if (!srv) {
         notify(NULL, "MaxPack is already running: port 8095 is busy");

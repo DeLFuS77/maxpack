@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // The installer's JSON API and its job queue (one install at a time).
-//   GET  /                 the page
 //   GET  /api/state        drives, found, installed, job in progress, last result
 //   POST /api/scan {}      searches again
 //   POST /api/probe        {"path"}
@@ -27,7 +26,6 @@ typedef struct mp_api mp_api;
 mp_api *mp_api_new(const mp_inst_env *env, const mp_smp_cfg *smp, unsigned smp_retry_ms, mp_err *e);
 void mp_api_handle(void *api, const mp_http_req *rq, mp_http_resp *rs);   // for mp_http_start
 int mp_api_wait_idle(mp_api *a, unsigned timeout_ms);                    // 0 if the queue emptied
-void mp_api_set_page(mp_api *a, const unsigned char *html, size_t len);
 // With mp_api_set_quit, POST /api/quit (loopback only) calls cb(ctx) once and answers 200.
 // cb must not stop the server or free the API: it only notifies (it is called inside the handler, before
 // sending the response, and stopping it from there would block or use freed memory). mp_api_set_quit

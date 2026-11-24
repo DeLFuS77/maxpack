@@ -91,8 +91,8 @@ is of no use for a `.p5z` that is already on a USB drive. It stays for phase 2 b
    `ampr_emu.index`, hashes and zstd 1.5.6. The POSIX code of `mp_platform.c` is the starting point.
 2. **Install engine** (new, portable C11): looks for `.p5z`, plans, copies, verifies, resumes, keeps the
    record of what is installed, verifies and uninstalls. It works the same on the PC and on the PS5.
-3. **Web server and page** (new, portable): minimal HTTP with a JSON API and the page (HTML, CSS and JS)
-   embedded in the binary.
+3. **Web server** (new, portable): minimal HTTP with the JSON API. The page that uses it, with its own
+   translations, is the console payload's (`maxpack-ps5`); this repository no longer carries a page.
 4. **PS5 layer** (new, console only): payload start-up, on-screen notices, free space, mounted drives
    and ShadowMountPlus API client.
 5. **PC version of the installer** (for testing): the engine and the web server built on Windows or

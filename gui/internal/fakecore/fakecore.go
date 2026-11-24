@@ -28,6 +28,9 @@ import (
 //     and no --runtime; verify ends well.
 //   - "priority": ends well at once, saying the priority it runs at ("priority" in its result: see
 //     NormalPriority and LowPriority).
+//   - "writes": pack and unpack write their output (in an empty folder that is there too), tell
+//     some progress and end well; verify ends well.
+//   - "bad-verify": as "writes", but verify finds a damaged file.
 const Env = "MP_FAKE_CORE"
 
 // Main acts as the engine and exits when Env says so; else it returns at once.
@@ -56,6 +59,27 @@ func run(mode string, args []string) int {
 		return 2
 	case "priority":
 		fmt.Printf("{\"event\":\"result\",\"ok\":true,\"files_bad\":0,\"priority\":%q}\n", priority())
+		return 0
+	case "writes", "bad-verify":
+		if len(args) > 0 && args[0] == "verify" {
+			if mode == "bad-verify" {
+				fmt.Println(`{"event":"result","ok":false,"files_bad":1}`)
+				return 1
+			}
+			fmt.Println(`{"event":"result","ok":true,"files_bad":0}`)
+			return 0
+		}
+		out := output(args)
+		if out == "" {
+			fmt.Fprintln(os.Stderr, "error: missing -o")
+			return 2
+		}
+		if err := writePart(out, hasArg(args, "--p5z")); err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			return 1
+		}
+		progress()
+		fmt.Println(`{"event":"result","ok":true,"original_size":10,"output_size":8}`)
 		return 0
 	case "stubborn":
 		progress()

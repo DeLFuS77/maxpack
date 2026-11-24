@@ -42,7 +42,30 @@ type Options struct {
 	Threads       int
 	Runtime       string
 	ContinueFat32 bool
+	// Originals is what becomes of a game once its .p5z or folder is made, verified and in its
+	// place, only when compressing: OriginalsKeep, OriginalsTrash or OriginalsDelete
+	Originals string
+	// OriginalsNoBin: with OriginalsTrash, the originals that cannot go to the recycle bin (their
+	// drive has none, or they do not fit in it) are deleted for good; else they stay
+	OriginalsNoBin bool
+	// LowPriority runs the engine below the other programs (see core.RunOptions)
+	LowPriority bool
 }
+
+// What becomes of the original of a game once its new one is checked (Options.Originals).
+const (
+	OriginalsKeep   = ""
+	OriginalsTrash  = "trash"  // to the recycle bin of the system
+	OriginalsDelete = "delete" // deleted for good
+)
+
+// The names of what a queue writes apart: the new one while it is made and verified, and the old
+// one it replaces while the new one takes its place. Both end with the game; one a crash leaves
+// is found at the next start (see Leftovers).
+const (
+	TmpSuffix = ".maxpack-tmp"
+	OldSuffix = ".maxpack-old"
+)
 
 // Plan is what will be done with one game: where it goes, what it replaces, what to tell the
 // user and, if it cannot be done, why not. Block is "same_as_source", "no_space" or
@@ -50,9 +73,11 @@ type Options struct {
 // "may_not_fit", "duplicate_target" and "no_title_id". A Plan with Replace is one the user accepted
 // to replace: not going on with it is a matter of dropping the plan.
 type Plan struct {
-	Item     Item
-	Out      string
-	Tmp      string   // with Replace: where the new one is made, <Out>.maxpack-tmp
+	Item Item
+	Out  string
+	// Tmp is where the new one is made, <Out>.maxpack-tmp, hidden on Windows: only once it is
+	// verified does it take the name Out (or, with Replace, the place of the old one)
+	Tmp      string
 	Replace  []string // what exists in the way, and goes when the new one is done and checked
 	Warnings []string
 	Block    string
@@ -161,15 +186,12 @@ func plan(items []Item, o Options, fs FS, out func(Item) string, args func(it It
 			plans[i] = p
 			continue
 		}
+		// every game is written apart, and takes its name only once verified
+		p.Tmp = p.Out + TmpSuffix
 		if inTheWay(p.Out) {
 			p.Replace = []string{p.Out}
-			p.Tmp = p.Out + ".maxpack-tmp"
 		}
-		target := p.Out
-		if p.Tmp != "" {
-			target = p.Tmp
-		}
-		p.Args = args(it, target)
+		p.Args = args(it, p.Tmp)
 		if fat32 {
 			if kind, err := fs.Type(o.Dest); err == nil && strings.EqualFold(kind, "fat32") && it.OriginalSize > fat32Max {
 				p.Warnings = append(p.Warnings, "fat32")

@@ -122,7 +122,7 @@ const pathKey = path => (windows ? String(path).toLowerCase() : String(path));
 
 function newRow(path, section) {
   const tr = $("row-template").content.firstElementChild.cloneNode(true);
-  const row = { path, section, game: null, error: "", state: "", detail: "", step: "", phase: "", offset: 0, done: 0, total: 0, out: "", outSize: 0, homebrew: false, warnings: [], replacing: false, tr };
+  const row = { path, section, game: null, error: "", state: "", detail: "", step: "", phase: "", offset: 0, done: 0, total: 0, out: "", outSize: 0, homebrew: false, warnings: [], tr };
   tr.querySelector(".remove button").addEventListener("click", () => removeRow(row));
   // the entrance of a row and the pop of what it saved play once: a row put back in the list
   // (every render puts them all back) does not play them again
@@ -225,11 +225,11 @@ function clearList() {
 
 // ---- how far a game is -------------------------------------------------------------------------
 
-// the steps of a game in a queue of a mode, each a part of its bar
+// the steps of a game in a queue of a mode, each a part of its bar: what is made is verified
+// before it takes its name, but the original dump, which the engine checks as it writes it
 function stepsOf(row, mode) {
-  if (mode === "p5z" || mode === "folder") return ["packing", "verifying"];
+  if (mode === "p5z" || mode === "folder" || mode === "console") return [mode === "console" ? "unpacking" : "packing", "verifying"];
   if (mode === "verify") return ["verifying"];
-  if (mode === "console" && row.replacing) return ["unpacking", "verifying"];
   return ["unpacking"];
 }
 // how far the step at work is, from 0 to 1: the phases of a step follow one another (copying the
@@ -768,7 +768,7 @@ async function startQueue() {
     job = { section, mode: opts.Mode, dest: opts.Dest, runtime: opts.Runtime || builtInRuntime(), rows: going.map(n => rows[n]), shown: 0, rate: 0 };
     for (const n of going) {
       Object.assign(rows[n], { state: "waiting", detail: "", step: "", phase: "", offset: 0, done: 0, total: 0, out: "", outSize: 0,
-        warnings: plans[n].Warnings || [], replacing: (plans[n].Replace || []).length > 0 });
+        warnings: plans[n].Warnings || [] });
     }
     job.running = true;
     state.job = job;

@@ -85,7 +85,7 @@ func (t *teller) item(i int, state, detail string) {
 	e := itemEvent{I: i, State: state, Detail: detail}
 	if state == jobs.StateOK && t.mode != jobs.ModeVerify && i < len(t.plans) {
 		e.Out = t.plans[i].Out
-		e.Size = sizeOn(e.Out)
+		e.Size = jobs.SizeOf(e.Out)
 		if t.mode == jobs.ModeFolder || t.mode == jobs.ModeConsole {
 			e.Homebrew = inHomebrew(e.Out, t.drives)
 		}
@@ -124,14 +124,16 @@ type shareRow struct {
 	ended               bool
 }
 
-// stepsOf are the steps of a game in a queue of a mode, as the Runner does them.
-func stepsOf(mode jobs.Mode, replacing bool) []string {
-	switch {
-	case mode == jobs.ModeP5z || mode == jobs.ModeFolder:
+// stepsOf are the steps of a game in a queue of a mode, as the Runner does them: what is made is
+// verified before it takes its name, but the original dump, which the engine checks file by file
+// as it writes it.
+func stepsOf(mode jobs.Mode) []string {
+	switch mode {
+	case jobs.ModeP5z, jobs.ModeFolder:
 		return []string{jobs.StatePacking, jobs.StateVerifying}
-	case mode == jobs.ModeVerify:
+	case jobs.ModeVerify:
 		return []string{jobs.StateVerifying}
-	case mode == jobs.ModeConsole && replacing:
+	case jobs.ModeConsole:
 		return []string{jobs.StateUnpacking, jobs.StateVerifying}
 	}
 	return []string{jobs.StateUnpacking}
@@ -140,7 +142,7 @@ func stepsOf(mode jobs.Mode, replacing bool) []string {
 func newShare(plans []jobs.Plan, mode jobs.Mode) *share {
 	s := &share{rows: make([]shareRow, len(plans))}
 	for i, p := range plans {
-		s.rows[i] = shareRow{size: p.Item.OriginalSize, steps: stepsOf(mode, len(p.Replace) > 0)}
+		s.rows[i] = shareRow{size: p.Item.OriginalSize, steps: stepsOf(mode)}
 	}
 	return s
 }

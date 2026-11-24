@@ -11,7 +11,6 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -266,27 +265,6 @@ func (a *App) plans(section string, items []jobs.Item, o jobs.Options) ([]jobs.P
 	return jobs.PlanCompress(items, o, drives), o, nil
 }
 
-// sizeOn is what a file or a folder takes, its files added up.
-func sizeOn(path string) uint64 {
-	info, err := os.Stat(path)
-	if err != nil {
-		return 0
-	}
-	if !info.IsDir() {
-		return uint64(info.Size())
-	}
-	var total uint64
-	filepath.WalkDir(path, func(_ string, entry fs.DirEntry, err error) error {
-		if err == nil && entry.Type().IsRegular() {
-			if info, err := entry.Info(); err == nil {
-				total += uint64(info.Size())
-			}
-		}
-		return nil
-	})
-	return total
-}
-
 // Plan gives what a queue of a section would do with the games, before it starts: where each
 // goes, what it replaces and how much that takes, what to warn of and what cannot go.
 func (a *App) Plan(section string, items []jobs.Item, opts Choices) ([]PlanView, error) {
@@ -298,7 +276,7 @@ func (a *App) Plan(section string, items []jobs.Item, opts Choices) ([]PlanView,
 	for i, p := range plans {
 		views[i] = PlanView{Plan: p}
 		for _, path := range p.Replace {
-			views[i].ReplaceSize += sizeOn(path)
+			views[i].ReplaceSize += jobs.SizeOf(path)
 		}
 	}
 	return views, nil

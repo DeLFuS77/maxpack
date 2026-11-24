@@ -2,7 +2,7 @@
 #ifndef MP_VERSION_H
 #define MP_VERSION_H
 
-#define MP_VERSION "1.0.2"
+#define MP_VERSION "1.0.3"
 
 const char *mp_version_string(void);
 

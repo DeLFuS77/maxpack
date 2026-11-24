@@ -20,8 +20,9 @@ import (
 
 // App is what the window asks for: its methods are called from the page.
 type App struct {
-	ctx   context.Context
-	files []string
+	ctx context.Context
+	// what the window was started with, until the page takes it
+	start launch
 	// lets the next MaxPack start, once this window takes files
 	started func()
 
@@ -88,6 +89,10 @@ type Setup struct {
 	// CPUThreads are the threads of this PC, which Compress gives the engine unless a measure
 	// found fewer to be as fast (Settings.Threads)
 	CPUThreads int `json:"cpuThreads"`
+	// Explorer: this system has Settings › Windows Explorer (see shell.go); Portable: this copy
+	// keeps everything next to it, and writes nothing in Windows
+	Explorer bool `json:"explorer"`
+	Portable bool `json:"portable"`
 }
 
 func (a *App) startup(ctx context.Context) {
@@ -95,8 +100,8 @@ func (a *App) startup(ctx context.Context) {
 	// the ampr-emu-ng that comes with MaxPack is written now, before anything asks for it
 	a.builtInRuntime()
 	// what the window was started with waits for the page, as what other MaxPack send does
-	a.receive(a.files)
-	a.files = nil
+	a.receive(a.start)
+	a.start = launch{}
 	if a.started != nil {
 		a.started()
 	}
@@ -107,7 +112,8 @@ func (a *App) startup(ctx context.Context) {
 // reported in CoreError and the window opens all the same.
 func (a *App) Setup() Setup {
 	saved, _ := settings.Load()
-	setup := Setup{Version: version, Lang: saved.EffectiveLang(), Theme: saved.Theme, LogFile: logFile(), Templates: jobs.Templates, CPUThreads: runtime.NumCPU()}
+	setup := Setup{Version: version, Lang: saved.EffectiveLang(), Theme: saved.Theme, LogFile: logFile(), Templates: jobs.Templates, CPUThreads: runtime.NumCPU(),
+		Explorer: shell.available(), Portable: isPortable()}
 	if builtIn := a.builtInRuntime(); builtIn != "" {
 		setup.BuiltInRuntime, setup.BuiltInRuntimeVersion = builtIn, bundled.Version()
 	}
@@ -150,11 +156,17 @@ func (a *App) SetSettings(s settings.Settings) error {
 	return settings.Save(s)
 }
 
-// secondInstance takes the files another MaxPack was started with: this window comes to the
-// front and the files go to the page, to Compress or Decompress by what they are.
+// bringToFront puts this window in front of the others (a variable, for the tests).
+var bringToFront = system.BringToFront
+
+// secondInstance takes what another MaxPack was started with (from the menu of the Explorer, Send
+// to, a double click on a .p5z, or files dropped on MaxPack): this window comes to the front and
+// the files go to the page, to the space the Explorer asked for or the one that fits them (see
+// spaceOf). Wails calls it from its own goroutine, which the window coming to the front may wait
+// for, so that goes apart.
 func (a *App) secondInstance(data wailsoptions.SecondInstanceData) {
-	go system.BringToFront()
+	go bringToFront()
 	if start, ok := windowLaunch(absolute(data.Args, data.WorkingDirectory)); ok {
-		a.receive(start.files)
+		a.receive(start)
 	}
 }

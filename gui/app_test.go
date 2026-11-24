@@ -59,6 +59,17 @@ func TestForwardArgs(t *testing.T) {
 	if exit, ok := err.(*exec.ExitError); !ok || exit.ExitCode() != 2 {
 		t.Fatalf("pack without arguments should exit with 2: %v", err)
 	}
+	// the arguments of the Explorer open the window only with files: without, they go to
+	// maxpack-core, which does not know them, as before
+	err = exec.Command(exe, "--section", "verify").Run()
+	if exit, ok := err.(*exec.ExitError); !ok || exit.ExitCode() != 2 {
+		t.Fatalf("--section without files should be maxpack-core's, and exit with 2: %v", err)
+	}
+	// the installer without what to do says how it is used, and does nothing else
+	out, err := exec.Command(exe, "--installer").CombinedOutput()
+	if exit, ok := err.(*exec.ExitError); !ok || exit.ExitCode() != 1 || !strings.Contains(string(out), "usage: MaxPack --installer") {
+		t.Fatalf("--installer alone: %v %s", err, out)
+	}
 }
 
 func TestSetupFromSettings(t *testing.T) {

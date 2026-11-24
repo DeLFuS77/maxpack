@@ -36,7 +36,7 @@ const singleWindow = "maxpack-window-1"
 
 // runWindow opens the window with the files given, and gives the exit code once it is closed.
 func runWindow(start launch) int {
-	app := &App{files: start.files}
+	app := &App{start: start}
 	single := &wailsoptions.SingleInstanceLock{UniqueId: singleWindow, OnSecondInstanceLaunch: app.secondInstance}
 	if runtime.GOOS == "windows" {
 		// the files go to the MaxPack open, which comes to the front; one starting meanwhile
@@ -67,7 +67,7 @@ func runWindow(start launch) int {
 		DragAndDrop:        &wailsoptions.DragAndDrop{EnableFileDrop: true, DisableWebViewDrop: true},
 		SingleInstanceLock: single,
 		// files opened on, or dropped on, the Dock icon go where the ones of a second MaxPack go
-		Mac:   &mac.Options{OnFileOpen: func(path string) { app.receive([]string{path}) }},
+		Mac:   &mac.Options{OnFileOpen: func(path string) { app.receive(launch{files: []string{path}}) }},
 		Linux: &linux.Options{Icon: appIcon, ProgramName: "maxpack"},
 		Bind:  []any{app},
 		// portable: the page keeps its settings next to the program too

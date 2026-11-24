@@ -393,9 +393,9 @@ func TestSeveralFoldersAtOnce(t *testing.T) {
 	if strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Errorf("%v\nexpected %v", got, want)
 	}
-	compress, decompress := routeFiles([]string{first, second, image, touch(t, t.TempDir(), "x.p5z", 1)})
-	if len(compress) != 3 || len(decompress) != 1 {
-		t.Errorf("dropped: %v %v", compress, decompress)
+	given := routeFiles(launch{files: []string{first, second, image, touch(t, t.TempDir(), "x.p5z", 1)}})
+	if len(given.Compress) != 3 || len(given.Details) != 1 {
+		t.Errorf("given to MaxPack: %+v", given)
 	}
 	// the dialog of several folders gives each to Expand
 	a.ctx = context.Background()

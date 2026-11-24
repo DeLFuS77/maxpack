@@ -2,7 +2,8 @@
 ;
 ; El instalador de MaxPack para Windows. Se compila con makensis y estas definiciones:
 ;   VERSION  (por ejemplo dev-1a2b3c4 o 1.2.3)    NUMBERS  (4 números: 1.2.3.0)
-;   PROGRAM  (MaxPack.exe)   CORE (maxpack-core.exe)   LICENSE (LICENSE)   ICON (appicon.ico)
+;   PROGRAM  (MaxPack.exe)   CORE (maxpack-core.exe)   LICENSE (LICENSE)   NOTICES (THIRD_PARTY_NOTICES)
+;   ICON (appicon.ico)
 ;   OUTFILE  (el instalador que sale)
 ;
 ; Instala para el usuario, en %LOCALAPPDATA%\Programs\MaxPack, sin administrador. No lleva la
@@ -63,6 +64,7 @@ Section "MaxPack"
   File "/oname=MaxPack.exe" "${PROGRAM}"
   File "/oname=maxpack-core.exe" "${CORE}"
   File "/oname=LICENSE.txt" "${LICENSE}"
+  File "/oname=THIRD_PARTY_NOTICES.txt" "${NOTICES}"
   WriteUninstaller "$INSTDIR\uninstall.exe"
 
   CreateShortcut "$SMPROGRAMS\MaxPack.lnk" "$INSTDIR\MaxPack.exe"
@@ -85,6 +87,7 @@ Section "Uninstall"
   Delete "$INSTDIR\MaxPack.exe"
   Delete "$INSTDIR\maxpack-core.exe"
   Delete "$INSTDIR\LICENSE.txt"
+  Delete "$INSTDIR\THIRD_PARTY_NOTICES.txt"
   Delete "$INSTDIR\uninstall.exe"
   ; lo que haya puesto el usuario junto a ellos se queda, y la carpeta con ello
   RMDir "$INSTDIR"

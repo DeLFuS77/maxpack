@@ -109,6 +109,12 @@ function newRow(path, section) {
   const tr = $("row-template").content.firstElementChild.cloneNode(true);
   const row = { path, section, game: null, error: "", state: "", detail: "", step: "", phase: "", offset: 0, done: 0, total: 0, out: "", outSize: 0, homebrew: false, warnings: [], replacing: false, tr };
   tr.querySelector(".remove button").addEventListener("click", () => removeRow(row));
+  // the entrance of a row and the pop of what it saved play once: a row put back in the list
+  // (every render puts them all back) does not play them again
+  tr.addEventListener("animationend", event => {
+    if (event.animationName === "row-in") tr.classList.remove("enter");
+    if (event.animationName === "pop") event.target.classList.remove("pop");
+  });
   return row;
 }
 
@@ -140,6 +146,7 @@ function addPaths(section, paths) {
     if (typeof path !== "string" || have.has(pathKey(path))) continue;
     have.add(pathKey(path));
     const row = newRow(path, section);
+    row.tr.classList.add("enter");
     list.push(row);
     paintRow(row);
     describe(row);
@@ -358,7 +365,7 @@ function paintState(row) {
     if (segs.children.length !== steps.length) segs.replaceChildren(...steps.map(() => $("seg-template").content.firstElementChild.cloneNode(true)));
     [...segs.children].forEach((seg, n) => {
       seg.className = "seg " + (steps[n] === "verifying" ? "tone-check" : "tone-work");
-      seg.firstElementChild.style.width = (n < index ? 100 : n === index ? share * 100 : 0) + "%";
+      seg.firstElementChild.style.transform = "scaleX(" + (n < index ? 1 : n === index ? share : 0) + ")";
     });
     const phase = row.phase ? t("phase_" + row.phase) : "";
     step.textContent = [phase, t("percent")(Math.floor(rowShare(row, job.mode) * 100))].filter(Boolean).join(" · ");
@@ -366,7 +373,9 @@ function paintState(row) {
   // what it saved, once made
   const saved = tr.querySelector(".saved"), game = row.game;
   const smaller = row.section === "compress" && row.state === "ok" && game && row.outSize && row.outSize < game.OriginalSize;
-  saved.textContent = smaller ? t("smallerBy")(Math.round((1 - row.outSize / game.OriginalSize) * 100)) : "";
+  const savedText = smaller ? t("smallerBy")(Math.round((1 - row.outSize / game.OriginalSize) * 100)) : "";
+  if (savedText && !saved.textContent) saved.classList.add("pop");
+  saved.textContent = savedText;
   tr.querySelector(".remove button").disabled = running() && job.rows.includes(row);
 }
 
@@ -384,12 +393,22 @@ function paintTexts() {
   document.querySelectorAll("[data-t-label]").forEach(element => { element.setAttribute("aria-label", t(element.dataset.tLabel)); });
 }
 
+// the highlight of the open section slides to it: moved, never animated in size
+function placeNavHighlight() {
+  const on = document.querySelector("nav button.on"), highlight = $("nav-hl");
+  if (!on || !on.offsetHeight) return;
+  highlight.style.height = on.offsetHeight + "px";
+  highlight.style.transform = "translateY(" + on.offsetTop + "px)";
+  highlight.classList.add("on");
+}
+
 function paintNav() {
   for (const button of document.querySelectorAll("nav button[data-section]")) {
     const on = button.dataset.section === state.section;
     button.classList.toggle("on", on);
     if (on) button.setAttribute("aria-current", "page"); else button.removeAttribute("aria-current");
   }
+  placeNavHighlight();
   const setup = state.setup, core = $("side-core");
   core.classList.toggle("bad", !setup || !!setup.coreError);
   core.textContent = !setup ? t("noWindowShort") : setup.coreError ? (setup.coreOtherVersion ? t("coreOtherVersionShort") : t("coreMissingShort")) : "maxpack-core " + (setup.coreVersion.split(" ")[1] || "");
@@ -495,7 +514,7 @@ function paintSummary() {
     const finished = job.rows.filter(row => ended.includes(row.state)).length;
     $("summary-text").textContent = t("working")(finished, job.rows.length, Math.floor(share * 100));
     bar.hidden = false;
-    bar.firstElementChild.style.width = share * 100 + "%";
+    bar.firstElementChild.style.transform = "scaleX(" + share + ")";
     $("status").textContent = state.cancelling ? t("cancelling")
       : [job.rate > 0 ? t("speed")(size(job.rate)) : "", left >= 1 ? t("timeLeft")(time(Math.round(left))) : ""].filter(Boolean).join(" · ");
     return;
@@ -897,6 +916,7 @@ function wire() {
   }));
   for (const button of document.querySelectorAll("button[data-theme]")) button.addEventListener("click", () => { keep({ Theme: button.dataset.theme }); applyTheme(); render(); });
   watchDrops();
+  window.addEventListener("resize", placeNavHighlight);
 }
 
 async function main() {

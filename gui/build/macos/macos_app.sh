@@ -27,9 +27,11 @@ for size in 16 32 128 256 512; do
 done
 iconutil -c icns "${iconset}" -o "${app}/Contents/Resources/icon.icns"
 
+# de una etiqueta v1.2.3 (o 1.2.3) salen la versión 1.2.3 y los números 1.2.3; si no, 0.0.0
+version="${version#v}"
 numbers="0.0.0"
-if [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-  numbers="${version}"
+if [[ "${version}" =~ ^([0-9]+\.[0-9]+\.[0-9]+)(-[0-9A-Za-z.-]+)?$ ]]; then
+  numbers="${BASH_REMATCH[1]}"
 fi
 cat > "${app}/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

@@ -105,7 +105,7 @@ Generado por `tools/build_ampr_index.py` (drakmor/ampr_emu). Lista todos los arc
 - Cabecera `<8sIIQQQII`: `AMPRIDX3`, versión 3, tamaño de registro (24), número de filas, longitud
   del blob de rutas, offset de la tabla hash, tamaño de slot (16), número de slots.
 - Registro `<IIQq`: offset en el blob, longitud de ruta, tamaño, mtime (segundos Unix).
-- Blob: rutas UTF-8 terminadas en NUL. Relleno hasta múltiplo de 16. Después, los slots.
+- Blob: rutas UTF-8 terminadas en NUL. Relleno hasta múltiplo de 16 (build_ampr_index.py). Después, los slots. Al leer se acepta también el offset de los slots alineado solo a 8, como el de otros generadores (el índice propio de un paquete); al reescribir, siempre a 16.
 - Slots: potencia de 2 ≥ 2·filas (mínimo 2), direccionamiento abierto lineal desde `h & mask`;
   slot `<QII>` = (hash, índice+1, flags); flag 1 = hash duplicado (se marca en ambos).
 - Se excluyen `ampr_commands.bin` y `apr_emu.log`.

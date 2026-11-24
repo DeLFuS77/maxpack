@@ -252,11 +252,77 @@ MP_TEST(idx3_set_row_bad_input) {
     free(d);
 }
 
+// Un índice de otro generador (el propio de un paquete, p. ej. Crisis Core) puede dejar la tabla de
+// slots en un offset múltiplo de 8 pero no de 16. Lo único que exige el formato es que quepa tras las
+// rutas y que cada slot (16 B) esté alineado a 8.
+static void put64(uint8_t *p, uint64_t v) {
+    for (int i = 0; i < 8; i++) p[i] = (uint8_t)(v >> (8 * i));
+}
+
+// Copia de idx con la tabla de slots 'pad' bytes más allá (y la cabecera apuntando ahí).
+static uint8_t *shift_slots(const uint8_t *idx, size_t len, size_t pad, size_t *out_len) {
+    uint64_t hash_off = rd64(idx + 32);
+    uint8_t *d = calloc(1, len + pad);
+    memcpy(d, idx, (size_t)hash_off);
+    memcpy(d + hash_off + pad, idx + hash_off, len - (size_t)hash_off);
+    put64(d + 32, hash_off + pad);
+    *out_len = len + pad;
+    return d;
+}
+
+MP_TEST(idx3_parse_accepts_8_aligned_slots) {
+    mp_idx3_row rows[3] = {{"B.bin", 5, 100}, {"a.bin", 7, 200}, {"dir/c.bin", 9, 300}};
+    uint8_t *d = NULL, *a8 = NULL;
+    size_t n = 0, n8 = 0;
+    mp_err e = {{0}};
+    MP_CHECK(mp_idx3_build(rows, 3, &d, &n, &e) == 0);
+    if (!d) return;
+    a8 = shift_slots(d, n, 8, &n8);
+    MP_CHECK_EQ_U64(rd64(a8 + 32) % 16, 8);
+    mp_idx3_entry *v = NULL;
+    size_t m = 0;
+    memset(&e, 0, sizeof e);
+    MP_CHECK(mp_idx3_parse(a8, n8, &v, &m, &e) == 0);
+    if (e.msg[0]) MP_FAIL_("%s", e.msg);
+    MP_CHECK_EQ_U64(m, 3);
+    if (v && m == 3) {
+        MP_CHECK_STR(v[0].app0_path, "/app0/a.bin");
+        MP_CHECK_STR(v[1].app0_path, "/app0/B.bin");
+        MP_CHECK_STR(v[2].app0_path, "/app0/dir/c.bin");
+        MP_CHECK(mp_idx3_find(v, m, "DIR/C.BIN") == 2);
+    }
+    mp_idx3_entries_free(v, m);
+    // cambiar una fila lo reescribe en el formato propio (alineado a 16)
+    uint8_t *w = NULL;
+    size_t wl = 0;
+    memset(&e, 0, sizeof e);
+    MP_CHECK(mp_idx3_set_row(a8, n8, "a.bin", 11, 400, &w, &wl, &e) == 0);
+    if (w) {
+        MP_CHECK_EQ_U64(rd64(w + 32) % 16, 0);
+        mp_idx3_entry *v2 = NULL;
+        size_t m2 = 0;
+        MP_CHECK(mp_idx3_parse(w, wl, &v2, &m2, &e) == 0);
+        MP_CHECK(m2 == 3 && v2 && v2[0].size == 11 && v2[0].mtime == 400);
+        mp_idx3_entries_free(v2, m2);
+    }
+    free(w);
+    free(a8);
+
+    // sin alinear a 8, no: los slots llevan u64
+    uint8_t *a4 = shift_slots(d, n, 4, &n8);
+    memset(&e, 0, sizeof e);
+    MP_CHECK(mp_idx3_parse(a4, n8, &v, &m, &e) == -1);
+    MP_CHECK(e.msg[0] != 0);
+    free(a4);
+    free(d);
+}
+
 int main(void) {
     MP_RUN(idx3_set_row_matches_pack_runtime);
     MP_RUN(idx3_set_row_replaces);
     MP_RUN(idx3_set_row_bad_input);
     MP_RUN(idx3_find_case_insensitive);
+    MP_RUN(idx3_parse_accepts_8_aligned_slots);
     MP_RUN(idx3_two_rows);
     MP_RUN(idx3_rejects_case_dup);
     MP_RUN(idx3_parse_roundtrip);

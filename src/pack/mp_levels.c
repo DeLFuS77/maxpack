@@ -13,6 +13,7 @@
 
 #include "mp_analyze.h"
 #include "mp_platform.h"
+#include "mp_readahead.h"
 #include "mp_rules.h"
 #include "mp_sample.h"
 #include "mp_source_impl.h"
@@ -250,29 +251,37 @@ done:
 
 // ---- comparing -----------------------------------------------------------------------------------
 
-// Reads the sample once, in order and on one thread as the pack reads a game: how fast the game is
-// read, and the sample is then in memory for the levels when it fits.
-static int read_sample(mp_source *src, const uint32_t *packable, const mp_sample *smp, mp_progress *prog,
-                       uint64_t *ns, mp_err *e) {
+// Reads the sample once, in order and through the read-ahead as the pack reads a game: how fast the
+// game is read, and the sample is then in memory for the levels when it fits.
+static int read_sample(mp_source *src, const uint32_t *packable, const mp_sample *smp, unsigned threads,
+                       mp_progress *prog, uint64_t *ns, mp_err *e) {
     *ns = 0;
-    uint8_t *buf = malloc(MP_WINDOW);
-    if (!buf) {
+    mp_readahead_range *rg = malloc((smp->n ? smp->n : 1) * sizeof *rg);
+    if (!rg) {
         mp_err_set(e, "out of memory");
         return -1;
     }
-    uint64_t t0 = mp_now_ns();
     for (size_t k = 0; k < smp->n; k++) {
-        const mp_window *w = &smp->w[k];
-        if (mp_cancel_check(e) != 0 || mp_source_read(src, packable[w->file], w->off, buf, w->len, e) != 0) {
-            free(buf);
-            return -1;
-        }
-        mp_progress_add(prog, w->len);
+        rg[k].file = packable[smp->w[k].file];
+        rg[k].off = smp->w[k].off;
+        rg[k].len = smp->w[k].len;
+    }
+    mp_readahead_opts ro;
+    mp_readahead_opts_default(&ro);
+    if (ro.threads > threads) ro.threads = threads;   // as mp_zpk_write
+    mp_readahead *ra = NULL;
+    mp_readahead_piece pc;
+    uint64_t t0 = mp_now_ns();
+    int rc = mp_readahead_open_ranges(src, rg, smp->n, NULL, &ro, &ra, e);
+    while (rc == 0 && (rc = mp_readahead_next(ra, &pc, e)) == 1) {
+        rc = mp_cancel_check(e);
+        mp_progress_add(prog, pc.len);
         mp_progress_maybe_print(prog);
     }
     *ns = mp_now_ns() - t0;
-    free(buf);
-    return 0;
+    mp_readahead_close(ra);
+    free(rg);
+    return rc;
 }
 
 // Seconds for people: at least 1 when there was work.
@@ -360,7 +369,7 @@ int mp_levels_run(const char *src_path, const mp_levels_opts *o, mp_levels_repor
                      o->progress);
     prog_ok = 1;
     uint64_t read_ns = 0;
-    if (smp.n && read_sample(src, packable, &smp, &prog, &read_ns, e) != 0) goto done;
+    if (smp.n && read_sample(src, packable, &smp, threads, &prog, &read_ns, e) != 0) goto done;
     if (smp.n && read_ns) r->read_rate = (uint64_t)llround((double)smp.sample_bytes * 1e9 / (double)read_ns);
     uint64_t lstored = 0, lns = 0;
     if (run_loose(src, loose, &lsmp, threads, &prog, &lstored, &lns, e) != 0) goto done;

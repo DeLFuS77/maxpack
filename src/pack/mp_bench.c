@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Measuring this PC. The generated data is a pool of 64 MiB that a source of its own shows as files
-// of 8 MiB, as many as a trial needs, so mp_zpk_write packs it as it packs a game: one thread reads
-// and hashes, a pool compresses, this thread "writes" (into nothing). A short first run with the most
-// threads tells how much each trial needs to last about trial_seconds. Then a temporary file in the
-// folder is written (synced every 64 MiB) and read back past the system's cache, each for at most
-// disk_seconds, and deleted.
+// of 8 MiB, as many as a trial needs, so mp_zpk_write packs it as it packs a game: the read-ahead
+// reads and hashes, a pool compresses, this thread "writes" (into nothing). A short first run with
+// the most threads tells how much each trial needs to last about trial_seconds. Then a temporary file
+// in the folder is written (synced every 64 MiB) and read back past the system's cache, each for at
+// most disk_seconds, and deleted.
 #include "mp_bench.h"
 
 #include <math.h>

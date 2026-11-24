@@ -8,6 +8,8 @@
 :root {
   --bg: #0b111d; --panel: #111827; --raised: #172033; --line: #222d42; --text: #eef3ff; --muted: #93a0b8;
   --accent: #2d7dff; --accent-2: #36e2ff; --accent-soft: rgba(45, 125, 255, .14); --accent-text: #04111f;
+  /* the blue of small text on --accent-soft: --accent itself reads below 4.5:1 there */
+  --accent-ink: #7fb8ff;
   --ok: #3fe3a2; --ok-soft: rgba(63, 227, 162, .13); --bad: #ff5c73; --bad-soft: rgba(255, 92, 115, .12);
   --warn: #ffb547; --bar: #24304a; --hover: #1c263a; --focus: #7fb8ff;
   --radius: 10px; --radius-small: 8px;
@@ -24,8 +26,8 @@
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
     --bg: #eef2f8; --panel: #fff; --raised: #f5f7fb; --line: #dde3ec; --text: #111a2b; --muted: #5b667a;
-    --accent: #1b6ef3; --accent-2: #0a9fd0; --accent-soft: rgba(27, 110, 243, .09); --accent-text: #fff;
-    --ok: #0b7d57; --ok-soft: rgba(11, 125, 87, .1); --bad: #d02a43; --bad-soft: rgba(208, 42, 67, .08);
+    --accent: #1b6ef3; --accent-2: #0a9fd0; --accent-soft: rgba(27, 110, 243, .09); --accent-text: #fff; --accent-ink: #1259d6;
+    --ok: #0a7350; --ok-soft: rgba(10, 115, 80, .1); --bad: #d02a43; --bad-soft: rgba(208, 42, 67, .08);
     --warn: #9a5a00; --bar: #e3e8ef; --hover: #edf1f7; --focus: #1b6ef3;
     --tone-space: #1b6ef3; --tone-check: #0b8f88; --tone-neutral: #5b667a; --tile-on: #fff;
     --grad: linear-gradient(90deg, #1b6ef3, #0a9fd0);
@@ -37,8 +39,8 @@
 }
 :root[data-theme="light"] {
   --bg: #eef2f8; --panel: #fff; --raised: #f5f7fb; --line: #dde3ec; --text: #111a2b; --muted: #5b667a;
-  --accent: #1b6ef3; --accent-2: #0a9fd0; --accent-soft: rgba(27, 110, 243, .09); --accent-text: #fff;
-  --ok: #0b7d57; --ok-soft: rgba(11, 125, 87, .1); --bad: #d02a43; --bad-soft: rgba(208, 42, 67, .08);
+  --accent: #1b6ef3; --accent-2: #0a9fd0; --accent-soft: rgba(27, 110, 243, .09); --accent-text: #fff; --accent-ink: #1259d6;
+  --ok: #0a7350; --ok-soft: rgba(10, 115, 80, .1); --bad: #d02a43; --bad-soft: rgba(208, 42, 67, .08);
   --warn: #9a5a00; --bar: #e3e8ef; --hover: #edf1f7; --focus: #1b6ef3;
   --tone-space: #1b6ef3; --tone-check: #0b8f88; --tone-neutral: #5b667a; --tile-on: #fff;
   --grad: linear-gradient(90deg, #1b6ef3, #0a9fd0);
@@ -204,7 +206,7 @@ td.remove button { padding: 2px 8px; }
 .badge.error { color: var(--bad); background: var(--bad-soft); }
 .badge.skipped, .badge.cancelled { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
 .badge.waiting { color: var(--muted); background: var(--hover); }
-.badge.work { color: var(--accent); background: var(--accent-soft); }
+.badge.work { color: var(--accent-ink); background: var(--accent-soft); }
 @keyframes blink { 50% { opacity: .25; } }
 .badge.work::before { animation: blink 1.2s ease-in-out infinite; }
 /* the bar of a game, a part for each step (compress, then verify), each in its color; a fill is
@@ -244,7 +246,7 @@ aside { width: 280px; flex: none; border-left: 1px solid var(--line); padding: 2
 .segmented { display: flex; margin-top: 10px; border: 1px solid var(--line); border-radius: var(--radius-small); overflow: hidden; }
 .segmented button { flex: 1; border: none; border-radius: 0; font-size: 12px; padding: 6px 10px; background: transparent; }
 .segmented button + button { border-left: 1px solid var(--line); }
-.segmented button.on { background: var(--accent-soft); color: var(--accent); font-weight: 700; }
+.segmented button.on { background: var(--accent-soft); color: var(--accent-ink); font-weight: 700; }
 .segmented button:focus-visible { outline-offset: -3px; border-radius: 4px; }
 .segmented button:active:not(:disabled) { transform: none; }
 /* the levels each shortcut covers, under its name */
@@ -311,7 +313,7 @@ dialog p { margin: 8px 0; }
 .space-list b { overflow-wrap: anywhere; font-weight: 600; user-select: text; -webkit-user-select: text; }
 .space-list span { color: var(--muted); font-size: 13px; }
 /* the card at the end of a queue */
-#done-dialog { --done-tone: var(--ok); max-width: 480px; overflow: hidden; background: linear-gradient(165deg, color-mix(in srgb, var(--accent) 16%, var(--panel)), var(--panel) 60%); border-top: 3px solid var(--done-tone); }
+#done-dialog { --done-tone: var(--ok); max-width: 480px; overflow-x: hidden; background: linear-gradient(165deg, color-mix(in srgb, var(--accent) 16%, var(--panel)), var(--panel) 60%); border-top: 3px solid var(--done-tone); }
 #done-dialog.failed { --done-tone: var(--bad); }
 .done-saved { font: 800 30px/1.15 var(--display); letter-spacing: -.02em; color: var(--ok); margin: 6px 0 2px; font-variant-numeric: tabular-nums; }
 .done-top { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }

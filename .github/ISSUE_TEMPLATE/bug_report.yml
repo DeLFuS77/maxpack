@@ -1,0 +1,103 @@
+name: Bug report
+description: Something in the PC app, the command line or the .p5z format does not work as it should.
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. You can write in **English or Spanish**.
+
+        This repository is the PC app, the `maxpack` command line and the guide. Problems that happen
+        **on the console** (MaxPack for the console, `maxpack.elf`) belong in
+        [maxpack-ps5](https://github.com/DeLFuS77/maxpack-ps5/issues), and problems with the runtime in
+        [ampr-emu-ng](https://github.com/DeLFuS77/ampr-emu-ng/issues). If you are not sure, open it here.
+
+        Before you start, check the [troubleshooting section of the guide](https://github.com/DeLFuS77/maxpack/blob/main/docs/guide.md#7-common-problems).
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you expect, and what happened instead? Copy any message exactly as you saw it.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Short steps, one action each.
+      placeholder: |
+        1. Open MaxPack and drop the game on Compress.
+        2. Made for: MaxPack installer. Destination: E:\
+        3. Press Compress.
+        4. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: MaxPack version
+      description: "Shown in the window (bottom left) or by `maxpack --version`. For example: 1.0.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system of the PC
+      options:
+        - Windows 11
+        - Windows 10
+        - macOS (Apple silicon)
+        - macOS (Intel)
+        - Linux
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where does it happen
+      options:
+        - PC window
+        - Command line
+        - On the console (I use MaxPack for the console)
+        - Not sure
+    validations:
+      required: true
+  - type: input
+    id: firmware
+    attributes:
+      label: PS5 firmware (only if the console is involved)
+      placeholder: "For example: 13.60"
+  - type: dropdown
+    id: mounter
+    attributes:
+      label: Mounter (only if the console is involved)
+      options:
+        - Not applicable
+        - MaxPack for the console
+        - ShadowMountPlus
+        - Kraken Mount
+        - Other
+  - type: textarea
+    id: report
+    attributes:
+      label: Report from the console page
+      description: |
+        If the problem is on the console: open the game on the MaxPack page (`http://<PS5 IP>:8095`),
+        press **Copy report** and paste the text here.
+      render: text
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and output
+      description: |
+        The text from the command line (with `--progress json` if you used it), the message the window
+        shows, or the last lines of `/data/maxpack/maxpack.log` on the console. Do not paste anything
+        private.
+      render: text
+  - type: textarea
+    id: more
+    attributes:
+      label: Anything else
+      description: The game (title and PPSA ID) and its format (folder or `.exfat`), the size of the destination drive, screenshots...

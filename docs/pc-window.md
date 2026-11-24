@@ -1,0 +1,168 @@
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+# The MaxPack window for the PC
+
+MaxPack has a window for Windows, macOS and Linux. It does the same as the command line
+(`maxpack pack`, `unpack`, `verify` and `info`), without typing commands: you drop the games, choose
+what you want them for and press **Compress**.
+
+![The window with the light theme](img/window-light.jpg)
+
+![The window with the dark theme](img/window-dark.jpg)
+
+## 1. Download and open
+
+The releases are in **Releases** at https://github.com/DeLFuS77/maxpack/releases. Download the package
+for your system (the installer or the portable zip on Windows, the `.dmg` or the `.tar.gz` on macOS,
+the `.tar.gz` on Linux) and, if you want to check it, compare its SHA-256 with the one in
+`SHA256SUMS`, on the same page. Every package carries `LICENSE` and `THIRD_PARTY_NOTICES` (the
+licences of the third-party software they include).
+
+Then follow the steps for your system.
+
+**Windows**
+- `maxpack-windows-x64-setup.exe` is the installer. It installs MaxPack in your user folder, without
+  administrator rights, with a shortcut, and you uninstall it from "Installed apps".
+- `maxpack-windows-x64-portable.zip` is the portable version: unzip it anywhere and open
+  `MaxPack.exe`. It has a `settings` folder next to it, and while that is there MaxPack keeps all its
+  data (settings, window size and position) in it and nothing in your user profile. It is handy for a
+  USB drive.
+- `MaxPack.exe` and `maxpack-core.exe` must stay together. The window uses `maxpack-core.exe` to do
+  its work, and if it is missing the window tells you what is missing. If the one there is of another
+  version (an old one that does not do everything the window needs), the window says "maxpack-core of
+  another version" and does not let you start: put next to MaxPack the `maxpack-core` that came with
+  it.
+
+> Neither the installer nor `MaxPack.exe` is signed: Windows SmartScreen will warn you the first time
+> ("Windows protected your PC"). Press **More info** and **Run anyway**.
+
+> The Windows installer is checked automatically on every build (silent install, compress a test image
+> and uninstall), but it has not been tested by hand yet with a double click and the on-screen wizard.
+> If something does not work, use the portable zip and report it.
+
+**macOS**
+- Open the `.dmg` and drag `MaxPack.app` to Applications. The `.tar.gz` carries the same app.
+- The app is not notarized. The first time, open it with a right click, **Open**. On macOS 15 or
+  later, if that does not work, try to open it once, then in System Settings, Privacy & Security,
+  press **Open Anyway**.
+- The Apple silicon and Intel versions are different: choose the one for your Mac.
+
+**Linux**
+- Unpack the `.tar.gz` and run `sh install.sh`. It puts MaxPack in the applications menu, with its
+  icon, and `maxpack` in `~/.local/bin`. `sh install.sh --uninstall` removes it.
+- It needs GTK 3 and WebKitGTK 4.1, which almost every desktop has.
+
+On all three systems, opening MaxPack with games or folders (dragging them to the icon, or from
+Explorer, Finder or the command line) adds them to the window that is already open: there is only one.
+With command-line options (`MaxPack pack ...`, `MaxPack --version`) it behaves like `maxpack`.
+
+## 2. Compress
+
+1. Drop games or folders here, or use **Add files** and **Add folder**. PS5 dump folders and `.exfat`
+   images are fine. Each game shows its title, ID, version and size. A folder that is already
+   compressed (with packs) is not compressed again: it shows "it is compressed already" and is
+   skipped; to check it, use **Verify**.
+2. Choose **Made for**.
+3. Choose the compression **level**, 1 to 22 (19 by default), or one of the shortcuts **Light**,
+   **Medium** and **Maximum**. 20 to 22 use a lot of memory and take much longer to gain little.
+4. Choose the **Destination** and press **Compress**. Each game is verified when it finishes.
+
+![MaxPack compressing, with the progress of each game](img/window-working.jpg)
+
+While there is work, the PC does not go to sleep. Progress also shows on the taskbar (Windows) or in
+the Dock (macOS), and when it ends the system notifies you. The portable version of Windows does not
+notify: to send notifications it would have to register in the Windows registry, and the portable one
+does not.
+
+Cancelling, or closing the window while work is running, stops the current game without leaving
+anything half made or unverified:
+- what it had written is deleted, and the destination is left as it was: without the game if it was
+  not there, or empty if it was an empty folder; with **Replace**, the old one stays intact;
+- `maxpack-core` finishes what it has in hand first and then deletes, so with a big game or a slow USB
+  drive it can take a few seconds;
+- if you close the window, `maxpack-core` is not cut off: it goes on by itself until it has deleted
+  everything, even if the window is already gone;
+- if something cannot be deleted (for example, a file open in another program), the row says so, with
+  the path, so you can delete it yourself.
+
+When it ends, the result shows. If the queue compressed and saved space, the size before squeezes down
+to the size now, with a bar that shrinks, and the GB saved count up. Below, you see what saved the most
+and what to do next. If the system asks for less motion, the final numbers show without animation.
+
+![The result: what saved the most and what to do next](img/window-result.jpg)
+
+### Made for: MaxPack installer
+
+This is the normal choice. Each game is saved in **one `.p5z` file** named `<Title> [<TITLE_ID>].p5z`.
+It is the smallest and keeps well on the PC or on a USB drive.
+
+Afterwards:
+1. Copy the `.p5z` files to a USB drive.
+2. Plug the USB drive into the PS5 and open it with MaxPack for the console, which is the payload from
+   [DeLFuS77/maxpack-ps5](https://github.com/DeLFuS77/maxpack-ps5) (`maxpack.elf`;
+   [how its installation works](ps5-installer.md)). It plays the `.p5z` as it is, or installs the game
+   in `<drive>/homebrew/<TITLE_ID>` still compressed on the console.
+
+### Made for: Play from the USB
+
+Each game is saved in **a folder ready for the console**, with the zstd packs that ampr-emu-ng serves.
+- If the destination is the root of a drive (for example `E:\` or a USB drive), each game goes to
+  `<destination>/homebrew/<TITLE_ID>`.
+- If you choose any other folder, each game goes inside it, with its `<TITLE_ID>`.
+
+Afterwards:
+1. Put the folders in `homebrew/` on the USB drive or on the internal storage of the PS5. If you made
+   them in another folder, move them there: ShadowMountPlus only looks in `homebrew/`.
+2. ShadowMountPlus will see and mount them. Since they do not go through the installer, you set each
+   game's fakelib mode in ShadowMountPlus, so that it does not change ampr-emu-ng:
+   [test-on-ps5.md](test-on-ps5.md). Kraken Mount comes with its own ampr-emu-ng.
+
+## 3. Decompress and verify
+
+- **Decompress** turns a `.p5z` back into:
+  - the **Original dump (bit for bit)**, with every file checked against its SHA-256; or
+  - the **Folder for the PS5**, the same one that "Play from the USB" produces.
+- **Verify** reads a `.p5z` or a compressed folder and checks that it is still whole. It changes
+  nothing.
+- **Details** shows what a game says: title, ID, version, sizes, files, packs and whether it carries a
+  runtime that reads zstd.
+
+## 4. Settings
+
+- **Language** (Spanish or English) and **Theme** (System, Light or Dark).
+- **Runtime for the games that lack one.** The zstd packs are served by ampr-emu-ng, and some dumps
+  carry an old `libSceAmpr.sprx` that does not read them. For those games MaxPack puts the
+  `libSceAmpr.sprx` of ampr-emu-ng in their `fakelib/`. Download it from
+  https://github.com/DeLFuS77/ampr-emu-ng, choose it in Settings and MaxPack remembers it. **Remove**
+  forgets it.
+  - MaxPack checks that the one you choose reads zstd (the one of ampr-emu-ng carries the mark
+    `AMPRZPK1`). If it does not, it does not accept it and asks for another: with it, the game would be
+    compressed and verified fine, but it would not start.
+  - If a game still comes out with a runtime that does not read zstd, its row says so when it ends, and
+    the summary counts how many games will not start until you give them the one of ampr-emu-ng.
+  - If a game needs one and Settings has none, MaxPack asks for it once before starting.
+  - If you go on without it, it warns you that the game will not start until it has ampr-emu-ng, and
+    lets you go on.
+
+## 5. Warnings
+
+- **FAT32.** FAT32 does not take files over 4 GiB, and a `.p5z` can go over that. If the destination is
+  FAT32 and the original game is over 4 GiB, MaxPack tells you before starting:
+  - **Use a folder** switches to "Play from the USB", whose parts fit in FAT32;
+  - **Go on anyway** tries it. MaxPack never writes more to the `.p5z` than fits in FAT32 (4 GiB minus
+    one byte): before going over, it stops, deletes what it wrote and tells you it does not fit.
+
+  With an exFAT USB drive there is no limit.
+- **Space.** If the destination has less free space than the original game, it warns that it "may not
+  fit", and you can **Start anyway**. With **Replace**, the new one and the old one have to fit at the
+  same time: if they do not, that game does not start.
+- **Replace.** If the game is already at the destination, MaxPack asks before touching anything. If you
+  accept, the new one is written apart, in `<destination>.maxpack-tmp`, verified, and only then is the
+  old one set aside and deleted. If you cancel, or anything fails (for example, you pull out the USB
+  drive), the old one stays intact and with no leftovers.
+- **The source is never the destination.** If they are the same, or the destination is inside the
+  source game, it asks for another.
+- **Two games with the same ID** going to the same destination are flagged before starting.
+- **No ID.** If a game's `param.json` does not give its ID (TITLE_ID), MaxPack warns you before
+  starting with "MaxPack installer": MaxPack for the console does not accept a `.p5z` without one. A
+  `param.json` with a BOM or with padding at the end is read fine.
+- MaxPack never writes to the source game and does not touch keys, encryption or DRM.

@@ -1,0 +1,119 @@
+name: Game report
+description: Tell us how a game worked (or did not) with MaxPack. These reports feed the compatibility list.
+title: "[Game] "
+labels: ["game report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks! Reports of games that work help as much as reports of games that do not. You can write in
+        **English or Spanish**.
+
+        The list of games is kept in
+        [maxpack-ps5](https://github.com/DeLFuS77/maxpack-ps5/blob/main/docs/compatibility.md).
+        On the MaxPack page of the console, open the game and press **Copy report**: it has the row
+        ready for the list.
+
+        Only report games you own and dumped yourself. Do not share game files, keys or download links.
+  - type: input
+    id: title
+    attributes:
+      label: Game title
+      placeholder: "Hollow Knight: Silksong"
+    validations:
+      required: true
+  - type: input
+    id: title-id
+    attributes:
+      label: PPSA id (TITLE_ID)
+      placeholder: PPSA12544
+    validations:
+      required: true
+  - type: input
+    id: game-version
+    attributes:
+      label: Game version
+      placeholder: "01.000.010"
+    validations:
+      required: true
+  - type: dropdown
+    id: dump-type
+    attributes:
+      label: Dump type
+      options:
+        - Folder
+        - exFAT image (.exfat)
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: packed-as
+    attributes:
+      label: Packed as
+      options:
+        - ".p5z file (MaxPack installer)"
+        - "Folder (Play from the USB)"
+        - Not packed (played as it is)
+    validations:
+      required: true
+  - type: input
+    id: sizes
+    attributes:
+      label: Sizes (optional)
+      description: Original size and size after packing.
+      placeholder: 8.39 GB to 2.33 GB
+  - type: input
+    id: maxpack-version
+    attributes:
+      label: MaxPack version (PC and console)
+      placeholder: "1.0.0 / 1.0.0"
+    validations:
+      required: true
+  - type: input
+    id: firmware
+    attributes:
+      label: PS5 firmware
+      placeholder: "13.60"
+    validations:
+      required: true
+  - type: dropdown
+    id: mounter
+    attributes:
+      label: Mounter
+      options:
+        - MaxPack for the console
+        - ShadowMountPlus
+        - Kraken Mount
+        - Other
+    validations:
+      required: true
+  - type: checkboxes
+    id: result
+    attributes:
+      label: Result
+      description: Tick everything that worked.
+      options:
+        - label: Boots (reaches the title screen or the menu)
+        - label: Plays (about 10 minutes with no odd stutter or freeze, videos work)
+        - label: Saves (it saves and loads the save game again)
+  - type: dropdown
+    id: verdict
+    attributes:
+      label: Overall
+      options:
+        - Works
+        - Works with problems
+        - Does not work
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: What happened, what you had to change (for example `--keep-loose`), errors you saw, the "Last crash" line.
+  - type: textarea
+    id: report
+    attributes:
+      label: Report from the console page (optional)
+      description: Paste the text of **Copy report** here.
+      render: text

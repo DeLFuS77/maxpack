@@ -1,0 +1,17 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Read the guide first
+    url: https://github.com/DeLFuS77/maxpack/blob/main/docs/guide.md
+    about: Download, compress, play on the PS5 and fix the common problems, step by step.
+  - name: Common problems
+    url: https://github.com/DeLFuS77/maxpack/blob/main/docs/guide.md#7-common-problems
+    about: Most questions about the console, ShadowMountPlus and FAT32 are answered here.
+  - name: Problems on the console (MaxPack for the console)
+    url: https://github.com/DeLFuS77/maxpack-ps5/issues
+    about: The library, Play, the installer and the page on port 8095 live in the maxpack-ps5 repository.
+  - name: Problems with the runtime (ampr-emu-ng)
+    url: https://github.com/DeLFuS77/ampr-emu-ng/issues
+    about: The libSceAmpr.sprx that reads the packs while you play.
+  - name: Report a security problem privately
+    url: https://github.com/DeLFuS77/maxpack/security/advisories/new
+    about: Please do not open a public issue for a security problem.

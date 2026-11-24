@@ -1,0 +1,44 @@
+name: Feature request
+description: Suggest something new or a change to how MaxPack works.
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea. You can write in **English or Spanish**.
+
+        MaxPack never touches keys, encryption or DRM, and does not include or distribute games: requests
+        for those will be declined.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve
+      description: Describe what you are trying to do and what gets in the way.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like to happen
+      description: How should it work? A short example helps.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you tried
+      description: Other ways you tried, or other tools that do it.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - PC window
+        - Command line
+        - .p5z format
+        - Documentation
+        - MaxPack for the console (it will be moved to its repository)
+        - Other
+    validations:
+      required: true

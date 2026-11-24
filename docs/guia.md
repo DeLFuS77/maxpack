@@ -2,12 +2,11 @@
 # Guía de MaxPack
 
 MaxPack comprime juegos de PS5 (tu dump, en carpeta o en imagen `.exfat`) para que ocupen menos y se
-puedan jugar sin descomprimirlos. Esta guía va de principio a fin: descargar MaxPack, comprimir un
-juego, llevarlo a la PS5 y jugarlo. Cada sección resume y enlaza la página con los detalles.
+puedan jugar sin descomprimirlos. Esta guía va de principio a fin: descargar, comprimir en el PC,
+llevar el juego a la PS5 y jugarlo. Cada paso es una sola acción.
 
-> **Antes de empezar:** MaxPack todavía no se ha probado en una PS5 real. En el PC se prueba en cada
-> cambio, pero que un juego comprimido arranque en la consola está por comprobar
-> ([sección 8](#8-qué-está-probado-y-qué-falta)). Guarda siempre tu dump original.
+> **Antes de empezar:** la parte de la consola se ha probado poco. Lo probado y lo que falta está en la
+> [sección 8](#8-qué-está-probado-y-qué-falta). Guarda siempre tu dump original.
 
 ![La ventana de MaxPack](img/ventana-claro.jpg)
 
@@ -15,9 +14,9 @@ juego, llevarlo a la PS5 y jugarlo. Cada sección resume y enlaza la página con
 
 1. [Qué es MaxPack y qué necesitas](#1-qué-es-maxpack-y-qué-necesitas)
 2. [El camino rápido](#2-el-camino-rápido)
-3. [Descargar e instalar el programa del PC](#3-descargar-e-instalar-el-programa-del-pc)
-4. [Comprimir, Descomprimir, Verificar y Detalles](#4-comprimir-descomprimir-verificar-y-detalles)
-5. [En la PS5](#5-en-la-ps5)
+3. [Descargar e instalar](#3-descargar-e-instalar)
+4. [La ventana del PC](#4-la-ventana-del-pc)
+5. [MaxPack en la consola](#5-maxpack-en-la-consola)
 6. [La línea de comandos](#6-la-línea-de-comandos)
 7. [Problemas frecuentes](#7-problemas-frecuentes)
 8. [Qué está probado y qué falta](#8-qué-está-probado-y-qué-falta)
@@ -26,209 +25,314 @@ juego, llevarlo a la PS5 y jugarlo. Cada sección resume y enlaza la página con
 ## 1. Qué es MaxPack y qué necesitas
 
 MaxPack guarda el juego en packs zstd (formato `AMPRZPK1`). En la consola los lee **ampr-emu-ng**
-mientras juegas, así que el juego nunca se descomprime entero. Solo quedan sin comprimir los archivos
-que el sistema necesita sueltos: ejecutables y módulos, `sce_sys/`, `fakelib/` y poco más.
+mientras juegas, así que el juego nunca se descomprime entero. Solo quedan sueltos los archivos que el
+sistema necesita así: ejecutables y módulos, `sce_sys/`, `fakelib/` y poco más.
 
 Como referencia, en el PC Hollow Knight: Silksong pasó de 8,39 GB a un `.p5z` de 2,33 GB, y
 RESIDENT EVIL requiem, de 133,59 GB a 79,32 GB ([informe](informes/fase1.md)).
 
-MaxPack tiene tres piezas:
+### Las tres piezas
 
-| Pieza | Dónde | Para qué |
-|---|---|---|
-| **MaxPack**, la ventana | PC | Comprimir, descomprimir, verificar y ver los detalles de un juego, sin escribir comandos. |
-| **`maxpack`**, el motor | PC | Hace el trabajo. Va junto a la ventana con el nombre `maxpack-core`, y también se usa solo, como [línea de comandos](#6-la-línea-de-comandos). |
-| **`maxpack.elf`**, el instalador | PS5 | Instala tus `.p5z`, que siguen comprimidos en la consola, desde una página web en el puerto 8095. También instala tal cual carpetas e imágenes. |
+MaxPack son tres programas, cada uno en su repositorio (todos GPL-3.0). Descargas cada uno de sus
+**Releases**.
 
-Hay dos formas de llevar un juego a la PS5. En la ventana se eligen en **Hecho para**:
-- **Instalador MaxPack** (lo normal): un archivo `.p5z` por juego. Es lo más pequeño y se guarda bien
-  en el PC o en un USB. En la PS5, el instalador lo deja listo para jugar.
-- **Jugar desde el USB**: una carpeta por juego, ya lista para la consola, sin instalador.
+| Pieza | Dónde corre | Repositorio | Para qué |
+|---|---|---|---|
+| **MaxPack para el PC** (la ventana y la línea de comandos `maxpack`) | PC | [DeLFuS77/maxpack](https://github.com/DeLFuS77/maxpack) | Comprimir, descomprimir, verificar y ver los detalles de un juego. |
+| **MaxPack para la consola** (`maxpack.elf`) | PS5 | [DeLFuS77/maxpack-ps5](https://github.com/DeLFuS77/maxpack-ps5) | Monta los juegos como Kraken Mount, juega un `.p5z` tal cual y trae un instalador. |
+| **ampr-emu-ng** (`libSceAmpr.sprx`) | PS5 | [DeLFuS77/ampr-emu-ng](https://github.com/DeLFuS77/ampr-emu-ng) | El runtime que lee los packs mientras juegas. MaxPack para la consola ya lleva el suyo dentro. |
 
-En la consola, las dos acaban igual: la misma carpeta, comprimida, en `homebrew/`.
+Todo lleva la misma versión: 1.0.0.
+
+### Dos formas de llevar un juego a la PS5
+
+En la ventana se eligen en **Hecho para**:
+- **Instalador MaxPack**: un archivo `.p5z` por juego. Es lo más pequeño y se guarda bien en el PC o en
+  un USB. Es lo normal.
+- **Jugar desde el USB**: una carpeta por juego, lista para montar con ShadowMountPlus o Kraken Mount.
 
 ### Qué necesitas
 
 **En el PC**
-- Windows de 64 bits, macOS 13 o posterior (con chip de Apple o Intel) o Linux de 64 bits con GTK 3 y
+- Windows de 64 bits, macOS 13 o posterior (chip de Apple o Intel) o Linux de 64 bits con GTK 3 y
   WebKitGTK 4.1.
 - Tu juego: un dump de PS5 en carpeta o en imagen `.exfat`. Los PKG, `.ffpkg`, `.ffpfs` y `.ffpfsc`
   todavía no se pueden comprimir.
-- El `libSceAmpr.sprx` de ampr-emu-ng: el de la copia de MaxPack,
-  [DeLFuS77/ampr-emu-ng](https://github.com/DeLFuS77/ampr-emu-ng), que se descarga de sus Releases
-  (mientras no haya versiones publicadas, es el artefacto `sprx` de su GitHub Actions). Sin él, el
-  juego comprimido no arranca con ShadowMountPlus. La v0.5.0 original de quer3q también lee los packs
-  zstd. Algunos dumps traen un `libSceAmpr.sprx` antiguo que no lee zstd: MaxPack pone el de
-  ampr-emu-ng en `fakelib/` de los juegos que no lo traen.
 - Espacio en el destino. MaxPack avisa si hay menos libre de lo que ocupa el juego original.
+- Solo si vas a usar ShadowMountPlus o Kraken Mount: el `libSceAmpr.sprx` de la
+  [copia de ampr-emu-ng de MaxPack](https://github.com/DeLFuS77/ampr-emu-ng/releases). MaxPack lo pone
+  en el `fakelib/` de los juegos que no traen uno que lea zstd.
 
 **En la PS5**
 - Una PS5 con jailbreak y un cargador de ELF en el puerto 9021 (elfldr, etaHEN o Payload Manager).
-- Para jugar, ShadowMountPlus (con kstuff, la pila habitual) o Kraken Mount.
-- Un USB en **exFAT** si algún `.p5z` pasa de 4 GiB: FAT32 no admite archivos tan grandes. Al
-  formatear un USB se borra lo que tenga.
-- Para abrir la página del instalador, el navegador de la PS5, o un móvil o un PC de tu red.
+  kstuff tiene que estar cargado.
+- Un USB en **exFAT** si algún `.p5z` pasa de 4 GiB: FAT32 no admite archivos tan grandes. Al formatear
+  un USB se borra lo que tenga.
+- Para abrir la página de MaxPack: el navegador de la PS5, o un móvil o un PC de tu red.
 
 > MaxPack nunca escribe en el juego de origen y no toca claves, cifrado ni DRM. En la consola nunca
 > comprime nada: comprimir es cosa del PC.
 
 ## 2. El camino rápido
 
-### Con el instalador MaxPack (lo normal)
+Elige uno.
 
-1. **Descarga** MaxPack para tu sistema y `maxpack.elf` para la PS5
-   ([sección 3](#3-descargar-e-instalar-el-programa-del-pc)). Instala MaxPack y ábrelo.
-2. **Pon ampr-emu-ng.** Descarga `libSceAmpr.sprx` de las Releases de la
-   [copia de ampr-emu-ng de MaxPack](https://github.com/DeLFuS77/ampr-emu-ng). En MaxPack, abre **Ajustes** y, en «Runtime
-   para los juegos que no lo traen», pulsa **Elegir libSceAmpr.sprx…**. MaxPack lo recuerda.
-   - Si te lo saltas, MaxPack lo pide una vez antes de empezar, con los juegos que lo necesitan.
-   - Hoy este paso es obligatorio para el instalador: `maxpack.elf` no lleva ningún ampr-emu-ng dentro
-     y no instala un `.p5z` que no lo traiga.
-3. **Comprime.** En **Comprimir**, suelta tus juegos en la ventana (o usa **Añadir archivos** y
-   **Añadir carpeta**). En **Hecho para**, deja **Instalador MaxPack**. Elige el **Destino**: el USB
-   (en exFAT) o una carpeta del PC. Pulsa **Comprimir**. Cada juego se verifica al terminar y queda
-   como `<Título> [<TITLE_ID>].p5z`.
-4. **Lleva los `.p5z` al USB**, si no los guardaste ya ahí. Déjalos en la raíz del USB o en una
-   carpeta justo debajo: el instalador no busca más adentro.
-5. **Carga el instalador.** Conecta el USB a la PS5 y envía `maxpack.elf` a tu cargador de ELF
-   (puerto 9021), como cualquier payload. Cuando la consola diga «MaxPack … listo», abre
-   `http://<IP de la PS5>:8095` en el navegador de la PS5, del móvil o del PC.
-6. **Instala.** Elige el juego, dónde instalarlo y pulsa **Instalar**. El juego queda en
-   `<unidad>/homebrew/<TITLE_ID>`, todavía comprimido.
-7. **Juega.** Si ShadowMountPlus está en marcha, el instalador le registra el juego y le fija el modo
-   de fakelib. Kraken Mount (sin ShadowMountPlus en marcha) lo encuentra en `homebrew/`.
+### A. Jugar un `.p5z` tal cual, con MaxPack en la consola (lo normal)
 
-### Jugar desde el USB (sin instalador)
+El `.p5z` se queda en su USB o en su unidad. No se instala.
 
-1. Haz los pasos 1 y 2 de arriba. No necesitas `maxpack.elf`. Si solo usas Kraken Mount, el paso 2
-   tampoco hace falta, porque trae su propio ampr-emu-ng: cuando MaxPack lo pida, pulsa «Seguir sin
-   él».
-2. En **Comprimir**, en **Hecho para**, elige **Jugar desde el USB**. Como destino, elige la raíz del
-   USB (por ejemplo `E:\`): cada juego va a `E:\homebrew\<TITLE_ID>`. Si eliges otra carpeta, cada
-   juego va dentro de ella y luego tendrás que moverlo a `homebrew/`.
-3. Conecta el USB a la PS5.
-   - **Con ShadowMountPlus:** añade o vuelve a escanear el juego y deja su modo de fakelib en
-     «Predeterminado (Completo)»: así ShadowMountPlus carga el `libSceAmpr.sprx` del juego y, si hace
-     falta, añade su backport (aviso «Backport aplicado: <TITLE_ID>»). Comprobado en una PS5
-     ([sección 8](#8-qué-está-probado-y-qué-falta)). Los pasos: [probar-en-ps5.md](probar-en-ps5.md).
-     Deja apagada la actualización automática de AMPR de ShadowMountPlus (`auto_update_ampr`, que ya
-     viene apagada): si la enciendes, cambia ampr-emu-ng por el `ampr_emu` antiguo de drakmor y los
-     juegos comprimidos dejan de arrancar
-     ([issue #214](https://github.com/drakmor/ShadowMountPlus/issues/214)).
-   - **Con Kraken Mount:** no hay que hacer nada más.
+1. Descarga MaxPack para tu sistema y `maxpack.elf`
+   ([sección 3](#3-descargar-e-instalar)).
+2. Abre MaxPack en el PC y suelta tus juegos en **Comprimir**.
+3. En **Hecho para**, deja **Instalador MaxPack**.
+4. Elige el **Destino**: la raíz de un USB en exFAT o una carpeta del PC.
+5. Pulsa **Comprimir**. Cada juego se verifica al terminar y queda como `<Título> [<TITLE_ID>].p5z`.
+6. Si no los guardaste ya en el USB, copia los `.p5z` a él. Déjalos en la raíz, o en `homebrew/`.
+7. Conecta el USB a la PS5.
+8. Envía `maxpack.elf` al cargador de ELF (puerto 9021).
+9. Abre `http://<IP de la PS5>:8095` en el navegador.
+10. Busca el juego en la biblioteca, ábrelo y pulsa **Jugar** (o ábrelo desde la pantalla de inicio de la
+    PS5).
 
-## 3. Descargar e instalar el programa del PC
+La primera vez, MaxPack prepara el juego un rato. Más en la [sección 5](#5-maxpack-en-la-consola).
 
-Cuando haya versiones publicadas, estarán en **Releases** del repositorio. Hasta entonces, GitHub
-Actions construye todo en cada cambio y lo deja como artefactos:
+### B. Instalar el juego en la consola
 
-| Artefacto | Qué lleva |
+Para tener el juego en carpeta en el SSD de la PS5 (por ejemplo, para quitar el USB).
+
+1. Haz los pasos 1 a 9 de arriba.
+2. En la página, abre la pestaña **Instalar**.
+3. Elige el juego y la unidad donde instalarlo.
+4. Pulsa **Instalar**.
+5. Al acabar, el juego sale en la biblioteca, listo para **Jugar**.
+
+### C. Con ShadowMountPlus o Kraken Mount, sin MaxPack en la consola
+
+1. Haz los pasos 1 y 2 del camino A.
+2. En **Hecho para**, elige **Jugar desde el USB**.
+3. Como destino, elige la raíz del USB (por ejemplo `E:\`). Cada juego va a `E:\homebrew\<TITLE_ID>`.
+4. Si usas ShadowMountPlus, descarga `libSceAmpr.sprx` de las
+   [Releases de ampr-emu-ng](https://github.com/DeLFuS77/ampr-emu-ng/releases) y elígelo en **Ajustes**.
+   Kraken Mount trae su propio ampr-emu-ng.
+5. Pulsa **Comprimir** y conecta el USB a la PS5.
+6. Con ShadowMountPlus: añade o vuelve a escanear el juego y deja su modo de fakelib en
+   «Predeterminado (Completo)». Con Kraken Mount no hay que hacer nada más.
+7. Deja apagada la actualización automática de AMPR de ShadowMountPlus
+   ([por qué](#shadowmountplus-cambia-ampr-emu-ng-y-el-juego-no-arranca)).
+
+## 3. Descargar e instalar
+
+### El PC
+
+1. Abre las [Releases de MaxPack](https://github.com/DeLFuS77/maxpack/releases).
+2. Descarga el archivo de tu sistema:
+
+| Sistema | Archivo |
 |---|---|
-| `maxpack-windows-x64` | `maxpack-windows-x64-setup.exe` (el instalador) y `maxpack-windows-x64-portable.zip` (la versión portable) |
-| `maxpack-macos-apple-silicon` | `MaxPack.app` en un `.dmg` y en un `.tar.gz`, para Mac con chip de Apple |
-| `maxpack-macos-intel` | Lo mismo, para Mac con Intel |
-| `maxpack-linux-x64` | `maxpack-linux-x64.tar.gz`, con `install.sh` |
-| `maxpack-ps5` | `maxpack.elf`, el instalador de la PS5 |
-
-Para bajarlos:
-1. En https://github.com/DeLFuS77/maxpack abre **Actions**, el último trabajo `build` en verde y, abajo,
-   **Artifacts**.
-2. Hace falta tener sesión iniciada en GitHub, y los artefactos caducan pasado un tiempo.
-3. Cada artefacto baja como un zip que envuelve el paquete de verdad: descomprímelo primero.
+| Windows | `maxpack-windows-x64-setup.exe` (instalador) o `maxpack-windows-x64-portable.zip` (portable) |
+| macOS con chip de Apple | `.dmg` de Apple silicon |
+| macOS con Intel | `.dmg` de Intel |
+| Linux | `maxpack-linux-x64.tar.gz` |
 
 Después, según tu sistema:
-- **Windows.** El instalador pone MaxPack en tu carpeta de usuario, sin permisos de administrador, con
-  su acceso directo; se desinstala desde «Aplicaciones instaladas». La versión portable se descomprime
-  donde quieras y guarda sus ajustes en su carpeta `settings`. `MaxPack.exe` y `maxpack-core.exe`
-  tienen que estar juntos. Ni el instalador ni `MaxPack.exe` están firmados: la primera vez,
-  SmartScreen avisará ([qué hacer](#smartscreen-y-gatekeeper)).
-- **macOS.** Abre el `.dmg` y arrastra `MaxPack.app` a Aplicaciones. La app no está notarizada: la
-  primera vez, ábrela con clic derecho, **Abrir** ([qué hacer](#smartscreen-y-gatekeeper)).
+- **Windows (instalador).** Ejecútalo. Pone MaxPack en tu carpeta de usuario, sin permisos de
+  administrador, con su acceso directo. Se desinstala desde «Aplicaciones instaladas».
+- **Windows (portable).** Descomprime el zip donde quieras. `MaxPack.exe` y `maxpack-core.exe` tienen
+  que estar juntos. Los ajustes se guardan en su carpeta `settings`.
+- **macOS.** Abre el `.dmg` y arrastra `MaxPack.app` a Aplicaciones.
 - **Linux.** Descomprime el `.tar.gz` y ejecuta `sh install.sh`. Pone MaxPack en el menú de
   aplicaciones y `maxpack` en `~/.local/bin`. `sh install.sh --uninstall` lo quita.
 
+La primera vez, Windows y macOS avisan porque el programa no está firmado:
+- **Windows:** sale «Windows protegió su PC». Pulsa **Más información** y luego **Ejecutar de todas
+  formas**.
+- **macOS:** haz clic derecho en `MaxPack.app` y elige **Abrir**. En macOS 15 o posterior, si no te
+  deja, intenta abrirla una vez y luego, en Ajustes del Sistema, Privacidad y seguridad, pulsa **Abrir
+  igualmente**.
+
 Solo hay una ventana: abrir MaxPack con juegos (arrastrándolos a su icono, por ejemplo) los añade a la
-que ya está abierta. Los detalles de cada sistema están en
-[ventana-pc.md](ventana-pc.md#1-descargar-y-abrir).
+que ya está abierta. Más detalles de cada sistema: [ventana-pc.md](ventana-pc.md#1-descargar-y-abrir).
 
-## 4. Comprimir, Descomprimir, Verificar y Detalles
+### La consola
 
-La barra lateral de la ventana tiene cuatro secciones de trabajo y los Ajustes. Todo está explicado,
-con capturas, en [ventana-pc.md](ventana-pc.md).
+1. Abre las [Releases de MaxPack para la consola](https://github.com/DeLFuS77/maxpack-ps5/releases).
+2. Descarga `maxpack.elf`.
+3. No hace falta descargar ampr-emu-ng: `maxpack.elf` lleva dentro su propia copia.
 
-**Comprimir** ([detalles](ventana-pc.md#2-comprimir))
-- Valen las carpetas de dump y las imágenes `.exfat`. **Añadir carpeta** acepta un juego o una
-  carpeta con juegos justo debajo. Una carpeta ya comprimida se salta («ya está comprimido»).
-- **Hecho para:** «Instalador MaxPack» (un `.p5z`) o «Jugar desde el USB» (una carpeta en
-  `homebrew/`).
-- **Nivel de compresión:** del 1 al 22, 19 por defecto, con los atajos **Ligero**, **Medio** y
-  **Máximo**. Del 20 al 22 se usa mucha memoria y se tarda bastante más, para ahorrar poco más.
-- Cada juego se verifica al terminar. Mientras hay trabajo, el PC no se duerme, y el progreso sale
-  también en la barra de tareas (Windows) o en el Dock (macOS).
-- Al final, MaxPack dice cuánto se ahorró, qué juegos ahorraron más y qué hacer ahora.
-- **Cancelar** detiene el juego en marcha, borra lo que llevaba escrito y deja el destino como
-  estaba; los juegos que esperaban no empiezan.
+### ampr-emu-ng (solo para ShadowMountPlus o Kraken Mount)
 
-**Descomprimir** ([detalles](ventana-pc.md#3-descomprimir-y-verificar))
-- Devuelve un `.p5z` al **dump original (bit a bit)**, con cada archivo comprobado con su SHA-256, o a
-  la **carpeta para la PS5**, la misma que sale de «Jugar desde el USB».
-- Si el juego era una imagen `.exfat`, el dump original sale como carpeta con sus archivos, no como
-  imagen.
+1. Abre las [Releases de ampr-emu-ng](https://github.com/DeLFuS77/ampr-emu-ng/releases).
+2. Descarga `libSceAmpr.sprx`.
 
-**Verificar** lee un `.p5z` o una carpeta comprimida y comprueba que siguen enteros. No cambia nada.
+## 4. La ventana del PC
 
-**Detalles** enseña lo que dice un juego: título, ID, versión, tamaños, archivos, packs y si trae un
-runtime que lea zstd.
+La barra lateral tiene cuatro secciones de trabajo y los Ajustes. Todo está explicado, con capturas,
+en [ventana-pc.md](ventana-pc.md).
 
-**Ajustes** ([detalles](ventana-pc.md#4-ajustes)): idioma (español o inglés), tema (sistema, claro u
-oscuro) y el runtime de ampr-emu-ng para los juegos que no lo traen. MaxPack solo acepta un
-`libSceAmpr.sprx` que lea zstd.
+### Comprimir ([detalles](ventana-pc.md#2-comprimir))
 
-## 5. En la PS5
+1. Suelta los juegos en la ventana, o usa **Añadir archivos** o **Añadir carpeta**. Valen carpetas de
+   dump e imágenes `.exfat`. **Añadir carpeta** acepta un juego o una carpeta con juegos justo debajo.
+2. En **Hecho para**, elige «Instalador MaxPack» (un `.p5z`) o «Jugar desde el USB» (una carpeta en
+   `homebrew/`).
+3. Elige el **Destino**.
+4. Si quieres, cambia el **Nivel de compresión**: del 1 al 22, 19 por defecto, con los atajos
+   **Ligero**, **Medio** y **Máximo**. Del 20 al 22 se usa mucha memoria y se tarda bastante más, para
+   ahorrar poco más.
+5. Pulsa **Comprimir**.
 
-### El instalador MaxPack
+Lo que hace sola:
+- Una carpeta ya comprimida se salta («ya está comprimido»).
+- Cada juego se verifica al terminar.
+- El PC no se duerme mientras hay trabajo, y el progreso sale también en la barra de tareas (Windows)
+  o en el Dock (macOS).
+- Al final dice cuánto se ahorró y qué hacer ahora.
+- **Cancelar** detiene el juego en marcha, borra lo que llevaba escrito y deja el destino como estaba.
 
-`maxpack.elf` se carga como cualquier payload y sirve una página en el puerto 8095. Los detalles están
-en [instalador-ps5.md](instalador-ps5.md).
+### Descomprimir ([detalles](ventana-pc.md#3-descomprimir-y-verificar))
 
-- **Qué instala:**
-  - los `.p5z`: copia los packs tal cual y solo descomprime los archivos pequeños que van sueltos;
-  - tal cual, sin comprimir nada: carpetas (dumps, o carpetas con packs de Dump Forge) e imágenes
-    `.exfat`, `.ffpkg`, `.ffpfs` y `.ffpfsc`. Una `.ffpkg`, `.ffpfs` o `.ffpfsc` tiene que llevar el
-    ID del juego en el nombre, por ejemplo `Silksong-PPSA12544.ffpkg`.
-- **Dónde busca:** en cada USB y en el almacenamiento ampliado (en la raíz y un nivel por debajo), y
-  en `/data/maxpack/`. Si algo no aparece, escribe su ruta a mano.
-- **Reemplazar:** si el juego ya está en la consola (aunque sea tu dump sin comprimir), te dice qué se
-  borrará y cuánto ocupa, y pide confirmación. Lo viejo solo se borra cuando lo nuevo está instalado y
-  verificado.
-- **Pausar y seguir:** **Pausar** detiene la instalación sin perder lo hecho. Si se corta (USB
-  quitado, reposo, apagón), el juego aparece en **Instalaciones a medias**, con **Seguir** y
-  **Descartar**.
-- **Borrar el `.p5z`:** la casilla «Borrar el .p5z cuando esté instalado y verificado» relee el juego
-  entero antes de borrar el `.p5z`, porque después será la única copia.
-- **Verificar y Desinstalar** los juegos instalados con MaxPack. Cierra el juego antes de
-  desinstalarlo o reemplazarlo: ShadowMountPlus 1.7 no dice qué juego está abierto.
-- La página solo acepta peticiones que llegan por la IP de la consola y desde la propia página.
+Devuelve un `.p5z` al **dump original (bit a bit)**, con cada archivo comprobado con su SHA-256, o a la
+**carpeta para la PS5**. Si el juego era una imagen `.exfat`, el dump original sale como carpeta con
+sus archivos, no como imagen.
 
-### ShadowMountPlus o Kraken Mount
+### Verificar
 
-Los dos montan los juegos de `homebrew/`. Elige uno:
+Lee un `.p5z` o una carpeta comprimida y comprueba que siguen enteros. No cambia nada.
 
-| | ShadowMountPlus | Kraken Mount |
-|---|---|---|
-| ampr-emu-ng | El juego tiene que llevarlo en `fakelib/` (MaxPack lo pone). Con el modo de fakelib predeterminado («Completo»), ShadowMountPlus usa el del juego. | Trae el suyo. |
-| Con el instalador | Si está en marcha, el instalador registra el juego y le fija el modo de fakelib. Si no lo está, o aplaza el escaneo, el juego sale como «Pendiente en ShadowMountPlus» y el instalador lo reintenta cada minuto. | Explora las mismas rutas. No hay que hacer nada más. |
-| Sin el instalador | Añade el juego y deja su modo de fakelib en «Predeterminado (Completo)». | Nada más que hacer. |
+### Detalles
 
-Con ShadowMountPlus, deja apagada su actualización automática de AMPR (`auto_update_ampr`): cambiaría
-ampr-emu-ng por un `ampr_emu` que no lee los packs zstd.
+Enseña título, ID, versión, tamaños, archivos, packs y si trae un runtime que lea zstd.
 
-Kraken Mount se usa sin ShadowMountPlus en marcha. Más detalles:
-[instalador-ps5.md](instalador-ps5.md#3-shadowmountplus-y-kraken-mount).
+### Ajustes ([detalles](ventana-pc.md#4-ajustes))
+
+Idioma (español o inglés), tema (sistema, claro u oscuro) y el `libSceAmpr.sprx` de ampr-emu-ng para los
+juegos que no lo traen. MaxPack solo acepta un `libSceAmpr.sprx` que lea zstd.
+
+## 5. MaxPack en la consola
+
+### Enviar `maxpack.elf`
+
+1. Conecta el USB con tus juegos.
+2. Envía `maxpack.elf` al cargador de ELF, puerto 9021. Con `nc`:
+   `nc -w 3 <IP de la PS5> 9021 < maxpack.elf`.
+3. Espera el aviso de la consola.
+4. Abre `http://<IP de la PS5>:8095` en el navegador de la PS5, del móvil o del PC. Hay que usar la IP,
+   no un nombre.
+
+Si MaxPack ya estaba cargado, abre la página directamente.
+
+### Qué hace al arrancar
+
+- **Busca juegos** en el SSD interno, en la unidad M.2 y en los USB: carpetas, FPKG (`.pkg`) y `.p5z`.
+- **Los registra** en la pantalla de inicio y los **monta al lanzarlos**, como Kraken Mount.
+- **Primera vez:** importa las rutas de búsqueda que hubieras añadido a mano en ShadowMountPlus o en
+  Kraken Mount, y adopta los juegos que ya registraron, sin duplicarlos.
+- No escribe nada en `/data/krakenmount` ni en `/data/shadowmount`: se puede volver a ellos.
+- Nunca registra ni monta un título que ya esté instalado en la consola.
+
+### La biblioteca
+
+La página principal lista tus juegos.
+- **Buscar:** escribe parte del nombre o del `TITLE_ID`.
+- **Filtrar por unidad:** pulsa la pastilla de una unidad (Interno, USB 1…). Otra pulsación los muestra
+  todos. **Desmontar** en la pastilla de un USB prepara su retirada.
+- **Abrir la ficha:** pulsa un juego.
+- **Jugar:** en la ficha, lo arranca en la consola, también desde el móvil. Está apagado si hay otro
+  juego abierto, si el juego no está «Listo» o si hay otro montador en marcha.
+- **Ocultar:** «Ocultar en la biblioteca» lo quita de la lista, pero sigue montado y en la pantalla de
+  inicio. **Mostrar ocultos** (junto al buscador) los enseña, atenuados.
+- **Copiar informe:** en la ficha, da un texto con la versión de MaxPack, el firmware, el montador, el
+  juego, su origen, su estado, ampr-emu-ng, el último cierre inesperado y las últimas líneas del
+  registro. Pégalo en una incidencia ([cómo avisar](#8-qué-está-probado-y-qué-falta)).
+- **Recrear caché:** rehace lo que MaxPack guarda de ese juego. Solo hace falta si algo se estropea.
+
+Si un juego se cierra solo, la ficha lo dice («Último cierre inesperado»).
+
+### Jugar un `.p5z` tal cual
+
+Un `.p5z` en una unidad que MaxPack explora sale como un juego más, sin instalarlo. Dónde ponerlo:
+la raíz del USB, o `homebrew/` de un USB, de la unidad M.2 o del SSD interno (`/data/homebrew`).
+
+Lo que tienes que saber:
+- **El `.p5z` tiene que seguir donde está.** MaxPack lo monta en solo lectura al lanzar. Si lo mueves de
+  unidad, MaxPack lo reconoce (avisa «movido a…»).
+- **En el SSD interno solo se copian los archivos sueltos** del juego (ejecutables, `sce_sys/`…), no
+  los packs, que se leen del propio `.p5z`. Hace falta que quepa lo suelto más 256 MiB. Si no cabe, el
+  juego sale con «Error», dice cuánto falta y se monta solo cuando lo liberas.
+- **Un `.p5z` dañado** o con más de 256 volúmenes no es un juego: sale en «Archivos .p5z que no se
+  pueden jugar».
+- **Si el mismo juego está dos veces**, gana la carpeta, luego el FPKG y por último el `.p5z`. El otro
+  sale como duplicado.
+- El nombre del archivo puede llevar tildes, ™ o japonés. Solo no valen los caracteres de control.
+- Al lanzarlo, la consola dice «ampr-emu-ng: v0.5.1 (p5z) running».
+
+### Instalar un juego (pestaña Instalar)
+
+1. Abre la pestaña **Instalar**.
+2. Elige el juego. Sale con lo que ahorra y lo que ocupará.
+3. Elige la unidad. Cada una dice si el juego cabe; si no cabe, no empieza la copia.
+4. Pulsa **Instalar**.
+
+Qué instala:
+- un `.p5z`: copia los packs tal cual y solo descomprime los archivos pequeños que van sueltos;
+- tal cual, sin comprimir nada: carpetas e imágenes `.exfat`, `.ffpkg`, `.ffpfs` y `.ffpfsc`.
+  Una `.ffpkg`, `.ffpfs` o `.ffpfsc` tiene que llevar el ID en el nombre (por ejemplo
+  `Silksong-PPSA12544.ffpkg`). MaxPack no monta las imágenes: las juega ShadowMountPlus.
+
+Dónde busca: en cada USB y en el almacenamiento ampliado (en la raíz y un nivel por debajo), y en
+`/data/maxpack/`. Si algo no aparece, escribe su ruta a mano.
+
+Otras cosas:
+- **Reemplazar:** si el juego ya está en la consola, la página dice qué se borrará y cuánto ocupa, y
+  pide confirmación. Lo viejo solo se borra cuando lo nuevo está instalado y verificado.
+- **Pausar y Seguir:** si se corta (USB quitado, reposo), el juego sale en **Instalaciones a medias**,
+  con **Seguir** y **Descartar**.
+- **Borrar el `.p5z`:** la casilla relee el juego entero antes de borrar el `.p5z`.
+- **Verificar y Desinstalar** los juegos instalados con MaxPack. Cierra el juego antes: con un juego
+  abierto no deja desinstalar ni reemplazar.
+
+Si un juego instalado también está en un USB como `.p5z`, el instalado (en carpeta) gana.
+
+### Ajustes de la página
+
+- **Rutas de escaneo:** dónde busca juegos.
+- **Rutas excluidas:** MaxPack nunca abre esas rutas.
+- **Librerías de MaxPack al lanzar:** en la ficha de un juego en carpeta sin empaquetar, se puede apagar
+  para un juego que deba ir tal cual. Un `.pkg`, un `.p5z` o una carpeta zstd o LZ4 no pueden ir sin
+  ellas.
+- Los emuladores de DLC y PlayGo incluidos, la limpieza de juegos que desaparecen y otros ajustes
+  heredados de Kraken Mount.
+- **Purgar caché**, **Recrear todo** y **Detener MaxPack**.
+
+### El icono de MaxPack
+
+MaxPack pone su propio icono en la pantalla de inicio de la PS5.
+- Si MaxPack no está en marcha, ábrelo: muestra «Iniciando MaxPack...» y arranca en unos segundos.
+- Si dice «maxpack.elf aún no está guardado», envía `maxpack.elf` una vez al puerto 9021 y repite.
+
+### Convivir con ShadowMountPlus y Kraken Mount
+
+MaxPack no monta mientras corre ShadowMountPlus o Kraken Mount. Lo dice con un aviso y la página dice
+«solo instala». No rompe nada: sigue la página y el instalador (lo instalado se registra en
+ShadowMountPlus). Cuando el otro se cierra, MaxPack vuelve a montar en unos segundos.
+
+Ten en cuenta:
+- **Elige uno para montar.** Si arrancas los dos, MaxPack espera.
+- El icono de MaxPack no se registra mientras corre otro montador. Llega cuando se cierra.
+- Con ShadowMountPlus, el juego tiene que llevar ampr-emu-ng en su `fakelib/`. Deja apagado
+  `auto_update_ampr` ([por qué](#shadowmountplus-cambia-ampr-emu-ng-y-el-juego-no-arranca)).
+
+### Volver a ShadowMountPlus o a Kraken Mount
+
+1. En la página de MaxPack, pulsa **Detener MaxPack**.
+2. Arranca ShadowMountPlus o Kraken Mount como siempre.
+
+Tus juegos, su caché y su configuración siguen como estaban. Para volver a MaxPack, ciérralos y envía
+`maxpack.elf` otra vez.
 
 ### Dónde tienen que estar los juegos
 
-Cada juego va en su carpeta `homebrew/<TITLE_ID>`, en la raíz de la unidad:
+Cada juego en carpeta va en `homebrew/<TITLE_ID>`, en la raíz de la unidad:
 
 | Unidad | En la PS5 | En el PC (ejemplo) |
 |---|---|---|
@@ -236,8 +340,11 @@ Cada juego va en su carpeta `homebrew/<TITLE_ID>`, en la raíz de la unidad:
 | USB | `/mnt/usb0/homebrew/<TITLE_ID>` (o `usb1`…`usb7`) | `E:\homebrew\<TITLE_ID>` |
 | Almacenamiento ampliado | `/mnt/ext0/homebrew/<TITLE_ID>` (o `ext1`) | — |
 
-El instalador siempre los deja ahí, y «Jugar desde el USB» también, si eliges la raíz del USB como
-destino. Si un juego está en otra carpeta, muévelo a `homebrew/`.
+### Copiar archivos por FTP
+
+Si copias juegos a la consola por FTP, pon el cliente en **modo binario** (en FileZilla:
+Transferencia, Tipo de transferencia, Binario). Si no, los archivos sin extensión, como
+`sce_sys/keystone`, fallan con «504 STOR in ASCII mode».
 
 ## 6. La línea de comandos
 
@@ -261,6 +368,7 @@ maxpack pack <carpeta|imagen.exfat> -o <salida> [opciones]
 maxpack unpack <juego.p5z> --folder|--original -o <carpeta> [--threads N]
 maxpack info <juego.p5z>
 maxpack info --json <carpeta|imagen.exfat|juego.p5z>
+maxpack info --play <juego.p5z>
 maxpack icon <carpeta|imagen.exfat|juego.p5z> -o <icono.png>
 maxpack verify <juego.p5z | carpeta> [--against <origen>] [--threads N]
 maxpack --version
@@ -299,7 +407,7 @@ Lo que garantiza:
 
 Avisos que puede dar al terminar:
 - `aviso: el runtime de fakelib/libSceAmpr.sprx no parece leer packs zstd: usa el libSceAmpr.sprx de ampr-emu-ng (--runtime)`
-- `aviso: sce_sys/param.json no da el TITLE_ID del juego (titleId): el instalador de MaxPack no aceptará este .p5z`
+- `aviso: sce_sys/param.json no da el TITLE_ID del juego (titleId): MaxPack no aceptará este .p5z`
 
 Con `--progress json`, las líneas son así:
 
@@ -340,6 +448,7 @@ con el código 1.
 |---|---|---|
 | `info` | Título, ID, versión, archivos, packs y tamaño de un `.p5z`, para personas. | `maxpack info "D:\juegos\MiJuego.p5z"` |
 | `info --json` | Lo mismo de un `.p5z`, una carpeta o un `.exfat`, en una línea JSON. Es lo que lee la ventana. | `maxpack info --json "D:\dumps\MiJuego.exfat"` |
+| `info --play` | Lo que la consola necesita para jugar un `.p5z` sin instalarlo, en JSON. Es cosa de desarrollo. | `maxpack info --play "D:\juegos\MiJuego.p5z"` |
 | `icon` | Guarda el `sce_sys/icon0.png` del juego. Sale con el código 1 si no tiene. | `maxpack icon "D:\dumps\MiJuego.exfat" -o icono.png` |
 
 La línea de `info --json` lleva `kind` (`folder`, `exfat` o `p5z`), `title_id`, `version`, `name`,
@@ -372,17 +481,119 @@ El progreso sale por stderr y el informe por stdout. Cómo leerlo:
 
 | Orden | Qué hace | Ejemplo |
 |---|---|---|
-| `--version` | La versión del motor y de zstd y zlib. | `maxpack --version` → `maxpack 0.0.1 (zstd 1.5.6, zlib 1.3.1)` |
+| `--version` | La versión del motor y de zstd y zlib. | `maxpack --version` → `maxpack 1.0.0 (zstd 1.5.6, zlib 1.3.1)` |
 | `--capabilities` | Lo que sabe hacer esta versión, en JSON. La ventana lo usa para saber si su `maxpack-core` le vale. | `maxpack --capabilities` |
 | `--help` | El uso, con todas las opciones (también `-h` o `help`). | `maxpack --help` |
-
-Para probar el instalador sin consola, los que compilan MaxPack tienen `maxpack-installer-pc`:
-[instalador-ps5.md](instalador-ps5.md#compilar-maxpackelf).
 
 ## 7. Problemas frecuentes
 
 Las frases entre comillas son las que ves en pantalla: en la ventana, en la línea de comandos, en la
-página del instalador o en la consola.
+página de MaxPack o en la consola.
+
+### El juego no aparece en MaxPack para la consola
+
+1. ¿Está en una unidad que MaxPack explora? Mira [dónde tienen que estar](#dónde-tienen-que-estar-los-juegos).
+   Un `.p5z` vale en la raíz del USB o en `homebrew/`.
+2. ¿Hay otro montador en marcha? Si la página dice «otro montador» o «solo instala», MaxPack espera a
+   que ShadowMountPlus o Kraken Mount se cierren.
+3. ¿Está en «Archivos .p5z que no se pueden jugar»? Entonces está dañado: [mira abajo](#un-p5z-dañado).
+4. ¿Está oculto? Pulsa **Mostrar ocultos**.
+5. ¿Está en una ruta excluida? Mira **Rutas excluidas** en Ajustes.
+6. ¿El mismo juego está también en carpeta o en FPKG? Gana esa copia, y el `.p5z` sale como duplicado.
+7. ¿El título está instalado en la consola? MaxPack no registra ni monta una copia de un título
+   instalado: sale con «Error» y la ficha lo explica.
+
+### Otro montador en marcha
+
+Lo que ves: aviso «ShadowMount+ está en ejecución» o «Kraken Mount está en marcha; MaxPack no monta
+juegos hasta que se cierre», y la página dice «solo instala».
+
+Qué hacer: cierra el otro montador (en Kraken Mount, **Detener**) y espera unos segundos. MaxPack
+vuelve a montar solo. Si quieres que monte MaxPack, no arranques los dos a la vez.
+
+### «puerto 8095 ocupado» o MaxPack ya estaba cargado
+
+- «MaxPack: puerto 8095 ocupado, no se ha iniciado…»: hay otra copia en marcha, por ejemplo el
+  `maxpack.elf` antiguo del instalador de la fase 2 de MaxPack (se llamaba igual y usaba el mismo
+  puerto). Quítalo de toda lista de carga automática (la del cargador, la de etaHEN o la de kstuff),
+  reinicia la consola y envía solo el nuevo.
+- Si MaxPack ya estaba cargado, abre la página directamente.
+
+### «No cabe: faltan …» o el juego sale con «Error» por espacio
+
+Lo que ves: el juego con «Error» y, en la ficha, cuánto falta; o, en **Instalar**, la unidad con «No
+cabe: faltan …».
+
+Qué hacer: haz sitio en esa unidad. Para jugar un `.p5z` desde el SSD interno hace falta el tamaño de
+sus archivos sueltos más 256 MiB; si lo liberas, el juego se monta solo. O pon el `.p5z` en un USB.
+
+### Un `.p5z` dañado
+
+Lo que ves: el archivo sale en «Archivos .p5z que no se pueden jugar», con «Dañado o incompleto», y un
+aviso «No se puede jugar <archivo>: está dañado o incompleto». Un fallo de lectura de un momento (un
+USB que se reinicia) no cuenta: MaxPack lo reintenta antes.
+
+Qué hacer:
+1. Verifica el `.p5z` en el PC con **Verificar**.
+2. Si falla, copia el archivo otra vez al USB.
+3. Si sigue fallando, vuelve a comprimir el juego.
+
+### El juego se cierra solo
+
+Lo que ves: la ficha dice «Último cierre inesperado».
+
+Qué hacer: en la ficha, pulsa **Copiar informe** y pégalo en una incidencia
+([cómo avisar](#cómo-contar-un-resultado)).
+
+### Cómo copiar un informe de fallo
+
+1. Abre la página (`http://<IP de la PS5>:8095`) desde el móvil o el PC.
+2. Abre la ficha del juego.
+3. Pulsa **Copiar informe**. Sale «Informe copiado».
+4. Pega el texto donde lo vayas a contar.
+
+Desde el navegador de la PS5, si no puede copiar, el texto sale seleccionado debajo: cópialo a mano.
+También lo tienes en `http://<IP de la PS5>:8095/api/report/<TITLE_ID>`. El registro entero está en
+`/data/maxpack/maxpack.log` y al final de la página.
+
+### La página tarda o no responde tras el reposo
+
+Espera unos segundos: vuelve sola. Si no, envía `maxpack.elf` otra vez.
+
+### ShadowMountPlus cambia ampr-emu-ng y el juego no arranca
+
+ShadowMountPlus tiene la opción `auto_update_ampr`. Si la enciendes, cambia ampr-emu-ng por el
+`ampr_emu` antiguo de drakmor, que no lee los packs zstd de MaxPack, y los juegos comprimidos dejan de
+arrancar ([issue #214](https://github.com/drakmor/ShadowMountPlus/issues/214)). Viene apagada: déjala
+así.
+
+Con ShadowMountPlus, en su modo de fakelib predeterminado («Completo») se usa el `libSceAmpr.sprx` que
+lleva el propio juego en `fakelib/`, y añade su backport si hace falta. Si funciona, al arrancar el
+juego sale «ampr-emu-ng: v… (zstd) running».
+
+### El juego no aparece en ShadowMountPlus
+
+1. **¿Está en `homebrew/`?** Si lo comprimiste para «Jugar desde el USB» en otra carpeta, MaxPack te lo
+   dice al terminar: «ShadowMountPlus solo los ve en homebrew/». Muévelo a `homebrew/<TITLE_ID>`.
+2. **¿Lo instalaste desde MaxPack para la consola?** Mira la página:
+   - «ShadowMountPlus no está en marcha: los juegos se registrarán cuando arranque»: carga
+     ShadowMountPlus.
+   - «Pendiente en ShadowMountPlus: …»: ShadowMountPlus aplazó el escaneo (por ejemplo, porque hay un
+     juego abierto). MaxPack lo reintenta cada minuto. Para hacerlo a mano, añade la ruta del juego en
+     ShadowMountPlus.
+3. **¿Usas Kraken Mount?** Entonces ShadowMountPlus no debe estar en marcha.
+
+Si aparece pero no arranca:
+- Lo más probable es el runtime: mira [El runtime no lee zstd](#el-runtime-no-lee-zstd-falta-ampr-emu-ng)
+  y que el modo de fakelib del juego sea «Predeterminado (Completo)».
+- Un archivo que el juego abre con `mmap` no puede ir empaquetado. Se deja suelto volviendo a empaquetar
+  con `--keep-loose "<ruta o patrón>"` (solo en la línea de comandos).
+- Qué anotar si falla: [probar-en-ps5.md](probar-en-ps5.md#4-qué-comprobar-diseño-68).
+
+### FTP: «504 STOR in ASCII mode»
+
+Pon el cliente en modo binario. En FileZilla: Transferencia, Tipo de transferencia, Binario. Los
+archivos sin extensión, como `sce_sys/keystone`, fallan en modo ASCII.
 
 ### FAT32 y los 4 GiB
 
@@ -392,21 +603,19 @@ Lo que ves en la ventana:
 
 Qué hacer:
 - **Usar carpeta** cambia a «Jugar desde el USB», cuyas partes caben en FAT32.
-- **Seguir igualmente** lo intenta. Si el `.p5z` va a pasar de 4 GiB menos un byte, MaxPack para y
-  borra lo escrito.
-- Lo mejor: un USB en exFAT, que no tiene ese límite. Un `.p5z` grande guardado en el disco del PC
-  tampoco se puede copiar luego a un USB en FAT32.
+- **Seguir igualmente** lo intenta. Si el `.p5z` va a pasar de 4 GiB menos un byte, MaxPack para y borra
+  lo escrito.
+- Lo mejor: un USB en exFAT, que no tiene ese límite.
 
 En la línea de comandos, `--max-file-size 4294967295` hace lo mismo que **Seguir igualmente**.
 
-### No hay espacio
+### No hay espacio en el PC
 
 Lo que ves:
-- «puede no caber en el destino», antes de empezar: el destino tiene menos libre de lo que ocupa el
-  juego original. El resultado suele ocupar menos, así que puedes pulsar **Empezar igualmente**.
+- «puede no caber en el destino», antes de empezar. El resultado suele ocupar menos, así que puedes
+  pulsar **Empezar igualmente**.
 - «no caben lo nuevo y lo de ahora a la vez: elige otro destino o haz sitio», con **Reemplazar**: ese
-  juego no empieza. Puedes elegir otro destino o seguir sin él.
-- En la PS5, «No cabe: faltan …». El instalador no empieza.
+  juego no empieza.
 
 Qué hacer: haz sitio o elige otro destino.
 
@@ -415,108 +624,53 @@ Qué hacer: haz sitio o elige otro destino.
 Lo que ves: «Ya está en el destino», con lo que se borraría y cuánto ocupa, y tres botones:
 **Cancelar**, **Saltar** y **Reemplazar**.
 
-Qué pasa si eliges **Reemplazar**: lo nuevo se escribe aparte, en `<destino>.maxpack-tmp`, y se
-verifica; solo entonces se borra lo de antes. Por eso tienen que caber los dos a la vez. Si cancelas o
-algo falla (por ejemplo, quitas el USB), lo de antes sigue intacto.
-
-En la PS5 pasa lo mismo: el instalador dice qué se borrará y pregunta «¿Instalar y reemplazar?».
+Si eliges **Reemplazar**, lo nuevo se escribe aparte, en `<destino>.maxpack-tmp`, y se verifica; solo
+entonces se borra lo de antes. Por eso tienen que caber los dos a la vez. Si algo falla, lo de antes
+sigue intacto.
 
 ### El runtime no lee zstd (falta ampr-emu-ng)
 
+Esto importa si vas a jugar con ShadowMountPlus o Kraken Mount. MaxPack para la consola lleva su propio
+ampr-emu-ng.
+
 Lo que ves:
-- En la ventana, antes de empezar: «Falta ampr-emu-ng». En la lista: «no trae un ampr-emu-ng que lea
-  zstd: no arrancará hasta ponérselo».
+- En la ventana: «Falta ampr-emu-ng», o «no trae un ampr-emu-ng que lea zstd: no arrancará hasta
+  ponérselo».
 - Al terminar: «hecho, pero su libSceAmpr.sprx no lee zstd: no arrancará hasta ponerle el de
   ampr-emu-ng».
-- En Ajustes, si eliges otro archivo: «Ese libSceAmpr.sprx no lee zstd: no es el de ampr-emu-ng. Elige
-  otro.»
+- En Ajustes, si eliges otro archivo: «Ese libSceAmpr.sprx no lee zstd: no es el de ampr-emu-ng».
 - En la línea de comandos: `aviso: el runtime de fakelib/libSceAmpr.sprx no parece leer packs zstd`.
-- En la PS5: «Este .p5z no trae ampr-emu-ng y el instalador no lleva ninguno. Vuelve a empaquetarlo
-  con --runtime.»
 
 Qué hacer:
-1. Descarga `libSceAmpr.sprx` de las Releases de la
-   [copia de ampr-emu-ng de MaxPack](https://github.com/DeLFuS77/ampr-emu-ng) y elígelo en **Ajustes**.
-2. Vuelve a comprimir el juego. En la ventana, «empaquetar con `--runtime`» es esto mismo: comprimir con
-   el runtime elegido en Ajustes.
-3. Si ya no tienes el dump, **Descomprimir** el `.p5z` a «Dump original (bit a bit)» lo recupera, y
-   luego lo comprimes otra vez.
+1. Descarga `libSceAmpr.sprx` de las [Releases de ampr-emu-ng](https://github.com/DeLFuS77/ampr-emu-ng/releases)
+   y elígelo en **Ajustes**.
+2. Vuelve a comprimir el juego.
+3. Si ya no tienes el dump, **Descomprimir** el `.p5z` a «Dump original (bit a bit)» lo recupera.
 
 ### Un `.p5z` sin TITLE_ID
 
-Lo que ves:
-- En la ventana, antes de empezar con «Instalador MaxPack»: «su param.json no da el ID del juego
-  (TITLE_ID): el instalador MaxPack no aceptará el .p5z».
-- En la línea de comandos: `aviso: sce_sys/param.json no da el TITLE_ID del juego (titleId)`.
+Lo que ves: «su param.json no da el ID del juego (TITLE_ID)» en la ventana, o
+`aviso: sce_sys/param.json no da el TITLE_ID del juego (titleId)` en la línea de comandos.
 
-Qué hacer: el instalador de la PS5 no acepta un `.p5z` así. Comprueba que el dump está completo y que
-su `sce_sys/param.json` trae el `titleId`. Un `param.json` con BOM o con relleno al final se lee bien.
+Qué hacer: comprueba que el dump está completo y que su `sce_sys/param.json` trae el `titleId`.
 
 ### «maxpack-core de otra versión» o «falta maxpack-core»
 
-Lo que ves: en la ventana, «maxpack-core, el motor de MaxPack, es de otra versión: no hace todo lo que
-la ventana necesita…» o «No se encuentra maxpack-core, el motor de MaxPack». No deja empezar ningún
-trabajo.
+Lo que ves: la ventana no deja empezar ningún trabajo.
 
 Qué hacer: pon junto a MaxPack el `maxpack-core` que venía con ella. Lo más fácil es volver a instalar
 MaxPack o descomprimir otra vez el zip portable entero.
 
-### SmartScreen y Gatekeeper
-
-- **Windows:** ni el instalador ni `MaxPack.exe` están firmados, así que SmartScreen avisa la primera
-  vez («Windows protegió su PC»). Pulsa **Más información** y **Ejecutar de todas formas**.
-- **macOS:** la app no está notarizada. La primera vez, ábrela con clic derecho, **Abrir**. En macOS
-  15 o posterior, si no te deja, intenta abrirla una vez y luego, en Ajustes del Sistema, Privacidad y
-  seguridad, pulsa **Abrir igualmente**.
-
-### El juego no aparece en ShadowMountPlus
-
-1. **¿Está en `homebrew/`?** Si lo comprimiste para «Jugar desde el USB» en otra carpeta, MaxPack te
-   lo dice al terminar: «ShadowMountPlus solo los ve en homebrew/». Muévelo a `homebrew/<TITLE_ID>`
-   del USB o del almacenamiento interno.
-2. **¿Lo instalaste con el instalador?** Mira la página:
-   - «ShadowMountPlus no está en marcha: los juegos se registrarán cuando arranque»: carga
-     ShadowMountPlus.
-   - «Pendiente en ShadowMountPlus: …»: ShadowMountPlus aplazó el escaneo (por ejemplo, porque hay un
-     juego abierto). El instalador lo reintenta cada minuto. Para hacerlo a mano, añade la ruta del
-     juego en ShadowMountPlus.
-3. **¿Usas Kraken Mount?** Entonces ShadowMountPlus no debe estar en marcha.
-
-Si aparece pero **no arranca**:
-- Lo más probable es el runtime: mira [la sección del runtime](#el-runtime-no-lee-zstd-falta-ampr-emu-ng)
-  y que el modo de fakelib del juego en ShadowMountPlus sea «Predeterminado (Completo)». Si ampr-emu-ng funciona, al arrancar el
-  juego debería salir su aviso «ampr-emu-ng: v… (zstd) running».
-- Un archivo que el juego abre con `mmap` no puede ir empaquetado. Se deja suelto volviendo a
-  empaquetar con `--keep-loose "<ruta o patrón>"` (solo en la línea de comandos).
-- Qué anotar si falla: [probar-en-ps5.md](probar-en-ps5.md#4-qué-comprobar-diseño-68).
-
-### El instalador de la PS5 no encuentra el juego o no abre
-
-- «No hay ningún .p5z en los USB ni en /data/maxpack…»: pon el `.p5z` en la raíz del USB o en una
-  carpeta justo debajo, y pulsa **Buscar otra vez**. También puedes escribir su ruta a mano.
-- «MaxPack ya está en marcha»: ya estaba cargado. Abre la página directamente.
-- «No hay conexión con la consola. Comprueba que MaxPack sigue cargado.»: vuelve a enviar
-  `maxpack.elf`. Lo que se cortó aparece en **Instalaciones a medias**, para seguir donde iba.
-- «El .p5z está dañado o no es válido.»: compruébalo en el PC con **Verificar** y, si falla, vuelve a
-  comprimir el juego.
-
 ### Cancelar
 
-**En la ventana**, **Cancelar** (o cerrar la ventana con trabajo en marcha) detiene el juego actual
-sin dejar nada a medias ni sin verificar:
-- lo que llevaba escrito se borra y el destino queda como estaba; con **Reemplazar**, lo de antes
-  sigue intacto;
-- los juegos que esperaban no empiezan, y los ya hechos se quedan;
-- puede tardar unos segundos: `maxpack-core` acaba lo que tiene entre manos y luego borra. Si cierras
-  la ventana, sigue solo hasta haberlo borrado;
-- si algo no se puede borrar (por ejemplo, un archivo abierto en otro programa), la fila lo dice, con
-  la ruta, para que lo borres tú: «no se pudo borrar lo escrito a medias».
-
-**En la PS5**, **Pausar** detiene la instalación sin perder lo hecho. En **Instalaciones a medias**,
-**Seguir** continúa donde se quedó y **Descartar** borra lo copiado.
-
-**En la línea de comandos**, `--control stdin` permite cancelar (con la línea `cancel`). El motor
-borra lo que estaba escribiendo y sale con el código 130.
+- **En la ventana**, **Cancelar** (o cerrar la ventana con trabajo en marcha) borra lo que llevaba
+  escrito y deja el destino como estaba; con **Reemplazar**, lo de antes sigue intacto. Los juegos que
+  esperaban no empiezan, y los ya hechos se quedan. Puede tardar unos segundos. Si algo no se puede
+  borrar, la fila lo dice, con la ruta: «no se pudo borrar lo escrito a medias».
+- **En la consola**, **Pausar** detiene una instalación sin perder lo hecho. En **Instalaciones a
+  medias**, **Seguir** continúa y **Descartar** borra lo copiado.
+- **En la línea de comandos**, `--control stdin` permite cancelar con la línea `cancel`. El motor borra
+  lo que estaba escribiendo y sale con el código 130.
 
 ### Otros avisos de la ventana
 
@@ -526,97 +680,102 @@ borra lo que estaba escribiendo y sale con el código 130.
 - «lo nuevo no pasó la verificación y se borró»: vuelve a intentarlo y, si se repite, prueba con otro
   destino.
 
-La lista completa de avisos de la ventana está en [ventana-pc.md](ventana-pc.md#5-avisos).
+La lista completa está en [ventana-pc.md](ventana-pc.md#5-avisos).
 
 ## 8. Qué está probado y qué falta
 
-**Probado en el PC, con juegos reales**, en Windows 11 y con la línea de comandos
-([informe](informes/fase1.md)):
-- Silksong: empaquetar, verificar y reconstruir el dump original, con cero fallos. El
-  `ampr_emu.index` que genera MaxPack salió idéntico byte a byte al que trae el dump.
-- RESIDENT EVIL requiem (133 GB, con archivos de hasta 72 GB): empaquetar en `.p5z` y verificar, con
-  cero fallos.
+### Probado en una PS5 real
 
-**Probado en cada cambio, en GitHub Actions** ([el flujo](../.github/workflows/build.yml)):
-- **Windows y Linux:** se compila el motor y pasan todas sus pruebas (`ctest`): imágenes exFAT
-  sintéticas con casos difíciles, empaquetar y reconstruir, `.p5z` dañados, cancelar, y el motor y la
-  página del instalador contra un ShadowMountPlus falso.
-- **Windows, Linux y macOS (Apple silicon e Intel):** se compilan el motor y la ventana, pasan las
-  pruebas de la ventana (Go) con ese motor y se hacen los paquetes.
-- **Los paquetes, en automático:**
-  - Windows: el instalador se instala en silencio, comprime una imagen de prueba y se desinstala;
-  - Linux: `install.sh` instala, comprime y desinstala;
-  - macOS: el `.dmg` se abre, la app copiada conserva su firma y comprime una imagen de prueba.
-- **PS5:** `maxpack.elf` se compila con el SDK de payloads. No se ejecuta.
-- En macOS no se pasan las pruebas del motor (`ctest`): allí el motor solo se prueba a través de las
-  de la ventana.
+Firmware 13.60, ShadowMountPlus 1.7beta12, 24/11/2026
+([probar-en-ps5.md](probar-en-ps5.md)):
+- Hollow Knight: Silksong, empaquetado con MaxPack en carpeta zstd y montado con ShadowMountPlus,
+  arranca con nuestro ampr-emu-ng, guarda y vuelve a cargar la partida.
+- ShadowMountPlus, con el modo de fakelib predeterminado («Predeterminado (Completo)»), conserva el
+  `libSceAmpr.sprx` del juego y añade su backport.
+- MaxPack para la consola, en su primera versión (solo montar), montó, lanzó y limpió ese juego 3
+  veces, y volver a ShadowMountPlus funcionó.
 
-**Probado en una PS5** (firmware 13.60, ShadowMountPlus 1.7beta12, 24/11/2026):
-- Silksong empaquetado por MaxPack, en carpeta, arranca con ampr-emu-ng
-  («ampr-emu-ng: v0.5.0… (zstd) running»), carga, guarda y vuelve a cargar partida
-  ([probar-en-ps5.md](probar-en-ps5.md)).
-- ShadowMountPlus, con el modo de fakelib predeterminado («Completo»), carga el `libSceAmpr.sprx` del
-  juego y añade su backport.
+### Probado en el PC
 
-**Sin probar todavía:**
-- El instalador en una PS5 real
-  ([lista de comprobación](instalador-ps5.md#6-lista-de-comprobación-en-consola)).
+- **Con juegos reales** ([informe](informes/fase1.md)): Silksong (empaquetar, verificar y reconstruir el
+  dump original, con cero fallos; el `ampr_emu.index` salió idéntico al del dump) y RESIDENT EVIL
+  requiem (133 GB, con archivos de hasta 72 GB; empaquetar en `.p5z` y verificar, con cero fallos).
+- **En cada cambio, en GitHub Actions:** el motor se compila y pasa sus pruebas en Windows y Linux; la
+  ventana se compila y pasa las suyas en Windows, Linux y macOS; los paquetes se instalan, comprimen
+  una imagen de prueba y se desinstalan.
+
+### Sin probar todavía en una consola
+
+- **Jugar un `.p5z` tal cual** (el modo `p5z`), desde USB, M.2 y SSD interno.
+- Lo más nuevo de MaxPack para la consola: la biblioteca, **Jugar** desde la página, ocultar y mostrar,
+  **Copiar informe**, el instalador, las rutas excluidas, convivir con ShadowMountPlus y Kraken Mount, y
+  su icono. Existe el código y se prueba en el PC, pero no se ha ejecutado en una PS5.
+- La velocidad de un `.p5z` frente a una carpeta empaquetada.
 - El instalador de Windows con doble clic y el asistente en pantalla. Si algo no va, usa el zip
   portable y cuéntalo.
 
-**Pendiente de comprobar en la consola**
-([detalles](instalador-ps5.md#7-pendiente-de-comprobar-en-consola)):
-- **P1. El modo de fakelib de ShadowMountPlus.** Comprobado: con `full` (el «Predeterminado
-  (Completo)» de ShadowMountPlus 1.7) el juego carga su ampr-emu-ng, así que el instalador sigue
-  usando `full`.
-- **P2. Desinstalar.** Que, después de desinstalar, el juego desaparezca de ShadowMountPlus.
-- **P3. Modo reposo.** Si el instalador sigue cargado después del reposo. Si no, se vuelve a cargar y
-  la instalación sigue donde iba.
-- **P4. El runtime del instalador.** Qué copia y qué versión de ampr-emu-ng llevará dentro
-  `maxpack.elf`. Hoy no lleva ninguna, y por eso solo instala `.p5z` que ya la traen.
-- **P5. USB sin conectar.** Si `/mnt/usb0` existe como carpeta vacía sin ningún USB. Entonces la
-  página lo ofrecería como destino aunque no haya nada conectado.
+La lista de pruebas pendientes en la consola está en
+[`docs/pruebas-consola.md`](https://github.com/DeLFuS77/maxpack-ps5/blob/main/docs/pruebas-consola.md)
+y los juegos ya probados, en
+[`docs/compatibilidad.md`](https://github.com/DeLFuS77/maxpack-ps5/blob/main/docs/compatibilidad.md),
+ambos en el repositorio de MaxPack para la consola.
+
+### Cómo contar un resultado
+
+1. En la página de MaxPack, abre la ficha del juego y pulsa **Copiar informe**. Trae la fila hecha para
+   la lista de compatibilidad.
+2. Abre una incidencia en el repositorio que corresponda: PC en
+   [DeLFuS77/maxpack](https://github.com/DeLFuS77/maxpack/issues), consola en
+   [DeLFuS77/maxpack-ps5](https://github.com/DeLFuS77/maxpack-ps5/issues) y el runtime en
+   [DeLFuS77/ampr-emu-ng](https://github.com/DeLFuS77/ampr-emu-ng/issues).
+3. Pega el informe y di si funcionó, con el juego, su versión y tu firmware.
+
+Cuenta también lo que funciona: ayuda a llenar la lista de compatibilidad.
 
 ## 9. Licencias y créditos
 
 **MaxPack** es software libre con la licencia GPL-3.0-or-later ([LICENSE](../LICENSE)), de DeLFuS77, y
-no tiene ninguna garantía. La ventana parte de [NXPress](https://github.com/DeLFuS77/NXPress), del
-mismo autor; lo que viene de NXPress se publica aquí con la licencia de MaxPack.
+no tiene ninguna garantía. Sus tres piezas (PC, consola y ampr-emu-ng) son GPL-3.0. La ventana parte de
+[NXPress](https://github.com/DeLFuS77/NXPress), del mismo autor.
 
-**Lo que va dentro de los programas:**
-- [zstd](https://github.com/facebook/zstd) 1.5.6 (Meta): BSD o GPLv2, a elegir. Va como submódulo en
-  `third_party/zstd` y se compila dentro de `maxpack`, `maxpack-core` y `maxpack.elf`.
-- [zlib](https://github.com/madler/zlib) 1.3.1 (Jean-loup Gailly y Mark Adler): licencia zlib. Va como
-  submódulo en `third_party/zlib`, igual que zstd.
-- La ventana, en Go: [Wails](https://github.com/wailsapp/wails) v2 (MIT); en Windows,
-  go-webview2 (MIT), go-ole (MIT) y go-toast (MIT o Unlicense); en Linux, godbus (BSD);
-  golang.org/x/net, x/sys y x/text (BSD); y otras librerías pequeñas con licencias MIT, BSD o
-  Apache-2.0. La lista con versiones está en [gui/go.mod](../gui/go.mod).
-- La página de la ventana se ve con el navegador web del sistema (WebView2 en Windows, WebKitGTK en
-  Linux y WebKit en macOS), que no va dentro de MaxPack.
-- `maxpack.elf` se compila con el SDK [ps5-payload-dev/sdk](https://github.com/ps5-payload-dev/sdk)
-  (GPL-3.0).
+**Lo que va dentro de MaxPack para el PC:**
+- [zstd](https://github.com/facebook/zstd) 1.5.6 (Meta): BSD o GPLv2, a elegir.
+- [zlib](https://github.com/madler/zlib) 1.3.1 (Jean-loup Gailly y Mark Adler): licencia zlib.
+- La ventana, en Go: [Wails](https://github.com/wailsapp/wails) v2 (MIT); en Windows, go-webview2 (MIT),
+  go-ole (MIT) y go-toast (MIT o Unlicense); en Linux, godbus (BSD); golang.org/x/net, x/sys y x/text
+  (BSD); y otras librerías pequeñas con licencias MIT, BSD o Apache-2.0. La lista con versiones está en
+  [gui/go.mod](../gui/go.mod).
+- La página de la ventana se ve con el navegador web del sistema (WebView2, WebKitGTK o WebKit), que no
+  va dentro de MaxPack.
 
-**Proyectos con los que funciona MaxPack** (no van dentro):
-- [ampr-emu-ng](https://github.com/quer3q/ampr-emu-ng), de quer3q (GPL-3.0): el runtime que lee los
-  packs zstd en la consola. MaxPack usa su propia copia,
-  [DeLFuS77/ampr-emu-ng](https://github.com/DeLFuS77/ampr-emu-ng), derivada de la v0.5.0 de quer3q.
-  Lo descargas tú. Si compilas `maxpack.elf` con un ampr-emu-ng dentro, ese `libSceAmpr.sprx` sigue
-  con su licencia GPL-3.0.
-- [ampr_emu](https://github.com/drakmor/ampr_emu), de drakmor (GPL-3.0): de él viene el formato del
-  índice `ampr_emu.index`, que MaxPack genera para cada juego.
-- [ShadowMountPlus](https://github.com/drakmor/ShadowMountPlus), de drakmor (GPL-3.0).
-- [Kraken Mount](https://github.com/quer3q/kraken-mount), de quer3q (GPL-3.0-or-later).
-- [PS5 Dump Forge](https://github.com/quer3q/ps5-dump-forge), de quer3q (GPL-3.0): escribe los mismos
-  packs zstd; MaxPack sigue sus reglas.
-- [ps5upload](https://github.com/phantomptr/ps5upload), de phantomptr (GPL-3.0), otra herramienta de la
-  escena.
+**Lo que va dentro de MaxPack para la consola** (avisos completos en `THIRD_PARTY_NOTICES` de
+[maxpack-ps5](https://github.com/DeLFuS77/maxpack-ps5)):
+- [Kraken Mount](https://github.com/quer3q/kraken-mount), de quer3q (GPL-3.0-or-later): la base de
+  MaxPack para la consola, que conserva su historial y su licencia.
+- [ampr-emu-ng](https://github.com/DeLFuS77/ampr-emu-ng): el runtime. Es una copia propia de
+  [ampr-emu-ng](https://github.com/quer3q/ampr-emu-ng), de quer3q, que a su vez es un fork de
+  [ampr_emu](https://github.com/drakmor/ampr_emu), de drakmor (GPL-3.0). La incluida es
+  `v0.5.1-maxpack.1`: la v0.5.1 de quer3q con el modo `.p5z`.
+- [dlc_emu](https://github.com/drakmor/dlc_emu) y [pgo_stub](https://github.com/drakmor/pgo_stub), de
+  drakmor: los emuladores de DLC y PlayGo.
+- [ShadowMountPlus](https://github.com/drakmor/ShadowMountPlus), de drakmor (GPL-3.0): de ahí vienen el
+  registro en la pantalla de inicio, la capa `fakelib` y los backports.
+- [PS5 Dump Forge](https://github.com/quer3q/ps5-dump-forge), de quer3q (GPL-3.0): su decodificador
+  Kraken, y los mismos packs zstd que escribe MaxPack.
+- [ps5-payload-sdk](https://github.com/ps5-payload-dev/sdk) (GPL-3.0), [zstd](https://github.com/facebook/zstd),
+  [zlib](https://zlib.net) y [SQLite](https://www.sqlite.org).
+
+[ampr_emu](https://github.com/drakmor/ampr_emu) también es de donde viene el formato del índice
+`ampr_emu.index`, que MaxPack genera para cada juego. [ps5upload](https://github.com/phantomptr/ps5upload),
+de phantomptr (GPL-3.0), es otra herramienta de la escena.
 
 ## Más documentación
 
 - [ventana-pc.md](ventana-pc.md): la ventana del PC, con capturas.
-- [instalador-ps5.md](instalador-ps5.md): el instalador de la PS5 y lo pendiente en consola.
 - [probar-en-ps5.md](probar-en-ps5.md): probar a mano en la consola un juego empaquetado.
 - [formato-p5z.md](formato-p5z.md): el formato del `.p5z`.
 - [research-notes.md](research-notes.md): lo investigado sobre la escena y los formatos.
 - [README](../README.md): compilar MaxPack y leer el informe de `analyze`.
+- [MaxPack para la consola](https://github.com/DeLFuS77/maxpack-ps5) y su
+  [DESIGN.md](https://github.com/DeLFuS77/maxpack-ps5/blob/main/DESIGN.md).
+- [ampr-emu-ng y el modo p5z](https://github.com/DeLFuS77/ampr-emu-ng/blob/main/docs/p5z-mode.md).

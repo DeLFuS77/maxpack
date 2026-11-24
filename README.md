@@ -247,7 +247,9 @@ played on a console, and how, is in the
 ## Download
 
 Packages are in **[Releases](https://github.com/DeLFuS77/maxpack/releases)**, with a `SHA256SUMS` file
-to check them:
+to check them. Each file also has a build attestation, signed through GitHub, that proves it was built by
+this repository's workflow from the tagged commit: `gh attestation verify <file> -R DeLFuS77/maxpack`
+checks one. Releases are immutable once published: their files cannot be replaced.
 
 | System | File |
 |---|---|
@@ -429,7 +431,7 @@ The window is a [Wails](https://wails.io) app in [gui/](gui/) that drives this s
 **Continuous integration.** GitHub Actions, on every change: builds the engine and runs all its tests
 (`ctest`) on Windows and Linux; builds `maxpack` and the window on Windows, Linux and macOS (Apple
 silicon and Intel), runs the window's Go tests with that engine and makes the packages; and, with a
-`vX.Y.Z` tag, puts them in a draft release with their `SHA256SUMS`.
+`vX.Y.Z` tag, puts them in a draft release with their `SHA256SUMS` and a build attestation for each.
 
 **Tests.** `ctest` generates synthetic exFAT images (`tests/tools/make_exfat.py`) with long and emoji
 names, fragmented files, a ValidDataLength smaller than the size, truncated images and a looping FAT.

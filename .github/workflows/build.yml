@@ -297,6 +297,9 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+      # for the build attestation (Sigstore through GitHub's OIDC token)
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -315,6 +318,14 @@ jobs:
           sha256sum maxpack-* > SHA256SUMS
           sha256sum -c SHA256SUMS
           cat SHA256SUMS
+      # A signed statement, kept by GitHub, that each file was built by this workflow from this
+      # commit: `gh attestation verify <file> -R DeLFuS77/maxpack` checks one.
+      - name: Build attestation
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: |
+            artifacts/maxpack-*
+            artifacts/SHA256SUMS
       - name: Draft release
         env:
           GH_TOKEN: ${{ github.token }}

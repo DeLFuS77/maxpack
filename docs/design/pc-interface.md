@@ -29,7 +29,7 @@ NXPress").
   sizes, packs, runtime).
 - W5. Progress per game and in total, speed and time left, and **Cancel** without leaving anything half
   made. At the end, the result window: "X GB saved", what saved the most and what to do now.
-- W6. Windows, macOS and Linux, in Spanish and English and with light and dark themes, like NXPress.
+- W6. Windows, macOS and Linux, in eleven languages and with light and dark themes, like NXPress.
 - W7. **The essential extras of NXPress** (decided by you, "the essentials"):
   - the PC does not go to sleep while a job is running;
   - progress on the taskbar icon (Windows) or the Dock (macOS);
@@ -214,7 +214,7 @@ The window runs `maxpack-core` as a separate process, one job at a time:
   as it is.
 - **Names:** the engine is called `maxpack-core` next to the `MaxPack` window; the usual `maxpack` keeps
   existing only for whoever uses just the command line.
-- At the start, the window is only in Spanish and English.
+- The window speaks eleven languages (the same as the console page), starting in the system's.
 - No Pause: Cancel stops the running game and leaves the others waiting.
 - Replace writes apart and deletes the old one at the end, with the new one verified, even if that
   needs space for both.

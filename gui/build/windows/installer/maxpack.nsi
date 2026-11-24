@@ -51,12 +51,32 @@ VIAddVersionKey /LANG=0 "LegalCopyright" "GPL-3.0-or-later"
 !insertmacro MUI_UNPAGE_CONFIRM
 !insertmacro MUI_UNPAGE_INSTFILES
 
-; Spanish first: it is the default language if Windows' is neither of the two
-!insertmacro MUI_LANGUAGE "Spanish"
+; The languages of the window, the same eleven. The installer takes the one of Windows when it has it; English is
+; first, so it is the one used when Windows' is none of them. KeepSettings is the only text of this script that is
+; not one of the standard pages, so it is the only one with its own translation.
 !insertmacro MUI_LANGUAGE "English"
+!insertmacro MUI_LANGUAGE "Russian"
+!insertmacro MUI_LANGUAGE "SimpChinese"
+!insertmacro MUI_LANGUAGE "German"
+!insertmacro MUI_LANGUAGE "Spanish"
+!insertmacro MUI_LANGUAGE "French"
+!insertmacro MUI_LANGUAGE "Japanese"
+!insertmacro MUI_LANGUAGE "PortugueseBR"
+!insertmacro MUI_LANGUAGE "Italian"
+!insertmacro MUI_LANGUAGE "Korean"
+!insertmacro MUI_LANGUAGE "Arabic"
 
-LangString KeepSettings ${LANG_SPANISH} "¿Borrar también los ajustes de MaxPack y lo que recuerda de la ventana?"
 LangString KeepSettings ${LANG_ENGLISH} "Also delete the settings of MaxPack and what its window remembers?"
+LangString KeepSettings ${LANG_RUSSIAN} "Также удалить настройки MaxPack и то, что запоминает его окно?"
+LangString KeepSettings ${LANG_SIMPCHINESE} "是否同时删除 MaxPack 的设置以及它的窗口记住的内容？"
+LangString KeepSettings ${LANG_GERMAN} "Auch die Einstellungen von MaxPack und das, was sich sein Fenster merkt, löschen?"
+LangString KeepSettings ${LANG_SPANISH} "¿Borrar también los ajustes de MaxPack y lo que recuerda de la ventana?"
+LangString KeepSettings ${LANG_FRENCH} "Supprimer aussi les paramètres de MaxPack et ce dont sa fenêtre se souvient ?"
+LangString KeepSettings ${LANG_JAPANESE} "MaxPack の設定とウィンドウが記憶している内容も削除しますか？"
+LangString KeepSettings ${LANG_PORTUGUESEBR} "Apagar também as configurações do MaxPack e o que a janela dele lembra?"
+LangString KeepSettings ${LANG_ITALIAN} "Eliminare anche le impostazioni di MaxPack e ciò che la sua finestra ricorda?"
+LangString KeepSettings ${LANG_KOREAN} "MaxPack의 설정과 창이 기억하는 내용도 함께 삭제할까요?"
+LangString KeepSettings ${LANG_ARABIC} "هل تريد أيضًا حذف إعدادات MaxPack وما تتذكره نافذته؟"
 
 Section "MaxPack"
   SetOutPath "$INSTDIR"

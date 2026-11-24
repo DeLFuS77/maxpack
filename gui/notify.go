@@ -3,7 +3,6 @@
 package main
 
 import (
-	"fmt"
 	"math"
 	"runtime"
 	"strconv"
@@ -16,8 +15,8 @@ import (
 )
 
 // sizeText is a size as the page writes it (size() in app.js, as NXPress does): in steps of
-// 1024, B with no decimals and one from KB on, with the decimal comma in Spanish and no
-// thousands separator.
+// 1024, B with no decimals and one from KB on, with the decimal comma in the languages that
+// write it so (Spanish, Russian, German, French, Portuguese, Italian) and no thousands separator.
 func sizeText(lang string, bytes uint64) string {
 	units := []string{"B", "KB", "MB", "GB", "TB"}
 	value, unit := float64(bytes), 0
@@ -26,54 +25,32 @@ func sizeText(lang string, bytes uint64) string {
 		unit++
 	}
 	if unit == 0 {
-		return strconv.FormatUint(bytes, 10) + " B"
+		return isolate(lang, strconv.FormatUint(bytes, 10)+" B")
 	}
 	// half away from zero, as Intl.NumberFormat rounds on the page
 	text := strconv.FormatFloat(math.Round(value*10)/10, 'f', 1, 64)
-	if lang == "es" {
+	if decimalComma[lang] {
 		text = strings.Replace(text, ".", ",", 1)
 	}
-	return text + " " + units[unit]
+	return isolate(lang, text+" "+units[unit])
 }
 
 // noticeText is the notice of the system when a queue ends: the title and a body that says the
-// games done, the ones that failed and what was saved, in the language of the settings, in the
-// words of the page. The texts of the notice are all here.
+// games done, the ones that failed or were cancelled and what was saved, in the language of the
+// window and in the words of the page (see langs.go).
 func noticeText(lang string, s jobs.Summary) (title, body string) {
-	title = "MaxPack"
-	saved := sizeText(lang, s.Saved)
-	var parts []string
-	if lang == "es" {
-		parts = append(parts, plural(s.Done, "juego listo", "juegos listos"))
-		if s.Failed > 0 {
-			parts = append(parts, fmt.Sprintf("%d con error", s.Failed))
-		}
-		if s.Cancelled > 0 {
-			parts = append(parts, plural(s.Cancelled, "cancelado", "cancelados"))
-		}
-		if s.Saved > 0 {
-			parts = append(parts, saved+" ahorrados")
-		}
-		return title, strings.Join(parts, ", ")
-	}
-	parts = append(parts, plural(s.Done, "game done", "games done"))
+	w := wordsFor(lang)
+	parts := []string{w.done(s.Done)}
 	if s.Failed > 0 {
-		parts = append(parts, fmt.Sprintf("%d failed", s.Failed))
+		parts = append(parts, w.failed(s.Failed))
 	}
 	if s.Cancelled > 0 {
-		parts = append(parts, fmt.Sprintf("%d cancelled", s.Cancelled))
+		parts = append(parts, w.cancelled(s.Cancelled))
 	}
 	if s.Saved > 0 {
-		parts = append(parts, saved+" saved")
+		parts = append(parts, w.saved(sizeText(lang, s.Saved)))
 	}
-	return title, strings.Join(parts, ", ")
-}
-
-func plural(n int, one, many string) string {
-	if n == 1 {
-		return fmt.Sprintf("%d %s", n, one)
-	}
-	return fmt.Sprintf("%d %s", n, many)
+	return "MaxPack", strings.Join(parts, w.sep)
 }
 
 // notify shows a notice of the system.

@@ -1,10 +1,10 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
-/* Direction A, "Ambiente" (docs/diseno/rediseno-interfaces.md), the same as the page of MaxPack on
+/* Direction A, "Ambiente" (docs/design/interface-redesign.md), the same as the page of MaxPack on
    the console: MaxPack blue to cyan for what you choose and what moves on, mint for space saved,
    amber for what needs a look, coral for what went wrong. Spacing on a 4 px grid; type at 12, 13,
    14, 15, 22 and 26 px in the font of the system. Only transform and opacity animate, and nothing
-   moves when the system asks for less motion. Dark unless the system or Ajustes say light. */
+   moves when the system asks for less motion. Dark unless the system or Settings say light. */
 :root {
   --bg: #0b111d; --panel: #111827; --raised: #172033; --line: #222d42; --text: #eef3ff; --muted: #93a0b8;
   --accent: #2d7dff; --accent-2: #36e2ff; --accent-soft: rgba(45, 125, 255, .14); --accent-text: #04111f;
@@ -22,7 +22,7 @@
   --display: "Segoe UI Variable Display", "Segoe UI", system-ui, -apple-system, "SF Pro Display", sans-serif;
   color-scheme: dark;
 }
-/* the theme of the system, unless one is chosen in Ajustes */
+/* the theme of the system, unless one is chosen in Settings */
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
     --bg: #eef2f8; --panel: #fff; --raised: #f5f7fb; --line: #dde3ec; --text: #111a2b; --muted: #5b667a;
@@ -87,7 +87,7 @@ button.icon { padding: 4px 8px; }
 /* the one button that deletes, in coral: coral is for errors and what cannot be undone */
 button.danger { background: transparent; border-color: var(--bad); color: var(--bad); font-weight: 600; }
 button.danger:hover:not(:disabled) { background: var(--bad-soft); }
-button.link { background: none; border: none; padding: 0; margin-top: 8px; color: var(--accent); font-weight: 600; text-align: left; }
+button.link { background: none; border: none; padding: 0; margin-top: 8px; color: var(--accent); font-weight: 600; text-align: start; }
 button.link:hover:not(:disabled) { background: none; text-decoration: underline; }
 input[type=range] { width: 100%; accent-color: var(--accent); margin: 8px 0 0; }
 input[type=checkbox], input[type=radio] { accent-color: var(--accent); }
@@ -96,9 +96,9 @@ input[type=checkbox], input[type=radio] { accent-color: var(--accent); }
 main { flex: 1; display: flex; min-height: 0; }
 
 /* the sections, by group; the highlight of the open one slides to it (placeNavHighlight) */
-nav { position: relative; width: 196px; flex: none; border-right: 1px solid var(--line); background: var(--panel); padding: 12px 8px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+nav { position: relative; width: 196px; flex: none; border-inline-end: 1px solid var(--line); background: var(--panel); padding: 12px 8px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
 .nav-hl {
-  position: absolute; left: 8px; right: 8px; top: 0; height: 46px; border-radius: var(--radius);
+  position: absolute; inset-inline: 8px; top: 0; height: 46px; border-radius: var(--radius);
   background: linear-gradient(90deg, var(--accent-soft), transparent); box-shadow: inset 3px 0 0 var(--accent);
   opacity: 0; transition: transform .4s var(--ease), opacity .2s; pointer-events: none;
 }
@@ -106,7 +106,7 @@ nav { position: relative; width: 196px; flex: none; border-right: 1px solid var(
 nav .icon { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
 nav .group { font-size: 12px; font-weight: 600; color: var(--muted); padding: 12px 12px 4px; }
 nav div.group:first-of-type { padding-top: 2px; }
-nav button { position: relative; text-align: left; border-color: transparent; background: transparent; padding: 5px 10px 5px 8px; display: flex; gap: 10px; align-items: center; border-radius: var(--radius); }
+nav button { position: relative; text-align: start; border-color: transparent; background: transparent; padding: 5px 10px 5px 8px; padding-inline: 8px 10px; display: flex; gap: 10px; align-items: center; border-radius: var(--radius); }
 nav button > span { min-width: 0; }
 nav button b { display: block; font-weight: 600; }
 nav button small { display: block; font-size: 11px; color: var(--muted); }
@@ -119,10 +119,10 @@ nav button.on, nav button.on:hover:not(:disabled) { background: transparent; }
 .tone-neutral { --tone: var(--tone-neutral); --tone-grad: linear-gradient(135deg, #64748b, #93a0b8); }
 nav button:hover:not(:disabled) .tile { background: color-mix(in srgb, var(--tone) 24%, transparent); }
 nav button.on .tile, nav button.on:hover:not(:disabled) .tile { background: var(--tone-grad); color: var(--tile-on); transform: scale(1.06); }
-/* Ajustes and the engine, at the bottom of the menu */
+/* Settings and the engine, at the bottom of the menu */
 .side-foot { margin-top: auto; padding-top: 10px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 2px; }
 .side-core { margin: 6px 0 0 10px; font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.side-core::before { content: "●"; margin-right: 6px; color: var(--ok); }
+.side-core::before { content: "●"; margin-inline-end: 6px; color: var(--ok); }
 .side-core.bad { color: var(--bad); }
 .side-core.bad::before { color: var(--bad); }
 @media (max-height: 640px) { nav button small { display: none; } }
@@ -161,7 +161,7 @@ nav button.on .tile, nav button.on:hover:not(:disabled) .tile { background: var(
 
 /* the list of games */
 table { width: 100%; border-collapse: collapse; }
-th { text-align: left; font-weight: 600; color: var(--muted); font-size: 12px; padding: 10px 12px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--panel); z-index: 1; }
+th { text-align: start; font-weight: 600; color: var(--muted); font-size: 12px; padding: 10px 12px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--panel); z-index: 1; }
 td { padding: 11px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
 tbody tr:hover { background: var(--raised); }
 tbody tr:last-child td { border-bottom: none; }
@@ -169,7 +169,7 @@ tbody tr:last-child td { border-bottom: none; }
 @keyframes row-in { from { opacity: 0; transform: translateY(12px); } }
 tr.enter td { animation: row-in .5s var(--ease) both; }
 td.name { word-break: break-word; }
-.size, td.size { width: 84px; text-align: right; white-space: nowrap; color: var(--muted); font-variant-numeric: tabular-nums; }
+.size, td.size { width: 84px; text-align: end; white-space: nowrap; color: var(--muted); font-variant-numeric: tabular-nums; }
 .state, td.state { width: 150px; }
 /* the column of the state shows once a game of the list has one */
 #files.no-state .state { display: none; }
@@ -194,7 +194,7 @@ td.remove button { padding: 2px 8px; }
 .game .note { font-size: 12px; color: var(--muted); margin-top: 3px; user-select: text; -webkit-user-select: text; overflow-wrap: anywhere; }
 .game .note.bad { color: var(--bad); }
 .game .note.warn { color: var(--warn); }
-/* Detalles: what the engine says of the game */
+/* Details: what the engine says of the game */
 .facts { display: grid; grid-template-columns: max-content 1fr; gap: 3px 12px; margin: 8px 0 0; font-size: 12px; user-select: text; -webkit-user-select: text; }
 .facts dt { color: var(--muted); }
 .facts dd { margin: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
@@ -235,7 +235,7 @@ td.remove button { padding: 2px 8px; }
 .bar.total { height: 9px; max-width: 440px; box-shadow: 0 0 14px var(--glow); }
 
 /* the options of the section */
-aside { width: 280px; flex: none; border-left: 1px solid var(--line); padding: 20px; overflow: auto; display: flex; flex-direction: column; background: var(--panel); }
+aside { width: 280px; flex: none; border-inline-start: 1px solid var(--line); padding: 20px; overflow: auto; display: flex; flex-direction: column; background: var(--panel); }
 /* the options follow one another on the panel, a line between them, not boxes in a box */
 .block { padding: 0 0 18px; }
 .block:not([hidden]) ~ .block:not([hidden]) { border-top: 1px solid var(--line); padding-top: 18px; }
@@ -245,7 +245,7 @@ aside { width: 280px; flex: none; border-left: 1px solid var(--line); padding: 2
 .ends { display: flex; justify-content: space-between; font-size: 12px; }
 .segmented { display: flex; margin-top: 10px; border: 1px solid var(--line); border-radius: var(--radius-small); overflow: hidden; }
 .segmented button { flex: 1; border: none; border-radius: 0; font-size: 12px; padding: 6px 10px; background: transparent; }
-.segmented button + button { border-left: 1px solid var(--line); }
+.segmented button + button { border-inline-start: 1px solid var(--line); }
 .segmented button.on { background: var(--accent-soft); color: var(--accent-ink); font-weight: 700; }
 .segmented button:focus-visible { outline-offset: -3px; border-radius: 4px; }
 .segmented button:active:not(:disabled) { transform: none; }
@@ -265,7 +265,7 @@ label.check { display: flex; align-items: center; gap: 8px; cursor: pointer; mar
 .path { display: flex; gap: 6px; align-items: center; }
 /* a path cut at its start: its end, the folder, is what tells it */
 .path span { flex: 1; min-width: 0; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; padding: 6px 9px; border-radius: var(--radius-small); background: var(--bg); border: 1px solid var(--line); }
-.path span.empty { direction: ltr; color: var(--muted); }
+.path span.empty { direction: inherit; text-align: start; color: var(--muted); }
 .runtime { font-size: 12px; overflow-wrap: anywhere; }
 .runtime.ok::before { content: "✓ "; color: var(--ok); font-weight: 800; }
 .runtime.bad { color: var(--warn); }
@@ -273,7 +273,7 @@ label.check { display: flex; align-items: center; gap: 8px; cursor: pointer; mar
 .warning { font-size: 12px; color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, transparent); border-radius: var(--radius-small); padding: 7px 10px; margin: 8px 0 0; }
 .warning::before { content: "⚠ "; }
 
-/* Ajustes, in groups */
+/* Settings, in groups */
 #settings { flex: 1; min-width: 0; overflow-y: auto; display: flex; flex-direction: column; animation: fade-up .35s ease-out; }
 #work { animation: fade-up .35s ease-out; }
 @keyframes fade-up { from { opacity: 0; transform: translateY(8px); } }
@@ -288,6 +288,11 @@ label.check { display: flex; align-items: center; gap: 8px; cursor: pointer; mar
 .pref-path.bad { color: var(--warn) !important; }
 .pref-buttons { display: flex; gap: 6px; flex: none; }
 .pref-item .segmented { margin-top: 0; flex: none; }
+/* the languages, each by its own name: eleven of them wrap into rows of their own buttons */
+.pref-item.stack { flex-direction: column; align-items: stretch; gap: 8px; }
+.pref-item.stack .segmented { flex-wrap: wrap; gap: 6px; border: none; overflow: visible; }
+.pref-item.stack .segmented button { flex: 0 1 auto; border: 1px solid var(--line); border-radius: var(--radius-small); }
+.pref-item.stack .segmented button + button { border-inline-start: 1px solid var(--line); }
 .about-list { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 0; font-size: 13px; user-select: text; -webkit-user-select: text; }
 .about-list dt { color: var(--muted); }
 .about-list dd { margin: 0; overflow-wrap: anywhere; }
@@ -309,15 +314,15 @@ dialog p { margin: 8px 0; }
 .warn-dialog h2 { display: flex; align-items: center; gap: 8px; }
 .warn-icon { width: 22px; height: 22px; flex: none; fill: none; stroke: var(--warn); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .space-list { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 8px; max-height: 40vh; overflow: auto; }
-.space-list li { display: grid; gap: 2px; padding: 8px 12px; border-left: 3px solid var(--warn); border-radius: var(--radius-small); background: var(--hover); }
+.space-list li { display: grid; gap: 2px; padding: 8px 12px; border-inline-start: 3px solid var(--warn); border-radius: var(--radius-small); background: var(--hover); }
 .space-list b { overflow-wrap: anywhere; font-weight: 600; user-select: text; -webkit-user-select: text; }
 .space-list span { color: var(--muted); font-size: 13px; }
 /* the card at the end of a queue */
 #done-dialog { --done-tone: var(--ok); max-width: 480px; overflow-x: hidden; background: linear-gradient(165deg, color-mix(in srgb, var(--accent) 16%, var(--panel)), var(--panel) 60%); border-top: 3px solid var(--done-tone); }
 #done-dialog.failed { --done-tone: var(--bad); }
 .done-saved { font: 800 30px/1.15 var(--display); letter-spacing: -.02em; color: var(--ok); margin: 6px 0 2px; font-variant-numeric: tabular-nums; }
-.done-top { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
-.done-top li span { margin-right: 8px; }
+.done-top { margin: 0; padding-inline-start: 20px; display: flex; flex-direction: column; gap: 4px; }
+.done-top li span { margin-inline-end: 8px; }
 .done-top li b { color: var(--ok); font-variant-numeric: tabular-nums; }
 .done-next p { padding: 9px 12px; border-radius: var(--radius-small); background: var(--accent-soft); }
 /* The end of a queue that saved space (playDone adds .go): the arrows of the icon close in, the
@@ -363,3 +368,14 @@ dialog p { margin: 8px 0; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* Right-to-left languages (Arabic): the page mirrors by itself (the sections go to the right, the
+   options to the left); what is drawn from one side is told to start from the other, and paths,
+   sizes and the numbers of the animation of the end stay as they are written, left to right */
+[dir="rtl"] .seg div, [dir="rtl"] .bar div { left: auto; right: 0; transform-origin: 100% 0; }
+[dir="rtl"] .saved, [dir="rtl"] .done-saved { transform-origin: 100% 50%; }
+[dir="rtl"] .squeeze-nums span { left: auto; right: 0; transform-origin: 100% 50%; }
+[dir="rtl"] .squeeze-bar .free, [dir="rtl"] .squeeze-bar .full { left: auto; right: 0; }
+[dir="rtl"] .squeeze-bar .full { transform-origin: 100% 0; }
+[dir="rtl"] .burst i { left: auto; right: 70px; }
+[dir="rtl"] #work .page-head::before { left: auto; right: -80px; }

@@ -37,7 +37,8 @@ saved and loaded a save game on a real PS5 (firmware 13.60, ShadowMountPlus 1.7b
   - warnings for FAT32 (4 GiB limit), lack of space, games that are already at the destination
     (**Replace** writes the new copy apart and deletes the old one only after verifying) and runtimes
     that do not read zstd;
-  - English and Spanish, light and dark themes, progress on the taskbar or Dock, system notification
+  - eleven languages (English, Russian, Chinese, German, Spanish, French, Japanese, Portuguese, Italian,
+    Korean and Arabic), starting in the language of the system, light and dark themes, progress on the taskbar or Dock, system notification
     when finished, and a single window.
 - **`maxpack` command line**: `analyze`, `pack`, `unpack`, `verify`, `info`, `icon`, `--version` and
   `--capabilities`, with `--progress json` and `--control stdin` for other programs. The same input and

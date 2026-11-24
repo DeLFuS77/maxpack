@@ -13,6 +13,7 @@ import (
 	"github.com/DeLFuS77/maxpack/gui/core"
 	"github.com/DeLFuS77/maxpack/gui/internal/fakecore"
 	"github.com/DeLFuS77/maxpack/gui/jobs"
+	"github.com/DeLFuS77/maxpack/gui/settings"
 )
 
 // queueContext is the context of the queue running, as Start made it.
@@ -50,7 +51,7 @@ func TestCloseAskedWhileWorking(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !a.pageAsksClose() {
-		a.CloseTexts("¿Cancelar y cerrar?", "Cancelar y cerrar", "Seguir trabajando")
+		a.CloseTexts("Cancel and close?", "Cancel and close", "Keep working")
 	}
 	if !a.holdClose(context.Background()) || asked != 1 {
 		t.Fatalf("closing with a queue running is not asked: %d", asked)
@@ -83,6 +84,16 @@ func TestCloseQuestionInTheLanguage(t *testing.T) {
 	if _, yes, no := a.closeQuestion(); yes != "Cancel and close" || no != "Keep working" {
 		t.Fatalf("%q %q", yes, no)
 	}
+	// every language of the window has its words
+	for _, lang := range settings.Languages {
+		b := &App{lang: func() string { return lang }}
+		if question, yes, no := b.closeQuestion(); question == "" || yes == "" || no == "" || yes == no {
+			t.Errorf("%s: %q %q %q", lang, question, yes, no)
+		}
+	}
+	if question, _, _ := (&App{lang: func() string { return "xx" }}).closeQuestion(); question != wordsOf["en"].closeQuestion {
+		t.Errorf("a language the window does not have is not English: %q", question)
+	}
 	a.CloseTexts("Q", "Y", "N")
 	if question, yes, no := a.closeQuestion(); question != "Q" || yes != "Y" || no != "N" {
 		t.Fatalf("%q %q %q", question, yes, no)
@@ -95,7 +106,7 @@ func TestCloseQuestionInTheLanguage(t *testing.T) {
 
 // A close confirmed during the verification of a game cancels the queue and waits for the Runner
 // to return: what was made but not verified is taken away, not left at the destination looking
-// done ("Cada juego se comprueba al terminar").
+// done ("Every game is verified once made").
 func TestClosingDiscardsUnverified(t *testing.T) {
 	engine, fixtures := needCore(t)
 	image, err := (&App{core: engine}).Describe(filepath.Join(fixtures, "basic.exfat"))

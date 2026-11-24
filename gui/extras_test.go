@@ -13,6 +13,7 @@ import (
 
 	"github.com/DeLFuS77/maxpack/gui/core"
 	"github.com/DeLFuS77/maxpack/gui/jobs"
+	"github.com/DeLFuS77/maxpack/gui/settings"
 )
 
 type realFS struct{}
@@ -127,6 +128,55 @@ func TestNoticeText(t *testing.T) {
 	}
 }
 
+// The notice says the same in every language of the window: the numbers, the size in the
+// language's own decimal mark, and no word left over from another language.
+func TestNoticeTextInEveryLanguage(t *testing.T) {
+	s := jobs.Summary{Done: 4, Failed: 1, Cancelled: 3, Saved: 3_758_096_384}
+	for _, lang := range settings.Languages {
+		title, body := noticeText(lang, s)
+		mark := "3.5"
+		if decimalComma[lang] {
+			mark = "3,5"
+		}
+		if title != "MaxPack" || !strings.Contains(body, "4") || !strings.Contains(body, "1") || !strings.Contains(body, "3") || !strings.Contains(body, mark+" GB") {
+			t.Errorf("%s: %q", lang, body)
+		}
+		// without anything saved, failed or cancelled it is only the games done
+		_, plain := noticeText(lang, jobs.Summary{Done: 1})
+		if plain == "" || strings.Contains(plain, ",") && lang == "en" {
+			t.Errorf("%s: %q", lang, plain)
+		}
+		for _, other := range settings.Languages {
+			if other != lang && body == func() string { _, b := noticeText(other, s); return b }() {
+				t.Errorf("%s and %s say the same: %q", lang, other, body)
+			}
+		}
+	}
+	// plurals of the languages that have them
+	if _, ru := noticeText("ru", jobs.Summary{Done: 2}); ru != "2 игры готовы" {
+		t.Errorf("ru 2: %q", ru)
+	}
+	if _, ru := noticeText("ru", jobs.Summary{Done: 5}); ru != "5 игр готово" {
+		t.Errorf("ru 5: %q", ru)
+	}
+	if _, ru := noticeText("ru", jobs.Summary{Done: 21}); ru != "21 игра готова" {
+		t.Errorf("ru 21: %q", ru)
+	}
+	if _, fr := noticeText("fr", jobs.Summary{Done: 1}); fr != "1 jeu terminé" {
+		t.Errorf("fr: %q", fr)
+	}
+	if _, ar := noticeText("ar", jobs.Summary{Done: 2}); ar != "اكتمل لعبتان" {
+		t.Errorf("ar: %q", ar)
+	}
+	if _, ja := noticeText("ja", jobs.Summary{Done: 2, Saved: 500 << 20}); ja != "2 件完了、500.0 MB 節約" {
+		t.Errorf("ja: %q", ja)
+	}
+	// a language the window does not have says it in English
+	if _, xx := noticeText("xx", jobs.Summary{Done: 1}); xx != "1 game done" {
+		t.Errorf("xx: %q", xx)
+	}
+}
+
 // TestSizeText: sizes as size() of the page (and NXPress) writes them: steps of 1024, B with no
 // decimals, one decimal from KB on, the decimal comma in Spanish, no thousands separator.
 func TestSizeText(t *testing.T) {
@@ -147,6 +197,18 @@ func TestSizeText(t *testing.T) {
 		{3 << 50, "3072,0 TB", "3072.0 TB"},
 	}
 	for _, c := range cases {
+		for _, lang := range settings.Languages {
+			want := c.en
+			if decimalComma[lang] {
+				want = c.es
+			}
+			if lang == "ar" {
+				want = "\u2066" + c.en + "\u2069" // the number keeps its order in right-to-left text
+			}
+			if got := sizeText(lang, c.bytes); got != want {
+				t.Errorf("%s %d: %q, expected %q", lang, c.bytes, got, want)
+			}
+		}
 		if got := sizeText("es", c.bytes); got != c.es {
 			t.Errorf("es %d: %q, expected %q", c.bytes, got, c.es)
 		}

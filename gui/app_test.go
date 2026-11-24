@@ -102,7 +102,7 @@ func TestCoreOtherVersionReported(t *testing.T) {
 	}
 }
 
-// The runtime chosen in Ajustes has to read zstd (the one of ampr-emu-ng carries AMPRZPK1): any
+// The runtime chosen in Settings has to read zstd (the one of ampr-emu-ng carries AMPRZPK1): any
 // other is refused, and nothing is kept.
 func TestChooseRuntimeChecksZstd(t *testing.T) {
 	dir := t.TempDir()

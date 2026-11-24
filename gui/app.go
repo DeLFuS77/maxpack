@@ -31,6 +31,8 @@ type App struct {
 	// closing while a queue runs (see closing.go): the words the page told for the question,
 	// and whether the user said to cancel and close
 	closeAsk, closeYes, closeNo string
+	// the language the page speaks (TellLanguage), for what the Go side says
+	pageLang string
 	closeConfirmed              atomic.Bool
 
 	// what the tests stand in for; the zero values are the real ones
@@ -75,7 +77,7 @@ func (a *App) startup(ctx context.Context) {
 // reported in CoreError and the window opens all the same.
 func (a *App) Setup() Setup {
 	saved, _ := settings.Load()
-	setup := Setup{Version: version, Lang: saved.Lang, Theme: saved.Theme}
+	setup := Setup{Version: version, Lang: saved.EffectiveLang(), Theme: saved.Theme}
 	path, err := core.Locate()
 	if err != nil {
 		setup.CoreError = err.Error()
@@ -104,7 +106,7 @@ func (a *App) SetSettings(s settings.Settings) error {
 }
 
 // secondInstance takes the files another MaxPack was started with: this window comes to the
-// front and the files go to the page, to Comprimir or Descomprimir by what they are.
+// front and the files go to the page, to Compress or Decompress by what they are.
 func (a *App) secondInstance(data wailsoptions.SecondInstanceData) {
 	go system.BringToFront()
 	if start, ok := windowLaunch(absolute(data.Args, data.WorkingDirectory)); ok {

@@ -45,14 +45,16 @@ const takes = {
   verify: [[".p5z", ""], ["", "typePacked"]],
   details: [["", "typeDump"], [".exfat", ""], [".p5z", ""]],
 };
-const defaults = { Lang: "es", Theme: "system", Runtime: "", LastDest: "", Mode: "p5z", Level: 19 };
+const defaults = { Lang: "", Theme: "system", Runtime: "", LastDest: "", Mode: "p5z", Level: 19 };
 
 const $ = id => document.getElementById(id);
 const windows = /win/i.test(navigator.platform || navigator.userAgent || "");
 
 const state = {
   section: "compress",
-  lang: /^es\b/i.test(navigator.language || "") ? "es" : "en",
+  // the language of the window: the one chosen in Settings (settings.Lang), else the one of the
+  // system, else English; see chooseLanguage
+  lang: systemLanguage(navigator),
   // the settings as GetSettings gave them, with the changes made here: SetSettings takes them whole
   settings: Object.assign({}, defaults),
   setup: null,
@@ -79,22 +81,29 @@ function save(name, value) {
   try { localStorage.setItem("maxpack." + name, JSON.stringify(value)); } catch { }
 }
 
-// a size as NXPress writes it, with the decimal mark of the language (8,4 GB in Spanish); the
-// notice at the end of a queue writes it the same way (sizeText in notify.go)
-const sizeFormats = {};
+// a number with its unit inside text written from right to left keeps its own order (300.2 GB, not
+// GB 300.2): the sizes and times are isolated as left to right there (a Go notice does the same)
+const isolate = text => languageInfo(state.lang)[3] ? "\u2066" + text + "\u2069" : text;
+// the languages that write the decimal mark as a comma (8,4 GB in Spanish); the notice at the end
+// of a queue writes sizes the same way (sizeText in notify.go)
+const decimalComma = ["ru", "de", "es", "fr", "pt", "it"];
+// a size as NXPress writes it: steps of 1024, no decimals for bytes and one from KB on, rounded
+// half away from zero, no thousands separator
 function size(bytes) {
   const units = ["B", "KB", "MB", "GB", "TB"];
   let value = Number(bytes) || 0, unit = 0;
   while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit++; }
-  const digits = unit ? 1 : 0, key = state.lang + digits;
-  sizeFormats[key] = sizeFormats[key] || new Intl.NumberFormat(state.lang, { minimumFractionDigits: digits, maximumFractionDigits: digits, useGrouping: false });
-  return sizeFormats[key].format(value) + " " + units[unit];
+  let text = unit ? (Math.round(value * 10) / 10).toFixed(1) : String(Math.round(value));
+  if (decimalComma.includes(state.lang)) text = text.replace(".", ",");
+  return isolate(text + " " + units[unit]);
 }
 function time(seconds) {
-  if (seconds < 60) return seconds + " s";
+  if (seconds < 60) return isolate(seconds + " s");
   const m = Math.floor(seconds / 60), s = seconds % 60;
-  return m < 60 ? `${m} min ${s} s` : `${Math.floor(m / 60)} h ${m % 60} min`;
+  return isolate(m < 60 ? `${m} min ${s} s` : `${Math.floor(m / 60)} h ${m % 60} min`);
 }
+// the language of the window: the one chosen if it is one the window has, else the one of the system
+const chooseLanguage = chosen => isLanguage(chosen) ? chosen : systemLanguage(navigator);
 const message = error => String((error && error.message) || error || "");
 const baseName = path => String(path).split(/[\\/]/).filter(Boolean).pop() || String(path);
 // a path in a field cut at its start (direction: rtl) keeps its order with a mark of left to
@@ -179,8 +188,8 @@ async function addSent(files) {
   showAdded(compress, decompress);
 }
 
-// files dropped on the window: to the section open in Verificar and Detalles; else to
-// Comprimir or Descomprimir by what they are, as the files given to MaxPack
+// files dropped on the window: to the section open in Verify and Details; else to
+// Compress or Decompress by what they are, as the files given to MaxPack
 async function dropped(paths) {
   showDrop(false);
   if (state.section === "verify" || state.section === "details") {
@@ -387,7 +396,10 @@ function setSection(section) {
 }
 
 function paintTexts() {
-  document.documentElement.lang = state.lang;
+  // the document says its language and its direction: Arabic is written from right to left
+  const [, , tag, rtl] = languageInfo(state.lang);
+  document.documentElement.lang = tag || state.lang;
+  document.documentElement.dir = rtl ? "rtl" : "ltr";
   document.querySelectorAll("[data-t]").forEach(element => { element.textContent = t(element.dataset.t); });
   document.querySelectorAll("[data-t-title]").forEach(element => { element.title = t(element.dataset.tTitle); });
   document.querySelectorAll("[data-t-label]").forEach(element => { element.setAttribute("aria-label", t(element.dataset.tLabel)); });
@@ -477,9 +489,11 @@ function paintLevel(level) {
 
 function paintSettings() {
   const s = state.settings, setup = state.setup;
+  // "" is "System": the language is the one of the system until one is chosen
   for (const button of document.querySelectorAll("button[data-lang]")) {
-    button.classList.toggle("on", button.dataset.lang === state.lang);
-    button.setAttribute("aria-checked", button.dataset.lang === state.lang);
+    const on = button.dataset.lang === (s.Lang || "");
+    button.classList.toggle("on", on);
+    button.setAttribute("aria-checked", on);
   }
   for (const button of document.querySelectorAll("button[data-theme]")) {
     button.classList.toggle("on", button.dataset.theme === s.Theme);
@@ -818,7 +832,7 @@ function showDone(job, summary) {
   $("done-next-block").hidden = !summary.Done;
   $("done-next").textContent = nextStep(job);
   // the games made without a runtime that reads zstd are said again, at the end: none was given
-  // (the dump has none and Ajustes neither), or the one of Ajustes does not read zstd
+  // (the dump has none and Settings neither), or the one of Settings does not read zstd
   const lacking = job.section === "compress" ? summary.NoZstdRuntime || 0 : 0;
   $("done-runtime").hidden = !lacking;
   $("done-runtime").textContent = lacking ? (job.runtime ? t("doneRuntimeWrong")(lacking) : t("doneNoRuntime")(lacking)) : "";
@@ -909,6 +923,7 @@ function askClose() {
 // the words of the question the window asks with the dialog of the system when the page cannot
 // ask, in the language of the page
 function tellCloseTexts() {
+  go.call("TellLanguage", state.lang).catch(() => { });
   go.call("CloseTexts", t("closeQuestion"), t("closeYes"), t("closeNo")).catch(() => { });
 }
 
@@ -964,13 +979,15 @@ function wire() {
   $("choose-runtime").addEventListener("click", chooseRuntime);
   $("pref-runtime-choose").addEventListener("click", chooseRuntime);
   $("pref-runtime-clear").addEventListener("click", () => { keep({ Runtime: "" }); state.askedRuntime = false; render(); });
-  // the languages of i18n/, each by its own name
-  $("languages").replaceChildren(...languages.map(([code, name]) => {
+  // "System" (the language is the one of the system again) and the languages of i18n/, each by its
+  // own name, whatever the language of the window is
+  $("languages").replaceChildren(...[["", ""], ...languages].map(([code, name]) => {
     const button = document.createElement("button");
     button.setAttribute("role", "radio");
     button.dataset.lang = code;
-    button.textContent = name;
-    button.addEventListener("click", () => { state.lang = code; keep({ Lang: code }); tellCloseTexts(); render(); });
+    if (code) button.textContent = name; else button.dataset.t = "themeSystem";
+    if (code) button.lang = languageInfo(code)[2] || code;
+    button.addEventListener("click", () => { keep({ Lang: code }); state.lang = chooseLanguage(code); tellCloseTexts(); render(); });
     return button;
   }));
   for (const button of document.querySelectorAll("button[data-theme]")) button.addEventListener("click", () => { keep({ Theme: button.dataset.theme }); applyTheme(); render(); });
@@ -996,7 +1013,7 @@ async function main() {
   } catch (error) {
     banner(message(error));
   }
-  state.lang = state.settings.Lang === "en" ? "en" : "es";
+  state.lang = chooseLanguage(state.settings.Lang);
   tellCloseTexts();
   applyTheme();
   const setup = state.setup;

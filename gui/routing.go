@@ -10,7 +10,7 @@ import (
 )
 
 // FilesAdd is what the page is told when files reach the window: what goes to the list of
-// Comprimir and what to the one of Descomprimir.
+// Compress and what to the one of Decompress.
 type FilesAdd struct {
 	Compress   []string `json:"compress"`
 	Decompress []string `json:"decompress"`
@@ -18,8 +18,8 @@ type FilesAdd struct {
 
 func (f FilesAdd) empty() bool { return len(f.Compress) == 0 && len(f.Decompress) == 0 }
 
-// routeFiles tells where each path goes: a .p5z (any case) to Descomprimir; a folder or an
-// .exfat to Comprimir; anything else is left out. The order is kept.
+// routeFiles tells where each path goes: a .p5z (any case) to Decompress; a folder or an
+// .exfat to Compress; anything else is left out. The order is kept.
 func routeFiles(paths []string) (compress, decompress []string) {
 	for _, path := range paths {
 		info, err := os.Stat(path)

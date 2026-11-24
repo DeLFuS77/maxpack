@@ -11,7 +11,6 @@ import (
 	"github.com/DeLFuS77/maxpack/gui/core"
 	"github.com/DeLFuS77/maxpack/gui/internal/system"
 	"github.com/DeLFuS77/maxpack/gui/jobs"
-	"github.com/DeLFuS77/maxpack/gui/settings"
 )
 
 // extras are what MaxPack does around a queue, apart so the tests can stand in for them.
@@ -97,12 +96,6 @@ func (a *App) run(ctx context.Context, plans []jobs.Plan, o jobs.Options) jobs.S
 	} else {
 		x.Taskbar("none", 0, 0)
 	}
-	lang := ""
-	if a.lang != nil {
-		lang = a.lang()
-	} else if s, err := settings.Load(); err == nil {
-		lang = s.Lang
-	}
-	x.Notify(noticeText(lang, sum))
+	x.Notify(noticeText(a.language(), sum))
 	return sum
 }

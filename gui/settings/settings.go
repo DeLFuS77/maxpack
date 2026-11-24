@@ -16,9 +16,40 @@ import (
 	"github.com/DeLFuS77/maxpack/gui/jobs"
 )
 
+// Languages are the languages of the window, by their code, the same as the page of MaxPack on the
+// console has (the order is the one of Settings).
+var Languages = []string{"en", "ru", "zh", "de", "es", "fr", "ja", "pt", "it", "ko", "ar"}
+
+// ValidLang tells whether code is one of the languages of the window.
+func ValidLang(code string) bool {
+	for _, l := range Languages {
+		if l == code {
+			return true
+		}
+	}
+	return false
+}
+
+// SystemLang is the language of the system when the window has it, by the base of its tag
+// (pt-BR and pt_BR.UTF-8 are pt, zh-Hant-TW is zh), else English.
+func SystemLang() string { return baseLang(system.Language()) }
+
+// baseLang is the language of a tag of the system ("es-ES", "pt_BR.UTF-8", "zh-Hant-TW"), when the
+// window has it, else English.
+func baseLang(tag string) string {
+	tag = strings.ToLower(tag)
+	if i := strings.IndexAny(tag, "-_.@"); i >= 0 {
+		tag = tag[:i]
+	}
+	if ValidLang(tag) {
+		return tag
+	}
+	return "en"
+}
+
 // Settings is what is remembered.
 type Settings struct {
-	Lang     string // "es" or "en"
+	Lang     string // one of Languages, or "" when none was chosen: the language of the system
 	Theme    string // "system", "light" or "dark"
 	Runtime  string
 	LastDest string
@@ -32,14 +63,19 @@ const fileName = "settings.json"
 // else MaxPack in the folder of the settings of the user (a variable so the tests can move it).
 var Dir = portable.DataFolder
 
-// Defaults are the settings of a first run: the language of the system, the system theme, an
-// installer (.p5z) and level 19.
+// Defaults are the settings of a first run: no language chosen (the system's), the system theme,
+// an installer (.p5z) and level 19.
 func Defaults() Settings {
-	lang := "en"
-	if strings.HasPrefix(strings.ToLower(system.Language()), "es") {
-		lang = "es"
+	return Settings{Theme: "system", Mode: jobs.ModeP5z, Level: 19}
+}
+
+// EffectiveLang is the language the window speaks: the one chosen, else the one of the system,
+// else English.
+func (s Settings) EffectiveLang() string {
+	if ValidLang(s.Lang) {
+		return s.Lang
 	}
-	return Settings{Lang: lang, Theme: "system", Mode: jobs.ModeP5z, Level: 19}
+	return SystemLang()
 }
 
 func validMode(m jobs.Mode) bool {
@@ -53,7 +89,7 @@ func validMode(m jobs.Mode) bool {
 // Normalize puts the defaults in place of every field that is not valid.
 func (s Settings) Normalize() Settings {
 	d := Defaults()
-	if s.Lang != "es" && s.Lang != "en" {
+	if !ValidLang(s.Lang) {
 		s.Lang = d.Lang
 	}
 	if s.Theme != "system" && s.Theme != "light" && s.Theme != "dark" {

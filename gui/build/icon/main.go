@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// Command icon draws the provisional icon of MaxPack: the glyph of Comprimir in the sidebar (two
+// Command icon draws the provisional icon of MaxPack: the glyph of Compress in the sidebar (two
 // arrows pointing at a line) in white on a rounded square of the accent color of the page. It
 // uses only the standard library, so the program of the window depends on nothing for it:
 //
@@ -36,7 +36,7 @@ const (
 // the sizes of the Windows icon
 var icoSizes = []int{16, 32, 48, 64, 256}
 
-// the glyph of Comprimir in index.html: M12 3v6 m0 0-3-3 m3 3 3-3 M12 21v-6 m0 0-3 3 m3-3 3 3 M5 12h14
+// the glyph of Compress in index.html: M12 3v6 m0 0-3-3 m3 3 3-3 M12 21v-6 m0 0-3 3 m3-3 3 3 M5 12h14
 var segments = [][4]float64{
 	{12, 3, 12, 9}, {12, 9, 9, 6}, {12, 9, 15, 6},
 	{12, 21, 12, 15}, {12, 15, 9, 18}, {12, 15, 15, 18},

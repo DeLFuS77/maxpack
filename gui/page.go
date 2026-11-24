@@ -31,7 +31,7 @@ type Game struct {
 	Packed bool
 }
 
-// GameDetails is all the engine says of a game, for Detalles: with its packs, the files stored
+// GameDetails is all the engine says of a game, for Details: with its packs, the files stored
 // in them and their volumes (0 when it is not compressed).
 type GameDetails struct {
 	Game

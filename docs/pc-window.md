@@ -128,7 +128,11 @@ Afterwards:
 
 ## 4. Settings
 
-- **Language** (Spanish or English) and **Theme** (System, Light or Dark).
+- **Language** and **Theme** (System, Light or Dark). The window speaks English, Russian, Chinese,
+  German, Spanish, French, Japanese, Portuguese (Brazil), Italian, Korean and Arabic (written from right to
+  left), each shown by its own name. Until you choose one it uses the language of your system, or English
+  if the window does not have it; **System** goes back to that. The window's notice and its question when
+  you close it with games at work follow the language too.
 - **Runtime for the games that lack one.** The zstd packs are served by ampr-emu-ng, and some dumps
   carry an old `libSceAmpr.sprx` that does not read them. For those games MaxPack puts the
   `libSceAmpr.sprx` of ampr-emu-ng in their `fakelib/`. Download it from

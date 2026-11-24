@@ -14,7 +14,6 @@ import (
 
 	"github.com/DeLFuS77/maxpack/gui/core"
 	"github.com/DeLFuS77/maxpack/gui/internal/windowplace"
-	"github.com/DeLFuS77/maxpack/gui/settings"
 
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -94,16 +93,8 @@ func (a *App) closeQuestion() (question, yes, no string) {
 		return a.closeAsk, a.closeYes, a.closeNo
 	}
 	a.mutex.Unlock()
-	lang := ""
-	if a.lang != nil {
-		lang = a.lang()
-	} else if s, err := settings.Load(); err == nil {
-		lang = s.Lang
-	}
-	if lang == "es" {
-		return "Hay juegos en marcha. ¿Cancelarlos y cerrar MaxPack?", "Cancelar y cerrar", "Seguir trabajando"
-	}
-	return "Games are at work. Cancel them and close MaxPack?", "Cancel and close", "Keep working"
+	w := wordsFor(a.language())
+	return w.closeQuestion, w.closeYes, w.closeNo
 }
 
 // closed (OnShutdown) stops the queue running as MaxPack closes, and waits for it, closeWait at

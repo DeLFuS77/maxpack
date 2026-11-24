@@ -5,11 +5,9 @@ package settings
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/DeLFuS77/maxpack/gui/internal/portable"
-	"github.com/DeLFuS77/maxpack/gui/internal/system"
 )
 
 func useFolder(t *testing.T) string {
@@ -39,12 +37,12 @@ func TestSettingsDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	lang := "en"
-	if strings.HasPrefix(strings.ToLower(system.Language()), "es") {
-		lang = "es"
+	// no language chosen: the window speaks the one of the system (English when it has none)
+	if got.Mode != "p5z" || got.Level != 19 || got.Lang != "" || got.Theme != "system" {
+		t.Fatalf("default: %+v", got)
 	}
-	if got.Mode != "p5z" || got.Level != 19 || got.Lang != lang || got.Theme != "system" {
-		t.Fatalf("default: %+v (expected language %s)", got, lang)
+	if lang := got.EffectiveLang(); lang != SystemLang() || !ValidLang(lang) {
+		t.Fatalf("language of a first run: %q", lang)
 	}
 }
 
@@ -53,18 +51,18 @@ func TestSettingsCorruptFallsBack(t *testing.T) {
 	os.MkdirAll(folder, 0o755)
 	file := filepath.Join(folder, "settings.json")
 	// partial and with bad values: the good ones stay, the bad ones go to the defaults
-	os.WriteFile(file, []byte(`{"Theme":"dark","Level":99,"Mode":"nada","Lang":"fr","LastDest":"E:\\x"}`), 0o644)
+	os.WriteFile(file, []byte(`{"Theme":"dark","Level":99,"Mode":"nada","Lang":"xx","LastDest":"E:\\x"}`), 0o644)
 	got, err := Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Theme != "dark" || got.LastDest != `E:\x` || got.Level != 19 || got.Mode != "p5z" || (got.Lang != "es" && got.Lang != "en") {
-		t.Fatalf("parcial: %+v", got)
+	if got.Theme != "dark" || got.LastDest != `E:\x` || got.Level != 19 || got.Mode != "p5z" || got.Lang != "" {
+		t.Fatalf("partial: %+v", got)
 	}
 	os.WriteFile(file, []byte(`{ esto no es json`), 0o644)
 	got, err = Load()
 	if err != nil || got.Level != 19 || got.Theme != "system" {
-		t.Fatalf("roto: %+v, %v", got, err)
+		t.Fatalf("broken: %+v, %v", got, err)
 	}
 	os.WriteFile(file, []byte(`{"Level":"diez","Theme":5}`), 0o644)
 	got, err = Load()
@@ -108,5 +106,37 @@ func TestPortable(t *testing.T) {
 	}
 	if got, _ := Load(); got.Level != 12 || got.Theme != "light" {
 		t.Fatalf("%+v", got)
+	}
+}
+
+// The language of the system by its base: the tag of Windows (pt-BR), of the others (es_ES.UTF-8,
+// C) and of the languages the window does not have.
+func TestBaseLang(t *testing.T) {
+	for tag, want := range map[string]string{
+		"es-ES": "es", "pt-BR": "pt", "pt_BR.UTF-8": "pt", "zh-Hans-CN": "zh", "zh_TW": "zh", "ar-EG": "ar",
+		"ja-JP": "ja", "ko-KR": "ko", "ru-RU": "ru", "de_DE@euro": "de", "FR-fr": "fr", "it": "it", "en-US": "en",
+		"": "en", "C": "en", "POSIX": "en", "C.UTF-8": "en", "fil-PH": "en", "xx": "en",
+	} {
+		if got := baseLang(tag); got != want {
+			t.Errorf("%q: %q, expected %q", tag, got, want)
+		}
+	}
+	if len(Languages) != 11 {
+		t.Errorf("%d languages", len(Languages))
+	}
+	for _, code := range Languages {
+		if !ValidLang(code) {
+			t.Errorf("%s is not valid", code)
+		}
+		if got := (Settings{Lang: code}).Normalize().Lang; got != code {
+			t.Errorf("the choice of %s is lost: %q", code, got)
+		}
+	}
+	// a choice that is not a language of the window is not a choice
+	if (Settings{Lang: "xx"}).Normalize().Lang != "" || ValidLang("") {
+		t.Error("an unknown language was kept")
+	}
+	if got := (Settings{Lang: "ja"}).EffectiveLang(); got != "ja" {
+		t.Errorf("the choice is not the language: %q", got)
 	}
 }

@@ -127,6 +127,11 @@ jobs:
           go run github.com/tc-hib/go-winres@v0.3.3 make --in build/winres/winres.json --arch amd64 \
             --file-version "${NUMBERS}.0" --product-version "${VERSION}"
 
+      # every language of the window has every text of en.js (node is on the runner)
+      - name: Texts of the window
+        if: runner.os == 'Linux'
+        run: node tools/check_i18n.js
+
       # without -H windowsgui: the window hides its console (HideConsole) and, when forwarding to maxpack-core,
       # keeps the command line's input and output
       - name: Window

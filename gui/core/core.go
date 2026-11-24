@@ -123,7 +123,19 @@ func parse(line []byte) (Event, bool) {
 // cancelled would. When ctx ends with the cause ErrClosing the engine is never killed. It gives
 // the result, and the exit code of the engine.
 func Run(ctx context.Context, core string, args []string, onEvent func(Event)) (Event, int, error) {
-	command := hide(exec.Command(core, append(append([]string{}, args...), "--progress", "json", "--control", "stdin")...))
+	return RunWith(ctx, core, args, RunOptions{}, onEvent)
+}
+
+// RunOptions are how the engine is run.
+type RunOptions struct {
+	// Low runs it below the other programs, so the PC stays usable while it works: below normal on
+	// Windows (its threads go with it), nice 10 on macOS and Linux
+	Low bool
+}
+
+// RunWith is Run with options.
+func RunWith(ctx context.Context, core string, args []string, options RunOptions, onEvent func(Event)) (Event, int, error) {
+	command, started := engineCommand(core, append(append([]string{}, args...), "--progress", "json", "--control", "stdin"), options.Low)
 	stdin, err := command.StdinPipe()
 	if err != nil {
 		return Event{}, -1, err
@@ -136,6 +148,9 @@ func Run(ctx context.Context, core string, args []string, onEvent func(Event)) (
 	command.Stderr = &stderr
 	if err := command.Start(); err != nil {
 		return Event{}, -1, err
+	}
+	if started != nil {
+		started(command.Process)
 	}
 	ended := make(chan struct{})
 	stopped := make(chan struct{})

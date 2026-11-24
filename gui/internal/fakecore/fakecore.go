@@ -26,6 +26,8 @@ import (
 //   - "no-zstd-runtime": pack writes its output and ends well, saying that what it made carries no
 //     runtime that reads zstd (runtime_without_zstd), as the real one does for a dump without one
 //     and no --runtime; verify ends well.
+//   - "priority": ends well at once, saying the priority it runs at ("priority" in its result: see
+//     NormalPriority and LowPriority).
 const Env = "MP_FAKE_CORE"
 
 // Main acts as the engine and exits when Env says so; else it returns at once.
@@ -52,6 +54,9 @@ func run(mode string, args []string) int {
 			return 0
 		}
 		return 2
+	case "priority":
+		fmt.Printf("{\"event\":\"result\",\"ok\":true,\"files_bad\":0,\"priority\":%q}\n", priority())
+		return 0
 	case "stubborn":
 		progress()
 		time.Sleep(time.Minute)

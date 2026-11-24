@@ -184,3 +184,22 @@ func TestCapabilitiesOfAnotherVersion(t *testing.T) {
 		}
 	}
 }
+
+// With low priority the engine runs below the other programs, so the PC stays usable: below
+// normal on Windows, nice 10 elsewhere. Without it, at the priority of the window.
+func TestRunLowPriority(t *testing.T) {
+	t.Setenv(fakecore.Env, "priority")
+	for _, low := range []bool{false, true} {
+		result, code, err := RunWith(context.Background(), os.Args[0], []string{"verify", "x"}, RunOptions{Low: low}, nil)
+		if err != nil || code != 0 || result.Raw["ok"] != true {
+			t.Fatalf("low=%v: code %d, %+v, %v", low, code, result.Raw, err)
+		}
+		got, _ := result.Raw["priority"].(string)
+		if want := fakecore.NormalPriority(); !low && got != want {
+			t.Errorf("without low priority the engine runs at %q, not %q", got, want)
+		}
+		if want := fakecore.LowPriority(); low && got != want {
+			t.Errorf("with low priority the engine runs at %q, not %q", got, want)
+		}
+	}
+}

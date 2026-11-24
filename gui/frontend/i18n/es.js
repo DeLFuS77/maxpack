@@ -137,6 +137,8 @@ texts.es = {
 
   doneTitle: "Hecho",
   doneTop: "Lo que más ahorró",
+  doneBefore: size => "Antes: " + size,
+  doneAfter: size => "Ahora: " + size,
   doneNext: "Y ahora",
   nextP5z: "Conecta el USB a la PS5 y ábrelo con el instalador MaxPack.",
   nextFolder: "ShadowMountPlus lo verá en homebrew/.",

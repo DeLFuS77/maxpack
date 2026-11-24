@@ -109,6 +109,12 @@ function newRow(path, section) {
   const tr = $("row-template").content.firstElementChild.cloneNode(true);
   const row = { path, section, game: null, error: "", state: "", detail: "", step: "", phase: "", offset: 0, done: 0, total: 0, out: "", outSize: 0, homebrew: false, warnings: [], replacing: false, tr };
   tr.querySelector(".remove button").addEventListener("click", () => removeRow(row));
+  // the entrance of a row and the pop of what it saved play once: a row put back in the list
+  // (every render puts them all back) does not play them again
+  tr.addEventListener("animationend", event => {
+    if (event.animationName === "row-in") tr.classList.remove("enter");
+    if (event.animationName === "pop") event.target.classList.remove("pop");
+  });
   return row;
 }
 
@@ -140,6 +146,7 @@ function addPaths(section, paths) {
     if (typeof path !== "string" || have.has(pathKey(path))) continue;
     have.add(pathKey(path));
     const row = newRow(path, section);
+    row.tr.classList.add("enter");
     list.push(row);
     paintRow(row);
     describe(row);
@@ -358,7 +365,7 @@ function paintState(row) {
     if (segs.children.length !== steps.length) segs.replaceChildren(...steps.map(() => $("seg-template").content.firstElementChild.cloneNode(true)));
     [...segs.children].forEach((seg, n) => {
       seg.className = "seg " + (steps[n] === "verifying" ? "tone-check" : "tone-work");
-      seg.firstElementChild.style.width = (n < index ? 100 : n === index ? share * 100 : 0) + "%";
+      seg.firstElementChild.style.transform = "scaleX(" + (n < index ? 1 : n === index ? share : 0) + ")";
     });
     const phase = row.phase ? t("phase_" + row.phase) : "";
     step.textContent = [phase, t("percent")(Math.floor(rowShare(row, job.mode) * 100))].filter(Boolean).join(" · ");
@@ -366,7 +373,9 @@ function paintState(row) {
   // what it saved, once made
   const saved = tr.querySelector(".saved"), game = row.game;
   const smaller = row.section === "compress" && row.state === "ok" && game && row.outSize && row.outSize < game.OriginalSize;
-  saved.textContent = smaller ? t("smallerBy")(Math.round((1 - row.outSize / game.OriginalSize) * 100)) : "";
+  const savedText = smaller ? t("smallerBy")(Math.round((1 - row.outSize / game.OriginalSize) * 100)) : "";
+  if (savedText && !saved.textContent) saved.classList.add("pop");
+  saved.textContent = savedText;
   tr.querySelector(".remove button").disabled = running() && job.rows.includes(row);
 }
 
@@ -384,12 +393,22 @@ function paintTexts() {
   document.querySelectorAll("[data-t-label]").forEach(element => { element.setAttribute("aria-label", t(element.dataset.tLabel)); });
 }
 
+// the highlight of the open section slides to it: moved, never animated in size
+function placeNavHighlight() {
+  const on = document.querySelector("nav button.on"), highlight = $("nav-hl");
+  if (!on || !on.offsetHeight) return;
+  highlight.style.height = on.offsetHeight + "px";
+  highlight.style.transform = "translateY(" + on.offsetTop + "px)";
+  highlight.classList.add("on");
+}
+
 function paintNav() {
   for (const button of document.querySelectorAll("nav button[data-section]")) {
     const on = button.dataset.section === state.section;
     button.classList.toggle("on", on);
     if (on) button.setAttribute("aria-current", "page"); else button.removeAttribute("aria-current");
   }
+  placeNavHighlight();
   const setup = state.setup, core = $("side-core");
   core.classList.toggle("bad", !setup || !!setup.coreError);
   core.textContent = !setup ? t("noWindowShort") : setup.coreError ? (setup.coreOtherVersion ? t("coreOtherVersionShort") : t("coreMissingShort")) : "maxpack-core " + (setup.coreVersion.split(" ")[1] || "");
@@ -495,7 +514,7 @@ function paintSummary() {
     const finished = job.rows.filter(row => ended.includes(row.state)).length;
     $("summary-text").textContent = t("working")(finished, job.rows.length, Math.floor(share * 100));
     bar.hidden = false;
-    bar.firstElementChild.style.width = share * 100 + "%";
+    bar.firstElementChild.style.transform = "scaleX(" + share + ")";
     $("status").textContent = state.cancelling ? t("cancelling")
       : [job.rate > 0 ? t("speed")(size(job.rate)) : "", left >= 1 ? t("timeLeft")(time(Math.round(left))) : ""].filter(Boolean).join(" · ");
     return;
@@ -805,7 +824,66 @@ function showDone(job, summary) {
   $("done-runtime").textContent = lacking ? (job.runtime ? t("doneRuntimeWrong")(lacking) : t("doneNoRuntime")(lacking)) : "";
   const dialog = $("done-dialog");
   dialog.classList.toggle("failed", !summary.Done);
+  const sizes = summary.Saved > 0 ? doneSizes(job) : null;
+  $("done-squeeze").hidden = !sizes;
   if (!dialog.open) dialog.showModal();
+  playDone(dialog, sizes, summary.Saved || 0);
+}
+
+// what the games made well took before and take now, when the queue compressed and every one of
+// them says its size; null otherwise (unpacking, nothing made, a size missing)
+function doneSizes(job) {
+  if (job.section !== "compress") return null;
+  let before = 0, after = 0;
+  for (const row of job.rows) {
+    if (row.state !== "ok") continue;
+    if (!row.game || !row.outSize) return null;
+    before += row.game.OriginalSize;
+    after += row.outSize;
+  }
+  return before > 0 ? { before, after } : null;
+}
+
+// The end of a queue that saved space: the size before is squeezed into the size now, the bar
+// with it, and what it saved counts up from 0 with a small burst. With less motion asked for, the
+// end at once. Without sizes the dialog is the plain one.
+let counting = 0;
+function playDone(dialog, sizes, saved) {
+  dialog.classList.remove("go");
+  counting++;
+  if (!sizes) return;
+  $("done-before").textContent = size(sizes.before);
+  $("done-after").textContent = size(sizes.after);
+  $("done-before-text").textContent = t("doneBefore")(size(sizes.before));
+  $("done-after-text").textContent = t("doneAfter")(size(sizes.after));
+  dialog.style.setProperty("--squeeze", String(Math.max(0.02, Math.min(1, sizes.after / sizes.before))));
+  burst();
+  if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    dialog.classList.add("go");
+    return;
+  }
+  requestAnimationFrame(() => requestAnimationFrame(() => dialog.classList.add("go")));
+  const run = counting, start = performance.now() + 1400, text = $("done-saved");
+  text.textContent = t("saved")(0);
+  const step = now => {
+    if (run !== counting) return;
+    const share = Math.max(0, Math.min(1, (now - start) / 900));
+    text.textContent = t("saved")(saved * (1 - Math.pow(1 - share, 3)));
+    if (share < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+// the dots of the burst, made once: where each flies to is its own --dx and --dy
+function burst() {
+  const box = $("done-burst");
+  if (box.children.length) return;
+  for (let n = 0; n < 18; n++) {
+    const dot = document.createElement("i"), angle = n / 18 * Math.PI * 2, reach = 70 + (n % 3) * 34;
+    dot.style.setProperty("--dx", Math.round(Math.cos(angle) * reach + 120) + "px");
+    dot.style.setProperty("--dy", Math.round(Math.sin(angle) * reach * 0.6) + "px");
+    box.append(dot);
+  }
 }
 
 // what to do now with the games made, by where they are: a folder for the console is seen by
@@ -897,6 +975,7 @@ function wire() {
   }));
   for (const button of document.querySelectorAll("button[data-theme]")) button.addEventListener("click", () => { keep({ Theme: button.dataset.theme }); applyTheme(); render(); });
   watchDrops();
+  window.addEventListener("resize", placeNavHighlight);
 }
 
 async function main() {

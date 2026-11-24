@@ -14,6 +14,7 @@
 <body>
 <main>
   <nav data-t-label="sections">
+    <span class="nav-hl" id="nav-hl" aria-hidden="true"></span>
     <div class="group" data-t="groupSpace"></div>
     <button data-section="compress" class="tone-space"><span class="tile"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v6m0 0-3-3m3 3 3-3M12 21v-6m0 0-3 3m3-3 3 3M5 12h14"/></svg></span><span><b data-t="compress"></b><small data-t="hintCompress"></small></span></button>
     <button data-section="decompress" class="tone-space"><span class="tile"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 9V3m0 0-3 3m3-3 3 3M12 15v6m0 0-3-3m3 3 3-3M5 12h14"/></svg></span><span><b data-t="decompress"></b><small data-t="hintDecompress"></small></span></button>
@@ -42,7 +43,7 @@
 
     <div id="drop">
       <div id="empty">
-        <svg class="empty-icon" viewBox="0 0 48 48" aria-hidden="true"><path d="M12 30v8h24v-8M24 8v22M16 22l8 8 8-8"/></svg>
+        <span class="empty-art" aria-hidden="true"><svg class="empty-icon" viewBox="0 0 48 48"><path d="M12 30v8h24v-8M24 8v22M16 22l8 8 8-8"/></svg></span>
         <div class="big" data-t="dropHere"></div>
         <div class="muted" data-t="orChoose"></div>
         <div class="empty-buttons">
@@ -223,8 +224,15 @@
 
 <!-- the end of a queue that wrote games: what it saved, what saved most, and what to do now -->
 <dialog id="done-dialog" aria-labelledby="done-title">
-  <h2 id="done-title" data-t="doneTitle"></h2>
+  <h2 id="done-title"><span class="squeeze-ic" aria-hidden="true"><svg viewBox="0 0 24 24"><g class="down"><path d="M12 3v6m0 0-3-3m3 3 3-3"/></g><g class="up"><path d="M12 21v-6m0 0-3 3m3-3 3 3"/></g><path d="M5 12h14"/></svg></span><span data-t="doneTitle"></span></h2>
+  <!-- what the games made took before and take now: the one squeezed into the other (playDone) -->
+  <div class="squeeze" id="done-squeeze" hidden>
+    <div class="squeeze-nums" aria-hidden="true"><span id="done-before"></span><span id="done-after"></span></div>
+    <div class="squeeze-bar" aria-hidden="true"><span class="free"></span><span class="full"></span></div>
+    <div class="squeeze-legend"><span id="done-before-text"></span><span id="done-after-text"></span></div>
+  </div>
   <p class="done-saved" id="done-saved"></p>
+  <div class="burst" id="done-burst" aria-hidden="true"></div>
   <p class="muted" id="done-stats"></p>
   <div id="done-top-block">
     <h3 data-t="doneTop"></h3>

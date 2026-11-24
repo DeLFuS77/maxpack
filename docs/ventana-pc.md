@@ -84,6 +84,11 @@ sin verificar:
 - si algo no se puede borrar (por ejemplo, un archivo abierto en otro programa), la fila lo dice,
   con la ruta, para que lo borres tú.
 
+Al terminar sale el resultado. Si la cola comprimió y ahorró espacio, el tamaño de antes se aprieta
+hasta el de ahora, con una barra que se encoge, y los GB ahorrados cuentan hacia arriba. Debajo
+salen lo que más ahorró y qué hacer después. Si el sistema pide menos movimiento, se ven los números
+finales sin animación.
+
 ![El resultado: lo que más ahorró y qué hacer después](img/ventana-resultado.jpg)
 
 ### Hecho para: Instalador MaxPack

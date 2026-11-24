@@ -171,7 +171,8 @@ func newName(it Item, template string) string {
 	return nameIn(it, template, maxName-len(ext)) + ext
 }
 
-// sameFile tells whether two paths are one file: a change of case only, on Windows and macOS.
+// sameFile tells whether two paths are one file: on a file system that ignores case, a change of
+// case only.
 func sameFile(a, b string) bool {
 	first, errA := os.Stat(a)
 	second, errB := os.Stat(b)
@@ -196,9 +197,9 @@ func PlanRename(items []Item, template string) []RenamePlan {
 		switch {
 		case p.To == p.From:
 			p.Block = "same_name"
-		case !same(p.To, p.From) && exists(p.To):
-			p.Block = "name_taken"
-		case same(p.To, p.From) && !sameFile(p.To, p.From) && exists(p.To):
+		case exists(p.To) && !sameFile(p.To, p.From):
+			// taken by another file; the same file at another case (a file system that ignores
+			// case, as Windows' and macOS' usually do) is only a change of case
 			p.Block = "name_taken"
 		}
 		for j := 0; j < i && p.Block == ""; j++ {
@@ -227,11 +228,11 @@ func Rename(plans []RenamePlan) []RenameResult {
 			r.State, r.Detail = StateSkipped, p.Block
 		case !exists(p.From):
 			r.State, r.Detail = StateError, "gone"
-		case exists(p.To) && !(same(p.To, p.From) && sameFile(p.To, p.From)):
+		case exists(p.To) && !sameFile(p.To, p.From):
 			r.State, r.Detail = StateSkipped, "name_taken"
 		default:
 			var err error
-			if same(p.To, p.From) {
+			if sameFile(p.To, p.From) {
 				// a change of case only: the file is the one at both names
 				err = os.Rename(p.From, p.To)
 			} else {

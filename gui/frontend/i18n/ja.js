@@ -143,7 +143,7 @@ texts.ja = {
   doneBefore: size => "前：" + size,
   doneAfter: size => "後：" + size,
   doneNext: "次にすること",
-  nextP5z: "USB を PS5 に接続し、MaxPack インストーラーで開いてください。",
+  nextP5z: "PS5 の内蔵 SSD または USB の homebrew/ にコピーしてください。コンソール版 MaxPack がそのまま起動します。",
   nextFolder: "ShadowMountPlus が homebrew/ 内で認識します。",
   nextMove: folder => "ゲームは " + folder + " にあります。ShadowMountPlus は homebrew/ 内のものしか認識しません。USB またはコンソール内蔵ストレージの homebrew/ に移動してください。",
   nextOriginal: dest => "ダンプは " + dest + " にあります。",

@@ -146,7 +146,7 @@ texts.ar = {
   doneBefore: size => "قبل: " + size,
   doneAfter: size => "الآن: " + size,
   doneNext: "ماذا بعد",
-  nextP5z: "وصّل USB بجهاز PS5 وافتحه بواسطة مثبّت MaxPack.",
+  nextP5z: "انسخه إلى ‎homebrew/‎ على SSD الداخلي لجهاز PS5 أو على USB، وسيشغّله MaxPack لجهاز اللعب كما هو.",
   nextFolder: "سيراه ShadowMountPlus داخل homebrew/\u200E.",
   nextMove: folder => "الألعاب في " + folder + ". لا يراها ShadowMountPlus إلا داخل homebrew/\u200E: انقلها إلى homebrew/\u200E على USB أو على التخزين الداخلي لجهاز اللعب.",
   nextOriginal: dest => "نسخ Dump في " + dest + ".",

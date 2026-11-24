@@ -143,7 +143,7 @@ texts.ko = {
   doneBefore: size => "이전: " + size,
   doneAfter: size => "현재: " + size,
   doneNext: "다음 단계",
-  nextP5z: "USB를 PS5에 꽂고 MaxPack 설치 프로그램으로 여세요.",
+  nextP5z: "PS5 내장 SSD나 USB의 homebrew/에 복사하세요. 콘솔용 MaxPack이 그대로 실행합니다.",
   nextFolder: "ShadowMountPlus가 homebrew/에서 인식합니다.",
   nextMove: folder => "게임은 " + folder + "에 있습니다. ShadowMountPlus는 homebrew/ 안에 있는 것만 인식합니다. USB나 콘솔 내장 저장소의 homebrew/로 옮기세요.",
   nextOriginal: dest => "덤프는 " + dest + "에 있습니다.",

@@ -143,7 +143,7 @@ texts.zh = {
   doneBefore: size => "之前：" + size,
   doneAfter: size => "现在：" + size,
   doneNext: "接下来",
-  nextP5z: "将 U 盘插入 PS5，并用 MaxPack 安装器打开。",
+  nextP5z: "将它复制到 PS5 内置 SSD 或 U 盘的 homebrew/ 中：主机版 MaxPack 可直接运行它。",
   nextFolder: "ShadowMountPlus 会在 homebrew/ 中看到它。",
   nextMove: folder => "游戏位于 " + folder + "。ShadowMountPlus 只能在 homebrew/ 中看到它们：请把它们移到 U 盘或主机内置存储的 homebrew/ 中。",
   nextOriginal: dest => "转储位于 " + dest + "。",

@@ -143,7 +143,7 @@ texts.es = {
   doneBefore: size => "Antes: " + size,
   doneAfter: size => "Ahora: " + size,
   doneNext: "Y ahora",
-  nextP5z: "Conecta el USB a la PS5 y ábrelo con el instalador MaxPack.",
+  nextP5z: "Cópialo a homebrew/ del disco interno de la PS5 o de un USB: MaxPack para la consola lo juega tal cual.",
   nextFolder: "ShadowMountPlus lo verá en homebrew/.",
   nextMove: folder => "Los juegos están en " + folder + ". ShadowMountPlus solo los ve en homebrew/: muévelos a homebrew/ del USB o del almacenamiento interno de la consola.",
   nextOriginal: dest => "Los dumps están en " + dest + ".",

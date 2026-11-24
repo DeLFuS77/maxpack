@@ -146,7 +146,7 @@ texts.ru = {
   doneBefore: size => "Было: " + size,
   doneAfter: size => "Стало: " + size,
   doneNext: "Что дальше",
-  nextP5z: "Подключите USB к PS5 и откройте его установщиком MaxPack.",
+  nextP5z: "Скопируйте его в homebrew/ на внутреннем SSD PS5 или на USB-накопителе: MaxPack для консоли запустит его как есть.",
   nextFolder: "ShadowMountPlus увидит игру в homebrew/.",
   nextMove: folder => "Игры лежат в " + folder + ". ShadowMountPlus видит их только в homebrew/: переместите их в homebrew/ на USB или во внутреннюю память консоли.",
   nextOriginal: dest => "Дампы лежат в " + dest + ".",

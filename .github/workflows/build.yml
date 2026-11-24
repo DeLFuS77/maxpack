@@ -8,7 +8,16 @@ on:
   push:
     branches: [main, "fase*", "interfaz-*", "consola-*", "motor-*", "publicacion*"]
     tags: ["v*"]
+    # tags always build; branch pushes skip docs-only changes
+    paths-ignore: ["**/*.md", "docs/**", ".github/ISSUE_TEMPLATE/**"]
   pull_request:
+    paths-ignore: ["**/*.md", "docs/**", ".github/ISSUE_TEMPLATE/**"]
+  workflow_dispatch:
+
+# a newer push to a branch cancels the run in progress; tag runs are never cancelled
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
 
 permissions:
   contents: read
@@ -27,7 +36,9 @@ jobs:
       - run: cmake --build build -j 4
       - run: ctest --test-dir build --output-on-failure
 
+  # Windows and macOS only on main, on tags and by hand (to save CI minutes)
   windows:
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
@@ -47,15 +58,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - name: windows-x64
-            runner: windows-2025
-          - name: linux-x64
-            runner: ubuntu-24.04
-          - name: macos-apple-silicon
-            runner: macos-15
-          - name: macos-intel
-            runner: macos-15-intel
+        # Linux always; Windows and macOS only on main, on tags and by hand
+        include: ${{ fromJSON(format('[{{"name":"linux-x64","runner":"ubuntu-24.04"}}{0}]', (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch') && ',{{"name":"windows-x64","runner":"windows-2025"}},{{"name":"macos-apple-silicon","runner":"macos-15"}},{{"name":"macos-intel","runner":"macos-15-intel"}}' || '')) }}
     name: gui ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
     defaults:

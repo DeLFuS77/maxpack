@@ -28,7 +28,7 @@ var CancelGrace = 120 * time.Second
 // ErrClosing is the cause of a cancel because the window closes (context.WithCancelCause): the
 // engine is asked to cancel and its input is closed, but it is never killed, so it takes away
 // what it wrote on its own even once the window is gone.
-var ErrClosing = errors.New("la ventana se cierra")
+var ErrClosing = errors.New("the window is closing")
 
 // Required is what the window needs of the engine, as `maxpack --capabilities` says it: an engine
 // that does not say one of them is of another version.
@@ -53,20 +53,20 @@ func Name() string {
 func Locate() (string, error) {
 	if path := os.Getenv("MAXPACK_CORE"); path != "" {
 		if info, err := os.Stat(path); err != nil || info.IsDir() {
-			return "", fmt.Errorf("no se encuentra maxpack-core en %s (MAXPACK_CORE)", path)
+			return "", fmt.Errorf("maxpack-core not found at %s (MAXPACK_CORE)", path)
 		}
 		return path, nil
 	}
 	program, err := os.Executable()
 	if err != nil {
-		return "", fmt.Errorf("no se encuentra maxpack-core: %w", err)
+		return "", fmt.Errorf("maxpack-core not found: %w", err)
 	}
 	if resolved, err := filepath.EvalSymlinks(program); err == nil {
 		program = resolved
 	}
 	path := filepath.Join(filepath.Dir(program), Name())
 	if info, err := os.Stat(path); err != nil || info.IsDir() {
-		return "", fmt.Errorf("no se encuentra maxpack-core: debería estar junto al programa, en %s", path)
+		return "", fmt.Errorf("maxpack-core not found: it should be next to the program, at %s", path)
 	}
 	return path, nil
 }
@@ -75,7 +75,7 @@ func Locate() (string, error) {
 func Version(core string) (string, error) {
 	out, err := hide(exec.Command(core, "--version")).Output()
 	if err != nil {
-		return "", fmt.Errorf("maxpack-core no responde: %w", err)
+		return "", fmt.Errorf("maxpack-core does not respond: %w", err)
 	}
 	return strings.TrimSpace(string(out)), nil
 }
@@ -88,11 +88,11 @@ func Missing(core string) ([]string, error) {
 	command.Stderr = &stderr
 	out, err := command.Output()
 	if err != nil {
-		return nil, fmt.Errorf("maxpack-core no dice lo que sabe hacer: %w: %s", err, strings.TrimSpace(stderr.String()))
+		return nil, fmt.Errorf("maxpack-core does not say what it can do: %w: %s", err, strings.TrimSpace(stderr.String()))
 	}
 	var can map[string]bool
 	if err := json.Unmarshal(out, &can); err != nil {
-		return nil, fmt.Errorf("maxpack-core no dice bien lo que sabe hacer: %w", err)
+		return nil, fmt.Errorf("maxpack-core does not say properly what it can do: %w", err)
 	}
 	missing := []string{}
 	for _, need := range Required {
@@ -190,7 +190,7 @@ func Run(ctx context.Context, core string, args []string, onEvent func(Event)) (
 	}
 	if result.Kind != "result" {
 		message := strings.TrimSpace(stderr.String())
-		return result, code, fmt.Errorf("maxpack-core terminó sin resultado (código %d): %s", code, message)
+		return result, code, fmt.Errorf("maxpack-core ended without a result (code %d): %s", code, message)
 	}
 	return result, code, nil
 }
@@ -202,11 +202,11 @@ func Info(core, path string) (map[string]any, error) {
 	command.Stderr = &stderr
 	out, err := command.Output()
 	if err != nil {
-		return nil, fmt.Errorf("info de %s: %w: %s", path, err, strings.TrimSpace(stderr.String()))
+		return nil, fmt.Errorf("info of %s: %w: %s", path, err, strings.TrimSpace(stderr.String()))
 	}
 	var info map[string]any
 	if err := json.Unmarshal(out, &info); err != nil {
-		return nil, fmt.Errorf("info de %s: respuesta no válida: %w", path, err)
+		return nil, fmt.Errorf("info of %s: invalid response: %w", path, err)
 	}
 	return info, nil
 }
@@ -217,7 +217,7 @@ func Icon(core, path, out string) error {
 	command := hide(exec.Command(core, "icon", path, "-o", out))
 	command.Stderr = &stderr
 	if err := command.Run(); err != nil {
-		return fmt.Errorf("icono de %s: %w: %s", path, err, strings.TrimSpace(stderr.String()))
+		return fmt.Errorf("icon of %s: %w: %s", path, err, strings.TrimSpace(stderr.String()))
 	}
 	return nil
 }

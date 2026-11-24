@@ -12,7 +12,7 @@
 #define TMP MP_TEST_TMP "/unpack"
 #define BASIC MP_FIXTURES_DIR "/basic.exfat"
 
-// Utilidades comunes de las pruebas (antes estaban aquí).
+// Common test utilities (they used to be here).
 #define strlist mpt_list
 #define list_dir mpt_list_dir
 #define free_list mpt_list_free
@@ -47,9 +47,9 @@ MP_TEST(p5z_folder_roundtrip) {
         int64_t ma = 0, mb = 0;
         mp_stat(pa, NULL, &ma);
         mp_stat(pb, NULL, &mb);
-        int is_vol = strstr(a.v[i], ".pak") != NULL;   // los volúmenes no llevan fecha fija
+        int is_vol = strstr(a.v[i], ".pak") != NULL;   // volumes have no fixed date
         if (strcmp(a.v[i], b.v[i]) || !ba || !bb || x != y || memcmp(ba, bb, x) || (!is_vol && ma != mb))
-            MP_FAIL_("distinto: %s", a.v[i]);
+            MP_FAIL_("different: %s", a.v[i]);
         free(ba);
         free(bb);
     }
@@ -78,14 +78,14 @@ MP_TEST(p5z_original_roundtrip) {
         mp_source_read(s, i, 0, a, (size_t)en->size, &e);
         int64_t mt = 0;
         mp_stat(pth, NULL, &mt);
-        if (!b || len != en->size || memcmp(a, b, len) || mt != en->mtime) MP_FAIL_("distinto: %s", en->path);
+        if (!b || len != en->size || memcmp(a, b, len) || mt != en->mtime) MP_FAIL_("different: %s", en->path);
         free(a);
         free(b);
     }
     free_list(&got);
     mp_source_close(s);
 
-    // Con originales reemplazados: vuelven el ampr_emu.index y el runtime antiguos.
+    // With replaced originals: the old ampr_emu.index and runtime come back.
     MP_CHECK(mp_make_dirs(TMP "/src_ampr/fakelib", &e) == 0);
     MP_CHECK(mp_write_file(TMP "/src_ampr/datos.bin", "datos datos datos datos datos", 29, &e) == 0);
     MP_CHECK(mp_write_file(TMP "/src_ampr/ampr_emu.index", "VIEJO", 5, &e) == 0);
@@ -115,8 +115,8 @@ MP_TEST(p5z_truncated_fails) {
     MP_CHECK(mp_write_file(TMP "/corto.p5z", d, n - 10, &e) == 0);
     mp_p5z *p = NULL;
     MP_CHECK(mp_p5z_open(TMP "/corto.p5z", &p, &e) == -1);
-    MP_CHECK_CONTAINS(e.msg, "truncado");
-    d[n - 40] ^= 0x10;   // dentro del índice comprimido
+    MP_CHECK_CONTAINS(e.msg, "truncated");
+    d[n - 40] ^= 0x10;   // inside the compressed index
     remove(TMP "/malo.p5z");
     MP_CHECK(mp_write_file(TMP "/malo.p5z", d, n, &e) == 0);
     mp_err e2 = {{0}};

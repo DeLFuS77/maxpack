@@ -66,7 +66,7 @@ var sectionTakes = map[string]takes{
 	"details": {dumps: true, images: true, p5z: true},
 }
 
-// the files a section takes in the dialog of Añadir archivos (its folders, with Añadir carpeta)
+// the files a section takes in the "Add files" dialog (its folders, with "Add folder")
 var sectionPatterns = map[string]string{
 	"compress":   "*.exfat",
 	"decompress": "*.p5z",
@@ -74,7 +74,7 @@ var sectionPatterns = map[string]string{
 	"details":    "*.exfat;*.p5z",
 }
 
-var errNoWindow = errors.New("sin ventana")
+var errNoWindow = errors.New("no window")
 
 func (k takes) file(path string) bool {
 	switch strings.ToLower(filepath.Ext(path)) {
@@ -224,7 +224,7 @@ func sectionOptions(section string, o jobs.Options) (jobs.Options, error) {
 	case "verify":
 		o.Mode = jobs.ModeVerify
 	default:
-		return o, fmt.Errorf("la sección %q no hace trabajos", section)
+		return o, fmt.Errorf("the section %q does not do jobs", section)
 	}
 	return o, nil
 }
@@ -324,7 +324,7 @@ func (a *App) Start(section string, items []jobs.Item, opts Choices) error {
 	if a.queue != nil {
 		a.mutex.Unlock()
 		cancel(nil)
-		return errors.New("ya hay un trabajo en marcha")
+		return errors.New("a job is already running")
 	}
 	a.queue = q
 	a.mutex.Unlock()
@@ -446,14 +446,14 @@ func readsZstd(path string) error {
 		return err
 	}
 	if info.IsDir() || info.Size() == 0 || info.Size() > runtimeMax {
-		return fmt.Errorf("runtime_not_zstd: %s no parece un libSceAmpr.sprx (%d bytes)", path, info.Size())
+		return fmt.Errorf("runtime_not_zstd: %s does not look like a libSceAmpr.sprx (%d bytes)", path, info.Size())
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return err
 	}
 	if !bytes.Contains(data, []byte("AMPRZPK1")) {
-		return fmt.Errorf("runtime_not_zstd: %s no lee zstd: no es el libSceAmpr.sprx de ampr-emu-ng", path)
+		return fmt.Errorf("runtime_not_zstd: %s does not read zstd: it is not ampr-emu-ng's libSceAmpr.sprx", path)
 	}
 	return nil
 }

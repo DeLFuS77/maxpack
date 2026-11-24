@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// unpack: carpeta para la consola (--folder) o dump original bit a bit (--original).
+// unpack: folder for the console (--folder) or bit-for-bit original dump (--original).
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,11 +12,11 @@
 static int prepare_out(const char *dir, mp_err *e) {
     int kind = mp_path_kind(dir);
     if (kind == 1) {
-        mp_err_set(e, "la salida es un archivo: %s", dir);
+        mp_err_set(e, "the output is a file: %s", dir);
         return -1;
     }
     if (kind == 2 && mp_dir_is_empty(dir) != 1) {
-        mp_err_set(e, "la carpeta de salida no está vacía: %s", dir);
+        mp_err_set(e, "the output folder is not empty: %s", dir);
         return -1;
     }
     return kind == 0 ? mp_make_dirs(dir, e) : 0;
@@ -26,7 +26,7 @@ static char *out_path(const char *dir, const char *rel, mp_err *e) {
     size_t a = strlen(dir), b = strlen(rel);
     char *p = malloc(a + b + 2);
     if (!p) {
-        mp_err_set(e, "sin memoria");
+        mp_err_set(e, "out of memory");
         return NULL;
     }
     memcpy(p, dir, a);
@@ -72,13 +72,13 @@ int mp_unpack_folder(mp_p5z *p, const char *out_dir, unsigned threads, int progr
     for (size_t i = 0; i < p->nfiles; i++)
         if (p->files[i].role != MP_ROLE_ORIGINAL) total += p->files[i].size;
     mp_progress prog;
-    mp_progress_init(&prog, "Extrayendo la carpeta", total, progress);
+    mp_progress_init(&prog, "Extracting the folder", total, progress);
     int rc = 0;
     for (size_t i = 0; i < p->nfiles && !rc; i++)
         if (p->files[i].role != MP_ROLE_ORIGINAL)
             rc = write_stored(p, i, out_dir, p->files[i].path, p->files[i].mtime, &prog, e);
     if (!rc) rc = mp_cancel_check(e);
-    if (!rc && progress) fprintf(stderr, "\rExtrayendo la carpeta: 100.0 %%\n");
+    if (!rc && progress) fprintf(stderr, "\rExtracting the folder: 100.0 %%\n");
     mp_progress_free(&prog);
     return rc;
 }
@@ -93,11 +93,11 @@ int mp_unpack_original(mp_p5z *p, const char *out_dir, unsigned threads, int pro
     uint64_t total = 0;
     for (size_t i = 0; i < p->man.n; i++) total += p->man.v[i].size;
     mp_progress prog;
-    mp_progress_init(&prog, "Reconstruyendo el original", total, progress);
+    mp_progress_init(&prog, "Rebuilding the original", total, progress);
     uint8_t *buf = malloc(PIECE);
     int rc = buf ? 0 : -1;
-    if (!buf) mp_err_set(e, "sin memoria");
-    size_t zi = 0;   // el manifiesto y los packs van en orden distinto: búsqueda por ruta
+    if (!buf) mp_err_set(e, "out of memory");
+    size_t zi = 0;   // the manifest and the packs are in a different order: lookup by path
     for (size_t i = 0; i < p->man.n && !rc; i++) {
         const mp_manifest_entry *m = &p->man.v[i];
         if (mp_cancel_check(e) != 0) {
@@ -108,10 +108,10 @@ int mp_unpack_original(mp_p5z *p, const char *out_dir, unsigned threads, int pro
             rc = write_stored(p, p->man_file[i], out_dir, m->path, m->mtime, &prog, e);
             continue;
         }
-        long found = mp_zpk_find(z, m->path);   // búsqueda binaria: O(log n) por archivo
+        long found = mp_zpk_find(z, m->path);   // binary search: O(log n) per file
         zi = found < 0 ? mp_zpk_count(z) : (size_t)found;
         if (zi == mp_zpk_count(z) || mp_zpk_size(z, zi) != m->size) {
-            mp_err_set(e, "%s no está en los packs del .p5z", m->path);
+            mp_err_set(e, "%s is not in the .p5z's packs", m->path);
             rc = -1;
             break;
         }
@@ -137,14 +137,14 @@ int mp_unpack_original(mp_p5z *p, const char *out_dir, unsigned threads, int pro
         uint8_t d[32];
         mp_sha256_final(&s, d);
         if (!rc && memcmp(d, m->sha, 32) != 0) {
-            mp_err_set(e, "%s: el SHA-256 no coincide con el del dump original", m->path);
+            mp_err_set(e, "%s: the SHA-256 does not match the original dump's", m->path);
             rc = -1;
         }
         if (!rc) rc = mp_set_mtime(path, m->mtime, e);
         free(path);
     }
     if (!rc) rc = mp_cancel_check(e);
-    if (!rc && progress) fprintf(stderr, "\rReconstruyendo el original: 100.0 %%\n");
+    if (!rc && progress) fprintf(stderr, "\rRebuilding the original: 100.0 %%\n");
     mp_progress_free(&prog);
     free(buf);
     mp_zpk_close(z);

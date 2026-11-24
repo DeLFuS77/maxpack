@@ -47,7 +47,7 @@ func (p *pageEvents) wait(t *testing.T) jobs.Summary {
 	case sum := <-p.done:
 		return sum
 	case <-time.After(2 * time.Minute):
-		t.Fatal("la cola no terminó")
+		t.Fatal("the queue did not finish")
 	}
 	return jobs.Summary{}
 }
@@ -143,7 +143,7 @@ func TestExpandSections(t *testing.T) {
 	for _, c := range cases {
 		got := a.Expand(c.paths, c.section)
 		if got == nil || !reflect.DeepEqual(got, c.want) {
-			t.Errorf("%s %v:\n  %v\n  esperaba %v", c.section, c.paths, got, c.want)
+			t.Errorf("%s %v:\n  %v\n  expected %v", c.section, c.paths, got, c.want)
 		}
 	}
 }
@@ -174,10 +174,10 @@ func TestDescribeIcon(t *testing.T) {
 		t.Fatalf("icono: %.60q", game.Icon)
 	}
 	if data, err := base64.StdEncoding.DecodeString(game.Icon[len(prefix):]); err != nil || !bytes.Equal(data, png) {
-		t.Fatalf("el icono no es el del juego: %v", err)
+		t.Fatalf("the icon is not the game's: %v", err)
 	}
 	if left, _ := os.ReadDir(temp); len(left) != 0 {
-		t.Fatalf("quedan temporales: %v", left)
+		t.Fatalf("temporary files are left: %v", left)
 	}
 
 	// without an icon: the game, with no icon and no error
@@ -186,10 +186,10 @@ func TestDescribeIcon(t *testing.T) {
 		t.Fatalf("%+v %v", plain, err)
 	}
 	if left, _ := os.ReadDir(temp); len(left) != 0 {
-		t.Fatalf("quedan temporales: %v", left)
+		t.Fatalf("temporary files are left: %v", left)
 	}
 	if _, err := a.Describe(filepath.Join(temp, "no-existe")); err == nil {
-		t.Fatal("algo que no existe se describe")
+		t.Fatal("something that does not exist is described")
 	}
 }
 
@@ -321,7 +321,7 @@ func TestRateFromProgress(t *testing.T) {
 	}
 	for n, s := range steps {
 		if got := r.add(s.i, s.phase, s.done, t0.Add(s.at)); !near(got, s.want) {
-			t.Fatalf("paso %d: %d, esperaba %.0f", n, got, s.want)
+			t.Fatalf("step %d: %d, expected %.0f", n, got, s.want)
 		}
 	}
 }
@@ -365,7 +365,7 @@ func TestPlanTellsReplaceSize(t *testing.T) {
 		t.Fatalf("%+v %v", plans, err)
 	}
 	if _, err := a.Plan("details", []jobs.Item{packed}, Choices{}); err == nil {
-		t.Fatal("Detalles no hace planes")
+		t.Fatal("Details does not make plans")
 	}
 }
 
@@ -389,7 +389,7 @@ func TestStartNeedsConsentToReplace(t *testing.T) {
 		t.Fatalf("%+v", last)
 	}
 	if data, _ := os.ReadFile(old); string(data) != "xxxxx" {
-		t.Fatalf("lo viejo cambió: %q", data)
+		t.Fatalf("the old one changed: %q", data)
 	}
 
 	engine, fixtures := needCore(t)
@@ -408,7 +408,7 @@ func TestStartNeedsConsentToReplace(t *testing.T) {
 	}
 	stat, err := os.Stat(out)
 	if err != nil || stat.Size() <= 5 {
-		t.Fatalf("no se reemplazó: %v %v", stat, err)
+		t.Fatalf("it was not replaced: %v %v", stat, err)
 	}
 	if last := events.last(0); last.State != jobs.StateOK || last.Out != out || last.Size != uint64(stat.Size()) {
 		t.Fatalf("%+v", last)
@@ -443,7 +443,7 @@ func TestStartTellsThePage(t *testing.T) {
 	progress := append([]progressEvent{}, events.progress...)
 	events.mutex.Unlock()
 	if len(progress) == 0 {
-		t.Fatal("sin progreso")
+		t.Fatal("no progress")
 	}
 	phases := map[string]bool{}
 	for _, p := range progress {
@@ -498,7 +498,7 @@ func TestStartOneAtATime(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := a.Start("compress", []jobs.Item{item}, o); err == nil {
-		t.Fatal("dos colas a la vez")
+		t.Fatal("two queues at once")
 	}
 	a.Cancel()
 	close(awake)
@@ -512,6 +512,6 @@ func TestStartOneAtATime(t *testing.T) {
 	events.wait(t)
 	a.Cancel() // with nothing running, nothing happens
 	if err := a.Start("details", []jobs.Item{item}, o); err == nil {
-		t.Fatal("Detalles no empieza nada")
+		t.Fatal("Details does not start anything")
 	}
 }

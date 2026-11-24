@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Prueba tools/version.sh: de una etiqueta vX.Y.Z sale X.Y.Z, también para los números de Windows.
+"""Tests tools/version.sh: a vX.Y.Z tag gives X.Y.Z, also for Windows' numbers.
 
   test_version.py <bash> <tools/version.sh> <CMakeLists.txt>
 """
@@ -29,17 +29,17 @@ bad = 0
 for kind, name, version, numbers in CASES:
     got = run(kind, name)
     if got != {"VERSION": version, "NUMBERS": numbers}:
-        print(f"FALLA {kind} {name}: {got} (esperado {version} / {numbers})")
+        print(f"FAIL {kind} {name}: {got} (expected {version} / {numbers})")
         bad += 1
 
-# la versión de CMake y la del motor (mp_version.h) son la misma, y la que lleva una etiqueta de versión
+# the CMake version and the engine's (mp_version.h) are the same, and the one a version tag carries
 with open(cmake, encoding="utf-8") as f:
     cm = re.search(r"project\(maxpack VERSION (\S+)", f.read()).group(1)
 with open(cmake.replace("CMakeLists.txt", "src/core/mp_version.h"), encoding="utf-8") as f:
     hv = re.search(r'#define MP_VERSION "([^"]+)"', f.read()).group(1)
 if cm != hv:
-    print(f"FALLA: CMake dice {cm} y mp_version.h {hv}")
+    print(f"FAIL: CMake says {cm} and mp_version.h {hv}")
     bad += 1
 
-print("ok" if not bad else f"{bad} fallos")
+print("ok" if not bad else f"{bad} failures")
 sys.exit(1 if bad else 0)

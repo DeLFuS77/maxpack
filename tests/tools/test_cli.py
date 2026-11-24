@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Pruebas de la línea de comandos de maxpack.
+"""Command-line tests for maxpack.
 
-Uso: test_cli.py <maxpack> <carpeta de fixtures> <carpeta temporal>
+Usage: test_cli.py <maxpack> <fixtures folder> <temporary folder>
 """
 import json
 import math
@@ -24,7 +24,7 @@ def run(*args):
 
 
 def check(name, cond, detail=""):
-    print(("ok    " if cond else "FALLO ") + name + ("" if cond else "  " + detail))
+    print(("ok    " if cond else "FAIL  ") + name + ("" if cond else "  " + detail))
     if not cond:
         failures.append(name)
 
@@ -86,7 +86,7 @@ try:
     check("texto_tiene_tabla", "(Forge)" in out and "basic.exfat" in out, out[:300])
     t = rep.get("transport")
     check("json_transporte", isinstance(t, dict) and t["est_packed"] > 0 and t["p5z_estimate"] > t["est_packed"], str(t))
-    check("texto_transporte", "Transporte" in out, out[-600:])
+    check("texto_transporte", "Transport" in out, out[-600:])
 except Exception as ex:  # noqa: BLE001
     check("json_legible", False, repr(ex))
 
@@ -102,14 +102,14 @@ rc, out, _ = run("analyze", BASIC, "--list")
 lines = out.splitlines()
 check("list_lineas", rc == 0 and len(lines) == manifest_count(), str(len(lines)))
 eboot = [l for l in lines if l.endswith("\teboot.bin")]
-check("list_eboot_suelto", len(eboot) == 1 and eboot[0].split("\t")[1] == "suelto", str(eboot))
+check("list_eboot_suelto", len(eboot) == 1 and eboot[0].split("\t")[1] == "loose", str(eboot))
 
 uni = os.path.join(TMP, "juego ñ 🎮.exfat")
 shutil.copyfile(BASIC, uni)
 rc, out, err = run("analyze", uni, "--list")
 check("ruta_no_ascii", rc == 0 and len(out.splitlines()) == manifest_count(), err)
 
-# --json nunca debe pisar el origen ni escribir dentro de la carpeta que se analiza.
+# --json must never overwrite the source or write inside the folder being analysed.
 import hashlib
 victim = os.path.join(TMP, "victima.exfat")
 shutil.copyfile(BASIC, victim)
@@ -129,7 +129,7 @@ check("json_no_escribe_en_el_origen", rc == 2 and not os.path.exists(inside), "r
 rc, _, err = run("analyze", BASIC, "--json", os.path.join(TMP, "no", "existe", "x.json"))
 check("json_carpeta_inexistente_sale_2", rc == 2, "rc=%d %s" % (rc, err[:200]))
 
-# pack a carpeta.
+# pack to a folder.
 def rmtree(p):
     if os.path.isdir(p):
         shutil.rmtree(p)
@@ -158,7 +158,7 @@ check("pack_p5z_sale_0", ok and ".p5z" in so, (so + err)[-300:])
 rc, _, err = run("pack", BASIC, "-o", p5z, "--p5z")
 check("pack_p5z_existente_sale_2", rc == 2, "rc=%d %s" % (rc, err[:200]))
 
-# info y unpack del .p5z.
+# info and unpack of the .p5z.
 rc, so, err = run("info", p5z)
 check("info_sale_0", rc == 0 and "TEST00001" in so, (so + err)[-300:])
 rc, _, err = run("unpack", p5z, "-o", os.path.join(TMP, "unp_x"))
@@ -181,9 +181,9 @@ data = bytearray(open(p5z, "rb").read())
 data[len(data) // 2] ^= 0x55
 open(bad, "wb").write(bytes(data))
 rc, so, err = run("verify", bad)
-check("verify_danado_sale_1", rc == 1 and ("FALLO" in err or "error" in err), (so + err)[-300:])
+check("verify_danado_sale_1", rc == 1 and ("FAIL" in err or "error" in err), (so + err)[-300:])
 
-# ---- --progress json, --control stdin, --max-file-size y limpieza al fallar ----------------------
+# ---- --progress json, --control stdin, --max-file-size and cleanup on failure ----------------------
 def json_lines(text):
     evs = []
     for l in text.splitlines():
@@ -238,7 +238,7 @@ try:
 except Exception as ex:  # noqa: BLE001
     check("progress_json_verify", False, repr(ex) + so[-200:])
 
-# Entrada de varios MiB para que la cancelación caiga a mitad del trabajo.
+# Input of several MiB so that cancellation lands in the middle of the work.
 BIG = os.path.join(TMP, "big_src")
 rmtree(BIG)
 os.makedirs(os.path.join(BIG, "data"))
@@ -269,8 +269,8 @@ try:
 except Exception as ex:  # noqa: BLE001
     check("control_stdin_cancel", False, repr(ex))
 
-# Si no se puede borrar lo escrito al cancelar, no dice que no queda nada: dice qué queda. Un
-# archivo abierto (Windows) o una carpeta sin permiso de escritura (los demás) impiden borrarlo.
+# If what was written cannot be deleted on cancel, it does not say nothing is left: it says what is left. An
+# open file (Windows) or a folder without write permission (the others) prevents deleting it.
 hold = os.path.join(TMP, "hold_out")
 held_dir = os.path.join(hold, "sce_sys")
 if os.path.isdir(held_dir):
@@ -284,7 +284,7 @@ if os.name == "nt" or os.geteuid() != 0:
     for _ in range(500):
         try:
             if os.name == "nt":
-                holder = open(os.path.join(held_dir, "param.json"), "rb")   # sin compartir el borrado
+                holder = open(os.path.join(held_dir, "param.json"), "rb")   # without sharing deletion
             else:
                 os.stat(os.path.join(held_dir, "param.json"))
                 os.chmod(held_dir, 0o555)
@@ -303,13 +303,13 @@ if os.name == "nt" or os.geteuid() != 0:
         os.chmod(held_dir, 0o755)
     left = os.path.exists(os.path.join(held_dir, "param.json"))
     check("cancel_sin_poder_borrar_dice_que_queda",
-          holder is not None and p.returncode == 130 and left and "no queda nada escrito" not in errtxt
-          and "queda a medias" in errtxt and hold in errtxt,
+          holder is not None and p.returncode == 130 and left and "nothing is left written" not in errtxt
+          and "half-done" in errtxt and hold in errtxt,
           "rc=%s holder=%s left=%s %s" % (p.returncode, holder is not None, left, errtxt[-400:]))
     rmtree(hold)
 
-# Si quien lanzó el motor se va (cierra su lectura y stdin), el motor cancela y limpia: no muere
-# al escribir en una tubería cerrada.
+# If whoever launched the engine goes away (closes its reading end and stdin), the engine cancels and cleans up: it does not die
+# when writing to a closed pipe.
 gone = os.path.join(TMP, "gone_out")
 rmtree(gone)
 p = subprocess.Popen([EXE, "pack", BIG, "-o", gone, "--threads", "2", "--progress", "json", "--control", "stdin"],
@@ -321,7 +321,7 @@ p.stdin.close()
 p.wait()
 check("ventana_ida_motor_limpia", p.returncode == 130 and not os.path.exists(gone), "rc=%s" % p.returncode)
 
-# Cerrar stdin también cancela.
+# Closing stdin also cancels.
 cdst2 = os.path.join(TMP, "cancel_out2")
 rmtree(cdst2)
 p = subprocess.Popen([EXE, "pack", BIG, "-o", cdst2, "--threads", "2", "--progress", "json", "--control", "stdin"],
@@ -345,7 +345,7 @@ except Exception as ex:  # noqa: BLE001
     check("max_file_size", False, repr(ex))
 rc, _, _ = run("pack", BASIC, "-o", os.path.join(TMP, "mx_folder"), "--max-file-size", "100000")
 check("max_file_size_solo_p5z_sale_2", rc == 2, str(rc))
-# El tope justo del tamaño del .p5z cabe; un byte menos, no: too_big, y nunca pasa del tope.
+# A cap of exactly the .p5z's size fits; one byte less does not: too_big, and it never goes over the cap.
 full = os.path.getsize(pj)
 for cap, want in ((full, 0), (full - 1, 1), (64, 1)):
     if os.path.exists(mx):
@@ -361,7 +361,7 @@ for cap, want in ((full, 0), (full - 1, 1), (64, 1)):
     except Exception as ex:  # noqa: BLE001
         check("max_file_size_borde_%d" % cap, False, repr(ex))
 
-# --volume-limit (para pruebas): con volúmenes de 512 KiB, el fixture pequeño da varios, con id 0..n-1.
+# --volume-limit (for testing): with 512 KiB volumes, the small fixture gives several, with ids 0..n-1.
 vl = os.path.join(TMP, "vl.p5z")
 if os.path.exists(vl):
     os.remove(vl)
@@ -377,9 +377,9 @@ try:
 except Exception as ex:  # noqa: BLE001
     check("volume_limit_varios_volumenes", False, repr(ex) + (err + err2)[-200:])
 _, human, _ = run("info", vl)
-m = re.search(r"en (\d+) volúmenes", human)
+m = re.search(r"in (\d+) volumes", human)
 check("volume_limit_info", m is not None and int(m.group(1)) >= 3, human[-300:])
-# El más pequeño que admite: la cabecera del volumen más un bloque entero.
+# The smallest it accepts: the volume header plus one whole block.
 vmin = os.path.join(TMP, "vl_min")
 rmtree(vmin)
 rc, _, err = run("pack", BASIC, "-o", vmin, "--volume-limit", str(64 + (256 << 10)))
@@ -388,7 +388,7 @@ for bad in ("0", str(64 + (256 << 10) - 1), "4294901761", "abc", "-1", "512k", "
     rc, _, _ = run("pack", BASIC, "-o", os.path.join(TMP, "vl_bad"), "--volume-limit", bad)
     check("volume_limit_%s_sale_2" % (bad or "vacio"), rc == 2 and not os.path.exists(os.path.join(TMP, "vl_bad")), str(rc))
 
-# Un param.json sin titleId (o que no se lee) da un .p5z sin TITLE_ID: pack lo avisa.
+# A param.json without a titleId (or that cannot be read) gives a .p5z without a TITLE_ID: pack warns about it.
 noid = os.path.join(TMP, "noid_game")
 rmtree(noid)
 os.makedirs(os.path.join(noid, "sce_sys"))
@@ -398,7 +398,7 @@ noid_p5z = os.path.join(TMP, "noid.p5z")
 if os.path.exists(noid_p5z):
     os.remove(noid_p5z)
 rc, so, err = run("pack", noid, "-o", noid_p5z, "--p5z")
-check("pack_sin_title_id_avisa", rc == 0 and "aviso:" in err and "TITLE_ID" in err, "rc=%d %s" % (rc, err[-300:]))
+check("pack_sin_title_id_avisa", rc == 0 and "warning:" in err and "TITLE_ID" in err, "rc=%d %s" % (rc, err[-300:]))
 bomd = os.path.join(TMP, "bom_game")
 rmtree(bomd)
 os.makedirs(os.path.join(bomd, "sce_sys"))
@@ -416,7 +416,7 @@ rc, so, err = run("pack", bomd, "-o", bom_p5z, "--p5z")
 _, human, _ = run("info", bom_p5z)
 check("pack_param_bom_guarda_title_id", rc == 0 and "TITLE_ID" not in err and "BOMS00001" in human, err[-200:] + human[-200:])
 
-# Un byte cambiado en los datos: unpack falla a mitad y la carpeta de salida no queda.
+# A byte changed in the data: unpack fails midway and the output folder is not left behind.
 dam = os.path.join(TMP, "dam.p5z")
 shutil.copyfile(pj, dam)
 data = bytearray(open(dam, "rb").read())
@@ -434,16 +434,16 @@ res = last_result(json_lines(so)) if so.strip() else {}
 check("failure_keeps_empty_folder", rc == 1 and os.path.isdir(fc2) and not os.listdir(fc2)
       and res.get("ok") is False, "rc=%d %s" % (rc, so[-200:]))
 
-# Sin --progress la salida es la de siempre: stdout sin JSON y el texto en stderr.
+# Without --progress the output is as always: stdout without JSON and the text on stderr.
 rc, so, err = run("verify", pj)
 check("human_output_unchanged", rc == 0 and so.startswith("verify:") and '"event"' not in so + err, so + err)
 
 rc, so, _ = run("--help")
 check("help_tiene_todas_las_ordenes", rc == 0 and all(w in so for w in ("analyze", "pack", "unpack", "verify", "info",
                                                                         "info --json", "icon", "--capabilities")), so[:300])
-check("help_volume_limit_para_pruebas", re.search(r"--volume-limit N .*pruebas", so) is not None, so[:2000])
+check("help_volume_limit_para_pruebas", re.search(r"--volume-limit N .*testing", so) is not None, so[:2000])
 
-# --capabilities: lo que esta versión sabe hacer, para que la ventana sepa si es la suya.
+# --capabilities: what this version can do, so that the window knows whether it is its own.
 rc, so, err = run("--capabilities")
 try:
     caps = json.loads(so)
@@ -469,16 +469,16 @@ try:
     d = json.loads(so)
     check("info_json_p5z", rc == 0 and d["kind"] == "p5z" and d["packed"] is True
           and d["p5z_size"] == os.path.getsize(pj), so[-300:] + err[-200:])
-    # los packs, como los cuenta info para personas: archivos empaquetados y volúmenes
+    # the packs, as info counts them for people: packed files and volumes
     _, human, _ = run("info", pj)
-    packed = re.search(r"\((\d+) sueltos, (\d+) empaquetados\)", human)
-    vols = re.search(r"en (\d+) volúmenes", human)
+    packed = re.search(r"\((\d+) loose, (\d+) packed\)", human)
+    vols = re.search(r"in (\d+) volumes", human)
     check("info_json_packs", packed is not None and vols is not None
           and d["packed_files"] == int(packed.group(2)) and d["volumes"] == int(vols.group(1))
           and 0 < d["packed_files"] < d["files"] and d["volumes"] >= 1, so[-300:] + human)
 except Exception as ex:
     check("info_json_p5z", False, repr(ex) + so[-200:])
-# Nombre con comillas, barras, acentos y control: JSON válido y bytes intactos.
+# Name with quotes, backslashes, accents and control characters: valid JSON and intact bytes.
 nm = os.path.join(TMP, "nm_game")
 rmtree(nm)
 os.makedirs(os.path.join(nm, "sce_sys"))
@@ -511,5 +511,5 @@ check("icon_cli_sin_icono_sale_1", rc == 1 and not os.path.exists(outpng2), "rc=
 rc, _, _ = run("icon", nm)
 check("icon_sin_salida_sale_2", rc == 2, str(rc))
 
-print("test_cli: %d fallos" % len(failures))
+print("test_cli: %d failures" % len(failures))
 sys.exit(1 if failures else 0)

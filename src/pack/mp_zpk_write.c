@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Escritor de packs zstd. Recorre los bloques de 256 KiB de los archivos en el orden del índice
-// (path_hash, ruta), los comprime por lotes en paralelo y los escribe en ese mismo orden, así que
-// la salida no depende del número de hilos.
+// Zstd pack writer. Walks the files' 256 KiB blocks in the index's order
+// (path_hash, path), compresses them in parallel batches and writes them in that same order, so
+// the output does not depend on the number of threads.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -22,9 +22,9 @@ static void wr64(uint8_t *p, uint64_t v) {
 typedef struct {
     uint64_t hash, size;
     const char *path;
-    uint32_t src;    // índice de origen
-    size_t pos;      // posición en files[] (para sha[])
-    uint64_t first;  // primer bloque global
+    uint32_t src;    // source index
+    size_t pos;      // position in files[] (for sha[])
+    uint64_t first;  // first global block
 } ford;
 
 static int cmp_ford(const void *a, const void *b) {
@@ -62,17 +62,17 @@ int mp_zpk_write(mp_source *src, const uint32_t *files, size_t n, const mp_zpk_o
     *index_len = 0;
     memset(st, 0, sizeof *st);
     if (o->level < 1 || o->level > 22) {
-        mp_err_set(e, "nivel de zstd fuera de 1..22: %d", o->level);
+        mp_err_set(e, "zstd level outside 1..22: %d", o->level);
         return -1;
     }
     if (o->volume_limit < MP_ZPK_VOL_HEADER + MP_BLOCK_V1 || o->volume_limit > MP_ZPK_VOLUME_LIMIT) {
-        mp_err_set(e, "límite de volumen no válido");
+        mp_err_set(e, "invalid volume limit");
         return -1;
     }
     unsigned threads = o->threads ? o->threads : 1;
     ford *fo = malloc((n ? n : 1) * sizeof *fo);
     if (!fo) {
-        mp_err_set(e, "sin memoria");
+        mp_err_set(e, "out of memory");
         return -1;
     }
     for (size_t i = 0; i < n; i++) {
@@ -91,7 +91,7 @@ int mp_zpk_write(mp_source *src, const uint32_t *files, size_t n, const mp_zpk_o
     uint64_t nchunks = 0, strings = 0, logical = 0;
     for (size_t i = 0; i < n; i++) {
         if (i && strcmp(fo[i - 1].path, fo[i].path) == 0) {
-            mp_err_set(e, "ruta repetida: %s", fo[i].path);
+            mp_err_set(e, "repeated path: %s", fo[i].path);
             free(fo);
             return -1;
         }
@@ -101,7 +101,7 @@ int mp_zpk_write(mp_source *src, const uint32_t *files, size_t n, const mp_zpk_o
         logical += fo[i].size;
     }
     if (nchunks >= 0xFFFFFFFFull) {
-        mp_err_set(e, "demasiados bloques para un pack (%llu)", (unsigned long long)nchunks);
+        mp_err_set(e, "too many blocks for a pack (%llu)", (unsigned long long)nchunks);
         free(fo);
         return -1;
     }
@@ -123,19 +123,19 @@ int mp_zpk_write(mp_source *src, const uint32_t *files, size_t n, const mp_zpk_o
         items[b].out = outbuf + b * cs.out_cap;
     }
 
-    // Recorrido en orden del índice: archivo fi, bloque k.
+    // Walk in the index's order: file fi, block k.
     size_t fi = 0;
     uint64_t k = 0, gchunk = 0, stored_total = 0, cur_off = 0;
     int64_t cur_vol = -1;
     if (n) mp_sha256_init(&shs[0]);
     while (fi < n) {
         if (mp_cancel_check(e) != 0) goto done;
-        // 1. Leer un lote (puede cruzar archivos) y actualizar los SHA-256.
+        // 1. Read a batch (may cross files) and update the SHA-256 hashes.
         size_t nb = 0;
         uint64_t first_g = gchunk;
         while (nb < batch && fi < n) {
             uint64_t size = fo[fi].size, off = k * MP_BLOCK_V1;
-            if (off >= size) {   // archivo terminado (o vacío)
+            if (off >= size) {   // file finished (or empty)
                 mp_sha256_final(&shs[fi], sha[fo[fi].pos]);
                 fi++;
                 k = 0;
@@ -151,12 +151,12 @@ int mp_zpk_write(mp_source *src, const uint32_t *files, size_t n, const mp_zpk_o
             gchunk++;
         }
         if (!nb) break;
-        // 2. Comprimir en paralelo.
+        // 2. Compress in parallel.
         if (mp_parallel_run(threads, nb, compress_work, &cs, NULL) != 0) {
-            if (mp_cancel_check(e) == 0) mp_err_set(e, "error al comprimir");
+            if (mp_cancel_check(e) == 0) mp_err_set(e, "compression error");
             goto done;
         }
-        // 3. Escribir en orden, abriendo volúmenes cuando el actual se llena.
+        // 3. Write in order, opening volumes when the current one fills up.
         for (size_t b = 0; b < nb; b++) {
             item *it = &items[b];
             if (cur_vol < 0 || cur_off + it->out_len > o->volume_limit) {
@@ -165,7 +165,7 @@ int mp_zpk_write(mp_source *src, const uint32_t *files, size_t n, const mp_zpk_o
                     if (sink->vol_end(sink->ctx, (uint32_t)cur_vol, e) != 0) goto done;
                 }
                 if (++cur_vol >= (int64_t)MP_ZPK_MAX_VOLUMES) {
-                    mp_err_set(e, "el pack necesitaría más de %u volúmenes", MP_ZPK_MAX_VOLUMES);
+                    mp_err_set(e, "the pack would need more than %u volumes", MP_ZPK_MAX_VOLUMES);
                     goto done;
                 }
                 if (sink->vol_begin(sink->ctx, (uint32_t)cur_vol, e) != 0) goto done;
@@ -188,7 +188,7 @@ int mp_zpk_write(mp_source *src, const uint32_t *files, size_t n, const mp_zpk_o
         if (sink->vol_end(sink->ctx, (uint32_t)cur_vol, e) != 0) goto done;
     }
 
-    // 4. Índice: cabecera, archivos, bloques, volúmenes, cadenas.
+    // 4. Index: header, files, blocks, volumes, strings.
     uint64_t chunks_off = MP_ZPK_HEADER + 32ull * n, vols_off = chunks_off + 8 * nchunks,
              strings_off = vols_off + 8ull * nvol, total = strings_off + strings;
     uint8_t *d = calloc(1, (size_t)total);
@@ -207,7 +207,7 @@ int mp_zpk_write(mp_source *src, const uint32_t *files, size_t n, const mp_zpk_o
     }
     for (uint64_t c = 0; c < nchunks; c++) wr64(d + chunks_off + 8 * c, chunk_rec[c]);
     for (uint32_t v = 0; v < nvol; v++) wr64(d + vols_off + 8ull * v, vol_size[v]);
-    // archive_id determinista: SHA-256("MAXPACK1" + tablas).
+    // deterministic archive_id: SHA-256("MAXPACK1" + tables).
     mp_sha256 s;
     uint8_t digest[32];
     mp_sha256_init(&s);
@@ -230,10 +230,10 @@ int mp_zpk_write(mp_source *src, const uint32_t *files, size_t n, const mp_zpk_o
     wr64(d + 88, strings);
     wr64(d + 96, logical);
     uint32_t body_crc = mp_crc32(d + MP_ZPK_HEADER, (size_t)(total - MP_ZPK_HEADER), 0);
-    uint32_t head_crc = mp_crc32(d, MP_ZPK_HEADER, 0);   // con 112..120 todavía a cero
+    uint32_t head_crc = mp_crc32(d, MP_ZPK_HEADER, 0);   // with 112..120 still zero
     wr32(d + 112, body_crc);
     wr32(d + 116, head_crc);
-    // 5. Cabeceras de volumen.
+    // 5. Volume headers.
     for (uint32_t v = 0; v < nvol; v++) {
         uint8_t h[64] = {0};
         memcpy(h, "AMPRZDT1", 8);
@@ -260,7 +260,7 @@ int mp_zpk_write(mp_source *src, const uint32_t *files, size_t n, const mp_zpk_o
     rc = 0;
     goto done;
 oom:
-    mp_err_set(e, "sin memoria");
+    mp_err_set(e, "out of memory");
 done:
     if (cs.cctx)
         for (unsigned t = 0; t < threads; t++) ZSTD_freeCCtx(cs.cctx[t]);
@@ -275,7 +275,7 @@ done:
     return rc;
 }
 
-// ---- Volúmenes en una carpeta ----------------------------------------------------------------
+// ---- Volumes in a folder ---------------------------------------------------------------------
 
 typedef struct {
     char *dir;
@@ -323,7 +323,7 @@ int mp_zpk_sink_dir(const char *dir, mp_zpk_sink *out, mp_err *e) {
     dirsink *d = calloc(1, sizeof *d);
     if (!d || !(d->dir = mp_strdup(dir))) {
         free(d);
-        mp_err_set(e, "sin memoria");
+        mp_err_set(e, "out of memory");
         return -1;
     }
     out->vol_begin = ds_begin;

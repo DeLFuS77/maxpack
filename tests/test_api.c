@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// API web del instalador y su cola de trabajos.
+// The installer's web API and its job queue.
 #include "mp_api.h"
 #include "mp_fixture.h"
 #include "mp_http.h"
@@ -28,7 +28,7 @@ typedef int sock_t;
 static uint8_t rt_new[4096];
 static const char *drives[] = {USB};
 
-// ---- ShadowMountPlus falso --------------------------------------------------------------------
+// ---- fake ShadowMountPlus --------------------------------------------------------------------
 
 static mp_http_server *smp_srv;
 static uint16_t smp_port;
@@ -55,7 +55,7 @@ static void smp_up(uint16_t p) {
     mp_err e = {{0}};
     if (!smp_mu) smp_mu = mp_mutex_new();
     smp_srv = mp_http_start("127.0.0.1", p, smp_handler, NULL, &e);
-    if (!smp_srv) MP_FAIL_("ShadowMountPlus falso: %s", e.msg);
+    if (!smp_srv) MP_FAIL_("fake ShadowMountPlus: %s", e.msg);
     else smp_port = mp_http_port(smp_srv);
 }
 
@@ -64,7 +64,7 @@ static void smp_down(void) {
     smp_srv = NULL;
 }
 
-// ---- un io_check que se puede bloquear para tener un trabajo "en marcha" ----------------------
+// ---- an io_check that can be blocked to have a job "in progress" ----------------------
 
 static volatile int hold = 0, holding = 0;
 
@@ -345,7 +345,7 @@ MP_TEST(api_smp_retry) {
 }
 
 MP_TEST(api_refuses_running) {
-    // ShadowMountPlus 1.7 no dice qué juego está en marcha (running = -1): se sigue adelante.
+    // ShadowMountPlus 1.7 does not say which game is running (running = -1): it carries on.
     setup();
     mp_json *r = NULL;
     MP_CHECK(call("POST", "/api/install", install_json(USB "/basic.p5z", 1), &r) == 200 && jok(r));
@@ -403,7 +403,7 @@ MP_TEST(api_kinds) {
     MP_CHECK(mp_path_kind(USB "/Juego/eboot.bin") == 1);
 }
 
-// Petición tal cual (cabeceras incluidas) y código de estado de la respuesta.
+// Request as is (headers included) and the response's status code.
 static int raw_status(const char *raw) {
     sock_t s = socket(AF_INET, SOCK_STREAM, 0);
     struct sockaddr_in a;
@@ -425,18 +425,18 @@ MP_TEST(api_rejects_cross_site) {
     setup();
     const char *body = "{\"title_id\":\"TEST00001\",\"confirm\":true}";
     char req[1024];
-    // Un POST "simple" de otra web (sin preflight): text/plain.
+    // A "simple" POST from another website (no preflight): text/plain.
     snprintf(req, sizeof req,
              "POST /api/uninstall HTTP/1.1\r\nHost: 127.0.0.1:%u\r\nContent-Type: text/plain\r\n"
              "Content-Length: %zu\r\n\r\n%s",
              (unsigned)web_port, strlen(body), body);
     MP_CHECK(raw_status(req) == 403);
-    // Sin Content-Type tampoco.
+    // Without a Content-Type either.
     MP_CHECK(raw_status("POST /api/scan HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: 2\r\n\r\n{}") == 403);
-    // Un nombre que no es una IP (rebinding de DNS), o sin Host.
+    // A name that is not an IP (DNS rebinding), or no Host.
     MP_CHECK(raw_status("GET /api/state HTTP/1.1\r\nHost: evil.example:8095\r\n\r\n") == 403);
     MP_CHECK(raw_status("GET /api/state HTTP/1.1\r\n\r\n") == 403);
-    // Lo que manda la página sí vale.
+    // What the page sends is accepted.
     MP_CHECK(raw_status("GET /api/state HTTP/1.1\r\nHost: 192.168.1.50:8095\r\n\r\n") == 200);
     MP_CHECK(raw_status("GET /api/state HTTP/1.1\r\nHost: localhost\r\n\r\n") == 200);
     MP_CHECK(raw_status("POST /api/scan HTTP/1.1\r\nHost: 127.0.0.1\r\n"
@@ -444,7 +444,7 @@ MP_TEST(api_rejects_cross_site) {
 }
 
 MP_TEST(api_dest_occupied_unknown) {
-    // El destino de una imagen sin ID en el nombre ya está ocupado: hay que preguntar antes.
+    // The destination of an image with no ID in its name is already taken: it has to ask first.
     setup();
     mpt_copy_file(MPT_BASIC, USB "/img/basic.exfat");
     mpt_put_text(DATA "/homebrew/basic.exfat", "otro archivo que ya estaba");

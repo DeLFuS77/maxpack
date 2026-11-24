@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Compila y prueba MaxPack en Linux y Windows y empaqueta la ventana del PC (Wails) para Windows,
-# Linux y macOS, cada una en una máquina de su sistema. Con una etiqueta vX.Y.Z crea además un
-# borrador de release en GitHub con los paquetes y SHA256SUMS (se publica a mano).
+# Builds and tests MaxPack on Linux and Windows and packages the PC window (Wails) for Windows,
+# Linux and macOS, each on a machine of its own system. With a vX.Y.Z tag it also creates a
+# draft release on GitHub with the packages and SHA256SUMS (published by hand).
 name: build
 
 on:
@@ -40,9 +40,9 @@ jobs:
       - run: cmake --build build --config Release -j 4
       - run: ctest --test-dir build -C Release --output-on-failure
 
-  # La ventana del PC: el motor (CMake, Release) junto a ella como maxpack-core, las pruebas de Go
-  # con ese motor y las imágenes de prueba, y los paquetes de cada sistema. Cada sistema usa su
-  # webview (WebView2, WebKitGTK, WebKit) y su compilador de C (cgo).
+  # The PC window: the engine (CMake, Release) next to it as maxpack-core, the Go tests
+  # with that engine and the test images, and each system's packages. Each system uses its
+  # webview (WebView2, WebKitGTK, WebKit) and its C compiler (cgo).
   gui:
     strategy:
       fail-fast: false
@@ -62,7 +62,7 @@ jobs:
       run:
         shell: bash
     env:
-      # el macOS más antiguo que admite Go
+      # the oldest macOS that Go supports
       MACOSX_DEPLOYMENT_TARGET: "13.0"
     steps:
       - uses: actions/checkout@v4
@@ -82,21 +82,21 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev desktop-file-utils
 
-      # la etiqueta sin la «v» (v1.2.3 -> 1.2.3), o "dev-" y el commit; NUMBERS es la parte X.Y.Z
-      - name: Versión
+      # the tag without the "v" (v1.2.3 -> 1.2.3), or "dev-" and the commit; NUMBERS is the X.Y.Z part
+      - name: Version
         run: |
           bash tools/version.sh "${GITHUB_REF_TYPE}" "${GITHUB_REF_NAME}" "${GITHUB_SHA}" >> "${GITHUB_ENV}"
           cat "${GITHUB_ENV}" | grep -E '^(VERSION|NUMBERS)='
 
-      # una etiqueta de versión tiene que ser la versión del motor, la de CMakeLists.txt
-      - name: La etiqueta es la versión del motor
+      # a version tag has to be the engine's version, the one in CMakeLists.txt
+      - name: The tag is the engine's version
         if: github.ref_type == 'tag'
         run: |
           engine=$(grep -m1 -oE 'maxpack VERSION [0-9]+[.][0-9]+[.][0-9]+' CMakeLists.txt | cut -d' ' -f3)
-          test "${NUMBERS}" = "${engine}" || { echo "la etiqueta dice ${VERSION} y el motor ${engine}" >&2; exit 1; }
-          test "${VERSION}" = "${NUMBERS}" || echo "(versión previa ${VERSION} del motor ${engine})"
+          test "${NUMBERS}" = "${engine}" || { echo "the tag says ${VERSION} and the engine ${engine}" >&2; exit 1; }
+          test "${VERSION}" = "${NUMBERS}" || echo "(pre-release ${VERSION} of engine ${engine})"
 
-      - name: Motor
+      - name: Engine
         run: |
           if [ "${RUNNER_OS}" = "Windows" ]; then
             cmake -B build
@@ -110,29 +110,29 @@ jobs:
           echo "MAXPACK_CORE=${core}" >> "${GITHUB_ENV}"
           "${core}" --version
 
-      - name: Imágenes de prueba
+      - name: Test images
         run: |
           python -I tests/tools/make_exfat.py --out build/fixtures
           echo "MP_FIXTURES=${GITHUB_WORKSPACE}/build/fixtures" >> "${GITHUB_ENV}"
 
-      # el icono, el manifiesto y la versión del programa de Windows
-      - name: Recursos de Windows
+      # the icon, the manifest and the version of the Windows program
+      - name: Windows resources
         if: runner.os == 'Windows'
         working-directory: gui
         run: |
           go run github.com/tc-hib/go-winres@v0.3.3 make --in build/winres/winres.json --arch amd64 \
             --file-version "${NUMBERS}.0" --product-version "${VERSION}"
 
-      # sin -H windowsgui: la ventana esconde su consola (HideConsole) y, al reenviar a maxpack-core,
-      # conserva la entrada y la salida de la línea de comandos
-      - name: Ventana
+      # without -H windowsgui: the window hides its console (HideConsole) and, when forwarding to maxpack-core,
+      # keeps the command line's input and output
+      - name: Window
         working-directory: gui
         env:
           CGO_ENABLED: "1"
         run: |
           tags="desktop,production"
           if [ "${RUNNER_OS}" = "macOS" ]; then
-            # los diálogos de archivos de Wails usan UTType, un framework que Wails no enlaza solo
+            # Wails's file dialogs use UTType, a framework that Wails does not link by itself
             export CGO_LDFLAGS="-framework UniformTypeIdentifiers"
           fi
           if [ "${RUNNER_OS}" = "Linux" ]; then
@@ -147,26 +147,26 @@ jobs:
           go vet -tags "${tags}" ./...
           go test -tags "${tags}" ./...
           go build -tags "${tags}" -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o "out/${exe}" .
-          # el motor, junto a la ventana
+          # the engine, next to the window
           cp "${MAXPACK_CORE}" "out/${core}"
           ls -l out
           "./out/${exe}" --version
 
-      - name: Paquete de Windows
+      - name: Windows package
         if: runner.os == 'Windows'
         working-directory: gui
         run: |
           mkdir -p ../dist
-          # el zip portable: la ventana, el motor y la carpeta settings, donde guarda todo lo suyo
+          # the portable zip: the window, the engine and the settings folder, where it keeps everything of its own
           mkdir -p out/portable/MaxPack/settings
           cp out/MaxPack.exe out/maxpack-core.exe ../LICENSE out/portable/MaxPack/
           cp ../THIRD_PARTY_NOTICES out/portable/MaxPack/THIRD_PARTY_NOTICES.txt
-          printf '%s\r\n' "MaxPack guarda aqui sus ajustes, el tamano y la posicion de la ventana y los datos de su pagina." "Si borras esta carpeta, MaxPack guarda lo suyo en tu carpeta de usuario." > out/portable/MaxPack/settings/LEEME.txt
+          printf '%s\r\n' "MaxPack keeps its settings, the window's size and position and its page's data here." "If you delete this folder, MaxPack keeps its own in your user folder." > out/portable/MaxPack/settings/README.txt
           pwsh -NoProfile -Command "Compress-Archive -Path out/portable/MaxPack -DestinationPath ../dist/maxpack-${{ matrix.name }}-portable.zip"
           ls -l ../dist
 
-      # el instalador (NSIS)
-      - name: Instalador de Windows
+      # the installer (NSIS)
+      - name: Windows installer
         if: runner.os == 'Windows'
         shell: pwsh
         working-directory: gui
@@ -182,12 +182,12 @@ jobs:
             "/DLICENSE=$((Resolve-Path ../LICENSE).Path)" "/DNOTICES=$((Resolve-Path ../THIRD_PARTY_NOTICES).Path)" "/DICON=$((Resolve-Path build/appicon.ico).Path)" `
             "/DOUTFILE=$dist\maxpack-${{ matrix.name }}-setup.exe" `
             build/windows/installer/maxpack.nsi
-          if ($LASTEXITCODE -ne 0) { throw "makensis falló" }
+          if ($LASTEXITCODE -ne 0) { throw "makensis failed" }
           Get-ChildItem $dist
 
-      # el instalador pone MaxPack en la carpeta dada y en «Aplicaciones instaladas», la ventana
-      # reenvía al motor y comprime una imagen, y el desinstalador lo quita todo; todo en silencio
-      - name: Probar el instalador
+      # the installer puts MaxPack in the given folder and in "Installed apps", the window
+      # forwards to the engine and compresses an image, and the uninstaller removes everything; all silently
+      - name: Test the installer
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
@@ -196,26 +196,26 @@ jobs:
           Start-Process -FilePath $setup.FullName -ArgumentList "/S", "/D=$folder" -Wait
           $key = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\MaxPack"
           foreach ($file in "MaxPack.exe", "maxpack-core.exe", "LICENSE.txt", "THIRD_PARTY_NOTICES.txt", "uninstall.exe") {
-            if (-not (Test-Path "$folder\$file")) { throw "falta $file" }
+            if (-not (Test-Path "$folder\$file")) { throw "missing $file" }
           }
-          if ((Get-ItemProperty $key).InstallLocation -ne $folder) { throw "no sale en Aplicaciones instaladas" }
+          if ((Get-ItemProperty $key).InstallLocation -ne $folder) { throw "does not appear in Installed apps" }
           & "$folder\MaxPack.exe" --version
           if ($LASTEXITCODE -ne 0) { throw "--version" }
           $out = Join-Path $env:RUNNER_TEMP "probe.p5z"
           & "$folder\MaxPack.exe" pack "$env:MP_FIXTURES\basic.exfat" -o $out --p5z
           if ($LASTEXITCODE -ne 0 -or -not (Test-Path $out)) { throw "pack" }
           Start-Process -FilePath "$folder\uninstall.exe" -ArgumentList "/S", "_?=$folder" -Wait
-          if (Test-Path "$folder\MaxPack.exe") { throw "no se desinstaló" }
-          if (Test-Path $key) { throw "sigue en Aplicaciones instaladas" }
+          if (Test-Path "$folder\MaxPack.exe") { throw "was not uninstalled" }
+          if (Test-Path $key) { throw "is still in Installed apps" }
 
-      - name: Paquete de macOS
+      - name: macOS package
         if: runner.os == 'macOS'
         run: |
           mkdir -p dist
           bash gui/build/macos/macos_app.sh gui/out/maxpack gui/out/maxpack-core "${VERSION}" gui/out gui/build/appicon.png
           cp LICENSE THIRD_PARTY_NOTICES gui/out/
           tar -czf "dist/maxpack-${{ matrix.name }}.tar.gz" -C gui/out MaxPack.app LICENSE THIRD_PARTY_NOTICES
-          # el disco para arrastrar MaxPack a Aplicaciones, sin ningún script
+          # the disk image for dragging MaxPack to Applications, without any script
           stage="$(mktemp -d)"
           ditto gui/out/MaxPack.app "${stage}/MaxPack.app"
           ln -s /Applications "${stage}/Applications"
@@ -223,9 +223,9 @@ jobs:
           hdiutil create -volname MaxPack -srcfolder "${stage}" -ov -format UDZO "dist/maxpack-${{ matrix.name }}.dmg"
           ls -l dist
 
-      # el disco se abre con MaxPack.app y el enlace a Aplicaciones; la app copiada de él, como
-      # hace el Finder al arrastrarla, conserva la firma, reenvía al motor y comprime una imagen
-      - name: Probar el disco de macOS
+      # the disk image opens with MaxPack.app and the link to Applications; the app copied from it, as
+      # Finder does when dragging it, keeps its signature, forwards to the engine and compresses an image
+      - name: Test the macOS disk image
         if: runner.os == 'macOS'
         run: |
           image="dist/maxpack-${{ matrix.name }}.dmg"
@@ -243,7 +243,7 @@ jobs:
           test -s "${apps}/probe.p5z"
           rm -rf "${apps}/MaxPack.app"
 
-      - name: Paquete de Linux
+      - name: Linux package
         if: runner.os == 'Linux'
         run: |
           mkdir -p dist gui/out/MaxPack
@@ -252,8 +252,8 @@ jobs:
           tar -czf "dist/maxpack-${{ matrix.name }}.tar.gz" -C gui/out MaxPack
           ls -l dist
 
-      # install.sh pone la ventana, el motor, el icono y la entrada del menú en su sitio, y los quita
-      - name: Probar la instalación en Linux
+      # install.sh puts the window, the engine, the icon and the menu entry in place, and removes them
+      - name: Test the install on Linux
         if: runner.os == 'Linux'
         run: |
           desktop-file-validate gui/build/linux/maxpack.desktop
@@ -272,15 +272,15 @@ jobs:
           test ! -e "$home/.local/lib/maxpack"
           test ! -e "$home/.local/share/applications/maxpack.desktop"
 
-      # los paquetes conservan los permisos de los archivos, que los artefactos pierden
+      # the packages keep the files' permissions, which artifacts lose
       - uses: actions/upload-artifact@v4
         with:
           name: maxpack-${{ matrix.name }}
           path: dist/*
           if-no-files-found: error
 
-  # Con una etiqueta v*: todos los paquetes (de los jobs de arriba) y su SHA256SUMS en un release en
-  # borrador, que se revisa y se publica a mano en GitHub.
+  # With a v* tag: all the packages (from the jobs above) and their SHA256SUMS in a draft
+  # release, which is reviewed and published by hand on GitHub.
   release:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [linux, windows, gui]
@@ -294,18 +294,18 @@ jobs:
           path: artifacts
           pattern: maxpack-*
           merge-multiple: true
-      - name: Paquetes y sumas
+      - name: Packages and sums
         run: |
           ls -l artifacts
-          # los cinco paquetes de cada versión; si falta uno, no hay release
+          # the five packages of each version; if one is missing, there is no release
           for f in maxpack-windows-x64-setup.exe maxpack-windows-x64-portable.zip maxpack-macos-apple-silicon.dmg maxpack-macos-apple-silicon.tar.gz maxpack-macos-intel.dmg maxpack-macos-intel.tar.gz maxpack-linux-x64.tar.gz; do
-            test -s "artifacts/${f}" || { echo "falta ${f}" >&2; exit 1; }
+            test -s "artifacts/${f}" || { echo "missing ${f}" >&2; exit 1; }
           done
           cd artifacts
           sha256sum maxpack-* > SHA256SUMS
           sha256sum -c SHA256SUMS
           cat SHA256SUMS
-      - name: Borrador de release
+      - name: Draft release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

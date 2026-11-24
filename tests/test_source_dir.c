@@ -9,7 +9,7 @@
 
 MP_TEST(dir_entries_sorted) {
     mp_err e = {{0}};
-    // "c/x" y no "b/x": en NTFS y APFS la carpeta "b" y el archivo "B" chocarían.
+    // "c/x" and not "b/x": on NTFS and APFS the folder "b" and the file "B" would clash.
     MP_CHECK(mp_make_dirs(TMP "/sorted/c", &e) == 0);
     MP_CHECK(mp_write_file(TMP "/sorted/c/x", "12345", 5, &e) == 0);
     MP_CHECK(mp_write_file(TMP "/sorted/a", "1", 1, &e) == 0);
@@ -74,7 +74,7 @@ MP_TEST(open_missing) {
     mp_err e = {{0}};
     mp_source *s = NULL;
     MP_CHECK(mp_source_open(TMP "/no-existe.exfat", &s, &e) == -1);
-    MP_CHECK_CONTAINS(e.msg, "no existe");
+    MP_CHECK_CONTAINS(e.msg, "does not exist");
 }
 
 int main(void) {

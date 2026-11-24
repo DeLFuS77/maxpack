@@ -13,7 +13,7 @@
 #define TMP MP_TEST_TMP "/pack"
 #define BASIC MP_FIXTURES_DIR "/basic.exfat"
 
-// ---- utilidades de prueba ----------------------------------------------------------------
+// ---- test utilities ----------------------------------------------------------------
 
 typedef struct {
     char **v;
@@ -58,8 +58,8 @@ static uint8_t *slurp(const char *path, size_t *len) {
     return b;
 }
 
-// Borra el contenido de una carpeta de salida de las pruebas (archivos y subcarpetas, rutas
-// ASCII dentro de MP_TEST_TMP), para empezar limpio.
+// Deletes the contents of a test output folder (files and subfolders, ASCII
+// paths inside MP_TEST_TMP), to start clean.
 #ifdef _WIN32
 #include <direct.h>
 #define rmdir_ _rmdir
@@ -87,10 +87,10 @@ static int rm_cb(void *ctx, const char *rel, int is_dir, uint64_t size, int64_t 
 }
 
 static void clear_dir(const char *dir) {
-    if (strncmp(dir, MP_TEST_TMP, strlen(MP_TEST_TMP)) != 0) return;   // nunca fuera de las pruebas
+    if (strncmp(dir, MP_TEST_TMP, strlen(MP_TEST_TMP)) != 0) return;   // never outside the tests
     rmctx c = {dir, {0}};
     mp_dir_walk(dir, rm_cb, &c, NULL);
-    for (size_t i = c.dirs.n; i-- > 0;) rmdir_(c.dirs.v[i]);   // de dentro hacia fuera
+    for (size_t i = c.dirs.n; i-- > 0;) rmdir_(c.dirs.v[i]);   // from the inside out
     free_list(&c.dirs);
 }
 
@@ -122,7 +122,7 @@ static mp_zpk *open_zpk(const char *dir, mp_zpk_volsrc *vs, uint8_t **index) {
     return z;
 }
 
-// ---- pruebas ----------------------------------------------------------------------------------
+// ---- tests ----------------------------------------------------------------------------------
 
 MP_TEST(pack_folder_roundtrip) {
     mp_pack_opts o = quiet(4);
@@ -151,7 +151,7 @@ MP_TEST(pack_folder_roundtrip) {
             uint64_t size = 0;
             int64_t mt = 0;
             if (!b || len != en->size || memcmp(a, b, len) || mp_stat(p, &size, &mt) != 0 || mt != en->mtime)
-                MP_FAIL_("suelto distinto (contenido o fecha): %s", en->path);
+                MP_FAIL_("loose file differs (content or date): %s", en->path);
             loose++;
         } else {
             size_t k = 0;
@@ -159,7 +159,7 @@ MP_TEST(pack_folder_roundtrip) {
             b = malloc((size_t)en->size + 1);
             if (k == mp_zpk_count(z) || mp_zpk_read_file(z, k, 0, b, (size_t)en->size, &e) != 0 ||
                 memcmp(a, b, (size_t)en->size))
-                MP_FAIL_("empaquetado distinto: %s", en->path);
+                MP_FAIL_("packed file differs: %s", en->path);
             packed++;
         }
         free(a);
@@ -193,7 +193,7 @@ static int same_trees(const char *a, const char *b) {
         snprintf(pb, sizeof pb, "%s/%s", b, lb.v[i]);
         uint8_t *ba = slurp(pa, &x), *bb = slurp(pb, &y);
         if (same) same = ba && bb && x == y && !memcmp(ba, bb, x);
-        if (!same) MP_FAIL_("distinto: %s", la.v[i]);
+        if (!same) MP_FAIL_("different: %s", la.v[i]);
         free(ba);
         free(bb);
     }
@@ -234,11 +234,11 @@ MP_TEST(pack_refuses_case_dups) {
     mp_err e = {{0}};
     clear_dir(TMP "/casedup");
     MP_CHECK(pack_to(MP_FIXTURES_DIR "/casedup.exfat", TMP "/casedup", &o, &r, &e) == -1);
-    MP_CHECK_CONTAINS(e.msg, "mayúsculas");
-    MP_CHECK(mp_dir_is_empty(TMP "/casedup") != 0);   // no se ha escrito nada: vacía o ni creada
+    MP_CHECK_CONTAINS(e.msg, "case");
+    MP_CHECK(mp_dir_is_empty(TMP "/casedup") != 0);   // nothing has been written: empty or not even created
 }
 
-// Con una carpeta de salida que no existía, un origen rechazado no la crea.
+// With an output folder that did not exist, a rejected source does not create it.
 MP_TEST(pack_dir_not_created_on_refusal) {
     mp_pack_opts o = quiet(2);
     mp_pack_result r;
@@ -258,7 +258,7 @@ MP_TEST(pack_dir_not_created_on_refusal) {
     MP_CHECK(mp_path_kind(dir) == 0);
 }
 
-// Un volumen de packs suelto sin su índice chocaría con los volúmenes nuevos: se rechaza antes.
+// A loose pack volume without its index would clash with the new volumes: it is rejected beforehand.
 MP_TEST(pack_refuses_stale_volume) {
     mp_err e = {{0}};
     MP_CHECK(mp_make_dirs(TMP "/stale_src", &e) == 0);
@@ -268,7 +268,7 @@ MP_TEST(pack_refuses_stale_volume) {
     mp_pack_opts o = quiet(2);
     mp_pack_result r;
     MP_CHECK(pack_to(TMP "/stale_src", TMP "/stale_out", &o, &r, &e) == -1);
-    MP_CHECK_CONTAINS(e.msg, "ya está empaquetado");
+    MP_CHECK_CONTAINS(e.msg, "already packed");
 }
 
 MP_TEST(pack_refuses_packed_source) {
@@ -276,7 +276,7 @@ MP_TEST(pack_refuses_packed_source) {
     mp_pack_result r;
     mp_err e = {{0}};
     MP_CHECK(pack_to(TMP "/basic", TMP "/repack", &o, &r, &e) == -1);
-    MP_CHECK_CONTAINS(e.msg, "ya está empaquetado");
+    MP_CHECK_CONTAINS(e.msg, "already packed");
 }
 
 MP_TEST(pack_replaces_ampr_files) {
@@ -313,7 +313,7 @@ MP_TEST(pack_replaces_ampr_files) {
     MP_CHECK(!has_old && rt_ok && has_data);
     mp_idx3_entries_free(v, m);
     free(idx);
-    // Sin --runtime: se queda el antiguo y se avisa.
+    // Without --runtime: the old one stays and a warning is given.
     o.runtime = NULL;
     MP_CHECK(pack_to(src, TMP "/out_ampr2", &o, &r, &e) == 0);
     MP_CHECK(r.runtime_without_zstd == 1);
@@ -326,7 +326,7 @@ MP_TEST(pack_many_small_files) {
     char p[512];
     uint8_t buf[3000];
     strlist have = list_dir(src);
-    if (have.n != 20001) {   // se genera una vez (eboot.bin + 20.000 archivos)
+    if (have.n != 20001) {   // generated once (eboot.bin + 20,000 files)
         for (int d = 0; d < 200; d++) {
             snprintf(p, sizeof p, "%s/d%03d", src, d);
             mp_make_dirs(p, &e);
@@ -359,14 +359,14 @@ MP_TEST(pack_many_small_files) {
     uint8_t *index = NULL;
     mp_zpk *z = open_zpk(TMP "/many_out", &vs, &index);
     MP_CHECK(z && mp_zpk_count(z) == 20000);
-    for (size_t i = 0; z && i < mp_zpk_count(z); i += 97) {   // una muestra repartida
+    for (size_t i = 0; z && i < mp_zpk_count(z); i += 97) {   // a spread-out sample
         uint64_t n = mp_zpk_size(z, i);
         uint8_t a[3000], b[3000];
         snprintf(p, sizeof p, "%s/%s", src, mp_zpk_path(z, i));
         size_t got = 0;
         uint8_t *orig = slurp(p, &got);
         if (!orig || got != n || mp_zpk_read_file(z, i, 0, a, (size_t)n, &e) != 0 || memcmp(a, orig, (size_t)n))
-            MP_FAIL_("distinto: %s", mp_zpk_path(z, i));
+            MP_FAIL_("different: %s", mp_zpk_path(z, i));
         (void)b;
         free(orig);
     }

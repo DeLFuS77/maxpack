@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Mete la ventana y el motor en una app de macOS, MaxPack.app, para abrirla desde el Finder; la
-# línea de comandos es MaxPack.app/Contents/MacOS/maxpack. La app va firmada "ad hoc", como pide
-# macOS en los chips de Apple: no está notarizada, así que la primera vez se abre con clic
-# derecho, Abrir. El icono (.icns) sale del PNG con sips e iconutil.
-#   macos_app.sh <ventana> <maxpack-core> <versión> <carpeta de la app> <appicon.png>
+# Puts the window and the engine in a macOS app, MaxPack.app, to open it from the Finder; the
+# command line is MaxPack.app/Contents/MacOS/maxpack. The app is signed "ad hoc", as
+# macOS requires on Apple chips: it is not notarized, so the first time it is opened with
+# right-click, Open. The icon (.icns) comes from the PNG with sips and iconutil.
+#   macos_app.sh <window> <maxpack-core> <version> <app folder> <appicon.png>
 set -euo pipefail
 
 program="$1"
@@ -27,7 +27,7 @@ for size in 16 32 128 256 512; do
 done
 iconutil -c icns "${iconset}" -o "${app}/Contents/Resources/icon.icns"
 
-# de una etiqueta v1.2.3 (o 1.2.3) salen la versión 1.2.3 y los números 1.2.3; si no, 0.0.0
+# a tag v1.2.3 (or 1.2.3) gives version 1.2.3 and numbers 1.2.3; otherwise, 0.0.0
 version="${version#v}"
 numbers="0.0.0"
 if [[ "${version}" =~ ^([0-9]+\.[0-9]+\.[0-9]+)(-[0-9A-Za-z.-]+)?$ ]]; then
@@ -51,13 +51,13 @@ cat > "${app}/Contents/Info.plist" <<PLIST
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
-			<key>CFBundleTypeName</key><string>Carpeta</string>
+			<key>CFBundleTypeName</key><string>Folder</string>
 			<key>CFBundleTypeRole</key><string>Viewer</string>
 			<key>LSHandlerRank</key><string>Alternate</string>
 			<key>LSItemContentTypes</key><array><string>public.folder</string></array>
 		</dict>
 		<dict>
-			<key>CFBundleTypeName</key><string>Juego de PS5</string>
+			<key>CFBundleTypeName</key><string>PS5 game</string>
 			<key>CFBundleTypeRole</key><string>Viewer</string>
 			<key>LSHandlerRank</key><string>Alternate</string>
 			<key>CFBundleTypeExtensions</key><array><string>p5z</string><string>exfat</string></array>

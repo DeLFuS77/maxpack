@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// mp_api_call: la API del instalador llamada sin servidor HTTP, y POST /api/quit.
+// mp_api_call: the installer's API called without an HTTP server, and POST /api/quit.
 #include "mp_api.h"
 #include "mp_api_call.h"
 #include "mp_fixture.h"
@@ -14,7 +14,7 @@
 
 static const char *drives[] = {USB};
 
-// ---- ShadowMountPlus falso --------------------------------------------------------------------
+// ---- fake ShadowMountPlus --------------------------------------------------------------------
 
 static mp_http_server *smp_srv;
 static mp_mutex *smp_mu;
@@ -62,7 +62,7 @@ static void setup(void) {
     smp_mu = mp_mutex_new();
     smp_srv = mp_http_start("127.0.0.1", 0, smp_handler, NULL, &e);
     if (!smp_srv) {
-        MP_FAIL_("ShadowMountPlus falso: %s", e.msg);
+        MP_FAIL_("fake ShadowMountPlus: %s", e.msg);
         return;
     }
     mp_inst_env env;
@@ -130,7 +130,7 @@ MP_TEST(bridge_install_flow_uses_smp) {
 MP_TEST(bridge_quit_loopback_only) {
     setup();
     mp_api_out o;
-    // Sin callback puesto, nadie atiende la petición.
+    // With no callback set, nobody handles the request.
     MP_CHECK(do_call("POST", "/api/quit", "127.0.0.1", "application/json", "{}", 1, &o) == 0);
     MP_CHECK_EQ_U64(o.status, 403);
     mp_api_out_free(&o);

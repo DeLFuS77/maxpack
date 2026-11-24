@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Instalador: instalar un .p5z como carpeta lista para la consola.
+// Installer: install a .p5z as a folder ready for the console.
 #include "mp_fixture.h"
 #include "mp_inst.h"
 #include "mp_p5z_internal.h"

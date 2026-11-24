@@ -62,7 +62,7 @@ const state = {
   job: null,
   busy: false,
   cancelling: false,
-  // the runtime of ampr-emu-ng is asked once: after "Seguir sin él" the window does not insist
+  // the runtime of ampr-emu-ng is asked once: after "Go on without it" (runtimeWithout) the window does not insist
   askedRuntime: false,
 };
 

@@ -30,14 +30,14 @@ MP_TEST(idx3_two_rows) {
     MP_CHECK_EQ_U64(rd32(d + 40), 16);
     MP_CHECK_EQ_U64(rd32(d + 44), 4);
     MP_CHECK_EQ_U64(n, 128 + 4 * 16);
-    // Orden por clave sin mayúsculas: a.bin primero.
+    // Order by case-insensitive key: a.bin first.
     MP_CHECK_EQ_U64(rd32(d + 48), 0);
     MP_CHECK_EQ_U64(rd32(d + 52), 11);
     MP_CHECK_EQ_U64(rd64(d + 56), 7);
     MP_CHECK_EQ_U64(rd64(d + 64), 200);
     MP_CHECK_EQ_U64(rd32(d + 72), 12);
     MP_CHECK(memcmp(d + 96, "/app0/a.bin\0/app0/B.bin\0", 24) == 0);
-    // Cada fila está en su slot (h & 3) o en el siguiente libre.
+    // Each row is in its slot (h & 3) or in the next free one.
     const char *paths[2] = {"/app0/a.bin", "/app0/B.bin"};
     for (int r = 0; r < 2; r++) {
         uint64_t h = mp_idx3_path_hash(paths[r]);
@@ -57,7 +57,7 @@ MP_TEST(idx3_rejects_case_dup) {
     size_t n = 0;
     mp_err e = {{0}};
     MP_CHECK(mp_idx3_build(rows, 2, &d, &n, &e) == -1);
-    MP_CHECK_CONTAINS(e.msg, "mayúsculas");
+    MP_CHECK_CONTAINS(e.msg, "case");
     mp_idx3_row bad[1] = {{"a/../b", 1, 0}};
     MP_CHECK(mp_idx3_build(bad, 1, &d, &n, &e) == -1);
 }
@@ -100,17 +100,17 @@ MP_TEST(idx3_parse_roundtrip) {
                 matched++;
     MP_CHECK_EQ_U64(matched, n);
     mp_err e2 = {{0}};
-    d[60] ^= 0xFF;   // estropear un registro
+    d[60] ^= 0xFF;   // corrupt a record
     mp_idx3_entry *v2 = NULL;
     size_t m2 = 0;
-    MP_CHECK(mp_idx3_parse(d, len - 16, &v2, &m2, &e2) == -1);   // además, recortado
+    MP_CHECK(mp_idx3_parse(d, len - 16, &v2, &m2, &e2) == -1);   // and, in addition, truncated
     mp_idx3_entries_free(v, m);
     free(d);
     free(rows);
     mp_source_close(s);
 }
 
-// Deja el índice y su lista en MP_TEST_TMP/idx3 para que check_idx3.py los compare con Python.
+// Leaves the index and its list in MP_TEST_TMP/idx3 for check_idx3.py to compare with Python.
 MP_TEST(idx3_writes_fixture) {
     mp_source *s = NULL;
     mp_idx3_row *rows = NULL;
@@ -152,7 +152,7 @@ MP_TEST(idx3_find_case_insensitive) {
         bad += k < 0 || strcmp(v[k].app0_path + 6, rows[i].path) != 0;
     }
     MP_CHECK_EQ_U64(bad, 0);
-    MP_CHECK(mp_idx3_find(v, m, "EBOOT.BIN") >= 0);   // sin distinguir mayúsculas
+    MP_CHECK(mp_idx3_find(v, m, "EBOOT.BIN") >= 0);   // case-insensitive
     MP_CHECK(mp_idx3_find(v, m, "no/existe") == -1);
     mp_idx3_entries_free(v, m);
     free(d);
@@ -252,14 +252,14 @@ MP_TEST(idx3_set_row_bad_input) {
     free(d);
 }
 
-// Un índice de otro generador (el propio de un paquete, p. ej. Crisis Core) puede dejar la tabla de
-// slots en un offset múltiplo de 8 pero no de 16. Lo único que exige el formato es que quepa tras las
-// rutas y que cada slot (16 B) esté alineado a 8.
+// An index from another generator (a package's own, e.g. Crisis Core) may leave the table of
+// slots at an offset that is a multiple of 8 but not of 16. All the format requires is that it fits after the
+// paths and that each slot (16 B) is aligned to 8.
 static void put64(uint8_t *p, uint64_t v) {
     for (int i = 0; i < 8; i++) p[i] = (uint8_t)(v >> (8 * i));
 }
 
-// Copia de idx con la tabla de slots 'pad' bytes más allá (y la cabecera apuntando ahí).
+// Copy of idx with the slot table 'pad' bytes further on (and the header pointing there).
 static uint8_t *shift_slots(const uint8_t *idx, size_t len, size_t pad, size_t *out_len) {
     uint64_t hash_off = rd64(idx + 32);
     uint8_t *d = calloc(1, len + pad);
@@ -292,7 +292,7 @@ MP_TEST(idx3_parse_accepts_8_aligned_slots) {
         MP_CHECK(mp_idx3_find(v, m, "DIR/C.BIN") == 2);
     }
     mp_idx3_entries_free(v, m);
-    // cambiar una fila lo reescribe en el formato propio (alineado a 16)
+    // changing a row rewrites it in its own format (aligned to 16)
     uint8_t *w = NULL;
     size_t wl = 0;
     memset(&e, 0, sizeof e);
@@ -308,7 +308,7 @@ MP_TEST(idx3_parse_accepts_8_aligned_slots) {
     free(w);
     free(a8);
 
-    // sin alinear a 8, no: los slots llevan u64
+    // not aligned to 8, no: the slots carry u64
     uint8_t *a4 = shift_slots(d, n, 4, &n8);
     memset(&e, 0, sizeof e);
     MP_CHECK(mp_idx3_parse(a4, n8, &v, &m, &e) == -1);

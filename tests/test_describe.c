@@ -8,7 +8,7 @@
 
 #define TMP MP_TEST_TMP "/describe"
 
-// Volúmenes de los packs de una carpeta: sus ampr_zstd-NNN.pak.
+// Volumes of a folder's packs: its ampr_zstd-NNN.pak files.
 static uint64_t pak_count(const char *dir) {
     mpt_list l = mpt_list_dir(dir);
     uint64_t n = 0;
@@ -32,7 +32,7 @@ MP_TEST(describe_kinds) {
     mp_describe d;
     mpt_clear(TMP);
 
-    // Imagen exFAT.
+    // exFAT image.
     MP_CHECK(mp_describe_path(MPT_BASIC, &d, &e) == 0);
     MP_CHECK_STR(d.kind, "exfat");
     MP_CHECK_STR(d.title_id, "TEST00001");
@@ -44,7 +44,7 @@ MP_TEST(describe_kinds) {
     MP_CHECK_EQ_U64(d.packed_files, 0);
     MP_CHECK_EQ_U64(d.volumes, 0);
 
-    // Carpeta de unpack --original: lo mismo.
+    // unpack --original folder: the same.
     mpt_pack(MPT_BASIC, TMP "/a.p5z", 1, NULL);
     mp_p5z *p = open_p5z(TMP "/a.p5z");
     if (!p) return;
@@ -59,7 +59,7 @@ MP_TEST(describe_kinds) {
     MP_CHECK_EQ_U64(f.files, d.files);
     MP_CHECK(f.packed == 0 && f.packed_files == 0 && f.volumes == 0);
 
-    // .p5z con runtime que lee zstd.
+    // .p5z with a runtime that reads zstd.
     uint8_t rt[256];
     for (size_t i = 0; i < sizeof rt; i++) rt[i] = (uint8_t)(i * 7 + 3);
     memcpy(rt + 40, "AMPRZPK1", 8);
@@ -78,7 +78,7 @@ MP_TEST(describe_kinds) {
     MP_CHECK(mp_unpack_folder(p, TMP "/fold", 2, 0, &e) == 0);
     mp_p5z_close(p);
     MP_CHECK_EQ_U64(z.install_size, mpt_dir_size(TMP "/fold"));
-    // los packs: los archivos que el manifiesto marca empaquetados, y los volúmenes que deja unpack
+    // the packs: the files the manifest marks as packed, and the volumes that unpack leaves
     p = open_p5z(TMP "/b.p5z");
     if (!p) return;
     const mp_pack_manifest *m = mp_p5z_manifest(p);
@@ -97,7 +97,7 @@ MP_TEST(describe_kinds) {
         fclose(fp);
     }
 
-    // Carpeta ya empaquetada (pack --folder): packed y runtime nuevo.
+    // Already packed folder (pack --folder): packed and new runtime.
     mpt_pack(MPT_BASIC, TMP "/packed", 0, TMP "/R.sprx");
     mp_describe g;
     MP_CHECK(mp_describe_path(TMP "/packed", &g, &e) == 0);
@@ -106,7 +106,7 @@ MP_TEST(describe_kinds) {
     MP_CHECK_EQ_U64(g.packed_files, z.packed_files);
     MP_CHECK_EQ_U64(g.volumes, pak_count(TMP "/packed"));
 
-    // No existe.
+    // Does not exist.
     MP_CHECK(mp_describe_path(TMP "/nada", &d, &e) != 0 && e.msg[0]);
 }
 
@@ -173,7 +173,7 @@ MP_TEST(describe_default_language) {
     MP_CHECK(mp_describe_path(TMP "/lang", &d, &e) == 0);
     MP_CHECK_STR(d.name, "Espa\xc3\xb1ol");
     MP_CHECK_STR(d.title_id, "LANG00001");
-    // pack guarda el mismo nombre en el manifiesto del .p5z.
+    // pack stores the same name in the .p5z's manifest.
     mpt_pack(TMP "/lang", TMP "/lang.p5z", 1, NULL);
     mp_p5z *p = open_p5z(TMP "/lang.p5z");
     if (!p) return;
@@ -182,7 +182,7 @@ MP_TEST(describe_default_language) {
     mp_describe z;
     MP_CHECK(mp_describe_path(TMP "/lang.p5z", &z, &e) == 0);
     MP_CHECK_STR(z.name, d.name);
-    // Sin idioma por defecto: el de primer nivel.
+    // Without a default language: the top-level one.
     mpt_put_text(TMP "/lang/sce_sys/param.json",
                  "{\"titleId\":\"LANG00001\",\"titleName\":\"Top\",\"localizedParameters\":{\"en-US\":{\"titleName\":\"English\"}}}");
     MP_CHECK(mp_describe_path(TMP "/lang", &d, &e) == 0);
@@ -193,19 +193,19 @@ MP_TEST(describe_name_truncated_on_boundary) {
     mp_err e = {{0}};
     mp_describe d;
     char json[1024] = "{\"titleId\":\"LONG00001\",\"titleName\":\"";
-    for (int i = 0; i < 100; i++) strcat(json, "\xc3\xa9");   // 200 bytes; caben 127
+    for (int i = 0; i < 100; i++) strcat(json, "\xc3\xa9");   // 200 bytes; 127 fit
     strcat(json, "\"}");
     mpt_clear(TMP "/long");
     mpt_put_text(TMP "/long/sce_sys/param.json", json);
     MP_CHECK(mp_describe_path(TMP "/long", &d, &e) == 0);
     size_t n = strlen(d.name);
-    MP_CHECK_EQ_U64(n, 126);   // 63 caracteres de 2 bytes: no parte el 64.º
+    MP_CHECK_EQ_U64(n, 126);   // 63 characters of 2 bytes: it does not split the 64th
     MP_CHECK((unsigned char)d.name[n - 1] == 0xa9 && (unsigned char)d.name[n - 2] == 0xc3);
 }
 
-// Un param.json con BOM de UTF-8, o con espacios y NUL al final (como sale de algunas
-// herramientas), se lee igual: describe da su TITLE_ID y pack lo guarda en el .p5z, que sin él
-// el instalador rechaza.
+// A param.json with a UTF-8 BOM, or with trailing spaces and NULs (as some
+// tools produce), reads the same: describe gives its TITLE_ID and pack stores it in the .p5z, which without it
+// the installer rejects.
 MP_TEST(describe_param_bom_and_padding) {
     static const char body[] = "{\"titleId\":\"BOMS00001\",\"contentVersion\":\"01.000.000\",\"titleName\":\"Con BOM\"}";
     struct {
@@ -243,7 +243,7 @@ MP_TEST(describe_param_bom_and_padding) {
         mp_p5z *p = open_p5z(p5z);
         if (!p) continue;
         if (strcmp(mp_p5z_manifest(p)->title_id, "BOMS00001") || strcmp(mp_p5z_manifest(p)->content_version, "01.000.000"))
-            MP_FAIL_("%s: el .p5z guarda \"%s\"", cases[i].name, mp_p5z_manifest(p)->title_id);
+            MP_FAIL_("%s: the .p5z stores \"%s\"", cases[i].name, mp_p5z_manifest(p)->title_id);
         mp_p5z_close(p);
     }
 }

@@ -1,8 +1,8 @@
 #!/bin/sh
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Instala MaxPack para este usuario: la ventana y el motor en ~/.local/lib/maxpack (juntos, porque
-# la ventana busca maxpack-core a su lado), con un enlace en ~/.local/bin, y su icono y su entrada
-# en el menú de aplicaciones. Con --uninstall lo quita todo.
+# Installs MaxPack for this user: the window and the engine in ~/.local/lib/maxpack (together, because
+# the window looks for maxpack-core next to it), with a link in ~/.local/bin, and its icon and its entry
+# in the applications menu. With --uninstall it removes everything.
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -21,7 +21,7 @@ if [ "${1:-}" = "--uninstall" ]; then
 	rm -f "$bin/maxpack" "$icon" "$entry"
 	rm -rf "$lib"
 	refresh
-	echo "MaxPack está desinstalado."
+	echo "MaxPack is uninstalled."
 	exit 0
 fi
 
@@ -30,12 +30,12 @@ install -m 755 "$here/maxpack" "$lib/maxpack"
 install -m 755 "$here/maxpack-core" "$lib/maxpack-core"
 install -m 644 "$here/maxpack.png" "$icon"
 ln -sf "$lib/maxpack" "$bin/maxpack"
-# la entrada abre el programa donde quedó, también si ~/.local/bin no está en el PATH
+# the entry opens the program where it ended up, also if ~/.local/bin is not in the PATH
 sed "s|^Exec=maxpack|Exec=$lib/maxpack|" "$here/maxpack.desktop" > "$entry"
 chmod 644 "$entry"
 refresh
-echo "MaxPack está instalado: sale en el menú de aplicaciones, y $bin/maxpack en la línea de comandos."
+echo "MaxPack is installed: it shows up in the applications menu, and $bin/maxpack on the command line."
 case ":$PATH:" in
 	*":$bin:"*) ;;
-	*) echo "Añade $bin al PATH para llamar a maxpack por su nombre." ;;
+	*) echo "Add $bin to the PATH to call maxpack by its name." ;;
 esac

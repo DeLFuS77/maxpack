@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Instalador: lista, Verificar y Desinstalar.
+// Installer: list, Verify and Uninstall.
 #include "mp_fixture.h"
 #include "mp_inst.h"
 
@@ -60,7 +60,7 @@ static void setup(void) {
     for (size_t i = 0; i < sizeof big; i++) big[i] = (char)('a' + i % 23);
     mpt_put_text(TMP "/two/sce_sys/param.json", "{\"titleId\":\"TEST00002\",\"contentVersion\":\"01.000.000\"}");
     mpt_put(TMP "/two/datos/grande.bin", big, sizeof big);
-    mpt_pack(TMP "/two", TMP "/src/b.p5z", 1, NULL);   // sin runtime: lo pone el instalador
+    mpt_pack(TMP "/two", TMP "/src/b.p5z", 1, NULL);   // without a runtime: the installer puts it in
     install(TMP "/src/a.p5z");
     install(TMP "/src/b.p5z");
 }
@@ -107,7 +107,7 @@ MP_TEST(verify_ok_and_bad) {
     MP_CHECK_EQ_U64(r.files_bad, 0);
     MP_CHECK(r.files_ok > 0 && r.p5z_checked == 1);
     MP_CHECK(mp_inst_verify(&env, "TEST00002", &r, &e) == 0);
-    MP_CHECK_EQ_U64(r.files_bad, 0);   // con el runtime cambiado por el instalador
+    MP_CHECK_EQ_U64(r.files_bad, 0);   // with the runtime changed by the installer
     size_t n = 0;
     uint8_t *b = mpt_slurp(DATA "/homebrew/TEST00001/eboot.bin", &n);
     if (b && n) {
@@ -119,7 +119,7 @@ MP_TEST(verify_ok_and_bad) {
     mp_rename(TMP "/src/a.p5z", TMP "/src/a.apart", &e);
     MP_CHECK(mp_inst_verify(&env, "TEST00001", &r, &e) == 0);
     MP_CHECK(r.p5z_checked == 0);
-    MP_CHECK_EQ_U64(r.files_bad, 0);   // sin el .p5z, el suelto cambiado no se puede comprobar
+    MP_CHECK_EQ_U64(r.files_bad, 0);   // without the .p5z, the changed loose file cannot be checked
     mp_rename(TMP "/src/a.apart", TMP "/src/a.p5z", &e);
     if (b && n) {
         b[0] ^= 1;

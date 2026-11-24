@@ -44,8 +44,8 @@ MP_TEST(rate_and_determinism) {
     MP_CHECK(a.n >= 1843 && a.n <= 2253);
     MP_CHECK(a.rate > 0.0199 && a.rate < 0.0201);
     MP_CHECK_EQ_U64(a.n, b.n);
-    // Campo a campo: memcmp también compararía los bytes de relleno de mp_window, que no se
-    // inicializan y pueden diferir entre dos llamadas.
+    // Field by field: memcmp would also compare mp_window's padding bytes, which are not
+    // initialized and may differ between two calls.
     int same = a.n == b.n;
     for (size_t i = 0; same && i < a.n; i++)
         same = a.w[i].file == b.w[i].file && a.w[i].off == b.w[i].off && a.w[i].len == b.w[i].len &&

@@ -87,7 +87,7 @@ func (a *App) Setup() Setup {
 		return setup
 	}
 	if missing, err := core.Missing(path); err != nil || len(missing) > 0 {
-		setup.CoreError, setup.CoreOtherVersion = "maxpack-core es de otra versión", true
+		setup.CoreError, setup.CoreOtherVersion = "maxpack-core is of another version", true
 	}
 	return setup
 }

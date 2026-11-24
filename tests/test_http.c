@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// HTTP mínimo del instalador: servidor y cliente.
+// The installer's minimal HTTP: server and client.
 #if !defined(_WIN32)
 #define _POSIX_C_SOURCE 200809L
 #endif
@@ -45,7 +45,7 @@ static sock_t connect_to(uint16_t port) {
     return s;
 }
 
-// Envía raw tal cual y devuelve el código de estado de la respuesta (o -1).
+// Sends raw as is and returns the response's status code (or -1).
 static int raw_status(uint16_t port, const char *raw) {
     sock_t s = connect_to(port);
     send(s, raw, (int)strlen(raw), 0);
@@ -125,7 +125,7 @@ MP_TEST(http_client_errors) {
     MP_CHECK(e2.msg[0] != 0);
     MP_CHECK(mp_now_ns() - t0 < 2000000000ull);
 
-    // Un servidor que acepta la conexión (la cola del sistema) y nunca responde.
+    // A server that accepts the connection (the system's queue) and never responds.
     sock_t ls = socket(AF_INET, SOCK_STREAM, 0);
     struct sockaddr_in a;
     memset(&a, 0, sizeof a);

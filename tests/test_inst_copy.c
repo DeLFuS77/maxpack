@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Instalador: instalar tal cual carpetas de juego e imágenes.
+// Installer: install game folders and images as is.
 #include "mp_fixture.h"
 #include "mp_inst.h"
 
@@ -49,7 +49,7 @@ static int install(const char *internal, const char *src, const char *const *rep
     q.dest_root = internal;
     q.replace = rep;
     q.nreplace = nrep;
-    q.delete_p5z = 1;   // se ignora fuera de un .p5z
+    q.delete_p5z = 1;   // ignored outside a .p5z
     memset(e, 0, sizeof *e);
     return mp_inst_install(&env, &q, r, e);
 }
@@ -65,7 +65,7 @@ static void setup(void) {
     mp_err e = {{0}};
     mpt_put(TMP "/R.sprx", rt_new, sizeof rt_new);
     mp_set_mtime(TMP "/R.sprx", 1700000000, &e);
-    // Dump en carpeta.
+    // Dump in a folder.
     mpt_put_text(USB "/Juego/sce_sys/param.json", "{\"titleId\":\"TEST00003\",\"contentVersion\":\"01.000.000\"}");
     mpt_put_text(USB "/Juego/eboot.bin", "eboot del juego");
     mpt_put_text(USB "/Juego/datos/\xF0\x9F\x8E\xAE.txt", "emoji");
@@ -79,10 +79,10 @@ static void setup(void) {
         mpt_put_text(p, t);
         mp_set_mtime(p, 1600000000 + i, &e);
     }
-    // Carpetas con packs: sin runtime y con él.
-    mpt_pack(MPT_BASIC, TMP "/srcs/Packed", 0, NULL);   // fuera de las unidades: no es "otra copia"
+    // Folders with packs: without a runtime and with one.
+    mpt_pack(MPT_BASIC, TMP "/srcs/Packed", 0, NULL);   // outside the drives: it is not "another copy"
     mpt_pack(MPT_BASIC, TMP "/packed_rt", 0, TMP "/R.sprx");
-    // Imágenes.
+    // Images.
     mpt_copy_file(MPT_BASIC, USB "/basic.exfat");
     mpt_put(USB "/x/Silksong-PPSA12544.ffpkg", big, 1u << 20);
 }
@@ -104,7 +104,7 @@ MP_TEST(copy_folder_identical) {
         MP_CHECK_EQ_U64(entries, 24);
     }
     free(b);
-    MP_CHECK(mp_path_kind(USB "/Juego/eboot.bin") == 1);   // el original sigue
+    MP_CHECK(mp_path_kind(USB "/Juego/eboot.bin") == 1);   // the original is still there
     mp_inst_result_free(&r);
 }
 
@@ -155,7 +155,7 @@ MP_TEST(copy_stop_resume) {
     mp_inst_result r;
     mp_err e;
     MP_CHECK(install(TMP "/f", USB "/Juego", NULL, 0, &h, 1, &r, &e) == 0 && r.status == MP_INST_STOPPED);
-    // Un archivo ya apuntado como hecho, estropeado con el mismo tamaño.
+    // A file already marked as done, corrupted with the same size.
     size_t n = 0;
     uint8_t *b = mpt_slurp(TMP "/f/maxpack/tmp/TEST00003/eboot.bin", &n);
     if (b && n) {

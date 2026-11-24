@@ -1,14 +1,14 @@
 ﻿; SPDX-License-Identifier: GPL-3.0-or-later
 ;
-; El instalador de MaxPack para Windows. Se compila con makensis y estas definiciones:
-;   VERSION  (por ejemplo dev-1a2b3c4 o 1.2.3)    NUMBERS  (4 números: 1.2.3.0)
+; MaxPack's installer for Windows. It is built with makensis and these definitions:
+;   VERSION  (for example dev-1a2b3c4 or 1.2.3)    NUMBERS  (4 numbers: 1.2.3.0)
 ;   PROGRAM  (MaxPack.exe)   CORE (maxpack-core.exe)   LICENSE (LICENSE)   NOTICES (THIRD_PARTY_NOTICES)
 ;   ICON (appicon.ico)
-;   OUTFILE  (el instalador que sale)
+;   OUTFILE  (the installer that comes out)
 ;
-; Instala para el usuario, en %LOCALAPPDATA%\Programs\MaxPack, sin administrador. No lleva la
-; carpeta "settings" (eso es lo que hace portable al zip): MaxPack guarda lo suyo en %APPDATA%.
-; Un MaxPack ya instalado se actualiza en su carpeta.
+; Installs for the user, in %LOCALAPPDATA%\Programs\MaxPack, without administrator rights. It does not carry the
+; "settings" folder (that is what makes the zip portable): MaxPack keeps its own in %APPDATA%.
+; An already installed MaxPack is updated in its folder.
 
 Unicode true
 ManifestDPIAware true
@@ -51,7 +51,7 @@ VIAddVersionKey /LANG=0 "LegalCopyright" "GPL-3.0-or-later"
 !insertmacro MUI_UNPAGE_CONFIRM
 !insertmacro MUI_UNPAGE_INSTFILES
 
-; el español primero: es el idioma por defecto si el de Windows no está entre los dos
+; Spanish first: it is the default language if Windows' is neither of the two
 !insertmacro MUI_LANGUAGE "Spanish"
 !insertmacro MUI_LANGUAGE "English"
 
@@ -60,7 +60,7 @@ LangString KeepSettings ${LANG_ENGLISH} "Also delete the settings of MaxPack and
 
 Section "MaxPack"
   SetOutPath "$INSTDIR"
-  ; la ventana busca el motor junto a ella
+  ; the window looks for the engine next to it
   File "/oname=MaxPack.exe" "${PROGRAM}"
   File "/oname=maxpack-core.exe" "${CORE}"
   File "/oname=LICENSE.txt" "${LICENSE}"
@@ -70,7 +70,7 @@ Section "MaxPack"
   CreateShortcut "$SMPROGRAMS\MaxPack.lnk" "$INSTDIR\MaxPack.exe"
   CreateShortcut "$DESKTOP\MaxPack.lnk" "$INSTDIR\MaxPack.exe"
 
-  ; MaxPack en «Aplicaciones instaladas», para este usuario
+  ; MaxPack in "Installed apps", for this user
   WriteRegStr HKCU "${UNINSTKEY}" "DisplayName" "MaxPack"
   WriteRegStr HKCU "${UNINSTKEY}" "DisplayVersion" "${VERSION}"
   WriteRegStr HKCU "${UNINSTKEY}" "DisplayIcon" "$INSTDIR\MaxPack.exe,0"
@@ -89,12 +89,12 @@ Section "Uninstall"
   Delete "$INSTDIR\LICENSE.txt"
   Delete "$INSTDIR\THIRD_PARTY_NOTICES.txt"
   Delete "$INSTDIR\uninstall.exe"
-  ; lo que haya puesto el usuario junto a ellos se queda, y la carpeta con ello
+  ; whatever the user put next to them stays, and the folder with it
   RMDir "$INSTDIR"
   Delete "$SMPROGRAMS\MaxPack.lnk"
   Delete "$DESKTOP\MaxPack.lnk"
   DeleteRegKey HKCU "${UNINSTKEY}"
-  ; en silencio los ajustes se quedan; con la ventana se pregunta
+  ; silently the settings stay; with the window it asks
   MessageBox MB_YESNO|MB_ICONQUESTION "$(KeepSettings)" /SD IDNO IDNO keep
   RMDir /r "$APPDATA\MaxPack"
   RMDir /r "$APPDATA\maxpack.exe"

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// ShadowMountPlus: registro del juego y reintentos, contra un ShadowMountPlus falso.
+// ShadowMountPlus: registering the game and retries, against a fake ShadowMountPlus.
 #include "mp_fixture.h"
 #include "mp_http.h"
 #include "mp_inst.h"
@@ -9,9 +9,9 @@
 
 typedef struct {
     mp_mutex *mu;
-    char log[16384];      // "ruta cuerpo\n" por llamada
-    int scan_deferred;    // scan responde aplazado
-    int fakelib_404;      // games/fakelib no conoce el juego
+    char log[16384];      // "path body\n" per call
+    int scan_deferred;    // scan answers postponed
+    int fakelib_404;      // games/fakelib does not know the game
     int settings_seen;
 } fake;
 
@@ -49,7 +49,7 @@ static void start_fake(uint16_t p) {
     mp_err e = {{0}};
     if (!F.mu) F.mu = mp_mutex_new();
     srv = mp_http_start("127.0.0.1", p, fake_handler, &F, &e);
-    if (!srv) MP_FAIL_("ShadowMountPlus falso: %s", e.msg);
+    if (!srv) MP_FAIL_("fake ShadowMountPlus: %s", e.msg);
     else port = mp_http_port(srv);
 }
 
@@ -105,7 +105,7 @@ MP_TEST(smp_scan_deferred) {
     reset_log();
     F.fakelib_404 = 1;
     MP_CHECK(mp_smp_register(&c, "TEST00001", "/x", 1, why, sizeof why) == 1);
-    MP_CHECK_CONTAINS(F.log, "/api/v1/manual/add");   // aunque falle el fakelib, se registra
+    MP_CHECK_CONTAINS(F.log, "/api/v1/manual/add");   // even if the fakelib fails, it is registered
     MP_CHECK_CONTAINS(F.log, "/api/v1/scan");
     MP_CHECK_CONTAINS(why, "fakelib");
 }

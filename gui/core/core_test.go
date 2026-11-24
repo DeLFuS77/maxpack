@@ -19,7 +19,7 @@ func needCore(t *testing.T) (core, fixtures string) {
 	t.Helper()
 	core, fixtures = os.Getenv("MAXPACK_CORE"), os.Getenv("MP_FIXTURES")
 	if core == "" || fixtures == "" {
-		t.Skip("faltan MAXPACK_CORE y MP_FIXTURES: se necesita el motor y las imágenes de prueba")
+		t.Skip("MAXPACK_CORE and MP_FIXTURES are missing: the engine and the test images are needed")
 	}
 	return core, fixtures
 }
@@ -39,10 +39,10 @@ func TestRunProgressAndResult(t *testing.T) {
 		t.Fatal(err)
 	}
 	if code != 0 || result.Kind != "result" || result.Raw["ok"] != true {
-		t.Fatalf("código %d, resultado %+v", code, result)
+		t.Fatalf("code %d, result %+v", code, result)
 	}
 	if progress == 0 {
-		t.Fatal("no llegó ningún evento de progreso")
+		t.Fatal("no progress event arrived")
 	}
 	if _, err := os.Stat(out); err != nil {
 		t.Fatal(err)
@@ -65,10 +65,10 @@ func TestRunCancel(t *testing.T) {
 		t.Fatal(err)
 	}
 	if code != 130 || result.Raw["error"] != "cancelled" {
-		t.Fatalf("código %d, resultado %+v", code, result)
+		t.Fatalf("code %d, result %+v", code, result)
 	}
 	if _, err := os.Stat(out); err == nil {
-		t.Fatal("quedó el .p5z a medias")
+		t.Fatal("the half-written .p5z was left")
 	}
 }
 
@@ -76,7 +76,7 @@ func TestLocateMissing(t *testing.T) {
 	t.Setenv("MAXPACK_CORE", filepath.Join(t.TempDir(), "no-existe.exe"))
 	_, err := Locate()
 	if err == nil || !strings.Contains(err.Error(), "maxpack-core") {
-		t.Fatalf("error inesperado: %v", err)
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
@@ -84,7 +84,7 @@ func TestVersionInfoIcon(t *testing.T) {
 	core, fixtures := needCore(t)
 	version, err := Version(core)
 	if err != nil || !strings.HasPrefix(version, "maxpack ") {
-		t.Fatalf("versión %q, %v", version, err)
+		t.Fatalf("version %q, %v", version, err)
 	}
 	pack := filepath.Join(t.TempDir(), "x.p5z")
 	if _, code, err := Run(context.Background(), core, []string{"pack", filepath.Join(fixtures, "basic.exfat"), "-o", pack, "--p5z"}, nil); err != nil || code != 0 {
@@ -93,9 +93,9 @@ func TestVersionInfoIcon(t *testing.T) {
 	if info, err := Info(core, pack); err != nil || len(info) == 0 {
 		t.Fatalf("info: %v, %v", info, err)
 	}
-	// el dump de prueba no trae icono: Icon lo dice con un error
+	// the test dump has no icon: Icon says so with an error
 	if err := Icon(core, pack, filepath.Join(t.TempDir(), "i.png")); err == nil {
-		t.Log("el dump trae icono")
+		t.Log("the dump has an icon")
 	}
 }
 
@@ -118,10 +118,10 @@ func TestRunKillsStubbornCore(t *testing.T) {
 		t.Fatal(err)
 	}
 	if code != 130 || result.Raw["error"] != "cancelled" || result.Raw["ok"] != false {
-		t.Fatalf("código %d, resultado %+v", code, result)
+		t.Fatalf("code %d, result %+v", code, result)
 	}
 	if time.Since(begin) > 5*time.Second {
-		t.Fatalf("tardó %v", time.Since(begin))
+		t.Fatalf("took %v", time.Since(begin))
 	}
 }
 
@@ -151,7 +151,7 @@ func TestRunClosingLeavesTheEngineToCleanUp(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(out + ".cleaned"); err != nil || code != 130 || result.Raw["error"] != "cancelled" {
-		t.Fatalf("the engine did not end on its own: código %d, %+v, %v", code, result.Raw, err)
+		t.Fatalf("the engine did not end on its own: code %d, %+v, %v", code, result.Raw, err)
 	}
 	if _, err := os.Stat(out); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("the output is still there: %v", err)
@@ -162,7 +162,7 @@ func TestCapabilities(t *testing.T) {
 	core, _ := needCore(t)
 	missing, err := Missing(core)
 	if err != nil || len(missing) != 0 {
-		t.Fatalf("el motor de esta versión: falta %v, %v", missing, err)
+		t.Fatalf("this version's engine: missing %v, %v", missing, err)
 	}
 }
 
@@ -171,16 +171,16 @@ func TestCapabilities(t *testing.T) {
 func TestCapabilitiesOfAnotherVersion(t *testing.T) {
 	t.Setenv(fakecore.Env, "old")
 	if _, err := Missing(os.Args[0]); err == nil {
-		t.Fatal("un motor sin --capabilities no da error")
+		t.Fatal("an engine without --capabilities gives no error")
 	}
 	t.Setenv(fakecore.Env, "partial")
 	missing, err := Missing(os.Args[0])
 	if err != nil || len(missing) == 0 {
-		t.Fatalf("falta %v, %v", missing, err)
+		t.Fatalf("missing %v, %v", missing, err)
 	}
 	for _, m := range missing {
 		if m == "progress_json" || m == "control_stdin" {
-			t.Fatalf("%s sí lo tiene: %v", m, missing)
+			t.Fatalf("%s does have it: %v", m, missing)
 		}
 	}
 }

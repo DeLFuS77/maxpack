@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Genera las imágenes exFAT sintéticas que usan las pruebas de MaxPack.
+"""Generates the synthetic exFAT images used by MaxPack's tests.
 
-Uso: make_exfat.py --out <carpeta>
+Usage: make_exfat.py --out <folder>
 
-Escribe basic.exfat (+ basic.manifest.tsv y basic.dirs.tsv), truncated_head.exfat,
-truncated_tail.exfat, fatloop.exfat y fake.pkg. Todo es determinista.
+Writes basic.exfat (+ basic.manifest.tsv and basic.dirs.tsv), truncated_head.exfat,
+truncated_tail.exfat, fatloop.exfat and fake.pkg. Everything is deterministic.
 """
 import argparse
 import os
@@ -19,7 +19,7 @@ SECTOR = 1 << SECTOR_SHIFT
 CLUSTER = SECTOR << SPC_SHIFT          # 4 KiB
 FAT_OFFSET = 128                       # en sectores
 EOC = 0xFFFFFFFF
-# 2024-05-06 07:08:10 UTC (formato DOS, segundos de 2 en 2) y desplazamiento UTC válido +0.
+# 2024-05-06 07:08:10 UTC (DOS format, seconds in steps of 2) and a valid UTC offset +0.
 MTIME_DOS = ((2024 - 1980) << 25) | (5 << 21) | (6 << 16) | (7 << 11) | (8 << 5) | (10 // 2)
 MTIME_UNIX = 1714979290
 UTC_OFS = 0x80
@@ -51,13 +51,13 @@ class Node:
     def __init__(self, name, is_dir, data=b"", vdl=None):
         self.name = name
         self.is_dir = is_dir
-        self.data = data            # archivos: contenido lógico (más allá de VDL son ceros)
+        self.data = data            # files: logical content (beyond VDL it is zeros)
         self.vdl = vdl              # None = igual a DataLength
         self.children = []
         self.clusters = []
         self.nofat = True
-        self.dl = 0                 # DataLength en bytes
-        self.raw = None             # bytes que se escriben en los clústeres (puede diferir más allá de VDL)
+        self.dl = 0                 # DataLength in bytes
+        self.raw = None             # bytes written to the clusters (may differ beyond VDL)
 
 
 def many_json(i):
@@ -89,7 +89,7 @@ LONG_NAME = "Nombre muy largo con acentos ñ y emoji 🎮 para probar varias ent
 
 
 def basic_files():
-    """(ruta, datos, vdl) en el orden en que se crean dentro de cada carpeta."""
+    """(path, data, vdl) in the order they are created inside each folder."""
     files = [
         ("sce_sys/param.json", (b'{"titleId": "TEST00001", "contentVersion": "01.000.000"}'
                                 + b" " * 200)[:200], None),
@@ -160,7 +160,7 @@ def file_set(node):
     struct.pack_into("<H", s, 4, rot16(upper))
     vdl = node.dl if node.vdl is None else node.vdl
     dl = node.dl
-    if getattr(node, "dl_override", None) is not None:   # imágenes trampa: tamaño falso
+    if getattr(node, "dl_override", None) is not None:   # trap images: fake size
         dl = vdl = node.dl_override
     struct.pack_into("<Q", s, 8, vdl)
     first = node.clusters[0] if node.clusters else 0
@@ -180,17 +180,17 @@ def file_set(node):
 
 
 def build(files, overrides=None, extra_clusters=0):
-    """overrides: {ruta: DataLength falso}; extra_clusters: clústeres que el volumen declara de
-    más sin escribirlos (la imagen queda más corta que el volumen)."""
+    """overrides: {path: fake DataLength}; extra_clusters: clusters the volume declares in
+    excess without writing them (the image ends up shorter than the volume)."""
     root = build_tree(files)
     nodes = list(walk(root))
     by_path = {p: n for p, n in nodes}
     for path, dl in (overrides or {}).items():
         by_path[path].dl_override = dl
-        if extra_clusters:   # que apunte a los clústeres extra, sin chocar con otros archivos
+        if extra_clusters:   # so that it points at the extra clusters, without clashing with other files
             by_path[path].first_override = "extra"
 
-    # Tamaños.
+    # Sizes.
     root.dl = dir_bytes(root, True)
     for _, n in nodes:
         n.dl = dir_bytes(n, False) if n.is_dir else len(n.data)
@@ -206,7 +206,7 @@ def build(files, overrides=None, extra_clusters=0):
             break
         bitmap_c = need
 
-    # Asignación: mapa de bits, upcase, directorios, datos; frag/vdl intercalados; random.bin al final.
+    # Allocation: bitmap, upcase, directories, data; frag/vdl interleaved; random.bin at the end.
     nxt = [2]
 
     def take(k):
@@ -221,12 +221,12 @@ def build(files, overrides=None, extra_clusters=0):
     for p, n in nodes:
         if n.is_dir:
             n.clusters = take(ceil_div(n.dl, CLUSTER))
-            n.nofat = p != "many"          # many/ va encadenado por FAT
+            n.nofat = p != "many"          # many/ is chained through the FAT
     frag, vdl, rnd = by_path["data/frag.bin"], by_path["data/vdl.bin"], by_path["random.bin"]
     for p, n in nodes:
         if not n.is_dir and n not in (frag, vdl, rnd) and n.dl:
             n.clusters = take(ceil_div(n.dl, CLUSTER))
-            n.nofat = p != "dupblocks.bin"   # encadenado por FAT aunque sea contiguo
+            n.nofat = p != "dupblocks.bin"   # chained through the FAT even though it is contiguous
     nf, nv = ceil_div(frag.dl, CLUSTER), ceil_div(vdl.dl, CLUSTER)
     inter = take(2 * nv)
     vdl.clusters = inter[1::2]
@@ -259,7 +259,7 @@ def build(files, overrides=None, extra_clusters=0):
             chain(n.clusters)
 
     # Heap.
-    heap = bytearray((count - extra_clusters) * CLUSTER)   # los clústeres extra no se escriben
+    heap = bytearray((count - extra_clusters) * CLUSTER)   # the extra clusters are not written
 
     def put(cl, data):
         for i, c in enumerate(cl):
@@ -277,7 +277,7 @@ def build(files, overrides=None, extra_clusters=0):
             continue
         raw = bytearray(n.data)
         if n.vdl is not None:
-            # Más allá de VDL el disco tiene basura: el lector debe devolver ceros.
+            # Beyond VDL the disk has garbage: the reader must return zeros.
             raw = raw[:n.vdl] + b"\xAA" * (len(n.clusters) * CLUSTER - n.vdl)
         put(n.clusters, raw)
 
@@ -302,7 +302,7 @@ def build(files, overrides=None, extra_clusters=0):
         if n.is_dir:
             put(n.clusters, dir_content(n, False))
 
-    # Región de arranque, FAT y heap.
+    # Boot region, FAT and heap.
     fat_len = ceil_div((count + 2) * 4, SECTOR)
     spc = 1 << SPC_SHIFT
     heap_off = ceil_div(FAT_OFFSET + fat_len, spc) * spc
@@ -323,7 +323,7 @@ def build(files, overrides=None, extra_clusters=0):
     region += bytes(2 * SECTOR)
     csum = rot32(region, skip=(106, 107, 112))
     region += struct.pack("<I", csum) * (SECTOR // 4)
-    img = bytearray(region + region)                       # principal + copia
+    img = bytearray(region + region)                       # main + copy
     img += bytes(FAT_OFFSET * SECTOR - len(img))
     img += struct.pack("<%dI" % len(fat), *fat)
     img += bytes(heap_off * SECTOR - len(img))
@@ -367,15 +367,15 @@ def main():
     struct.pack_into("<I", loop, info["frag_fat_entry"], info["frag_first"])
     w("fatloop.exfat", bytes(loop))
     w("fake.pkg", b"\x7FFIH" + bytes(60))
-    # Imágenes trampa: un archivo con DataLength = 2^64 - 1 y una carpeta que dice ocupar 300 MiB
-    # en un volumen que declara clústeres de sobra (la imagen real es mucho más corta).
+    # Trap images: a file with DataLength = 2^64 - 1 and a folder that claims to take 300 MiB
+    # in a volume that declares clusters to spare (the real image is much shorter).
     w("huge_len.exfat", build(basic_files(), overrides={"zeros.bin": 2**64 - 1})[0])
     w("bigdir.exfat", build(basic_files(), overrides={"deep": 300 << 20}, extra_clusters=80000)[0])
-    # Dos rutas que solo se diferencian en mayúsculas (exFAT real no lo permite; un origen
-    # copiado desde Linux sí podría tenerlas): pack debe negarse antes de escribir nada.
+    # Two paths that differ only in case (real exFAT does not allow it; a source
+    # copied from Linux could have them): pack must refuse before writing anything.
     w("casedup.exfat", build(basic_files() + [("x/A.bin", b"A" * 5000, None),
                                               ("x/a.bin", b"a" * 5000, None)])[0])
-    print("fixtures: %d archivos, %d carpetas, imagen de %d bytes en %s"
+    print("fixtures: %d files, %d folders, image of %d bytes in %s"
           % (len(files), len(dirs), len(img), args.out))
 
 

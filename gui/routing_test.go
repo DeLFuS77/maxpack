@@ -39,7 +39,7 @@ func TestFilesNotLostWithoutPage(t *testing.T) {
 	// no page yet: kept, nothing emitted
 	a.receive([]string{filepath.Join(dir, "a.p5z"), filepath.Join(dir, "Juego")})
 	if len(sent) != 0 {
-		t.Fatalf("emitido sin página: %v", sent)
+		t.Fatalf("emitted without a page: %v", sent)
 	}
 	// the page asks on load: gets them once
 	got := a.PendingFiles()
@@ -47,7 +47,7 @@ func TestFilesNotLostWithoutPage(t *testing.T) {
 		t.Fatalf("pendientes: %+v", got)
 	}
 	if again := a.PendingFiles(); len(again.Compress)+len(again.Decompress) != 0 {
-		t.Fatalf("no se vaciaron: %+v", again)
+		t.Fatalf("they were not emptied: %+v", again)
 	}
 	// with the page ready, they are emitted and not kept
 	a.receive([]string{filepath.Join(dir, "b.exfat")})
@@ -58,7 +58,7 @@ func TestFilesNotLostWithoutPage(t *testing.T) {
 		t.Fatalf("evento: %+v", p)
 	}
 	if left := a.PendingFiles(); len(left.Compress) != 0 {
-		t.Fatalf("quedó pendiente lo emitido: %+v", left)
+		t.Fatalf("what was emitted was left pending: %+v", left)
 	}
 }
 

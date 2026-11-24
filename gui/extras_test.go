@@ -25,7 +25,7 @@ func needCore(t *testing.T) (engine, fixtures string) {
 	t.Helper()
 	engine, fixtures = os.Getenv("MAXPACK_CORE"), os.Getenv("MP_FIXTURES")
 	if engine == "" || fixtures == "" {
-		t.Skip("faltan MAXPACK_CORE y MP_FIXTURES")
+		t.Skip("MAXPACK_CORE and MP_FIXTURES are missing")
 	}
 	return engine, fixtures
 }
@@ -68,27 +68,27 @@ func TestRunExtras(t *testing.T) {
 		t.Fatalf("%+v", sum)
 	}
 	if log[0] != "awake" || log[1] != "taskbar:normal" {
-		t.Fatalf("al empezar: %v", log)
+		t.Fatalf("at the start: %v", log)
 	}
 	if !strings.Contains(strings.Join(log, " "), "release") {
-		t.Fatalf("no se suelta: %v", log)
+		t.Fatalf("not released: %v", log)
 	}
 	if len(progress) < 2 || total == 0 {
-		t.Fatalf("progreso: %v de %d", progress, total)
+		t.Fatalf("progress: %v of %d", progress, total)
 	}
 	for i := 1; i < len(progress); i++ {
 		if progress[i] < progress[i-1] {
-			t.Fatalf("el progreso baja: %v", progress)
+			t.Fatalf("progress goes down: %v", progress)
 		}
 	}
 	if progress[len(progress)-1] != total {
-		t.Fatalf("no llega al final: %v de %d", progress, total)
+		t.Fatalf("does not reach the end: %v of %d", progress, total)
 	}
 	if !strings.Contains(strings.Join(log, " "), "taskbar:none") {
-		t.Fatalf("la barra no se limpia: %v", log)
+		t.Fatalf("the bar is not cleared: %v", log)
 	}
 	if notices != 1 || title != "MaxPack" || !strings.Contains(body, "1 juego listo") || !strings.Contains(body, sizeText("es", sum.Saved)+" ahorrados") {
-		t.Fatalf("aviso: %d %q %q", notices, title, body)
+		t.Fatalf("notice: %d %q %q", notices, title, body)
 	}
 }
 
@@ -148,10 +148,10 @@ func TestSizeText(t *testing.T) {
 	}
 	for _, c := range cases {
 		if got := sizeText("es", c.bytes); got != c.es {
-			t.Errorf("es %d: %q, esperaba %q", c.bytes, got, c.es)
+			t.Errorf("es %d: %q, expected %q", c.bytes, got, c.es)
 		}
 		if got := sizeText("en", c.bytes); got != c.en {
-			t.Errorf("en %d: %q, esperaba %q", c.bytes, got, c.en)
+			t.Errorf("en %d: %q, expected %q", c.bytes, got, c.en)
 		}
 	}
 }
@@ -185,7 +185,7 @@ func TestTaskbarFollowsThePhases(t *testing.T) {
 			q.progress(0, s.phase, s.done, s.total)
 		}
 		if got := q.value(); !near(got, s.want) {
-			t.Fatalf("paso %d (%s %s %d/%d): %v, esperaba %v", n, s.state, s.phase, s.done, s.total, got, s.want)
+			t.Fatalf("step %d (%s %s %d/%d): %v, expected %v", n, s.state, s.phase, s.done, s.total, got, s.want)
 		}
 	}
 	// two games: each weighs its size, and what was shown never goes back
@@ -193,11 +193,11 @@ func TestTaskbarFollowsThePhases(t *testing.T) {
 	q.item(0, jobs.StatePacking)
 	q.item(0, jobs.StateOK)
 	if got := q.value(); !near(got, 0.25) {
-		t.Fatalf("el primero de dos: %v", got)
+		t.Fatalf("the first of two: %v", got)
 	}
 	q.item(1, jobs.StatePacking)
 	if got := q.value(); !near(got, 0.25) {
-		t.Fatalf("el segundo empieza: %v", got)
+		t.Fatalf("the second starts: %v", got)
 	}
 }
 
@@ -244,15 +244,15 @@ func TestRunTaskbarPhases(t *testing.T) {
 		t.Fatalf("%+v", sum)
 	}
 	if len(copied) != 1 || len(atVerifying) != 1 || total == 0 {
-		t.Fatalf("copiado %v, verificar %v, de %d", copied, atVerifying, total)
+		t.Fatalf("copied %v, verify %v, of %d", copied, atVerifying, total)
 	}
 	if copied[0] >= total/2 {
-		t.Errorf("copiados los sueltos, al empezar a empaquetar, ya va por %d de %d", copied[0], total)
+		t.Errorf("loose files copied, on starting to pack, it is already at %d of %d", copied[0], total)
 	}
 	if atVerifying[0] > total/2 {
-		t.Errorf("al empezar a verificar ya va por %d de %d", atVerifying[0], total)
+		t.Errorf("on starting to verify it is already at %d of %d", atVerifying[0], total)
 	}
 	if last != total {
-		t.Errorf("al final: %d de %d", last, total)
+		t.Errorf("at the end: %d of %d", last, total)
 	}
 }

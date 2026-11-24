@@ -27,58 +27,58 @@
 
 static void usage(FILE *out) {
     fprintf(out,
-            "Uso:\n"
-            "  maxpack analyze <carpeta|imagen.exfat> [opciones]\n"
-            "  maxpack pack <carpeta|imagen.exfat> -o <salida> [opciones]\n"
-            "  maxpack unpack <juego.p5z> --folder|--original -o <carpeta> [--threads N]\n"
-            "  maxpack info <juego.p5z>\n"
-            "  maxpack info --json <carpeta|imagen.exfat|juego.p5z>\n"
-            "  maxpack info --play <juego.p5z>   lo que la consola necesita para jugarlo sin instalar (JSON)\n"
-            "  maxpack icon <carpeta|imagen.exfat|juego.p5z> -o <icono.png>\n"
-            "  maxpack verify <juego.p5z | carpeta> [--against <origen>] [--threads N]\n"
+            "Usage:\n"
+            "  maxpack analyze <folder|image.exfat> [options]\n"
+            "  maxpack pack <folder|image.exfat> -o <output> [options]\n"
+            "  maxpack unpack <game.p5z> --folder|--original -o <folder> [--threads N]\n"
+            "  maxpack info <game.p5z>\n"
+            "  maxpack info --json <folder|image.exfat|game.p5z>\n"
+            "  maxpack info --play <game.p5z>   what the console needs to play it without installing (JSON)\n"
+            "  maxpack icon <folder|image.exfat|game.p5z> -o <icon.png>\n"
+            "  maxpack verify <game.p5z | folder> [--against <source>] [--threads N]\n"
             "  maxpack --version\n"
-            "  maxpack --capabilities   lo que sabe hacer esta versión, en JSON (para una interfaz)\n"
+            "  maxpack --capabilities   what this version can do, as JSON (for a front end)\n"
             "\n"
-            "Opciones de pack:\n"
-            "  -o SALIDA          carpeta nueva o vacía (--folder) para copiar a la consola\n"
-            "  --folder           salida en carpeta (por defecto)\n"
-            "  --p5z              salida en un solo archivo .p5z para guardar en el PC\n"
-            "  --level N          nivel de zstd, 1 a 22 (por defecto 19)\n"
-            "  --threads N        hilos (por defecto, todos los de la CPU)\n"
-            "  --runtime ARCHIVO  libSceAmpr.sprx de ampr-emu-ng para fakelib/\n"
-            "  --keep-loose GLOB  dejar suelto también lo que case (se puede repetir)\n"
-            "  --max-file-size N  con --p5z: parar y borrar el .p5z si pasa de N bytes\n"
-            "  --volume-limit N   para pruebas: volúmenes de N bytes como mucho (262208 a 4294901760,\n"
-            "                     por defecto 4294901760), para tener varios con un juego pequeño\n"
+            "Pack options:\n"
+            "  -o OUTPUT          new or empty folder (--folder) to copy to the console\n"
+            "  --folder           output as a folder (default)\n"
+            "  --p5z              output as a single .p5z file to keep on the PC\n"
+            "  --level N          zstd level, 1 to 22 (default 19)\n"
+            "  --threads N        threads (default: all the CPU's)\n"
+            "  --runtime FILE     ampr-emu-ng's libSceAmpr.sprx for fakelib/\n"
+            "  --keep-loose GLOB  also leave whatever matches loose (can be repeated)\n"
+            "  --max-file-size N  with --p5z: stop and delete the .p5z if it goes over N bytes\n"
+            "  --volume-limit N   for testing: volumes of at most N bytes (262208 to 4294901760,\n"
+            "                     default 4294901760), to get several from a small game\n"
             "\n"
-            "Opciones de pack, unpack y verify (para una interfaz):\n"
-            "  --progress json    una línea JSON por evento en stdout (el texto sigue en stderr)\n"
-            "  --control stdin    leer de stdin: la línea \"cancel\" o cerrar la entrada cancela\n"
-            "  Códigos de salida: 0 bien, 1 error, 2 uso, 130 cancelado\n"
+            "Options for pack, unpack and verify (for a front end):\n"
+            "  --progress json    one JSON line per event on stdout (the text stays on stderr)\n"
+            "  --control stdin    read from stdin: the line \"cancel\" or closing the input cancels\n"
+            "  Exit codes: 0 ok, 1 error, 2 usage, 130 cancelled\n"
             "\n"
-            "Opciones de analyze:\n"
-            "  --sample N%%        porcentaje de la muestra (por defecto 2%%, mínimo 1 GiB)\n"
-            "  --full             medir todo el juego, sin muestra\n"
-            "  --json ARCHIVO     guardar el informe en JSON\n"
-            "  --threads N        hilos (por defecto, todos los de la CPU)\n"
-            "  --keep-loose GLOB  dejar suelto también lo que case (se puede repetir)\n"
-            "  --no-dedup         no hacer el pase de deduplicación (lee todo el juego)\n"
-            "  --no-transport     no medir el .p5z de transporte (zstd 19, ventana larga)\n"
-            "  --list            solo listar los archivos y su clase, sin medir\n");
+            "Options for analyze:\n"
+            "  --sample N%%        sample percentage (default 2%%, at least 1 GiB)\n"
+            "  --full             measure the whole game, no sample\n"
+            "  --json FILE        save the report as JSON\n"
+            "  --threads N        threads (default: all the CPU's)\n"
+            "  --keep-loose GLOB  also leave whatever matches loose (can be repeated)\n"
+            "  --no-dedup         skip the deduplication pass (reads the whole game)\n"
+            "  --no-transport     do not measure the transport .p5z (zstd 19, long window)\n"
+            "  --list             only list the files and their class, without measuring\n");
 }
 
-// ---- --progress json y --control stdin -------------------------------------------------------
+// ---- --progress json and --control stdin -------------------------------------------------------
 
 static int g_json;                  // --progress json
 static int g_control;               // --control stdin
-static const char *g_err_code;      // código de error para el resultado JSON
-static int g_result_done;           // ya se escribió la línea "result"
+static const char *g_err_code;      // error code for the JSON result
+static int g_result_done;           // the "result" line has already been written
 
 static const char *phase_code(const char *phase) {
-    if (!strncmp(phase, "Copiando", 8)) return "copying";
-    if (!strncmp(phase, "Empaquetando", 12)) return "packing";
-    if (!strncmp(phase, "Verificando", 11)) return "verifying";
-    if (!strncmp(phase, "Extrayendo", 10) || !strncmp(phase, "Reconstruyendo", 14)) return "unpacking";
+    if (!strncmp(phase, "Copying", 7)) return "copying";
+    if (!strncmp(phase, "Packing", 7)) return "packing";
+    if (!strncmp(phase, "Verifying", 9)) return "verifying";
+    if (!strncmp(phase, "Extracting", 10) || !strncmp(phase, "Rebuilding", 10)) return "unpacking";
     return "working";
 }
 
@@ -89,7 +89,7 @@ static void json_progress(void *ctx, const char *phase, uint64_t done, uint64_t 
     fflush(stdout);
 }
 
-// Línea "result": ok y, si falla, el código; extra son campos ya formateados (con coma inicial) o "".
+// "result" line: ok and, on failure, the code; extra is already-formatted fields (with a leading comma) or "".
 static void json_result(int ok, const char *err, const char *extra) {
     if (g_result_done) return;
     g_result_done = 1;
@@ -122,28 +122,28 @@ static void control_thread(void *arg) {
             line[n++] = c;
         }
     }
-    mp_cancel_request();   // fin de la entrada: quien nos lanzó se fue o cerró stdin
+    mp_cancel_request();   // end of input: whoever launched us is gone or closed stdin
 }
 
 static void start_json_and_control(void) {
 #ifndef _WIN32
-    // si quien nos lanzó se va, escribir en su tubería no debe matarnos antes de limpiar
+    // if whoever launched us goes away, writing to its pipe must not kill us before we clean up
     if (g_json || g_control) signal(SIGPIPE, SIG_IGN);
 #endif
     if (g_json) {
 #ifdef _WIN32
-        _setmode(_fileno(stdout), _O_BINARY);   // líneas con \n, sin \r
+        _setmode(_fileno(stdout), _O_BINARY);   // lines end in \n, not \r\n
 #endif
         mp_progress_hook h = {json_progress, NULL};
         mp_progress_set_hook(&h);
     }
     if (g_control) {
         mp_thread *t = NULL;
-        mp_thread_start(&t, control_thread, NULL);   // no se une: puede quedar bloqueado leyendo
+        mp_thread_start(&t, control_thread, NULL);   // never joined: it may stay blocked reading
     }
 }
 
-// Cierra una orden: si falló y se pidió JSON, escribe la línea "result"; cancelado sale con 130.
+// Finishes a command: if it failed and JSON was requested, writes the "result" line; cancelled exits with 130.
 static int finish_cmd(int rc) {
     if (rc != 0 && mp_cancelled()) {
         g_err_code = "cancelled";
@@ -153,8 +153,8 @@ static int finish_cmd(int rc) {
     return rc;
 }
 
-// Deja la salida como estaba antes: la borra si no existía, o vacía su contenido si era una
-// carpeta vacía. Devuelve 0, o -1 con el porqué en e si algo no se pudo borrar (se intenta todo).
+// Leaves the output as it was before: deletes it if it did not exist, or empties its contents if it
+// was an empty folder. Returns 0, or -1 with the reason in e if something could not be deleted (everything is tried).
 typedef struct {
     const char *dir;
     int failed;
@@ -168,7 +168,7 @@ static int rm_entry_cb(void *ctx, const char *name, int is_dir, uint64_t size) {
     size_t n = strlen(c->dir) + strlen(name) + 2;
     char *full = malloc(n);
     if (!full) {
-        if (!c->failed) mp_err_set(c->e, "sin memoria");
+        if (!c->failed) mp_err_set(c->e, "out of memory");
         c->failed = 1;
         return 0;
     }
@@ -190,16 +190,16 @@ static int clean_output(const char *dst, int existed, mp_err *e) {
     return c.failed ? -1 : 0;
 }
 
-// Tras un fallo: el error y qué queda en dst. left es si no se pudo borrar lo escrito, y why, el
-// porqué.
+// After a failure: the error and what is left in dst. left is whether what was written could not be deleted, and why, the
+// reason.
 static void say_left(const char *msg, const char *dst, int left, const char *why) {
     fprintf(stderr, "\nerror: %s\n", msg);
     if (!left)
-        fprintf(stderr, "(no queda nada escrito en %s)\n", dst);
+        fprintf(stderr, "(nothing is left written in %s)\n", dst);
     else if (why && why[0])
-        fprintf(stderr, "(no se pudo borrar lo escrito: queda a medias en %s; %s)\n", dst, why);
+        fprintf(stderr, "(could not delete what was written: it is left half-done in %s; %s)\n", dst, why);
     else
-        fprintf(stderr, "(no se pudo borrar lo escrito: queda a medias en %s)\n", dst);
+        fprintf(stderr, "(could not delete what was written: it is left half-done in %s)\n", dst);
 }
 
 static int sum_cb(void *ctx, const char *rel, int is_dir, uint64_t size, int64_t mtime) {
@@ -223,24 +223,24 @@ static int bad_usage(const char *msg, const char *arg) {
     return 2;
 }
 
-// Opciones comunes a pack, unpack y verify. 0 = no es nuestra, 1 = consumida, -1 = uso incorrecto.
+// Options common to pack, unpack and verify. 0 = not ours, 1 = consumed, -1 = bad usage.
 static int common_opt(int argc, char **argv, int *i) {
     const char *a = argv[*i];
     if (strcmp(a, "--progress") && strcmp(a, "--control")) return 0;
     if (*i + 1 >= argc) {
-        bad_usage("falta el valor de", a);
+        bad_usage("missing value for", a);
         return -1;
     }
     const char *v = argv[++*i];
     if (!strcmp(a, "--progress")) {
         if (strcmp(v, "json")) {
-            bad_usage("--progress solo admite json", v);
+            bad_usage("--progress only accepts json", v);
             return -1;
         }
         g_json = 1;
     } else {
         if (strcmp(v, "stdin")) {
-            bad_usage("--control solo admite stdin", v);
+            bad_usage("--control only accepts stdin", v);
             return -1;
         }
         g_control = 1;
@@ -248,7 +248,7 @@ static int common_opt(int argc, char **argv, int *i) {
     return 1;
 }
 
-// Antes de interpretar nada: con --progress json, los errores de uso también salen en JSON.
+// Before interpreting anything: with --progress json, usage errors also come out as JSON.
 static void prescan_json(int argc, char **argv) {
     for (int i = 0; i + 1 < argc; i++)
         if (!strcmp(argv[i], "--progress") && !strcmp(argv[i + 1], "json")) g_json = 1;
@@ -256,8 +256,8 @@ static void prescan_json(int argc, char **argv) {
 
 static int is_sep(char c) { return c == '/' || c == '\\'; }
 
-// Deja p en su carpeta padre (C:\a\b -> C:\a, C:\a -> C:\, /a -> /).
-// Devuelve 0 si p ya es una raíz.
+// Leaves p at its parent folder (C:\a\b -> C:\a, C:\a -> C:\, /a -> /).
+// Returns 0 if p is already a root.
 static int to_parent(char *p) {
     size_t n = strlen(p);
     while (n > 0 && is_sep(p[n - 1])) n--;
@@ -266,27 +266,27 @@ static int to_parent(char *p) {
     if (n == 0 || n == end) return 0;
     size_t sep = n - 1;
     if (sep == 0 || (sep == 2 && p[1] == ':'))
-        p[n] = 0;   // raíz: se queda con su separador
+        p[n] = 0;   // root: keeps its separator
     else
         p[sep] = 0;
     return 1;
 }
 
-// Comprueba --json antes de analizar: su carpeta existe y no pisa el juego ni cae dentro de él.
+// Checks --json before analysing: its folder exists and it does not overwrite the game or fall inside it.
 static int check_json_target(const char *src, const char *json) {
     char *dir = mp_full_path(json);
-    if (!dir) return bad_usage("ruta de --json no válida", json);
+    if (!dir) return bad_usage("invalid --json path", json);
     int rc = 0;
     if (mp_path_kind(json) == 2) {
-        rc = bad_usage("--json apunta a una carpeta", json);
+        rc = bad_usage("--json points to a folder", json);
     } else if (mp_same_file(json, src)) {
-        rc = bad_usage("--json no puede sobrescribir el juego que se analiza", json);
+        rc = bad_usage("--json cannot overwrite the game being analysed", json);
     } else if (!to_parent(dir) || mp_path_kind(dir) != 2) {
-        rc = bad_usage("no existe la carpeta donde guardar --json", json);
+        rc = bad_usage("the folder to save --json in does not exist", json);
     } else if (mp_path_kind(src) == 2) {
         do {
             if (mp_same_file(dir, src)) {
-                rc = bad_usage("--json no puede escribir dentro de la carpeta que se analiza", json);
+                rc = bad_usage("--json cannot write inside the folder being analysed", json);
                 break;
             }
         } while (to_parent(dir));
@@ -313,7 +313,7 @@ static int list_files(const char *src_path, const char *const *keep, size_t nkee
     for (size_t i = 0; i < mp_source_count(s); i++) {
         const mp_entry *en = mp_source_entry(s, i);
         printf("%llu\t%s\t%s\n", (unsigned long long)en->size,
-               mp_rules_classify(r, en->path, en->size) == MP_LOOSE ? "suelto" : "empaquetable",
+               mp_rules_classify(r, en->path, en->size) == MP_LOOSE ? "loose" : "packable",
                en->path);
     }
     mp_rules_free(r);
@@ -341,7 +341,7 @@ static int cmd_analyze(int argc, char **argv) {
             list = 1;
         } else if (!strcmp(a, "--sample") || !strcmp(a, "--json") || !strcmp(a, "--threads") ||
                    !strcmp(a, "--keep-loose")) {
-            if (!has_value) return bad_usage("falta el valor de", a);
+            if (!has_value) return bad_usage("missing value for", a);
             const char *v = argv[++i];
             if (!strcmp(a, "--json")) {
                 json = v;
@@ -352,24 +352,24 @@ static int cmd_analyze(int argc, char **argv) {
                 double p = strtod(v, &end);
                 if (end && *end == '%') end++;
                 if (end == v || *end || !(p > 0.0 && p <= 100.0))
-                    return bad_usage("--sample debe estar entre 0 y 100 %", v);
+                    return bad_usage("--sample must be between 0 and 100 %", v);
                 o.sample_fraction = p / 100.0;
             } else {
                 char *end = NULL;
                 long t = strtol(v, &end, 10);
                 if (end == v || *end || t < 1 || t > 1024)
-                    return bad_usage("--threads debe estar entre 1 y 1024", v);
+                    return bad_usage("--threads must be between 1 and 1024", v);
                 o.threads = (unsigned)t;
             }
         } else if (a[0] == '-' && a[1] == '-') {
-            return bad_usage("opción desconocida", a);
+            return bad_usage("unknown option", a);
         } else if (!src) {
             src = a;
         } else {
-            return bad_usage("sobra un argumento", a);
+            return bad_usage("extra argument", a);
         }
     }
-    if (!src) return bad_usage("falta la carpeta o la imagen .exfat", NULL);
+    if (!src) return bad_usage("missing the folder or .exfat image", NULL);
     o.keep_loose = keep;
     if (list) return list_files(src, keep, o.nkeep);
     if (json) {
@@ -413,8 +413,6 @@ static void print_size(FILE *out, uint64_t b) {
     }
     char s[32];
     snprintf(s, sizeof s, "%.2f %s", v, u);
-    for (char *p = s; *p; p++)
-        if (*p == '.') *p = ',';
     fputs(s, out);
 }
 
@@ -448,18 +446,18 @@ static int run_pack(int argc, char **argv) {
         } else if (!strcmp(a, "-o") || !strcmp(a, "--level") || !strcmp(a, "--threads") ||
                    !strcmp(a, "--runtime") || !strcmp(a, "--keep-loose") || !strcmp(a, "--max-file-size") ||
                    !strcmp(a, "--volume-limit")) {
-            if (!has_value) return bad_usage("falta el valor de", a);
+            if (!has_value) return bad_usage("missing value for", a);
             const char *v = argv[++i];
             char *end = NULL;
             if (!strcmp(a, "--max-file-size")) {
                 unsigned long long m = strtoull(v, &end, 10);
-                if (end == v || *end || m == 0 || v[0] == '-') return bad_usage("--max-file-size debe ser un número de bytes mayor que 0", v);
+                if (end == v || *end || m == 0 || v[0] == '-') return bad_usage("--max-file-size must be a number of bytes greater than 0", v);
                 max_size = m;
             } else if (!strcmp(a, "--volume-limit")) {
-                // para pruebas: volúmenes pequeños, para tener varios con un juego pequeño
+                // for testing: small volumes, to get several from a small game
                 unsigned long long m = strtoull(v, &end, 10);
                 if (end == v || *end || v[0] == '-' || m < MP_ZPK_VOL_HEADER + MP_BLOCK_V1 || m > MP_ZPK_VOLUME_LIMIT)
-                    return bad_usage("--volume-limit debe estar entre 262208 y 4294901760 bytes", v);
+                    return bad_usage("--volume-limit must be between 262208 and 4294901760 bytes", v);
                 o.volume_limit = m;
             } else if (!strcmp(a, "-o")) {
                 dst = v;
@@ -469,49 +467,49 @@ static int run_pack(int argc, char **argv) {
                 keep[o.nkeep++] = v;
             } else if (!strcmp(a, "--level")) {
                 long l = strtol(v, &end, 10);
-                if (end == v || *end || l < 1 || l > 22) return bad_usage("--level debe estar entre 1 y 22", v);
+                if (end == v || *end || l < 1 || l > 22) return bad_usage("--level must be between 1 and 22", v);
                 o.level = (int)l;
             } else {
                 long t = strtol(v, &end, 10);
-                if (end == v || *end || t < 1 || t > 1024) return bad_usage("--threads debe estar entre 1 y 1024", v);
+                if (end == v || *end || t < 1 || t > 1024) return bad_usage("--threads must be between 1 and 1024", v);
                 o.threads = (unsigned)t;
             }
         } else if (a[0] == '-') {
-            return bad_usage("opción desconocida", a);
+            return bad_usage("unknown option", a);
         } else if (!src) {
             src = a;
         } else {
-            return bad_usage("sobra un argumento", a);
+            return bad_usage("extra argument", a);
         }
     }
-    if (!src) return bad_usage("falta la carpeta o la imagen .exfat del juego", NULL);
-    if (!dst) return bad_usage("falta la salida (-o)", NULL);
-    if (max_size && !p5z) return bad_usage("--max-file-size solo sirve con --p5z", NULL);
+    if (!src) return bad_usage("missing the game's folder or .exfat image", NULL);
+    if (!dst) return bad_usage("missing the output (-o)", NULL);
+    if (max_size && !p5z) return bad_usage("--max-file-size only works with --p5z", NULL);
     o.keep_loose = keep;
     if (mp_path_kind(src) == 0) {
         g_err_code = "bad_input";
-        fprintf(stderr, "error: no existe: %s\n", src);
+        fprintf(stderr, "error: does not exist: %s\n", src);
         return 1;
     }
     if (mp_same_file(dst, src) || (mp_path_kind(src) == 2 && mp_path_is_inside(dst, src)))
-        return bad_usage("la salida no puede ser el juego ni estar dentro de él", dst);
+        return bad_usage("the output cannot be the game or be inside it", dst);
     if (p5z) {
         if (mp_path_kind(dst) != 0) {
             g_err_code = "exists";
-            return bad_usage("el .p5z de salida ya existe", dst);
+            return bad_usage("the output .p5z already exists", dst);
         }
         char *dir = mp_full_path(dst);
         int parent_ok = dir && to_parent(dir) && mp_path_kind(dir) == 2;
         free(dir);
-        if (!parent_ok) return bad_usage("no existe la carpeta donde guardar el .p5z", dst);
+        if (!parent_ok) return bad_usage("the folder to save the .p5z in does not exist", dst);
     } else {
         if (mp_path_kind(dst) == 1) {
             g_err_code = "exists";
-            return bad_usage("la salida ya existe y es un archivo", dst);
+            return bad_usage("the output already exists and is a file", dst);
         }
         if (mp_path_kind(dst) == 2 && mp_dir_is_empty(dst) != 1) {
             g_err_code = "exists";
-            return bad_usage("la carpeta de salida no está vacía", dst);
+            return bad_usage("the output folder is not empty", dst);
         }
     }
 
@@ -535,27 +533,25 @@ static int run_pack(int argc, char **argv) {
         mp_err why = {{0}};
         int left;
         if (p5z)
-            left = mp_path_kind(dst) != 0;   // el .p5z a medias lo borra el escritor al destruirse
+            left = mp_path_kind(dst) != 0;   // the half-written .p5z is deleted by the writer when it is destroyed
         else
             left = clean_output(dst, existed, &why) != 0;
         say_left(e.msg, dst, left, why.msg);
         return 1;
     }
-    FILE *hum = g_json ? stderr : stdout;   // con --progress json, stdout es solo JSON
-    fprintf(hum, "Empaquetado en %s (%.0f s)\n", dst, (double)(mp_now_ns() - t0) / 1e9);
-    fprintf(hum, "  sueltos:      %llu archivos, ", (unsigned long long)r.loose_files);
+    FILE *hum = g_json ? stderr : stdout;   // with --progress json, stdout is JSON only
+    fprintf(hum, "Packed to %s (%.0f s)\n", dst, (double)(mp_now_ns() - t0) / 1e9);
+    fprintf(hum, "  loose:  %llu files, ", (unsigned long long)r.loose_files);
     print_size(hum, r.loose_bytes);
-    fprintf(hum, "\n  empaquetados: %llu archivos, ", (unsigned long long)r.packed_files);
+    fprintf(hum, "\n  packed: %llu files, ", (unsigned long long)r.packed_files);
     print_size(hum, r.packed_bytes);
     fprintf(hum, " -> ");
     print_size(hum, r.stored_bytes);
-    fprintf(hum, " en %llu volúmenes", (unsigned long long)r.volumes);
+    fprintf(hum, " in %llu volumes", (unsigned long long)r.volumes);
     if (r.packed_bytes) {
         char pct[32];
         snprintf(pct, sizeof pct, "%.1f", 100.0 * (1.0 - (double)r.stored_bytes / (double)r.packed_bytes));
-        for (char *p = pct; *p; p++)
-            if (*p == '.') *p = ',';
-        fprintf(hum, " (%s %% menos)", pct);
+        fprintf(hum, " (%s%% smaller)", pct);
     }
     fprintf(hum, "\n");
     uint64_t psize = 0;
@@ -576,15 +572,15 @@ static int run_pack(int argc, char **argv) {
         json_result(1, NULL, extra);
     }
     if (r.runtime_without_zstd)
-        fprintf(stderr, "aviso: el runtime de fakelib/libSceAmpr.sprx no parece leer packs zstd: usa el "
-                        "libSceAmpr.sprx de ampr-emu-ng (--runtime)\n");
+        fprintf(stderr, "warning: the fakelib/libSceAmpr.sprx runtime does not seem to read zstd packs: use "
+                        "ampr-emu-ng's libSceAmpr.sprx (--runtime)\n");
     if (!r.title_id[0])
-        fprintf(stderr, "aviso: sce_sys/param.json no da el TITLE_ID del juego (titleId)%s\n",
-                p5z ? ": el instalador de MaxPack no aceptará este .p5z" : "");
+        fprintf(stderr, "warning: sce_sys/param.json gives no TITLE_ID for the game (titleId)%s\n",
+                p5z ? ": MaxPack's installer will not accept this .p5z" : "");
     return 0;
 }
 
-// Escribe s como cadena JSON: comillas, barras y controles escapados; UTF-8 no válido pasa a U+FFFD.
+// Writes s as a JSON string: quotes, backslashes and control characters escaped; invalid UTF-8 becomes U+FFFD.
 static void print_json_string(const char *s) {
     const unsigned char *p = (const unsigned char *)s;
     putchar('"');
@@ -602,7 +598,7 @@ static void print_json_string(const char *s) {
         } else {
             int n = c >= 0xf0 && c < 0xf5 ? 4 : c >= 0xe0 ? 3 : c >= 0xc2 && c < 0xe0 ? 2 : 0;
             int ok = n > 0 && c < 0xf5;
-            for (int i = 1; ok && i < n; i++) ok = (p[i] & 0xc0) == 0x80;   // un NUL también falla aquí
+            for (int i = 1; ok && i < n; i++) ok = (p[i] & 0xc0) == 0x80;   // a NUL fails here too
             if (ok && n == 3) {
                 unsigned cp = (c & 0x0f) << 12 | (p[1] & 0x3f) << 6 | (p[2] & 0x3f);
                 ok = cp >= 0x800 && !(cp >= 0xd800 && cp < 0xe000);
@@ -647,7 +643,7 @@ static int cmd_info_json(const char *path) {
     return 0;
 }
 
-// info --play: lo que la consola necesita para jugar el .p5z sin instalarlo.
+// info --play: what the console needs to play the .p5z without installing it.
 static int cmd_info_play(const char *path) {
     char err[512] = {0};
     mp_play *p = mp_play_open(path, err, sizeof err);
@@ -658,7 +654,7 @@ static int cmd_info_play(const char *path) {
     char *j = mp_play_json(p);
     mp_play_close(p);
     if (!j) {
-        fprintf(stderr, "error: sin memoria\n");
+        fprintf(stderr, "error: out of memory\n");
         return 1;
     }
     puts(j);
@@ -672,7 +668,7 @@ static int cmd_info(int argc, char **argv) {
     if (argc == 2 && !strcmp(argv[1], "--play")) return cmd_info_play(argv[0]);
     if (argc == 2 && !strcmp(argv[0], "--json")) return cmd_info_json(argv[1]);
     if (argc == 2 && !strcmp(argv[1], "--json")) return cmd_info_json(argv[0]);
-    if (argc != 1 || !strcmp(argv[0], "--json")) return bad_usage("info necesita un archivo .p5z (o --json o --play y una ruta)", NULL);
+    if (argc != 1 || !strcmp(argv[0], "--json")) return bad_usage("info needs a .p5z file (or --json or --play and a path)", NULL);
     mp_err e = {{0}};
     mp_p5z *p = NULL;
     if (mp_p5z_open(argv[0], &p, &e) != 0) {
@@ -684,22 +680,22 @@ static int cmd_info(int argc, char **argv) {
     return rc;
 }
 
-// icon <ruta> -o <png>: 0 con el PNG escrito, 1 si el juego no tiene icono (o no se pudo escribir).
+// icon <path> -o <png>: 0 with the PNG written, 1 if the game has no icon (or it could not be written).
 static int cmd_icon(int argc, char **argv) {
     const char *src = NULL, *out = NULL;
     for (int i = 0; i < argc; i++) {
         if (!strcmp(argv[i], "-o")) {
-            if (i + 1 >= argc || out) return bad_usage("-o necesita un valor", NULL);
+            if (i + 1 >= argc || out) return bad_usage("-o needs a value", NULL);
             out = argv[++i];
         } else if (argv[i][0] == '-' && argv[i][1]) {
-            return bad_usage("opción desconocida", argv[i]);
+            return bad_usage("unknown option", argv[i]);
         } else if (!src) {
             src = argv[i];
         } else {
-            return bad_usage("icon admite un solo origen", argv[i]);
+            return bad_usage("icon accepts a single source", argv[i]);
         }
     }
-    if (!src || !out) return bad_usage("icon necesita un origen y -o <icono.png>", NULL);
+    if (!src || !out) return bad_usage("icon needs a source and -o <icon.png>", NULL);
     mp_err e = {{0}};
     uint8_t *png = NULL;
     size_t len = 0;
@@ -723,7 +719,7 @@ static int cmd_unpack(int argc, char **argv) {
 
 static int run_unpack(int argc, char **argv) {
     const char *src = NULL, *dst = NULL;
-    int mode = 0;   // 1 carpeta, 2 original
+    int mode = 0;   // 1 folder, 2 original
     unsigned threads = mp_cpu_count();
     for (int i = 0; i < argc; i++) {
         const char *a = argv[i];
@@ -736,34 +732,34 @@ static int run_unpack(int argc, char **argv) {
         } else if (!strcmp(a, "--original")) {
             mode = 2;
         } else if (!strcmp(a, "-o") || !strcmp(a, "--threads")) {
-            if (i + 1 >= argc) return bad_usage("falta el valor de", a);
+            if (i + 1 >= argc) return bad_usage("missing value for", a);
             const char *v = argv[++i];
             if (!strcmp(a, "-o")) {
                 dst = v;
             } else {
                 char *end = NULL;
                 long t = strtol(v, &end, 10);
-                if (end == v || *end || t < 1 || t > 1024) return bad_usage("--threads debe estar entre 1 y 1024", v);
+                if (end == v || *end || t < 1 || t > 1024) return bad_usage("--threads must be between 1 and 1024", v);
                 threads = (unsigned)t;
             }
         } else if (a[0] == '-') {
-            return bad_usage("opción desconocida", a);
+            return bad_usage("unknown option", a);
         } else if (!src) {
             src = a;
         } else {
-            return bad_usage("sobra un argumento", a);
+            return bad_usage("extra argument", a);
         }
     }
-    if (!src) return bad_usage("falta el archivo .p5z", NULL);
-    if (!mode) return bad_usage("indica --folder (carpeta para la consola) o --original (dump original)", NULL);
-    if (!dst) return bad_usage("falta la carpeta de salida (-o)", NULL);
+    if (!src) return bad_usage("missing the .p5z file", NULL);
+    if (!mode) return bad_usage("give --folder (folder for the console) or --original (original dump)", NULL);
+    if (!dst) return bad_usage("missing the output folder (-o)", NULL);
     if (mp_path_kind(dst) == 1) {
         g_err_code = "exists";
-        return bad_usage("la salida ya existe y es un archivo", dst);
+        return bad_usage("the output already exists and is a file", dst);
     }
     if (mp_path_kind(dst) == 2 && mp_dir_is_empty(dst) != 1) {
         g_err_code = "exists";
-        return bad_usage("la carpeta de salida no está vacía", dst);
+        return bad_usage("the output folder is not empty", dst);
     }
     int existed = mp_path_kind(dst) == 2;
     start_json_and_control();
@@ -784,8 +780,8 @@ static int run_unpack(int argc, char **argv) {
         return 1;
     }
     FILE *hum = g_json ? stderr : stdout;
-    fprintf(hum, "%s en %s (%.0f s)%s\n", mode == 1 ? "Carpeta para la consola" : "Dump original reconstruido", dst,
-            (double)(mp_now_ns() - t0) / 1e9, mode == 2 ? "; todos los SHA-256 coinciden" : "");
+    fprintf(hum, "%s to %s (%.0f s)%s\n", mode == 1 ? "Console folder" : "Original dump rebuilt", dst,
+            (double)(mp_now_ns() - t0) / 1e9, mode == 2 ? "; all SHA-256 hashes match" : "");
     if (g_json) {
         char extra[64];
         snprintf(extra, sizeof extra, ",\"bytes\":%llu", (unsigned long long)folder_bytes(dst));
@@ -809,32 +805,32 @@ static int run_verify(int argc, char **argv) {
         if (common) {
             continue;
         } else if (!strcmp(a, "--against") || !strcmp(a, "--threads")) {
-            if (i + 1 >= argc) return bad_usage("falta el valor de", a);
+            if (i + 1 >= argc) return bad_usage("missing value for", a);
             const char *v = argv[++i];
             if (!strcmp(a, "--against")) {
                 against = v;
             } else {
                 char *end = NULL;
                 long t = strtol(v, &end, 10);
-                if (end == v || *end || t < 1 || t > 1024) return bad_usage("--threads debe estar entre 1 y 1024", v);
+                if (end == v || *end || t < 1 || t > 1024) return bad_usage("--threads must be between 1 and 1024", v);
                 threads = (unsigned)t;
             }
         } else if (a[0] == '-') {
-            return bad_usage("opción desconocida", a);
+            return bad_usage("unknown option", a);
         } else if (!target) {
             target = a;
         } else {
-            return bad_usage("sobra un argumento", a);
+            return bad_usage("extra argument", a);
         }
     }
-    if (!target) return bad_usage("falta el .p5z o la carpeta que verificar", NULL);
+    if (!target) return bad_usage("missing the .p5z or the folder to verify", NULL);
     int kind = mp_path_kind(target);
     if (kind == 0) {
         g_err_code = "bad_input";
-        fprintf(stderr, "error: no existe: %s\n", target);
+        fprintf(stderr, "error: does not exist: %s\n", target);
         return 1;
     }
-    if (kind == 1 && against) return bad_usage("--against solo sirve para carpetas (el .p5z ya lleva sus SHA-256)", NULL);
+    if (kind == 1 && against) return bad_usage("--against only works for folders (the .p5z already carries its SHA-256 hashes)", NULL);
     start_json_and_control();
     mp_err e = {{0}};
     mp_verify_result r;
@@ -846,7 +842,7 @@ static int run_verify(int argc, char **argv) {
         return 1;
     }
     FILE *hum = g_json ? stderr : stdout;
-    fprintf(hum, "verify: %llu correctos, %llu con fallos (%.0f s)\n", (unsigned long long)r.files_ok,
+    fprintf(hum, "verify: %llu OK, %llu failed (%.0f s)\n", (unsigned long long)r.files_ok,
             (unsigned long long)r.files_bad, (double)(mp_now_ns() - t0) / 1e9);
     if (g_json) {
         char extra[96];
@@ -868,7 +864,7 @@ int main(int argc, char **argv) {
         return 0;
     }
     if (argc >= 2 && strcmp(argv[1], "--capabilities") == 0) {
-        // lo que la ventana necesita de esta versión del motor
+        // what the window needs from this version of the engine
         printf("{\"progress_json\":true,\"control_stdin\":true,\"max_file_size\":true,\"info_json\":true,"
                "\"icon\":true,\"packs\":true}\n");
         return 0;
@@ -883,7 +879,7 @@ int main(int argc, char **argv) {
     if (argc >= 2 && strcmp(argv[1], "info") == 0) return cmd_info(argc - 2, argv + 2);
     if (argc >= 2 && strcmp(argv[1], "icon") == 0) return cmd_icon(argc - 2, argv + 2);
     if (argc >= 2 && strcmp(argv[1], "verify") == 0) return cmd_verify(argc - 2, argv + 2);
-    if (argc >= 2) return bad_usage("orden desconocida", argv[1]);
+    if (argc >= 2) return bad_usage("unknown command", argv[1]);
     usage(stderr);
     return 2;
 }

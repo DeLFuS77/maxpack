@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Implementación de referencia, independiente del código C, de los formatos AMPR.
+"""Reference implementation, independent of the C code, of the AMPR formats.
 
-  ampr_ref.py idx3-build <lista.tsv> <salida>   lista: "size<TAB>mtime<TAB>ruta" (relativa)
-  ampr_ref.py idx3-dump <ampr_emu.index>        "size<TAB>mtime<TAB>/app0/..." por fila
-  ampr_ref.py zpk-check <carpeta> <origen>      valida ampr_zstd.index + volúmenes y compara
-                                                cada archivo empaquetado con el origen (carpeta
-                                                o imagen .exfat); necesita compression.zstd
+  ampr_ref.py idx3-build <list.tsv> <output>   list: "size<TAB>mtime<TAB>path" (relative)
+  ampr_ref.py idx3-dump <ampr_emu.index>        "size<TAB>mtime<TAB>/app0/..." per row
+  ampr_ref.py zpk-check <folder> <source>      validates ampr_zstd.index + volumes and compares
+                                                each packed file with the source (folder
+                                                or .exfat image); needs compression.zstd
 
-AMPRIDX3 sigue write_index de tools/build_ampr_index.py (drakmor/ampr_emu); AMPRZPK1 sigue
-docs/zstd-format.md de ampr-emu-ng y docs/zstd.md de ps5-dump-forge.
+AMPRIDX3 follows write_index of tools/build_ampr_index.py (drakmor/ampr_emu); AMPRZPK1 follows
+ampr-emu-ng's docs/zstd-format.md and ps5-dump-forge's docs/zstd.md.
 """
 import os
 import struct
@@ -86,7 +86,7 @@ def cmd_idx3_dump(path):
     d = open(path, "rb").read()
     magic, ver, rsz, n, blob, hoff, ssz, slots = struct.unpack_from("<8sIIQQQII", d, 0)
     if magic != b"AMPRIDX3" or ver != 3:
-        raise SystemExit("no es AMPRIDX3")
+        raise SystemExit("not AMPRIDX3")
     base = 48 + rsz * n
     out = sys.stdout.buffer
     for i in range(n):
@@ -103,16 +103,16 @@ def zpk_load(folder):
      total, _r2, crc_body, crc_head, _r3) = struct.unpack_from("<8sIIBBHI16sQQQQQQQQQIIQ", d, 0)
     errs = []
     if magic != b"AMPRZPK1" or ver != 1 or hsz != 128 or shift != 18 or not 1 <= level <= 22:
-        errs.append("cabecera")
+        errs.append("header")
     if zlib.crc32(d[128:]) != crc_body:
-        errs.append("CRC del cuerpo")
+        errs.append("body CRC")
     head = bytearray(d[:128])
     head[112:120] = b"\0" * 8
     if zlib.crc32(bytes(head)) != crc_head:
-        errs.append("CRC de la cabecera")
+        errs.append("header CRC")
     if foff != 128 or coff != foff + 32 * fcount or voff != coff + 8 * ccount or soff != voff + 8 * vcount \
             or soff + slen != len(d) or (ccount == 0) != (vcount == 0):
-        errs.append("tablas")
+        errs.append("tables")
     files = []
     for i in range(fcount):
         h, size, first, poff, plen, flags, _ = struct.unpack_from("<QQIIHHI", d, foff + 32 * i)
@@ -126,46 +126,46 @@ def zpk_load(folder):
 def zpk_check(folder, src):
     from compression import zstd   # Python >= 3.14
     files, chunks, vols, aid, errs = zpk_load(folder)
-    # Orden, first_chunk, hash.
+    # Order, first_chunk, hash.
     prev = None
     expect_first = 0
     for h, size, first, path, flags in files:
         if fnv(path.encode("utf-8"), STD_BASIS) != h:
-            errs.append("hash de %s" % path)
+            errs.append("hash of %s" % path)
         if prev is not None and (h, path.encode()) <= prev:
-            errs.append("orden en %s" % path)
+            errs.append("order in %s" % path)
         prev = (h, path.encode())
         if first != expect_first:
-            errs.append("first_chunk de %s" % path)
+            errs.append("first_chunk of %s" % path)
         expect_first += (size + 262143) // 262144
     if expect_first != len(chunks):
-        errs.append("número de bloques")
-    # Volúmenes: cabeceras y bloques seguidos desde 64.
+        errs.append("number of blocks")
+    # Volumes: headers and blocks consecutive from 64.
     vfiles = []
     for v in range(len(vols)):
         name = os.path.join(folder, "ampr_zstd-%03d.pak" % v)
         data = open(name, "rb").read()
         vfiles.append(data)
         if len(data) != vols[v]:
-            errs.append("tamaño del volumen %d" % v)
+            errs.append("size of volume %d" % v)
         m, ver, hsz, vid, vcount, vaid, payload = struct.unpack_from("<8sIIII16sQ", data, 0)
         crc = struct.unpack_from("<I", data, 60)[0]
         hh = bytearray(data[:64])
         hh[60:64] = b"\0" * 4
         if m != b"AMPRZDT1" or ver != 1 or hsz != 64 or vid != v or vcount != len(vols) or vaid != aid \
                 or payload != len(data) - 64 or zlib.crc32(bytes(hh)) != crc:
-            errs.append("cabecera del volumen %d" % v)
+            errs.append("header of volume %d" % v)
     pos_v, pos_off = 0, 64
     for c in chunks:
         off, vid, stored, codec = c & 0xFFFFFFFF, (c >> 32) & 0xFFF, ((c >> 44) & 0x3FFFF) + 1, c >> 62
         if vid != pos_v:
             if vid != pos_v + 1 or pos_off != vols[pos_v]:
-                errs.append("bloques no seguidos entre volúmenes")
+                errs.append("blocks not consecutive across volumes")
             pos_v, pos_off = vid, 64
         if off != pos_off or codec > 1:
-            errs.append("bloque fuera de sitio o códec")
+            errs.append("block out of place or codec")
         pos_off = off + stored
-    # Contenido frente al origen.
+    # Content against the source.
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     read_src = source_reader(src)
     bad = 0
@@ -178,20 +178,20 @@ def zpk_check(folder, src):
             want = min(262144, size - k * 262144)
             if codec == 0:
                 if stored != want:
-                    errs.append("bloque en bruto con tamaño distinto en %s" % path)
+                    errs.append("raw block with a different size in %s" % path)
                 out += raw
             else:
                 if stored >= want:
-                    errs.append("bloque zstd que no es menor en %s" % path)
+                    errs.append("zstd block that is not smaller in %s" % path)
                 if flags & 1:
-                    errs.append("store-only con bloque zstd en %s" % path)
+                    errs.append("store-only with a zstd block in %s" % path)
                 out += zstd.decompress(raw)
         if bytes(out) != read_src(path, size):
             bad += 1
-            errs.append("contenido distinto: %s" % path)
+            errs.append("different content: %s" % path)
     for e in errs[:20]:
         print("ERROR:", e)
-    print("zpk-check: %d archivos, %d errores" % (len(files), len(errs)))
+    print("zpk-check: %d files, %d errors" % (len(files), len(errs)))
     return 1 if errs else 0
 
 

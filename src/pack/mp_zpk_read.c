@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Lector de packs zstd: valida el índice y los volúmenes como ampr-emu-ng y Forge, y decodifica.
+// Zstd pack reader: validates the index and the volumes like ampr-emu-ng and Forge, and decodes.
 #define ZSTD_STATIC_LINKING_ONLY
 #include <stdio.h>
 #include <stdlib.h>
@@ -32,7 +32,7 @@ static uint32_t rd32(const uint8_t *p) { return p[0] | p[1] << 8 | p[2] << 16 | 
 static uint64_t rd64(const uint8_t *p) { return rd32(p) | (uint64_t)rd32(p + 4) << 32; }
 
 static int bad(mp_err *e, const char *why) {
-    mp_err_set(e, "ampr_zstd.index no válido: %s", why);
+    mp_err_set(e, "invalid ampr_zstd.index: %s", why);
     return -1;
 }
 
@@ -53,7 +53,7 @@ void mp_zpk_close(mp_zpk *z) {
 static int check_volume(mp_zpk *z, uint32_t v, const uint8_t aid[16], mp_err *e) {
     uint8_t h[64];
     if (z->vs.size(z->vs.ctx, v) != z->vols[v]) {
-        mp_err_set(e, "el volumen ampr_zstd-%03u.pak no existe o no mide lo que dice el índice", v);
+        mp_err_set(e, "volume ampr_zstd-%03u.pak does not exist or is not the size the index says", v);
         return -1;
     }
     if (z->vs.read(z->vs.ctx, v, 0, h, 64, e) != 0) return -1;
@@ -65,11 +65,11 @@ static int check_volume(mp_zpk *z, uint32_t v, const uint8_t aid[16], mp_err *e)
              rd32(h + 20) == z->nvol && memcmp(h + 24, aid, 16) == 0 && rd64(h + 40) == z->vols[v] - 64;
     for (int i = 48; i < 60 && ok; i++) ok = h[i] == 0;
     if (!ok) {
-        mp_err_set(e, "cabecera del volumen ampr_zstd-%03u.pak no válida", v);
+        mp_err_set(e, "invalid header of volume ampr_zstd-%03u.pak", v);
         return -1;
     }
     if (mp_crc32(hz, 64, 0) != crc) {
-        mp_err_set(e, "CRC de la cabecera del volumen ampr_zstd-%03u.pak", v);
+        mp_err_set(e, "header CRC of volume ampr_zstd-%03u.pak", v);
         return -1;
     }
     return 0;
@@ -77,26 +77,26 @@ static int check_volume(mp_zpk *z, uint32_t v, const uint8_t aid[16], mp_err *e)
 
 int mp_zpk_open(const uint8_t *d, size_t len, const mp_zpk_volsrc *vs, mp_zpk **out, mp_err *e) {
     *out = NULL;
-    if (len < MP_ZPK_HEADER || memcmp(d, "AMPRZPK1", 8) != 0) return bad(e, "cabecera");
+    if (len < MP_ZPK_HEADER || memcmp(d, "AMPRZPK1", 8) != 0) return bad(e, "header");
     if (rd32(d + 8) != 1 || rd32(d + 12) != MP_ZPK_HEADER || d[16] != 18 || d[17] < 1 || d[17] > 22 ||
         rd16(d + 18) != 0 || rd64(d + 104) != 0 || rd64(d + 120) != 0)
-        return bad(e, "versión, tamaño de bloque, nivel o campos reservados");
+        return bad(e, "version, block size, level or reserved fields");
     uint8_t hz[MP_ZPK_HEADER];
     memcpy(hz, d, MP_ZPK_HEADER);
     memset(hz + 112, 0, 8);
-    if (mp_crc32(hz, MP_ZPK_HEADER, 0) != rd32(d + 116)) return bad(e, "CRC de la cabecera");
-    if (mp_crc32(d + MP_ZPK_HEADER, len - MP_ZPK_HEADER, 0) != rd32(d + 112)) return bad(e, "CRC de las tablas");
+    if (mp_crc32(hz, MP_ZPK_HEADER, 0) != rd32(d + 116)) return bad(e, "header CRC");
+    if (mp_crc32(d + MP_ZPK_HEADER, len - MP_ZPK_HEADER, 0) != rd32(d + 112)) return bad(e, "tables CRC");
     uint32_t nvol = rd32(d + 20);
     uint64_t nf = rd64(d + 40), nc = rd64(d + 48), foff = rd64(d + 56), coff = rd64(d + 64), voff = rd64(d + 72),
              soff = rd64(d + 80), slen = rd64(d + 88), logical = rd64(d + 96);
-    // Sin sumas que puedan dar la vuelta: cada parte se compara con lo que queda del archivo.
+    // No sums that could wrap around: each part is compared with what is left of the file.
     if (nvol > MP_ZPK_MAX_VOLUMES || nc >= 0xFFFFFFFFull || nf > len / 32 || nc > len / 8 ||
         foff != MP_ZPK_HEADER || coff != foff + 32 * nf || voff != coff + 8 * nc ||
         soff != voff + 8ull * nvol || soff > len || slen != len - soff || (nc == 0) != (nvol == 0))
-        return bad(e, "posición o tamaño de las tablas");
+        return bad(e, "position or size of the tables");
     mp_zpk *z = calloc(1, sizeof *z);
     if (!z) {
-        mp_err_set(e, "sin memoria");
+        mp_err_set(e, "out of memory");
         return -1;
     }
     z->vs = *vs;
@@ -108,7 +108,7 @@ int mp_zpk_open(const uint8_t *d, size_t len, const mp_zpk_volsrc *vs, mp_zpk **
     z->vols = malloc((nvol ? nvol : 1) * sizeof *z->vols);
     if (!z->f || !z->chunks || !z->vols) {
         mp_zpk_close(z);
-        mp_err_set(e, "sin memoria");
+        mp_err_set(e, "out of memory");
         return -1;
     }
     for (uint64_t c = 0; c < nc; c++) z->chunks[c] = rd64(d + coff + 8 * c);
@@ -123,19 +123,19 @@ int mp_zpk_open(const uint8_t *d, size_t len, const mp_zpk_volsrc *vs, mp_zpk **
         f->first = rd32(r + 16);
         uint32_t po = rd32(r + 20), pl = rd16(r + 24);
         f->flags = rd16(r + 26);
-        if (f->size > 0xFFFFFFFEull * MP_BLOCK_V1) {   // más bloques de los que caben en el índice
-            rc = bad(e, "tamaño de archivo imposible");
+        if (f->size > 0xFFFFFFFEull * MP_BLOCK_V1) {   // more blocks than fit in the index
+            rc = bad(e, "impossible file size");
             break;
         }
         if (rd32(r + 28) != 0 || (f->flags & ~1u) || pl == 0 || pl >= 1024 || po != want_off ||
             (uint64_t)po + pl > slen || f->first != want_first) {
-            rc = bad(e, "registro de archivo");
+            rc = bad(e, "file record");
             break;
         }
         f->path = malloc(pl + 1u);
         if (!f->path) {
             rc = -1;
-            mp_err_set(e, "sin memoria");
+            mp_err_set(e, "out of memory");
             break;
         }
         memcpy(f->path, d + soff + po, pl);
@@ -145,12 +145,12 @@ int mp_zpk_open(const uint8_t *d, size_t len, const mp_zpk_volsrc *vs, mp_zpk **
             break;
         }
         if (mp_zpk_path_hash(f->path) != f->hash) {
-            rc = bad(e, "hash de ruta");
+            rc = bad(e, "path hash");
             break;
         }
         if (i && (z->f[i - 1].hash > f->hash ||
                   (z->f[i - 1].hash == f->hash && strcmp(z->f[i - 1].path, f->path) >= 0))) {
-            rc = bad(e, "registros desordenados o repetidos");
+            rc = bad(e, "records out of order or repeated");
             break;
         }
         want_off += pl;
@@ -158,8 +158,8 @@ int mp_zpk_open(const uint8_t *d, size_t len, const mp_zpk_volsrc *vs, mp_zpk **
         sum += f->size;
     }
     if (!rc && (want_first != nc || want_off != slen || sum != logical))
-        rc = bad(e, "número de bloques, cadenas o bytes totales");
-    // Bloques: seguidos desde 64 en el orden del índice, con su códec y tamaño.
+        rc = bad(e, "number of blocks, strings or total bytes");
+    // Blocks: consecutive from 64 in the index's order, with their codec and size.
     uint32_t cv = 0;
     uint64_t coff_v = MP_ZPK_VOL_HEADER;
     for (size_t i = 0; i < z->n && !rc; i++) {
@@ -169,12 +169,12 @@ int mp_zpk_open(const uint8_t *d, size_t len, const mp_zpk_volsrc *vs, mp_zpk **
             uint64_t c = z->chunks[f->first + k];
             uint64_t want = f->size - k * MP_BLOCK_V1 < MP_BLOCK_V1 ? f->size - k * MP_BLOCK_V1 : MP_BLOCK_V1;
             if (C_VOL(c) >= z->nvol) {
-                rc = bad(e, "bloque en un volumen inexistente");
+                rc = bad(e, "block in a nonexistent volume");
                 break;
             }
             if (C_VOL(c) != cv) {
                 if (C_VOL(c) != cv + 1 || coff_v != z->vols[cv]) {
-                    rc = bad(e, "bloques que no van seguidos entre volúmenes");
+                    rc = bad(e, "blocks that are not consecutive across volumes");
                     break;
                 }
                 cv++;
@@ -182,13 +182,13 @@ int mp_zpk_open(const uint8_t *d, size_t len, const mp_zpk_volsrc *vs, mp_zpk **
             }
             if (C_OFF(c) != coff_v || C_CODEC(c) > 1 || (C_CODEC(c) == 0 && C_STORED(c) != want) ||
                 (C_CODEC(c) == 1 && C_STORED(c) >= want) || ((f->flags & 1) && C_CODEC(c) != 0)) {
-                rc = bad(e, "bloque fuera de sitio, con códec o tamaño no válido");
+                rc = bad(e, "block out of place, or with an invalid codec or size");
                 break;
             }
             coff_v += C_STORED(c);
         }
     }
-    if (!rc && nvol && (cv != nvol - 1 || coff_v != z->vols[cv])) rc = bad(e, "tamaño de los volúmenes");
+    if (!rc && nvol && (cv != nvol - 1 || coff_v != z->vols[cv])) rc = bad(e, "size of the volumes");
     for (uint32_t v = 0; v < nvol && !rc; v++) rc = check_volume(z, v, d + 24, e);
     if (rc) {
         mp_zpk_close(z);
@@ -232,7 +232,7 @@ int mp_zpk_chunk(const mp_zpk *z, size_t i, uint32_t k, uint32_t *vol, uint64_t 
 
 int mp_zpk_read_file(mp_zpk *z, size_t i, uint64_t off, void *buf, size_t n, mp_err *e) {
     if (i >= z->n || off > z->f[i].size || n > z->f[i].size - off) {
-        mp_err_set(e, "lectura fuera del archivo empaquetado");
+        mp_err_set(e, "read outside the packed file");
         return -1;
     }
     if (n == 0) return 0;
@@ -241,7 +241,7 @@ int mp_zpk_read_file(mp_zpk *z, size_t i, uint64_t off, void *buf, size_t n, mp_
     ZSTD_DCtx *dc = ZSTD_createDCtx();
     int rc = 0;
     if (!src || !dec || !dc) {
-        mp_err_set(e, "sin memoria");
+        mp_err_set(e, "out of memory");
         rc = -1;
     }
     uint8_t *o = buf;
@@ -259,15 +259,15 @@ int mp_zpk_read_file(mp_zpk *z, size_t i, uint64_t off, void *buf, size_t n, mp_
             size_t r = ZSTD_getFrameHeader(&fh, src, stored);
             if (r != 0 || fh.frameContentSize != want || !fh.checksumFlag || fh.windowSize > MP_BLOCK_V1 ||
                 fh.dictID != 0) {
-                mp_err_set(e, "%s: bloque %llu con un frame zstd no válido para el runtime", f->path,
+                mp_err_set(e, "%s: block %llu with a zstd frame that is not valid for the runtime", f->path,
                            (unsigned long long)k);
                 rc = -1;
                 break;
             }
             r = ZSTD_decompressDCtx(dc, dec, want, src, stored);
             if (ZSTD_isError(r) || r != want) {
-                mp_err_set(e, "%s: bloque %llu dañado (%s)", f->path, (unsigned long long)k,
-                           ZSTD_isError(r) ? ZSTD_getErrorName(r) : "tamaño distinto");
+                mp_err_set(e, "%s: block %llu damaged (%s)", f->path, (unsigned long long)k,
+                           ZSTD_isError(r) ? ZSTD_getErrorName(r) : "different size");
                 rc = -1;
                 break;
             }
@@ -285,7 +285,7 @@ int mp_zpk_read_file(mp_zpk *z, size_t i, uint64_t off, void *buf, size_t n, mp_
     return rc;
 }
 
-// ---- Volúmenes de una carpeta, abiertos bajo demanda ----------------------------------------
+// ---- Volumes of a folder, opened on demand --------------------------------------------------
 
 typedef struct {
     char *dir;
@@ -310,12 +310,12 @@ static int dsrc_read(void *ctx, uint32_t vol, uint64_t off, void *buf, size_t n,
     mp_file *f = ds_get(ctx, vol);
     size_t got = 0;
     if (!f) {
-        mp_err_set(e, "falta el volumen ampr_zstd-%03u.pak", vol);
+        mp_err_set(e, "volume ampr_zstd-%03u.pak is missing", vol);
         return -1;
     }
     if (mp_file_pread(f, buf, n, off, &got, e) != 0) return -1;
     if (got != n) {
-        mp_err_set(e, "volumen ampr_zstd-%03u.pak truncado", vol);
+        mp_err_set(e, "truncated volume ampr_zstd-%03u.pak", vol);
         return -1;
     }
     return 0;
@@ -334,7 +334,7 @@ int mp_zpk_volsrc_dir(const char *dir, mp_zpk_volsrc *out, mp_err *e) {
     if (!d || !(d->dir = mp_strdup(dir)) || !(d->mu = mp_mutex_new())) {
         if (d) free(d->dir);
         free(d);
-        mp_err_set(e, "sin memoria");
+        mp_err_set(e, "out of memory");
         return -1;
     }
     out->read = dsrc_read;

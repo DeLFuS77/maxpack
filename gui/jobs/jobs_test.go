@@ -51,7 +51,7 @@ func needCore(t *testing.T) (engine, fixtures string) {
 	t.Helper()
 	engine, fixtures = os.Getenv("MAXPACK_CORE"), os.Getenv("MP_FIXTURES")
 	if engine == "" || fixtures == "" {
-		t.Skip("faltan MAXPACK_CORE y MP_FIXTURES: se necesita el motor y las imágenes de prueba")
+		t.Skip("MAXPACK_CORE and MP_FIXTURES are missing: the engine and the test images are needed")
 	}
 	return engine, fixtures
 }
@@ -69,17 +69,17 @@ func TestP5zNameSanitized(t *testing.T) {
 	for _, c := range cases {
 		it := item(c.title, "PPSA00001", 1)
 		if got := P5zName(it); got != c.want {
-			t.Errorf("%q: %q, esperaba %q", c.title, got, c.want)
+			t.Errorf("%q: %q, expected %q", c.title, got, c.want)
 		}
 	}
 	long := P5zName(item(strings.Repeat("é", 200), "PPSA00001", 1))
 	if len(long) > 200 || !strings.HasSuffix(long, "[PPSA00001].p5z") {
-		t.Errorf("nombre largo: %d bytes, %q", len(long), long)
+		t.Errorf("long name: %d bytes, %q", len(long), long)
 	}
 	empty := item("", "PPSA00001", 1)
 	empty.Path = filepath.Join("x", "Mi Juego")
 	if got := P5zName(empty); !strings.HasPrefix(got, "Mi Juego") {
-		t.Errorf("sin título: %q", got)
+		t.Errorf("without a title: %q", got)
 	}
 }
 
@@ -92,15 +92,15 @@ func TestDestRules(t *testing.T) {
 
 	p := PlanCompress([]Item{it}, Options{Mode: "folder", Dest: root}, f)[0]
 	if want := filepath.Join(root, "homebrew", "TEST00001"); !same(p.Out, want) {
-		t.Errorf("raíz: %q, esperaba %q", p.Out, want)
+		t.Errorf("root: %q, wanted %q", p.Out, want)
 	}
 	p = PlanCompress([]Item{it}, Options{Mode: "folder", Dest: other}, f)[0]
 	if want := filepath.Join(other, "TEST00001"); !same(p.Out, want) {
-		t.Errorf("carpeta: %q, esperaba %q", p.Out, want)
+		t.Errorf("folder: %q, wanted %q", p.Out, want)
 	}
 	p = PlanCompress([]Item{it}, Options{Mode: "p5z", Dest: other}, f)[0]
 	if want := filepath.Join(other, "Test [TEST00001].p5z"); !same(p.Out, want) {
-		t.Errorf("p5z: %q, esperaba %q", p.Out, want)
+		t.Errorf("p5z: %q, expected %q", p.Out, want)
 	}
 }
 
@@ -116,11 +116,11 @@ func TestDecompressDestRules(t *testing.T) {
 	}
 	p = PlanDecompress([]Item{it}, Options{Mode: "console", Dest: root}, f)[0]
 	if want := filepath.Join(root, "homebrew", "TEST00001"); !same(p.Out, want) {
-		t.Errorf("consola raíz: %q", p.Out)
+		t.Errorf("console root: %q", p.Out)
 	}
 	p = PlanDecompress([]Item{it}, Options{Mode: "console", Dest: other}, f)[0]
 	if want := filepath.Join(other, "TEST00001"); !same(p.Out, want) {
-		t.Errorf("consola carpeta: %q", p.Out)
+		t.Errorf("console folder: %q", p.Out)
 	}
 }
 
@@ -136,13 +136,13 @@ func TestSameAsSource(t *testing.T) {
 	it.Path = "E:/juegos/G"
 	p = PlanCompress([]Item{it}, Options{Mode: "folder", Dest: "E:/juegos/G/salida"}, f)[0]
 	if p.Block != "same_as_source" {
-		t.Errorf("dentro del origen: Block = %q", p.Block)
+		t.Errorf("inside the source: Block = %q", p.Block)
 	}
 	// source inside the destination, which would be replaced
 	it.Path = "E:/homebrew/PPSA12544/sub"
 	p = PlanCompress([]Item{it}, Options{Mode: "folder", Dest: "E:/"}, f)[0]
 	if p.Block != "same_as_source" {
-		t.Errorf("origen dentro del destino: Block = %q", p.Block)
+		t.Errorf("source inside the destination: Block = %q", p.Block)
 	}
 }
 
@@ -170,23 +170,23 @@ func TestFat32Rules(t *testing.T) {
 	big := item("Grande", "TEST00001", 5*gib)
 	p := PlanCompress([]Item{big}, Options{Mode: "p5z", Dest: dest}, f)[0]
 	if !hasWarning(p, "fat32") || p.Block != "fat32_too_big" {
-		t.Errorf("sin seguir: avisos %v, Block %q", p.Warnings, p.Block)
+		t.Errorf("without continuing: warnings %v, Block %q", p.Warnings, p.Block)
 	}
 	p = PlanCompress([]Item{big}, Options{Mode: "p5z", Dest: dest, ContinueFat32: true}, f)[0]
 	if !hasWarning(p, "fat32") || p.Block != "" {
-		t.Errorf("seguir: avisos %v, Block %q", p.Warnings, p.Block)
+		t.Errorf("continuing: warnings %v, Block %q", p.Warnings, p.Block)
 	}
 	if !hasArg(p.Args, "--max-file-size") || !hasArg(p.Args, "4294967295") {
-		t.Errorf("faltan los argumentos de tope: %v", p.Args)
+		t.Errorf("the cap arguments are missing: %v", p.Args)
 	}
 	small := item("Pequeño", "TEST00002", 3*gib)
 	p = PlanCompress([]Item{small}, Options{Mode: "p5z", Dest: dest}, f)[0]
 	if len(p.Warnings) != 0 || p.Block != "" || hasArg(p.Args, "--max-file-size") {
-		t.Errorf("3 GiB: avisos %v, Block %q, args %v", p.Warnings, p.Block, p.Args)
+		t.Errorf("3 GiB: warnings %v, Block %q, args %v", p.Warnings, p.Block, p.Args)
 	}
 	p = PlanCompress([]Item{big}, Options{Mode: "folder", Dest: dest}, f)[0]
 	if hasWarning(p, "fat32") || p.Block != "" {
-		t.Errorf("carpeta en FAT32: avisos %v, Block %q", p.Warnings, p.Block)
+		t.Errorf("folder on FAT32: warnings %v, Block %q", p.Warnings, p.Block)
 	}
 }
 
@@ -196,7 +196,7 @@ func TestNoSpace(t *testing.T) {
 	it := item("Juego", "TEST00001", 3*gib)
 	p := PlanCompress([]Item{it}, Options{Mode: "p5z", Dest: dest}, f)[0]
 	if !hasWarning(p, "may_not_fit") || p.Block != "" {
-		t.Errorf("avisos %v, Block %q", p.Warnings, p.Block)
+		t.Errorf("warnings %v, Block %q", p.Warnings, p.Block)
 	}
 	// replacing something that is already there: both must fit
 	old := filepath.Join(dest, P5zName(it))
@@ -208,7 +208,7 @@ func TestNoSpace(t *testing.T) {
 	f.free = 10 * gib
 	p = PlanCompress([]Item{it}, Options{Mode: "p5z", Dest: dest}, f)[0]
 	if len(p.Replace) == 0 || p.Block != "" || hasWarning(p, "may_not_fit") {
-		t.Errorf("reemplazo con sitio: %+v", p)
+		t.Errorf("replacement with room: %+v", p)
 	}
 }
 
@@ -218,11 +218,11 @@ func TestNeedsRuntime(t *testing.T) {
 	it.HasZstdRuntime = false
 	p := PlanCompress([]Item{it}, Options{Mode: "p5z", Dest: dest}, newFS())[0]
 	if !hasWarning(p, "needs_runtime") || p.Block != "" || hasArg(p.Args, "--runtime") {
-		t.Errorf("sin runtime: %v %q %v", p.Warnings, p.Block, p.Args)
+		t.Errorf("without runtime: %v %q %v", p.Warnings, p.Block, p.Args)
 	}
 	p = PlanCompress([]Item{it}, Options{Mode: "p5z", Dest: dest, Runtime: "ampr.sprx"}, newFS())[0]
 	if hasWarning(p, "needs_runtime") || !hasArg(p.Args, "--runtime") || !hasArg(p.Args, "ampr.sprx") {
-		t.Errorf("con runtime: %v %v", p.Warnings, p.Args)
+		t.Errorf("with runtime: %v %v", p.Warnings, p.Args)
 	}
 }
 
@@ -232,7 +232,7 @@ func TestDuplicateTargetsWarned(t *testing.T) {
 	b.Path += "2"
 	plans := PlanCompress([]Item{a, b}, Options{Mode: "folder", Dest: dest}, newFS())
 	if !hasWarning(plans[0], "duplicate_target") || !hasWarning(plans[1], "duplicate_target") {
-		t.Errorf("avisos: %v %v", plans[0].Warnings, plans[1].Warnings)
+		t.Errorf("warnings: %v %v", plans[0].Warnings, plans[1].Warnings)
 	}
 }
 
@@ -281,7 +281,7 @@ func engineRun(t *testing.T, engine string, args ...string) {
 	t.Helper()
 	result, code, err := core.Run(context.Background(), engine, args, nil)
 	if err != nil || code != 0 || result.Raw["ok"] != true {
-		t.Fatalf("%v: código %d, %+v, %v", args, code, result.Raw, err)
+		t.Fatalf("%v: code %d, %+v, %v", args, code, result.Raw, err)
 	}
 }
 
@@ -320,12 +320,12 @@ func TestRunCompressBoth(t *testing.T) {
 			a, _ := os.ReadFile(plans[0].Out)
 			b, _ := os.ReadFile(want)
 			if len(a) == 0 || !bytes.Equal(a, b) {
-				t.Errorf("el .p5z no es igual byte a byte (%d y %d bytes)", len(a), len(b))
+				t.Errorf("the .p5z is not byte-for-byte equal (%d and %d bytes)", len(a), len(b))
 			}
 		} else {
 			a, b := tree(t, plans[0].Out), tree(t, want)
 			if len(a) == 0 || len(a) != len(b) {
-				t.Errorf("carpetas distintas: %d y %d archivos", len(a), len(b))
+				t.Errorf("different folders: %d and %d files", len(a), len(b))
 			}
 			for k, v := range b {
 				if a[k] != v {
@@ -345,7 +345,7 @@ func TestCancelKeepsOld(t *testing.T) {
 	os.WriteFile(plans[0].Out, []byte("viejo"), 0o644)
 	plans = PlanCompress([]Item{it}, o, newFS())
 	if len(plans[0].Replace) == 0 {
-		t.Fatal("el plan no reemplaza")
+		t.Fatal("the plan does not replace")
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -356,11 +356,11 @@ func TestCancelKeepsOld(t *testing.T) {
 		t.Errorf("%+v", sum)
 	}
 	if data, _ := os.ReadFile(plans[0].Out); string(data) != "viejo" {
-		t.Errorf("lo viejo cambió: %q", data)
+		t.Errorf("the old one changed: %q", data)
 	}
 	entries, _ := os.ReadDir(dest)
 	if len(entries) != 1 {
-		t.Errorf("sobran archivos: %v", entries)
+		t.Errorf("extra files: %v", entries)
 	}
 	if last := s.list[0][len(s.list[0])-1]; last != "cancelled" {
 		t.Errorf("estados %v", s.list[0])
@@ -381,11 +381,11 @@ func TestReplaceSwaps(t *testing.T) {
 	}
 	info, err := os.Stat(out)
 	if err != nil || info.Size() < 1000 {
-		t.Fatalf("no quedó lo nuevo: %v", err)
+		t.Fatalf("the new one is not there: %v", err)
 	}
 	entries, _ := os.ReadDir(dest)
 	if len(entries) != 1 {
-		t.Errorf("sobran archivos: %v", entries)
+		t.Errorf("extra files: %v", entries)
 	}
 }
 
@@ -411,10 +411,10 @@ func TestDestVanishesMarksError(t *testing.T) {
 		t.Fatalf("%+v, estados %v", sum, s.list)
 	}
 	if last := s.list[1][len(s.list[1])-1]; last != "error" {
-		t.Errorf("estados del segundo: %v", s.list[1])
+		t.Errorf("states of the second: %v", s.list[1])
 	}
 	if _, err := os.Stat(dest); err == nil {
-		t.Error("el destino volvió a aparecer")
+		t.Error("the destination appeared again")
 	}
 }
 
@@ -440,7 +440,7 @@ func TestRunDecompressVerify(t *testing.T) {
 	engineRun(t, engine, "unpack", p5z, "--original", "-o", want)
 	a, b := tree(t, plans[0].Out), tree(t, want)
 	if len(a) == 0 || len(a) != len(b) {
-		t.Fatalf("%d y %d archivos", len(a), len(b))
+		t.Fatalf("%d and %d files", len(a), len(b))
 	}
 	for k, v := range b {
 		if a[k] != v {
@@ -464,13 +464,13 @@ func TestRunDecompressVerify(t *testing.T) {
 	badItem.Path = bad
 	sum = (&Runner{Core: engine}).Run(context.Background(), PlanVerify([]Item{badItem}), vo)
 	if sum.Failed != 1 {
-		t.Errorf("un .p5z dañado dio %+v", sum)
+		t.Errorf("a damaged .p5z gave %+v", sum)
 	}
 }
 
 func TestSamePathCase(t *testing.T) {
 	if runtime.GOOS == "windows" && !same(`E:\Juegos`, `e:/juegos/`) {
-		t.Error("en Windows las rutas no distinguen mayúsculas")
+		t.Error("on Windows paths are case-insensitive")
 	}
 	if !inside("E:/a/b/c", "E:/a/b") || inside("E:/a/bc", "E:/a/b") {
 		t.Error("inside")
@@ -529,10 +529,10 @@ func TestStaleTmpNotDeleted(t *testing.T) {
 		t.Errorf("%+v %s %q", sum, *state, *detail)
 	}
 	if hasArg(s.list[0], "packing") {
-		t.Errorf("el motor llegó a correr: %v", s.list[0])
+		t.Errorf("the engine got to run: %v", s.list[0])
 	}
 	if data, _ := os.ReadFile(out); string(data) != "viejo" {
-		t.Error("lo viejo cambió")
+		t.Error("the old one changed")
 	}
 }
 
@@ -559,7 +559,7 @@ func TestDiscardFailureReported(t *testing.T) {
 		t.Errorf("%s %q", *state, *detail)
 	}
 	if data, _ := os.ReadFile(out); string(data) != "viejo" {
-		t.Error("lo viejo cambió")
+		t.Error("the old one changed")
 	}
 }
 
@@ -577,7 +577,7 @@ func TestConsoleReplaceVerifies(t *testing.T) {
 		os.WriteFile(filepath.Join(old, "viejo.txt"), []byte("viejo"), 0o644)
 		plans := PlanDecompress([]Item{it}, o, fakeFS{free: 1000 * gib, typ: "NTFS"})
 		if len(plans[0].Replace) == 0 {
-			t.Fatal("no reemplaza")
+			t.Fatal("does not replace")
 		}
 		ctx, cancel := context.WithCancel(context.Background())
 		s := &states{list: map[int][]string{}}
@@ -591,7 +591,7 @@ func TestConsoleReplaceVerifies(t *testing.T) {
 		cancel()
 		got := strings.Join(s.list[0], ",")
 		if !strings.Contains(got, "unpacking,verifying") {
-			t.Errorf("sin verificar antes del cambio: %s", got)
+			t.Errorf("not verified before the change: %s", got)
 		}
 		_, oldErr := os.Stat(filepath.Join(old, "viejo.txt"))
 		entries, _ := os.ReadDir(dest)
@@ -643,15 +643,15 @@ func TestKilledEngineLeavesNothing(t *testing.T) {
 		}
 		sum, state, detail := runCancelled(t, plans, o)
 		if sum.Cancelled != 1 || state != StateCancelled || detail != "cancelled" {
-			t.Errorf("%s vacía=%v: %+v %s %q", c.mode, c.empty, sum, state, detail)
+			t.Errorf("%s empty=%v: %+v %s %q", c.mode, c.empty, sum, state, detail)
 		}
 		entries, err := os.ReadDir(plans[0].Out)
 		switch {
 		case c.empty && (err != nil || len(entries) != 0):
-			t.Errorf("%s: la carpeta vacía no quedó vacía: %v %v", c.mode, entries, err)
+			t.Errorf("%s: the empty folder was not left empty: %v %v", c.mode, entries, err)
 		case !c.empty:
 			if _, err := os.Stat(plans[0].Out); !errors.Is(err, fs.ErrNotExist) {
-				t.Errorf("%s: quedó la salida a medias: %v", c.mode, err)
+				t.Errorf("%s: the half-written output was left: %v", c.mode, err)
 			}
 		}
 	}
@@ -691,14 +691,14 @@ func TestKilledEngineKeepsOld(t *testing.T) {
 	os.WriteFile(out, []byte("viejo"), 0o644)
 	plans := PlanCompress([]Item{it}, o, newFS())
 	if plans[0].Tmp == "" {
-		t.Fatal("el plan no reemplaza")
+		t.Fatal("the plan does not replace")
 	}
 	_, state, detail := runCancelled(t, plans, o)
 	if data, _ := os.ReadFile(out); string(data) != "viejo" || state != StateCancelled {
-		t.Errorf("lo viejo: %q, %s %q", data, state, detail)
+		t.Errorf("the old one: %q, %s %q", data, state, detail)
 	}
 	if entries, _ := os.ReadDir(dest); len(entries) != 1 {
-		t.Errorf("sobran archivos: %v", entries)
+		t.Errorf("extra files: %v", entries)
 	}
 }
 
@@ -731,7 +731,7 @@ func TestRuntimeWithoutZstdWarned(t *testing.T) {
 	engine, fixtures := needCore(t)
 	it := describe(t, engine, filepath.Join(fixtures, "basic.exfat"))
 	if it.HasZstdRuntime {
-		t.Fatal("el dump de prueba trae runtime")
+		t.Fatal("the test dump has a runtime")
 	}
 	good := filepath.Join(t.TempDir(), "bueno.sprx")
 	os.WriteFile(good, append(bytes.Repeat([]byte{7}, 100), []byte("AMPRZPK1 resto")...), 0o644)
@@ -762,7 +762,7 @@ func TestNoTitleIdWarned(t *testing.T) {
 	}
 	p = PlanCompress([]Item{item("Con ID", "TEST00001", 10)}, Options{Mode: ModeP5z, Dest: dest}, newFS())[0]
 	if hasWarning(p, "no_title_id") {
-		t.Errorf("con ID: %v", p.Warnings)
+		t.Errorf("with ID: %v", p.Warnings)
 	}
 }
 
@@ -783,14 +783,14 @@ func TestExistsRefusalNeverCleansOut(t *testing.T) {
 		on, state, detail := lastDetail()
 		(&Runner{Core: os.Args[0], OnItem: on}).Run(context.Background(), plans, o)
 		if *state != StateError || *detail != "exists" {
-			t.Errorf("%s vacía=%v: %s %q", c.mode, c.empty, *state, *detail)
+			t.Errorf("%s empty=%v: %s %q", c.mode, c.empty, *state, *detail)
 		}
 		if _, err := os.Stat(plans[0].Out); err != nil {
-			t.Errorf("%s vacía=%v: la salida ajena desapareció: %v", c.mode, c.empty, err)
+			t.Errorf("%s empty=%v: the foreign output disappeared: %v", c.mode, c.empty, err)
 		}
 		if c.mode == ModeFolder {
 			if _, err := os.Stat(filepath.Join(plans[0].Out, "eboot.bin")); err != nil {
-				t.Errorf("%s: el archivo ajeno desapareció: %v", c.mode, err)
+				t.Errorf("%s: the foreign file disappeared: %v", c.mode, err)
 			}
 		}
 	}
@@ -805,14 +805,14 @@ func TestExistsRefusalReplaceCleansOnlyTmp(t *testing.T) {
 	os.WriteFile(out, []byte("viejo"), 0o644)
 	plans := PlanCompress([]Item{it}, o, newFS())
 	if plans[0].Tmp == "" {
-		t.Fatal("el plan no reemplaza")
+		t.Fatal("the plan does not replace")
 	}
 	(&Runner{Core: os.Args[0]}).Run(context.Background(), plans, o)
 	if data, _ := os.ReadFile(out); string(data) != "viejo" {
-		t.Errorf("lo viejo: %q", data)
+		t.Errorf("the old one: %q", data)
 	}
 	if _, err := os.Stat(plans[0].Tmp); !errors.Is(err, fs.ErrNotExist) {
-		t.Errorf("quedó Tmp: %v", err)
+		t.Errorf("Tmp was left: %v", err)
 	}
 }
 
@@ -853,6 +853,6 @@ func TestUnreadableOutNotCleaned(t *testing.T) {
 	}
 	runCancelled(t, plans, o)
 	if _, err := os.Stat(plans[0].Out); err != nil {
-		t.Errorf("se borró lo que no se pudo leer: %v", err)
+		t.Errorf("what could not be read was deleted: %v", err)
 	}
 }

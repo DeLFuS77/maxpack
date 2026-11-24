@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Instalador: abrir y buscar .p5z, encontrar copias del juego y el registro.
+// Installer: open and find .p5z files, find copies of the game and the registry.
 #include "mp_fixture.h"
 #include "mp_inst.h"
 
@@ -40,7 +40,7 @@ MP_TEST(scan_depth) {
     mp_err e = {{0}};
     MP_CHECK(mp_inst_scan(&env, &v, &n, &e) == 0);
     MP_CHECK_EQ_U64(n, 3);
-    // install_size = lo que deja unpack --folder
+    // install_size = what unpack --folder leaves
     mp_p5z *p = NULL;
     MP_CHECK(mp_p5z_open(TMP "/basic.p5z", &p, &e) == 0);
     mpt_clear(TMP "/unp");
@@ -170,7 +170,7 @@ MP_TEST(record_roundtrip) {
     for (int i = 0; i < 32; i++) r.runtime_sha[i] = (uint8_t)(255 - i);
     r.runtime_replaced = 1;
     r.smp_pending = 1;
-    snprintf(r.smp_why, sizeof r.smp_why, "escaneo aplazado: game_active");
+    snprintf(r.smp_why, sizeof r.smp_why, "scan postponed: game_active");
     r.installed_at = 1700000000;
     mp_err e = {{0}};
     MP_CHECK(mp_inst_record_save(&env, &r, &e) == 0);
@@ -247,7 +247,7 @@ MP_TEST(scan_kinds) {
     mp_inst_found f;
     mp_err e2 = {{0}};
     MP_CHECK(mp_inst_probe_any(TMP "/usbk/sinid.ffpfsc", &f, &e2) == -1);
-    MP_CHECK_CONTAINS(e2.msg, "nombre");
+    MP_CHECK_CONTAINS(e2.msg, "name");
     MP_CHECK(mp_inst_probe_any(TMP "/basic.p5z", &f, &e2) == 0 && f.kind == MP_SRC_P5Z);
     free(f.path);
 }

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// mp_play: preparar un .p5z para jugarlo sin instalarlo.
+// mp_play: prepare a .p5z to play it without installing it.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -17,7 +17,7 @@ static int is_pak(const char *rel) {
     return !strncmp(rel, "ampr_zstd-", 10) && n > 14 && !strcmp(rel + n - 4, ".pak");
 }
 
-// Empaqueta basic.exfat a P5Z y saca la carpeta de referencia a REF.
+// Packs basic.exfat to P5Z and extracts the reference folder to REF.
 static int prepare(void) {
     mp_err e = {{0}};
     if (mpt_pack(MPT_BASIC, P5Z, 1, NULL) != 0) return -1;
@@ -53,7 +53,7 @@ MP_TEST(play_json_matches_folder) {
     MP_CHECK_CONTAINS(j, "\"title_id\":\"TEST00001\"");
     MP_CHECK_CONTAINS(j, "\"version\":\"01.000.000\"");
 
-    // archive_id: bytes 24..40 de la cabecera, en hex minúsculas.
+    // archive_id: bytes 24..40 of the header, in lowercase hex.
     size_t hl = 0;
     uint8_t *h = mpt_slurp(P5Z, &hl);
     char want[128] = "\"archive_id\":\"";
@@ -64,7 +64,7 @@ MP_TEST(play_json_matches_folder) {
     MP_CHECK_CONTAINS(j, want);
     free(h);
 
-    // un volumen: id 0, su sitio dentro del .p5z y su tamaño en la carpeta
+    // one volume: id 0, its place inside the .p5z and its size in the folder
     mp_err e = {{0}};
     mp_p5z *z = NULL;
     MP_CHECK(mp_p5z_open(P5Z, &z, &e) == 0);
@@ -76,7 +76,7 @@ MP_TEST(play_json_matches_folder) {
     MP_CHECK_CONTAINS(j, vol);
     mp_p5z_close(z);
 
-    // sueltos: la carpeta menos los .pak
+    // loose files: the folder minus the .pak files
     mpt_list l = mpt_list_dir(REF);
     uint64_t total = 0;
     size_t nloose = 0;
@@ -117,8 +117,8 @@ MP_TEST(play_extract_matches_folder) {
         int64_t ma = 0, mb = 0;
         mp_stat(dest, NULL, &ma);
         mp_stat(ref, NULL, &mb);
-        if (!a || !b || la != lb || memcmp(a, b, la)) MP_FAIL_("distinto: %s", l.v[i]);
-        if (ma != mb) MP_FAIL_("mtime distinto: %s", l.v[i]);
+        if (!a || !b || la != lb || memcmp(a, b, la)) MP_FAIL_("different: %s", l.v[i]);
+        if (ma != mb) MP_FAIL_("different mtime: %s", l.v[i]);
         free(a);
         free(b);
     }
@@ -140,7 +140,7 @@ MP_TEST(play_extract_replaces_existing) {
         snprintf(dest, sizeof dest, TMP "/rep/%s", rel);
         snprintf(ref, sizeof ref, REF "/%s", rel);
         mpt_clear(TMP "/rep");
-        mpt_put_text(dest, "otra cosa que no es el archivo, y bastante más larga que él mismo");
+        mpt_put_text(dest, "something other than the file, and quite a bit longer than itself");
         MP_CHECK(mp_play_extract(p, rel, dest, err, sizeof err) == 0);
         size_t la = 0, lb = 0;
         uint8_t *a = mpt_slurp(dest, &la), *b = mpt_slurp(ref, &lb);
@@ -176,11 +176,11 @@ static void expect_refused(const char *path, const char *what) {
     char err[256] = {0};
     mp_play *p = mp_play_open(path, err, sizeof err);
     if (p) {
-        MP_FAIL_("%s: se abrió", what);
+        MP_FAIL_("%s: it opened", what);
         mp_play_close(p);
         return;
     }
-    if (!err[0]) MP_FAIL_("%s: sin motivo", what);
+    if (!err[0]) MP_FAIL_("%s: no reason", what);
 }
 
 MP_TEST(play_open_refuses_damaged) {
@@ -189,11 +189,11 @@ MP_TEST(play_open_refuses_damaged) {
     uint8_t *b = mpt_slurp(P5Z, &n);
     if (!b) return;
 
-    // cortado en 1 byte
+    // cut off at 1 byte
     mpt_put(TMP "/cut.p5z", b, n - 1);
-    expect_refused(TMP "/cut.p5z", "cortado");
+    expect_refused(TMP "/cut.p5z", "cut");
 
-    // un byte de la cabecera del volumen
+    // one byte of the volume header
     mp_err e = {{0}};
     mp_p5z *z = NULL;
     MP_CHECK(mp_p5z_open(P5Z, &z, &e) == 0);
@@ -204,11 +204,11 @@ MP_TEST(play_open_refuses_damaged) {
         memcpy(c, b, n);
         c[off + 30] ^= 0x55;
         mpt_put(TMP "/vol.p5z", c, n);
-        expect_refused(TMP "/vol.p5z", "cabecera de volumen");
+        expect_refused(TMP "/vol.p5z", "volume header");
         free(c);
     }
 
-    // otro archive_id en la cabecera del .p5z, con su CRC recalculado
+    // another archive_id in the .p5z header, with its CRC recalculated
     uint8_t *d = malloc(n);
     memcpy(d, b, n);
     d[24] ^= 0xff;
@@ -222,8 +222,8 @@ MP_TEST(play_open_refuses_damaged) {
     free(b);
 }
 
-// Varios volúmenes, como cualquier juego de más de unos 4 GiB empaquetados: con volúmenes de 512 KiB
-// como mucho, el fixture pequeño ya da varios.
+// Several volumes, like any game of more than about 4 GiB packed: with volumes of at most 512 KiB,
+// the small fixture already gives several.
 #define MULTI TMP "/multi.p5z"
 #define MREF TMP "/mref"
 #define MULTI_LIMIT (512u << 10)
@@ -250,17 +250,17 @@ MP_TEST(play_json_several_volumes) {
     MP_CHECK(h != NULL);
     if (!j || !h) goto out;
 
-    // los .pak de la carpeta, de 000 en adelante sin huecos
+    // the folder's .pak files, from 000 onwards with no gaps
     uint32_t n = 0;
     for (;; n++) {
         char rel[2048];
         snprintf(rel, sizeof rel, MREF "/ampr_zstd-%03u.pak", n);
         if (mp_path_kind(rel) != 1) break;
     }
-    if (n < 3) MP_FAIL_("solo %u volúmenes", n);
+    if (n < 3) MP_FAIL_("only %u volumes", n);
 
-    // "volumes": id 0..n-1 en orden, cada uno en su sitio del .p5z y con el tamaño de su .pak,
-    // y nada más detrás
+    // "volumes": id 0..n-1 in order, each in its place in the .p5z and with the size of its .pak,
+    // and nothing after
     size_t cap = 64 + (size_t)n * 96;
     char *want = malloc(cap);
     MP_CHECK(want != NULL);
@@ -275,22 +275,22 @@ MP_TEST(play_json_several_volumes) {
         uint64_t off = mp_p5z_volume_offset(z, k);
         w += (size_t)snprintf(want + w, cap - w, "%s{\"id\":%u,\"offset\":%llu,\"length\":%llu}",
                               k ? "," : "", k, (unsigned long long)off, (unsigned long long)len);
-        if (len > MULTI_LIMIT) MP_FAIL_("volumen %u: %llu bytes", k, (unsigned long long)len);
-        if (off < prev_end) MP_FAIL_("volumen %u: empieza antes de que acabe el anterior", k);
+        if (len > MULTI_LIMIT) MP_FAIL_("volume %u: %llu bytes", k, (unsigned long long)len);
+        if (off < prev_end) MP_FAIL_("volume %u: starts before the previous one ends", k);
         prev_end = off + len;
-        // la región del .p5z es el .pak, byte a byte
+        // the .p5z's region is the .pak, byte by byte
         size_t pl = 0;
         uint8_t *pb = mpt_slurp(pak, &pl);
         if (!pb || pl != len || off + len > hl || memcmp(h + off, pb, pl))
-            MP_FAIL_("volumen %u: la región no es su .pak", k);
+            MP_FAIL_("volume %u: the region is not its .pak", k);
         free(pb);
     }
     snprintf(want + w, cap - w, "]}");
     MP_CHECK_CONTAINS(j, want);
-    if (prev_end + P5Z_FOOTER > hl) MP_FAIL_("el último volumen pisa el pie");
+    if (prev_end + P5Z_FOOTER > hl) MP_FAIL_("the last volume overlaps the footer");
     free(want);
 
-    // los sueltos salen igual que con un volumen
+    // the loose files come out the same as with one volume
     char err[256] = {0};
     mpt_clear(TMP "/mx");
     MP_CHECK(mp_play_extract(p, "eboot.bin", TMP "/mx/eboot.bin", err, sizeof err) == 0);

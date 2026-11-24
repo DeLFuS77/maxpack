@@ -5,12 +5,12 @@
 #include "mp_json.h"
 #include "mp_param.h"
 
-// Copia s en dst (de cap bytes) sin partir un carácter UTF-8 multibyte.
+// Copies s into dst (of cap bytes) without splitting a multibyte UTF-8 character.
 static void copy_str(char *dst, size_t cap, const char *s) {
     size_t n = s ? strlen(s) : 0;
     if (n > cap - 1) {
         n = cap - 1;
-        while (n > 0 && ((unsigned char)s[n] & 0xc0) == 0x80) n--;   // s[n] es continuación: retrocede
+        while (n > 0 && ((unsigned char)s[n] & 0xc0) == 0x80) n--;   // s[n] is a continuation: step back
     }
     if (n) memcpy(dst, s, n);
     dst[n] = 0;
@@ -18,7 +18,7 @@ static void copy_str(char *dst, size_t cap, const char *s) {
 
 int mp_param_read(const char *json, size_t n, char id[16], char ver[16], char name[128]) {
     id[0] = ver[0] = name[0] = 0;
-    // un BOM de UTF-8 al principio, o espacios y NUL de relleno al final, no cambian el JSON
+    // a UTF-8 BOM at the start, or padding spaces and NULs at the end, do not change the JSON
     if (n >= 3 && !memcmp(json, "\xef\xbb\xbf", 3)) {
         json += 3;
         n -= 3;

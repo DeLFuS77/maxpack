@@ -19,7 +19,7 @@ MP_TEST(sha256_vectors) {
     MP_CHECK_STR(h, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
     hex_of("abc", 3, h);
     MP_CHECK_STR(h, "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
-    // 1.000.000 'a' en trozos de 997 bytes (trozos que no casan con los bloques de 64).
+    // 1,000,000 'a' in chunks of 997 bytes (chunks that do not line up with the 64-byte blocks).
     char *a = malloc(1000000);
     memset(a, 'a', 1000000);
     mp_sha256 s;

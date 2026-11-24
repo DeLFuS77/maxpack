@@ -55,7 +55,7 @@ func TestCloseAskedWhileWorking(t *testing.T) {
 	if !a.holdClose(context.Background()) || asked != 1 {
 		t.Fatalf("closing with a queue running is not asked: %d", asked)
 	}
-	// answered «Cancelar y cerrar»: the window closes (and closed stops the queue)
+	// answered "Cancel and close": the window closes (and closed stops the queue)
 	a.ConfirmClose()
 	if a.holdClose(context.Background()) || asked != 1 {
 		t.Fatal("the close confirmed is asked again")

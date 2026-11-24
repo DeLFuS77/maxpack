@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Arnés mínimo de pruebas: cada archivo de prueba es un ejecutable registrado en CTest.
+// Minimal test harness: each test file is an executable registered with CTest.
 #ifndef MP_TEST_H
 #define MP_TEST_H
 
@@ -21,7 +21,7 @@ static const char *mp_test_current_ = "";
 
 #define MP_CHECK(c)                                                                \
     do {                                                                           \
-        if (!(c)) MP_FAIL_("falla: %s", #c);                                       \
+        if (!(c)) MP_FAIL_("fails: %s", #c);                                       \
     } while (0)
 
 #define MP_CHECK_EQ_U64(a, b)                                                      \
@@ -43,7 +43,7 @@ static const char *mp_test_current_ = "";
     do {                                                                           \
         const char *h_ = (h), *n_ = (n);                                           \
         if (!h_ || !strstr(h_, n_))                                                \
-            MP_FAIL_("\"%s\" no contiene \"%s\"", h_ ? h_ : "(null)", n_);         \
+            MP_FAIL_("\"%s\" does not contain \"%s\"", h_ ? h_ : "(null)", n_);         \
     } while (0)
 
 #define MP_TEST(name) static void name(void)
@@ -53,7 +53,7 @@ static const char *mp_test_current_ = "";
         int before_ = mp_test_failures_;                                           \
         mp_test_current_ = #name;                                                  \
         name();                                                                    \
-        fprintf(stderr, "%s %s\n", mp_test_failures_ == before_ ? "ok   " : "FALLO", \
+        fprintf(stderr, "%s %s\n", mp_test_failures_ == before_ ? "ok   " : "FAIL", \
                 #name);                                                            \
     } while (0)
 

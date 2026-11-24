@@ -25,17 +25,17 @@ func TestCoreMissingReported(t *testing.T) {
 	t.Cleanup(func() { settings.Dir = portable.DataFolder })
 	setup := (&App{}).Setup()
 	if setup.CoreError == "" {
-		t.Fatal("falta el motor y no se dice")
+		t.Fatal("the engine is missing and nothing says so")
 	}
 	if setup.Version == "" || setup.Lang == "" || setup.Theme != "system" {
-		t.Fatalf("setup incompleto: %+v", setup)
+		t.Fatalf("incomplete setup: %+v", setup)
 	}
 }
 
 func TestForwardArgs(t *testing.T) {
 	core := os.Getenv("MAXPACK_CORE")
 	if core == "" {
-		t.Skip("falta MAXPACK_CORE: se necesita el motor")
+		t.Skip("MAXPACK_CORE is missing: the engine is needed")
 	}
 	exe := filepath.Join(t.TempDir(), "MaxPack.exe")
 	tags := "desktop,production"
@@ -44,7 +44,7 @@ func TestForwardArgs(t *testing.T) {
 	}
 	build := exec.Command("go", "build", "-tags", tags, "-o", exe, ".")
 	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("no compila: %v\n%s", err, out)
+		t.Fatalf("does not compile: %v\n%s", err, out)
 	}
 	want, err := exec.Command(core, "--version").Output()
 	if err != nil {
@@ -52,11 +52,11 @@ func TestForwardArgs(t *testing.T) {
 	}
 	got, err := exec.Command(exe, "--version").Output()
 	if err != nil || strings.TrimSpace(string(got)) != strings.TrimSpace(string(want)) {
-		t.Fatalf("--version: %q, %v (esperado %q)", got, err, want)
+		t.Fatalf("--version: %q, %v (expected %q)", got, err, want)
 	}
 	err = exec.Command(exe, "pack").Run()
 	if exit, ok := err.(*exec.ExitError); !ok || exit.ExitCode() != 2 {
-		t.Fatalf("pack sin argumentos debería salir con 2: %v", err)
+		t.Fatalf("pack without arguments should exit with 2: %v", err)
 	}
 }
 
@@ -88,17 +88,17 @@ func TestCoreOtherVersionReported(t *testing.T) {
 	for _, mode := range []string{"old", "partial"} {
 		t.Setenv(fakecore.Env, mode)
 		setup := (&App{}).Setup()
-		if setup.CoreError != "maxpack-core es de otra versión" || !setup.CoreOtherVersion || setup.CoreVersion == "" {
+		if setup.CoreError != "maxpack-core is of another version" || !setup.CoreOtherVersion || setup.CoreVersion == "" {
 			t.Errorf("%s: %+v", mode, setup)
 		}
 	}
 	if ours == "" {
-		t.Skip("falta MAXPACK_CORE: se necesita el motor")
+		t.Skip("MAXPACK_CORE is missing: the engine is needed")
 	}
 	t.Setenv(fakecore.Env, "")
 	t.Setenv("MAXPACK_CORE", ours)
 	if setup := (&App{}).Setup(); setup.CoreError != "" || setup.CoreOtherVersion {
-		t.Errorf("el motor de esta versión: %+v", setup)
+		t.Errorf("this version's engine: %+v", setup)
 	}
 }
 
@@ -114,14 +114,14 @@ func TestChooseRuntimeChecksZstd(t *testing.T) {
 	a := &App{ctx: context.Background(), openFile: func(context.Context, wailsruntime.OpenDialogOptions) (string, error) { return chosen, nil }}
 	chosen = good
 	if path, err := a.ChooseRuntime(); path != good || err != nil {
-		t.Errorf("el de ampr-emu-ng: %q, %v", path, err)
+		t.Errorf("ampr-emu-ng's: %q, %v", path, err)
 	}
 	chosen = old
 	if path, err := a.ChooseRuntime(); path != "" || err == nil || !strings.HasPrefix(err.Error(), "runtime_not_zstd") {
-		t.Errorf("uno que no lee zstd: %q, %v", path, err)
+		t.Errorf("one that does not read zstd: %q, %v", path, err)
 	}
 	chosen = ""
 	if path, err := a.ChooseRuntime(); path != "" || err != nil {
-		t.Errorf("sin elegir: %q, %v", path, err)
+		t.Errorf("none chosen: %q, %v", path, err)
 	}
 }

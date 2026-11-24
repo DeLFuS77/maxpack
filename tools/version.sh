@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: GPL-3.0-or-later
-# La versión de un paquete a partir de la referencia de git: de una etiqueta vX.Y.Z sale X.Y.Z (sin la
-# «v»), y de cualquier otra cosa, dev-<commit>. También da la parte numérica (X.Y.Z), que es la que
-# aceptan el instalador de Windows, el recurso de versión de MaxPack.exe y el Info.plist de macOS.
-#   version.sh <tag|branch> <nombre de la referencia> <sha del commit>
-# Imprime dos líneas, VERSION=... y NUMBERS=..., listas para añadir a GITHUB_ENV.
+# A package's version from the git reference: a vX.Y.Z tag gives X.Y.Z (without the
+# "v"), and anything else gives dev-<commit>. It also gives the numeric part (X.Y.Z), which is what
+# the Windows installer, MaxPack.exe's version resource and macOS's Info.plist accept.
+#   version.sh <tag|branch> <name of the reference> <commit sha>
+# Prints two lines, VERSION=... and NUMBERS=..., ready to append to GITHUB_ENV.
 set -euo pipefail
 
-type="${1:?falta el tipo de referencia}"
-name="${2:?falta el nombre de la referencia}"
-sha="${3:?falta el commit}"
+type="${1:?missing the reference type}"
+name="${2:?missing the reference name}"
+sha="${3:?missing the commit}"
 
 version="dev-${sha:0:7}"
 if [ "${type}" = "tag" ]; then

@@ -18,7 +18,7 @@ int mp_source_open(const char *path, mp_source **out, mp_err *e) {
     *out = NULL;
     int kind = mp_path_kind(path);
     if (kind == 0) {
-        mp_err_set(e, "no existe: %s", path);
+        mp_err_set(e, "does not exist: %s", path);
         return -1;
     }
     if (kind == 2) return mp_dir_open(path, out, e);
@@ -32,11 +32,11 @@ int mp_source_open(const char *path, mp_source **out, mp_err *e) {
     if (rc != 0) return -1;
     if (got >= 11 && memcmp(h + 3, "EXFAT   ", 8) == 0) return mp_exfat_open(path, out, e);
     if (got >= 4 && memcmp(h, "\x7F" "FIH", 4) == 0) {
-        mp_err_set(e, "%s: los PKG todavía no están soportados (llegarán en la fase 4); "
-                      "usa una carpeta o una imagen .exfat", path);
+        mp_err_set(e, "%s: PKGs are not supported yet (they will come in phase 4); "
+                      "use a folder or an .exfat image", path);
         return -1;
     }
-    mp_err_set(e, "%s: formato no reconocido: de momento se admite una carpeta o una imagen .exfat",
+    mp_err_set(e, "%s: unrecognised format: for now a folder or an .exfat image is supported",
                path);
     return -1;
 }
@@ -62,12 +62,12 @@ long mp_source_find(const mp_source *s, const char *path) {
 
 int mp_source_read(mp_source *s, size_t i, uint64_t off, void *buf, size_t len, mp_err *e) {
     if (i >= s->n) {
-        mp_err_set(e, "índice de archivo fuera de rango: %zu", i);
+        mp_err_set(e, "file index out of range: %zu", i);
         return -1;
     }
     const mp_entry *en = &s->entries[i];
     if (off > en->size || len > en->size - off) {
-        mp_err_set(e, "lectura fuera de %s (%" PRIu64 " + %zu > %" PRIu64 ")", en->path, off, len,
+        mp_err_set(e, "read outside %s (%" PRIu64 " + %zu > %" PRIu64 ")", en->path, off, len,
                    en->size);
         return -1;
     }

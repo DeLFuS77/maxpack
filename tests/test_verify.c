@@ -24,7 +24,7 @@ static uint8_t *slurp(const char *path, size_t *len) {
     return b;
 }
 
-// Empaqueta basic a TMP/<name> (carpeta o .p5z) si todavía no está hecho.
+// Packs basic to TMP/<name> (folder or .p5z) if it is not done yet.
 static int ensure_pack(const char *path, int p5z) {
     if (mp_path_kind(path) != 0) return 0;
     mp_err e = {{0}};
@@ -59,7 +59,7 @@ MP_TEST(verify_ok) {
 MP_TEST(verify_detects_corruption) {
     if (ensure_pack(TMP "/ok.p5z", 1)) return;
     mp_err e = {{0}};
-    // Un byte cambiado dentro del frame zstd del primer bloque de zeros.bin, en el .p5z.
+    // A byte changed inside the zstd frame of zeros.bin's first block, in the .p5z.
     mp_p5z *p = NULL;
     MP_CHECK(mp_p5z_open(TMP "/ok.p5z", &p, &e) == 0);
     mp_zpk *z = NULL;
@@ -70,7 +70,7 @@ MP_TEST(verify_detects_corruption) {
             uint64_t off = 0;
             uint32_t vol = 0, stored = 0;
             mp_zpk_chunk(z, i, 0, &vol, &off, &stored, NULL);
-            // Región del volumen 000 dentro del .p5z: la de su registro en el índice.
+            // Region of volume 000 inside the .p5z: the one from its record in the index.
             const mp_pack_manifest *m = mp_p5z_manifest(p);
             (void)m;
             at = mp_p5z_volume_offset(p, vol) + off + stored / 2;
@@ -89,7 +89,7 @@ MP_TEST(verify_detects_corruption) {
     mp_verify_result r;
     MP_CHECK(mp_verify_p5z(TMP "/malo.p5z", 4, 0, &r, &e) == 0);
     MP_CHECK(r.files_bad >= 1);
-    // Un suelto cambiado en una carpeta empaquetada: lo descubre --against.
+    // A loose file changed in a packed folder: --against finds it.
     if (ensure_pack(TMP "/mala", 0)) return;
     MP_CHECK(mp_write_file(TMP "/mala/eboot.bin", "cambiado", 8, &e) == 0);
     MP_CHECK(mp_verify_folder(TMP "/mala", BASIC, 4, 0, &r, &e) == 0);

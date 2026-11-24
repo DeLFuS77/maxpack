@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Todo lo que depende del sistema operativo. Las rutas siempre son UTF-8 con '/' o '\'.
+// Everything that depends on the operating system. Paths are always UTF-8 with '/' or '\'.
 #ifndef MP_PLATFORM_H
 #define MP_PLATFORM_H
 
@@ -10,51 +10,51 @@
 
 typedef struct mp_file mp_file;
 
-// Abre solo para lectura. 0 = bien, -1 = error.
+// Opens read-only. 0 = ok, -1 = error.
 int mp_file_open_read(const char *utf8_path, mp_file **out, mp_err *e);
 int mp_file_size(mp_file *f, uint64_t *out, mp_err *e);
-// Lectura posicional y segura entre hilos; *got < len solo al llegar al final del archivo.
+// Positional read, safe across threads; *got < len only on reaching the end of the file.
 int mp_file_pread(mp_file *f, void *buf, size_t len, uint64_t off, size_t *got, mp_err *e);
 void mp_file_close(mp_file *f);
 
 int mp_write_file(const char *utf8_path, const void *data, size_t len, mp_err *e);
 
-// Archivo de salida nuevo (error si ya existe): se escribe al final y se pueden corregir bytes
-// ya escritos (p. ej. cabeceras que solo se conocen al acabar). Un solo hilo por archivo.
+// New output file (error if it already exists): written at the end, and bytes already written
+// can be corrected (e.g. headers only known at the end). One thread per file.
 typedef struct mp_wfile mp_wfile;
 int mp_wfile_create(const char *utf8_path, mp_wfile **out, mp_err *e);
-int mp_wfile_reopen(const char *utf8_path, mp_wfile **out, mp_err *e);   // existente, sin truncar
+int mp_wfile_reopen(const char *utf8_path, mp_wfile **out, mp_err *e);   // existing, not truncated
 int mp_wfile_write(mp_wfile *f, const void *p, size_t n, mp_err *e);
 int mp_wfile_pwrite(mp_wfile *f, const void *p, size_t n, uint64_t off, mp_err *e);
 uint64_t mp_wfile_size(const mp_wfile *f);
-int mp_wfile_close(mp_wfile *f, mp_err *e);   // también libera f si falla
-int mp_wfile_sync(mp_wfile *f, mp_err *e);    // fuerza los datos al disco (fsync)
+int mp_wfile_close(mp_wfile *f, mp_err *e);   // also frees f on failure
+int mp_wfile_sync(mp_wfile *f, mp_err *e);    // forces the data to disk (fsync)
 int mp_set_mtime(const char *utf8_path, int64_t unix_seconds, mp_err *e);
-int mp_remove_file(const char *utf8_path);   // 0 si se borró
-int mp_stat(const char *utf8_path, uint64_t *size, int64_t *mtime);   // 0 si existe
-// 1 si path es dir o está dentro de dir (por identidad en el disco, recorriendo sus carpetas
-// padre aunque path todavía no exista).
+int mp_remove_file(const char *utf8_path);   // 0 if deleted
+int mp_stat(const char *utf8_path, uint64_t *size, int64_t *mtime);   // 0 if it exists
+// 1 if path is dir or is inside dir (by identity on disk, walking up its parent folders
+// even if path does not exist yet).
 int mp_path_is_inside(const char *path, const char *dir);
-int mp_dir_is_empty(const char *utf8_path);    // 1 vacía, 0 con contenido, -1 no existe
+int mp_dir_is_empty(const char *utf8_path);    // 1 empty, 0 has contents, -1 does not exist
 int mp_make_dirs(const char *utf8_path, mp_err *e);
-// 0 = no existe, 1 = archivo, 2 = carpeta.
+// 0 = does not exist, 1 = file, 2 = folder.
 int mp_path_kind(const char *utf8_path);
 
-// Recorre la carpeta de forma recursiva. rel_utf8 es relativa a la raíz y usa '/'.
-// No sigue enlaces simbólicos ni puntos de reanálisis. Si cb devuelve != 0, se detiene
-// y mp_dir_walk devuelve ese valor.
+// Walks the folder recursively. rel_utf8 is relative to the root and uses '/'.
+// Does not follow symbolic links or reparse points. If cb returns != 0, it stops
+// and mp_dir_walk returns that value.
 typedef int (*mp_dir_cb)(void *ctx, const char *rel_utf8, int is_dir, uint64_t size,
                          int64_t mtime_unix);
 int mp_dir_walk(const char *root_utf8, mp_dir_cb cb, void *ctx, mp_err *e);
 
-// Un solo nivel de la carpeta, sin "." ni "..", sin enlaces. -1 si no es una carpeta.
+// A single level of the folder, without "." or "..", without links. -1 if it is not a folder.
 typedef int (*mp_list_cb)(void *ctx, const char *name, int is_dir, uint64_t size);
 int mp_dir_list(const char *dir_utf8, mp_list_cb cb, void *ctx, mp_err *e);
-// Renombra un archivo o carpeta dentro del mismo sistema de archivos; falla si 'to' existe.
+// Renames a file or folder within the same file system; fails if 'to' exists.
 int mp_rename(const char *from_utf8, const char *to_utf8, mp_err *e);
-// Borra una carpeta entera (sin seguir enlaces) o un archivo. 0 también si no existe.
+// Deletes a whole folder (without following links) or a file. 0 also if it does not exist.
 int mp_remove_tree(const char *utf8_path, mp_err *e);
-// Bytes libres para el usuario en el sistema de archivos de path (que debe existir).
+// Bytes free for the user on the file system of path (which must exist).
 int mp_disk_free(const char *utf8_path, uint64_t *free_bytes, mp_err *e);
 
 typedef struct mp_thread mp_thread;
@@ -71,17 +71,17 @@ uint64_t mp_now_ns(void);
 unsigned mp_cpu_count(void);
 void mp_sleep_ms(unsigned ms);
 
-// En Windows sustituye argc/argv por los argumentos reales en UTF-8 (argv llega en la página
-// de códigos ANSI y pierde caracteres como ñ o emoji). En el resto no hace nada.
+// On Windows replaces argc/argv with the real arguments in UTF-8 (argv arrives in the ANSI code
+// page and loses characters like é or emoji). Elsewhere it does nothing.
 void mp_args_utf8(int *argc, char ***argv);
 
-// Ruta absoluta en UTF-8 de un archivo o carpeta, exista o no (malloc). NULL si no se puede.
+// Absolute UTF-8 path of a file or folder, whether or not it exists (malloc). NULL if not possible.
 char *mp_full_path(const char *utf8_path);
-// 1 si las dos rutas existen y son el mismo archivo o carpeta (misma identidad en el disco,
-// no el mismo texto: no la engañan mayúsculas, "..", barras distintas ni enlaces).
+// 1 if both paths exist and are the same file or folder (same identity on disk,
+// not the same text: case, "..", different slashes and links do not fool it).
 int mp_same_file(const char *a, const char *b);
 
-// Copia de una cadena con malloc (strdup no es C11).
+// Copy of a string with malloc (strdup is not C11).
 char *mp_strdup(const char *s);
 
 #endif

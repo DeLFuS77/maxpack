@@ -91,7 +91,7 @@ func gameName(it Item, room int) string {
 	}
 	title = cut(title, room-len(suffix))
 	if title == "" {
-		title = "juego"
+		title = "game"
 	}
 	return title + suffix
 }

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Reparto de ítems entre hilos y progreso en stderr.
+// Distribution of items among threads and progress on stderr.
 #ifndef MP_PARALLEL_H
 #define MP_PARALLEL_H
 
@@ -9,22 +9,22 @@
 #include "mp_err.h"
 #include "mp_platform.h"
 
-// Enganche de progreso: lo llama mp_progress_add como mucho cada 100 ms y siempre al terminar la
-// fase (done == total). Se llama con el cerrojo de la fase tomado, así que no hay dos llamadas a la vez.
+// Progress hook: mp_progress_add calls it at most every 100 ms and always when the
+// phase ends (done == total). It is called with the phase's lock held, so no two calls happen at once.
 typedef struct {
     void (*cb)(void *ctx, const char *phase, uint64_t done, uint64_t total);
     void *ctx;
 } mp_progress_hook;
 
-// Un enganche por proceso (NULL lo quita). mp_progress_init lo copia: ponerlo antes de empezar.
+// One hook per process (NULL removes it). mp_progress_init copies it: set it before starting.
 void mp_progress_set_hook(const mp_progress_hook *h);
 
-// Cancelación: bandera atómica, se puede pedir desde cualquier hilo. mp_parallel_run deja de repartir
-// y pack, unpack y verify salen con -1 y el mensaje "cancelado".
+// Cancellation: atomic flag, can be requested from any thread. mp_parallel_run stops handing out
+// and pack, unpack and verify exit with -1 and the message "cancelled".
 void mp_cancel_request(void);
 int mp_cancelled(void);
 void mp_cancel_reset(void);
-// Si hay cancelación pendiente pone "cancelado" en e y devuelve -1; si no, 0.
+// If a cancellation is pending, puts "cancelled" in e and returns -1; otherwise 0.
 int mp_cancel_check(mp_err *e);
 
 typedef struct mp_progress {
@@ -32,22 +32,22 @@ typedef struct mp_progress {
     uint64_t done, total;
     const char *phase;
     int print;
-    uint64_t last_ns;   // última vez que se imprimió (mp_progress_maybe_print)
+    uint64_t last_ns;   // last time it was printed (mp_progress_maybe_print)
     mp_progress_hook hook;
-    uint64_t hook_ns;   // última llamada al enganche
-    int hook_final;     // ya se avisó de done == total
+    uint64_t hook_ns;   // last call to the hook
+    int hook_final;     // done == total has already been reported
 } mp_progress;
 
 void mp_progress_init(mp_progress *p, const char *phase, uint64_t total, int print);
-void mp_progress_add(mp_progress *p, uint64_t n);   // p puede ser NULL
+void mp_progress_add(mp_progress *p, uint64_t n);   // p may be NULL
 void mp_progress_free(mp_progress *p);
-// Para bucles que no usan mp_parallel_run para todo: imprime como mucho una vez por segundo.
+// For loops that do not use mp_parallel_run for everything: prints at most once per second.
 void mp_progress_maybe_print(mp_progress *p);
 
-// Procesa los ítems 0..n-1 con `threads` hilos (tid en [0, threads)). Si un work devuelve != 0,
-// se dejan de repartir ítems y se devuelve el primer código. Con mp_cancelled() también se deja de
-// repartir y se devuelve -1 si quedaban ítems sin repartir. Si prog->print, el hilo principal
-// escribe "\r<fase>: NN %" en stderr cada segundo y al acabar.
+// Processes items 0..n-1 with `threads` threads (tid in [0, threads)). If a work returns != 0,
+// items stop being handed out and the first code is returned. With mp_cancelled() it also stops
+// handing out and returns -1 if items were left undistributed. If prog->print, the main thread
+// writes "\r<phase>: NN %" on stderr every second and at the end.
 int mp_parallel_run(unsigned threads, size_t n, int (*work)(void *ctx, size_t item, unsigned tid),
                     void *ctx, mp_progress *prog);
 

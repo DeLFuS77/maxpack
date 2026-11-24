@@ -49,14 +49,14 @@ static int rm_cb(void *ctx, const char *rel, int is_dir, uint64_t size, int64_t 
     return 0;
 }
 
-// Carpeta vacía (solo con archivos, sin subcarpetas) para una salida nueva.
+// Empty folder (with files only, no subfolders) for a new output.
 static void fresh_dir(const char *dir) {
     mp_err e = {{0}};
     mp_make_dirs(dir, &e);
     mp_dir_walk(dir, rm_cb, (void *)dir, &e);
 }
 
-// Escribe los packs de los empaquetables de basic en dir; devuelve 0 si fue bien.
+// Writes the packs of basic's packable files into dir; returns 0 if it went well.
 static int write_packs(pk *p, const char *dir, unsigned threads, uint64_t vol_limit, mp_zpk_stats *st,
                        uint8_t (**sha)[32]) {
     mp_err e = {{0}};
@@ -117,7 +117,7 @@ static int same_as_source(pk *p, mp_zpk *z, mp_err *e) {
         uint8_t *a = malloc((size_t)size + 1), *b = malloc((size_t)size + 1);
         if (s == mp_source_count(p->src) || mp_zpk_read_file(z, i, 0, a, (size_t)size, e) != 0 ||
             mp_source_read(p->src, s, 0, b, (size_t)size, e) != 0 || memcmp(a, b, (size_t)size)) {
-            MP_FAIL_("contenido distinto: %s (%s)", path, e->msg);
+            MP_FAIL_("different content: %s (%s)", path, e->msg);
             bad++;
         }
         free(a);
@@ -144,7 +144,7 @@ MP_TEST(zpk_roundtrip) {
         MP_CHECK(same_as_source(&p, z, &e));
         mp_zpk_close(z);
     }
-    // sha[i] es el SHA-256 de files[i].
+    // sha[i] is the SHA-256 of files[i].
     for (size_t i = 0; i < p.n; i++) {
         uint64_t size = mp_source_entry(p.src, p.files[i])->size;
         uint8_t *b = malloc((size_t)size + 1), d[32];
@@ -153,7 +153,7 @@ MP_TEST(zpk_roundtrip) {
         mp_sha256_init(&s);
         mp_sha256_update(&s, b, (size_t)size);
         mp_sha256_final(&s, d);
-        if (memcmp(d, sha[i], 32)) MP_FAIL_("SHA-256 distinto: %s", mp_source_entry(p.src, p.files[i])->path);
+        if (memcmp(d, sha[i], 32)) MP_FAIL_("different SHA-256: %s", mp_source_entry(p.src, p.files[i])->path);
         free(b);
     }
     mp_zpk_volsrc_free(&vs);
@@ -167,7 +167,7 @@ MP_TEST(zpk_multi_volume) {
     if (!open_pk(&p)) return;
     mp_zpk_stats st;
     uint8_t(*sha)[32] = NULL;
-    // 512 KiB: no caben dos bloques en bruto en un volumen, así que random.bin cruza seguro.
+    // 512 KiB: two raw blocks do not fit in a volume, so random.bin surely crosses.
     if (write_packs(&p, TMP "/multi", 3, 512u << 10, &st, &sha) != 0) return;
     MP_CHECK(st.volumes > 3);
     mp_err e = {{0}};
@@ -236,7 +236,7 @@ static int same_dirs(const char *a, const char *b, uint32_t nvol) {
         free(x);
         free(y);
         if (!same) {
-            MP_FAIL_("distinto: %s", name);
+            MP_FAIL_("different: %s", name);
             return 0;
         }
     }
@@ -258,7 +258,7 @@ MP_TEST(zpk_threads_identical) {
     close_pk(&p);
 }
 
-// Volúmenes en memoria, para poder estropear uno sin tocar la carpeta.
+// Volumes in memory, so one can be corrupted without touching the folder.
 typedef struct {
     uint8_t *v[64];
     size_t n[64];
@@ -267,7 +267,7 @@ typedef struct {
 static int mem_read(void *ctx, uint32_t vol, uint64_t off, void *buf, size_t n, mp_err *e) {
     memvols *m = ctx;
     if (vol >= 64 || !m->v[vol] || off + n > m->n[vol]) {
-        mp_err_set(e, "fuera del volumen");
+        mp_err_set(e, "outside the volume");
         return -1;
     }
     memcpy(buf, m->v[vol] + off, n);
@@ -287,7 +287,7 @@ MP_TEST(zpk_rejects_corruption) {
     mp_err e = {{0}};
     mp_zpk *z = NULL;
     MP_CHECK(mp_zpk_open(index, len, &vs, &z, &e) == 0);
-    // Un byte cambiado dentro del frame zstd del primer bloque de zeros.bin.
+    // A byte changed inside the zstd frame of zeros.bin's first block.
     size_t zi = 0;
     while (z && zi < mp_zpk_count(z) && strcmp(mp_zpk_path(z, zi), "zeros.bin")) zi++;
     uint64_t off = 0;
@@ -297,7 +297,7 @@ MP_TEST(zpk_rejects_corruption) {
     uint8_t *buf = malloc(MP_BLOCK_V1);
     MP_CHECK(z && mp_zpk_read_file(z, zi, 0, buf, MP_BLOCK_V1, &e) == -1);
     if (z) mp_zpk_close(z);
-    // Un byte cambiado en las tablas del índice: CRC.
+    // A byte changed in the index tables: CRC.
     index[200] ^= 0x01;
     mp_err e2 = {{0}};
     MP_CHECK(mp_zpk_open(index, len, &vs, &z, &e2) == -1);

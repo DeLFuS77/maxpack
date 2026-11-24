@@ -41,7 +41,7 @@ func run(mode string, args []string) int {
 	}
 	switch mode {
 	case "old":
-		fmt.Fprintln(os.Stderr, "error: orden desconocida:", args)
+		fmt.Fprintln(os.Stderr, "error: unknown command:", args)
 		return 2
 	case "partial":
 		if len(args) > 0 && args[0] == "--capabilities" {
@@ -56,7 +56,7 @@ func run(mode string, args []string) int {
 	case "exists":
 		out := output(args)
 		if out == "" {
-			fmt.Fprintln(os.Stderr, "error: falta -o")
+			fmt.Fprintln(os.Stderr, "error: missing -o")
 			return 2
 		}
 		if err := writePart(out, hasArg(args, "--p5z")); err != nil {
@@ -68,7 +68,7 @@ func run(mode string, args []string) int {
 	case "writes-stubborn", "writes-slow-clean":
 		out := output(args)
 		if out == "" {
-			fmt.Fprintln(os.Stderr, "error: falta -o")
+			fmt.Fprintln(os.Stderr, "error: missing -o")
 			return 2
 		}
 		if err := writePart(out, hasArg(args, "--p5z")); err != nil {
@@ -91,7 +91,7 @@ func run(mode string, args []string) int {
 		fmt.Println(`{"event":"result","ok":false,"error":"cancelled"}`)
 		return 130
 	}
-	fmt.Fprintln(os.Stderr, "MP_FAKE_CORE desconocido:", mode)
+	fmt.Fprintln(os.Stderr, "MP_FAKE_CORE unknown:", mode)
 	return 2
 }
 

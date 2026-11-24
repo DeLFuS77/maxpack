@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Entradas manipuladas a propósito, con los CRC recalculados: un atacante también sabe calcularlos,
-// así que los lectores tienen que rechazar tamaños imposibles sin leer fuera de sus búferes.
+// Deliberately tampered inputs, with the CRCs recalculated: an attacker can compute them too,
+// so the readers have to reject impossible sizes without reading outside their buffers.
 #include <stdio.h>
 #include <stdlib.h>
 #include <zstd.h>
@@ -26,7 +26,7 @@ static void wr64(uint8_t *p, uint64_t v) {
     for (int i = 0; i < 8; i++) p[i] = (uint8_t)(v >> (8 * i));
 }
 
-// ---- un pack válido de basic, en memoria --------------------------------------------------
+// ---- a valid pack of basic, in memory --------------------------------------------------
 
 typedef struct {
     uint8_t *v[16];
@@ -64,7 +64,7 @@ static int ms_header(void *ctx, uint32_t vol, const uint8_t hdr[64], mp_err *e) 
 static int ms_read(void *ctx, uint32_t vol, uint64_t off, void *buf, size_t n, mp_err *e) {
     memsink *m = ctx;
     if (vol >= 16 || !m->v[vol] || off + n > m->n[vol]) {
-        mp_err_set(e, "fuera del volumen");
+        mp_err_set(e, "outside the volume");
         return -1;
     }
     memcpy(buf, m->v[vol] + off, n);
@@ -119,13 +119,13 @@ static int zpk_open_copy(uint8_t *d, size_t n, mp_err *e) {
 
 MP_TEST(zpk_wrapped_strings_len) {
     if (build_packs() != 0) {
-        MP_FAIL_("no se pudo crear el pack");
+        MP_FAIL_("could not create the pack");
         return;
     }
     uint8_t *d = malloc(zlen);
     memcpy(d, zidx, zlen);
-    // Tantos archivos como caben "por separado" (nf <= len/32), sin bloques ni volúmenes, y una
-    // longitud de cadenas que da la vuelta para que soff + slen == len.
+    // As many files as fit "separately" (nf <= len/32), with no blocks or volumes, and a
+    // string length that wraps around so that soff + slen == len.
     uint64_t nf = zlen / 32, foff = 128, coff = foff + 32 * nf, voff = coff, soff = voff;
     wr64(d + 40, nf);
     wr64(d + 48, 0);
@@ -133,11 +133,11 @@ MP_TEST(zpk_wrapped_strings_len) {
     wr64(d + 64, coff);
     wr64(d + 72, voff);
     wr64(d + 80, soff);
-    wr64(d + 88, (uint64_t)zlen - soff);   // da la vuelta: soff > zlen
+    wr64(d + 88, (uint64_t)zlen - soff);   // wraps around: soff > zlen
     zpk_fix_crcs(d, zlen);
     mp_err e = {{0}};
     MP_CHECK(zpk_open_copy(d, zlen, &e) == -1);
-    MP_CHECK_CONTAINS(e.msg, "tablas");
+    MP_CHECK_CONTAINS(e.msg, "tables");
     free(d);
 }
 
@@ -145,11 +145,11 @@ MP_TEST(zpk_huge_file_size) {
     if (build_packs() != 0) return;
     uint8_t *d = malloc(zlen);
     memcpy(d, zidx, zlen);
-    wr64(d + 128 + 8, UINT64_MAX);   // tamaño del primer archivo: 2^64 - 1
+    wr64(d + 128 + 8, UINT64_MAX);   // size of the first file: 2^64 - 1
     zpk_fix_crcs(d, zlen);
     mp_err e = {{0}};
     MP_CHECK(zpk_open_copy(d, zlen, &e) == -1);
-    MP_CHECK_CONTAINS(e.msg, "tamaño de archivo imposible");
+    MP_CHECK_CONTAINS(e.msg, "impossible file size");
     free(d);
 }
 
@@ -158,16 +158,16 @@ MP_TEST(zpk_chunk_volume_out_of_range) {
     uint8_t *d = malloc(zlen);
     memcpy(d, zidx, zlen);
     uint64_t nc = rd64(d + 48), coff = rd64(d + 64), voff = rd64(d + 72);
-    // El último bloque dice estar en el volumen 1 (solo existe el 0), justo donde acaba el 0.
+    // The last block says it is in volume 1 (only 0 exists), right where 0 ends.
     uint64_t last = rd64(d + coff + 8 * (nc - 1));
     uint64_t prev_end = (last & 0xFFFFFFFFull);
     uint64_t moved = (last & ~(0xFFFull << 32) & ~0xFFFFFFFFull) | (1ull << 32) | 64;
     wr64(d + coff + 8 * (nc - 1), moved);
-    wr64(d + voff, prev_end);   // el volumen 0 "acaba" donde empezaba ese bloque
+    wr64(d + voff, prev_end);   // volume 0 "ends" where that block started
     zpk_fix_crcs(d, zlen);
     mp_err e = {{0}};
     MP_CHECK(zpk_open_copy(d, zlen, &e) == -1);
-    MP_CHECK_CONTAINS(e.msg, "volumen inexistente");
+    MP_CHECK_CONTAINS(e.msg, "nonexistent volume");
     free(d);
 }
 
@@ -180,15 +180,15 @@ MP_TEST(idx3_wrapped_hash_off) {
     if (!d) return;
     uint64_t slots = 1u << 20;   // 16 · slots > n
     wr32(d + 44, (uint32_t)slots);
-    wr64(d + 32, (uint64_t)n - 16 * slots);   // hash_off da la vuelta
+    wr64(d + 32, (uint64_t)n - 16 * slots);   // hash_off wraps around
     mp_idx3_entry *v = NULL;
     size_t m = 0;
     MP_CHECK(mp_idx3_parse(d, n, &v, &m, &e) == -1);
-    MP_CHECK_CONTAINS(e.msg, "tablas");
+    MP_CHECK_CONTAINS(e.msg, "tables");
     free(d);
 }
 
-// ---- .p5z con el índice manipulado -------------------------------------------------------
+// ---- .p5z with the index tampered with -------------------------------------------------------
 
 static uint8_t *slurp(const char *path, size_t *len) {
     mp_file *f = NULL;
@@ -229,7 +229,7 @@ MP_TEST(p5z_wrapped_strings_len) {
     unsigned long long us = ZSTD_getFrameContentSize(d + ioff, (size_t)ilen);
     uint8_t *ix = malloc((size_t)us);
     MP_CHECK(ZSTD_decompress(ix, (size_t)us, d + ioff, (size_t)ilen) == us);
-    // Muchos más archivos de los que caben y una longitud de cadenas que da la vuelta.
+    // Many more files than fit and a string length that wraps around.
     uint32_t nf = 1000000, nfr = rd32(ix + 16), nm = rd32(ix + 20);
     uint64_t fixed = 56 + 88ull * nf + 16ull * nfr + 64ull * nm;
     wr32(ix + 12, nf);
@@ -253,7 +253,7 @@ MP_TEST(p5z_wrapped_strings_len) {
     mp_p5z *pz = NULL;
     mp_err e2 = {{0}};
     MP_CHECK(mp_p5z_open(TMP "/wrapped.p5z", &pz, &e2) == -1);
-    MP_CHECK_CONTAINS(e2.msg, "tamaño del índice");
+    MP_CHECK_CONTAINS(e2.msg, "index size");
     mp_p5z_close(pz);
     free(out);
     free(cz);

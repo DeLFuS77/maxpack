@@ -1,9 +1,10 @@
 [Desktop Entry]
 Type=Application
 Name=MaxPack
-GenericName=Compresor de juegos de PS5
-Comment=Comprime y descomprime volcados de juegos de PS5 a .p5z
-Comment[en]=Compress and decompress PS5 game dumps to .p5z
+GenericName=Compressor for PS5 games
+GenericName[es]=Compresor de juegos de PS5
+Comment=Compress and decompress PS5 game dumps to .p5z
+Comment[es]=Comprime y descomprime volcados de juegos de PS5 a .p5z
 Exec=maxpack %F
 Icon=maxpack
 Terminal=false

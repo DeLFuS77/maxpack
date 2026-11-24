@@ -48,7 +48,7 @@ static size_t load_manifest(man_line **out) {
         line = nl ? nl + 1 : NULL;
     }
     *out = v;
-    return n;   // el búfer queda vivo: las rutas apuntan a él
+    return n;   // the buffer stays alive: the paths point into it
 }
 
 static size_t count_lines(const char *path) {
@@ -108,7 +108,7 @@ MP_TEST(exfat_contents_match) {
             crc = crc32(crc, buf, (uInt)k);
             off += k;
         }
-        if (!ok || crc != m[i].crc) MP_FAIL_("contenido distinto en %s (%s)", m[i].path, e.msg);
+        if (!ok || crc != m[i].crc) MP_FAIL_("different content in %s (%s)", m[i].path, e.msg);
     }
     free(buf);
     mp_source_close(s);
@@ -142,7 +142,7 @@ MP_TEST(exfat_truncated_head_fails) {
     mp_err e = {{0}};
     mp_source *s = NULL;
     MP_CHECK(mp_source_open(FX "/truncated_head.exfat", &s, &e) == -1);
-    MP_CHECK_CONTAINS(e.msg, "truncada");
+    MP_CHECK_CONTAINS(e.msg, "truncated");
 }
 
 MP_TEST(exfat_truncated_read_fails) {
@@ -154,7 +154,7 @@ MP_TEST(exfat_truncated_read_fails) {
     MP_CHECK(i >= 0);
     unsigned char buf[1000];
     MP_CHECK(i >= 0 && mp_source_read(s, (size_t)i, 599000, buf, sizeof buf, &e) == -1);
-    MP_CHECK_CONTAINS(e.msg, "truncada");
+    MP_CHECK_CONTAINS(e.msg, "truncated");
     mp_source_close(s);
 }
 
@@ -169,7 +169,7 @@ MP_TEST(exfat_huge_length_rejected) {
     mp_err e = {{0}};
     mp_source *s = NULL;
     MP_CHECK(mp_source_open(FX "/huge_len.exfat", &s, &e) == -1);
-    MP_CHECK_CONTAINS(e.msg, "más grande que el volumen");
+    MP_CHECK_CONTAINS(e.msg, "larger than the volume");
     mp_source_close(s);
 }
 
@@ -177,7 +177,7 @@ MP_TEST(exfat_huge_dir_rejected) {
     mp_err e = {{0}};
     mp_source *s = NULL;
     MP_CHECK(mp_source_open(FX "/bigdir.exfat", &s, &e) == -1);
-    MP_CHECK_CONTAINS(e.msg, "demasiado grande");
+    MP_CHECK_CONTAINS(e.msg, "too large");
     mp_source_close(s);
 }
 

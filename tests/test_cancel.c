@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Enganche de progreso y cancelación del motor.
+// Progress hook and cancellation of the engine.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,9 +12,9 @@
 
 typedef struct {
     int calls, saw_pack, cancel_at_30;
-    int cancel_mid;        // cancela en la primera llamada con done < total
-    int cancelled_mid;     // esa llamada ocurrió
-    int reached_total;     // después de cancelar hubo una llamada con done == total
+    int cancel_mid;        // cancels on the first call with done < total
+    int cancelled_mid;     // that call happened
+    int reached_total;     // after cancelling there was a call with done == total
     uint64_t last_done, last_total, cancel_done, cancel_total;
 } rec;
 
@@ -23,7 +23,7 @@ static void on_progress(void *ctx, const char *phase, uint64_t done, uint64_t to
     r->calls++;
     r->last_done = done;
     r->last_total = total;
-    if (!strncmp(phase, "Empaquetando", 12)) r->saw_pack = 1;
+    if (!strncmp(phase, "Packing", 7)) r->saw_pack = 1;
     if (r->cancelled_mid && total && done >= total) r->reached_total = 1;
     if (r->cancel_mid && !r->cancelled_mid && total && done < total) {
         r->cancelled_mid = 1;
@@ -77,7 +77,7 @@ MP_TEST(cancel_pack_p5z) {
     out.destroy(out.ctx);
     clean();
     MP_CHECK(rc == -1);
-    MP_CHECK_CONTAINS(e.msg, "cancelado");
+    MP_CHECK_CONTAINS(e.msg, "cancelled");
     MP_CHECK_EQ_U64(mp_path_kind(dst), 0);
 }
 
@@ -94,7 +94,7 @@ MP_TEST(cancel_unpack_and_verify) {
     r.cancel_at_30 = 1;
     set_hook(&r);
     MP_CHECK(mp_unpack_original(p, TMP "/cancel_out", 4, 0, &e) == -1);
-    MP_CHECK_CONTAINS(e.msg, "cancelado");
+    MP_CHECK_CONTAINS(e.msg, "cancelled");
     mp_p5z_close(p);
     clean();
 
@@ -104,10 +104,10 @@ MP_TEST(cancel_unpack_and_verify) {
     memset(&e, 0, sizeof e);
     mp_verify_result vr;
     MP_CHECK(mp_verify_p5z(p5z, 4, 0, &vr, &e) == -1);
-    MP_CHECK_CONTAINS(e.msg, "cancelado");
+    MP_CHECK_CONTAINS(e.msg, "cancelled");
     clean();
 
-    // Y sin cancelar, la verificación sigue siendo limpia.
+    // And without cancelling, verification is still clean.
     memset(&e, 0, sizeof e);
     MP_CHECK(mp_verify_p5z(p5z, 4, 0, &vr, &e) == 0);
     MP_CHECK_EQ_U64(vr.files_bad, 0);
@@ -118,7 +118,7 @@ MP_TEST(no_hook_unchanged) {
     if (mpt_pack(MPT_BASIC, TMP "/plain_a.p5z", 1, NULL)) return;
     rec r = {0};
     set_hook(&r);
-    mp_progress_set_hook(NULL);   // se puso y se quitó: no debe dejar rastro
+    mp_progress_set_hook(NULL);   // it was set and removed: it must leave no trace
     mp_cancel_request();
     mp_cancel_reset();
     if (mpt_pack(MPT_BASIC, TMP "/plain_b.p5z", 1, NULL)) return;
@@ -130,7 +130,7 @@ MP_TEST(no_hook_unchanged) {
     free(b);
 }
 
-// Entrada de varios MiB: la cancelación cae a mitad de un bucle, no al final de una fase.
+// Input of several MiB: cancellation lands in the middle of a loop, not at the end of a phase.
 #define BIG TMP "/big_src"
 static int make_big(void) {
     if (mp_path_kind(BIG "/f5.bin") == 1) return 0;
@@ -158,7 +158,7 @@ static int make_big(void) {
 static void check_mid(const rec *r) {
     MP_CHECK(r->cancelled_mid);
     MP_CHECK(r->cancel_done < r->cancel_total);
-    MP_CHECK(!r->reached_total);   // paró antes de terminar la fase
+    MP_CHECK(!r->reached_total);   // it stopped before the phase finished
 }
 
 MP_TEST(cancel_mid_pack_p5z) {
@@ -181,7 +181,7 @@ MP_TEST(cancel_mid_pack_p5z) {
     out.destroy(out.ctx);
     clean();
     MP_CHECK(rc == -1);
-    MP_CHECK_CONTAINS(e.msg, "cancelado");
+    MP_CHECK_CONTAINS(e.msg, "cancelled");
     MP_CHECK_EQ_U64(mp_path_kind(dst), 0);
     check_mid(&r);
 }
@@ -200,7 +200,7 @@ MP_TEST(cancel_mid_unpack_and_verify) {
     r.cancel_mid = 1;
     set_hook(&r);
     MP_CHECK(mp_unpack_original(p, TMP "/mid_out", 4, 0, &e) == -1);
-    MP_CHECK_CONTAINS(e.msg, "cancelado");
+    MP_CHECK_CONTAINS(e.msg, "cancelled");
     mp_p5z_close(p);
     clean();
     check_mid(&r);
@@ -211,7 +211,7 @@ MP_TEST(cancel_mid_unpack_and_verify) {
     memset(&e, 0, sizeof e);
     mp_verify_result vr;
     MP_CHECK(mp_verify_p5z(p5z, 4, 0, &vr, &e) == -1);
-    MP_CHECK_CONTAINS(e.msg, "cancelado");
+    MP_CHECK_CONTAINS(e.msg, "cancelled");
     clean();
     check_mid(&r);
 }

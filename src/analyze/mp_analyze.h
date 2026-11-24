@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// maxpack analyze: mide cuánto gana cada técnica sobre un juego, sin escribir nada en él.
+// maxpack analyze: measures how much each technique gains on a game, without writing anything to it.
 #ifndef MP_ANALYZE_H
 #define MP_ANALYZE_H
 
@@ -14,11 +14,11 @@
 typedef struct {
     double sample_fraction;   // 0.02
     uint64_t sample_min;      // 1 GiB
-    int full;                 // medir todo, sin muestra
+    int full;                 // measure everything, no sample
     unsigned threads;
-    int dedup;                // pase completo de deduplicación
-    int transport;            // medir el .p5z de transporte (zstd 19, ventana larga)
-    int progress;             // progreso en stderr
+    int dedup;                // full deduplication pass
+    int transport;            // measure the transport .p5z (zstd 19, long window)
+    int progress;             // progress on stderr
     const char *const *keep_loose;
     size_t nkeep;
 } mp_analyze_opts;
@@ -29,8 +29,8 @@ typedef struct {
     uint64_t lo, hi, files, bytes;
 } mp_size_bin;
 
-// Transporte: lo empaquetable comprimido como en un .p5z solo para el PC (zstd 19, ventana larga,
-// frames de 32 MiB). La PS5 tendría que recomprimirlo a v1 al instalar.
+// Transport: the packable files compressed as in a .p5z only for the PC (zstd 19, long window,
+// 32 MiB frames). The PS5 would have to recompress it to v1 on install.
 typedef struct {
     uint64_t frames, sample_bytes, sample_raw, sample_stored, est_packed, ns, est_seconds;
     double rate;
@@ -40,7 +40,7 @@ typedef struct {
 #define MP_SIZE_BINS 8   // [0] [1,4K] [4K+1,64K] [64K+1,256K] [256K+1,1M] [1M+1,64M] [64M+1,4G] [4G+1,∞)
 
 typedef struct {
-    char *source_name;   // solo el nombre, no la ruta
+    char *source_name;   // only the name, not the path
     mp_source_kind kind;
     uint64_t files, dirs, total_bytes;
     uint64_t loose_files, loose_bytes, packable_files, packable_bytes;
@@ -50,10 +50,10 @@ typedef struct {
     unsigned threads;
     int full;
     mp_cfg_stat sampled[MP_CFG_COUNT];
-    uint64_t est_packed[MP_CFG_COUNT];    // extrapolado a todo lo empaquetable
-    uint64_t est_seconds[MP_CFG_COUNT];   // tiempo estimado de empaquetar con `threads` hilos
-    uint64_t v1_index_bytes;              // AMPRZPK1 + AMPRIDX3 + cabeceras de volumen
-    uint64_t loose_compressed;            // sueltos con zstd 19, ventana larga, frames de 32 MiB
+    uint64_t est_packed[MP_CFG_COUNT];    // extrapolated to everything packable
+    uint64_t est_seconds[MP_CFG_COUNT];   // estimated time to pack with `threads` threads
+    uint64_t v1_index_bytes;              // AMPRZPK1 + AMPRIDX3 + volume headers
+    uint64_t loose_compressed;            // loose files with zstd 19, long window, 32 MiB frames
     uint64_t p5z_estimate;
     int block_dicts;
     mp_small_result small;
@@ -61,7 +61,7 @@ typedef struct {
     mp_dedup_result dedup;
     int xport_done;
     mp_xport_stat xport;
-    uint64_t p5z_transport;               // transporte + sueltos comprimidos
+    uint64_t p5z_transport;               // transport + compressed loose files
     uint64_t elapsed_ns;
 } mp_report;
 

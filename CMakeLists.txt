@@ -6,7 +6,7 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 
-option(MAXPACK_PS5 "Compilar maxpack.elf para la PS5 (con el SDK ps5-payload-dev: prospero-cmake)" OFF)
+option(MAXPACK_PS5 "Build maxpack.elf for the PS5 (with the ps5-payload-dev SDK: prospero-cmake)" OFF)
 
 include(cmake/ThirdParty.cmake)
 find_package(Threads REQUIRED)
@@ -33,7 +33,7 @@ file(GLOB MP_ANALYZE_SRC CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/analy
 add_library(maxpack_analyze STATIC ${MP_ANALYZE_SRC})
 target_include_directories(maxpack_analyze PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/analyze)
 target_link_libraries(maxpack_analyze PUBLIC maxpack_core)
-# libm aparte solo donde existe (en la PS5 las funciones matemáticas van en la libc).
+# libm separately only where it exists (on the PS5 the math functions are in libc).
 find_library(MP_LIBM m)
 if(MP_LIBM)
   target_link_libraries(maxpack_analyze PUBLIC ${MP_LIBM})
@@ -46,7 +46,7 @@ target_include_directories(maxpack_pack PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/p
 target_link_libraries(maxpack_pack PUBLIC maxpack_analyze)
 mp_warnings(maxpack_pack)
 
-# Red mínima (fase 2): servidor y cliente HTTP.
+# Minimal networking (phase 2): HTTP server and client.
 file(GLOB MP_NET_SRC CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/net/*.c)
 add_library(maxpack_net STATIC ${MP_NET_SRC})
 target_include_directories(maxpack_net PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/net)
@@ -56,39 +56,39 @@ if(WIN32)
 endif()
 mp_warnings(maxpack_net)
 
-# Instalador (fase 2): motor portable. Dependencias: maxpack_web -> maxpack_install -> maxpack_pack.
+# Installer (phase 2): portable engine. Dependencies: maxpack_web -> maxpack_install -> maxpack_pack.
 file(GLOB MP_INSTALL_SRC CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/install/*.c)
 add_library(maxpack_install STATIC ${MP_INSTALL_SRC})
 target_include_directories(maxpack_install PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/install)
 target_link_libraries(maxpack_install PUBLIC maxpack_pack maxpack_net)
 mp_warnings(maxpack_install)
 
-# Web del instalador (fase 2): API y página.
+# The installer's web (phase 2): API and page.
 file(GLOB MP_WEB_SRC CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/web/mp_*.c)
 add_library(maxpack_web STATIC ${MP_WEB_SRC})
 target_include_directories(maxpack_web PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/web)
 target_link_libraries(maxpack_web PUBLIC maxpack_install)
 mp_warnings(maxpack_web)
 
-# La página del instalador, incrustada en el binario.
+# The installer's page, embedded in the binary.
 set(MP_PAGE_C ${CMAKE_BINARY_DIR}/gen/mp_page.c)
 add_custom_command(OUTPUT ${MP_PAGE_C}
   COMMAND ${CMAKE_COMMAND} -DIN=${CMAKE_CURRENT_SOURCE_DIR}/web/index.html -DOUT=${MP_PAGE_C} -DNAME=mp_page_html
           -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed.cmake
   DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/web/index.html ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed.cmake
-  COMMENT "Incrustando web/index.html")
+  COMMENT "Embedding web/index.html")
 add_library(maxpack_page STATIC ${MP_PAGE_C})
 target_include_directories(maxpack_page PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/web)
 target_link_libraries(maxpack_web PUBLIC maxpack_page)
 
 if(MAXPACK_PS5)
-  # maxpack.elf: el instalador de la fase 2. Ya no se publica ni lo compila el CI de este
-  # repositorio: el payload de la consola (DeLFuS77/maxpack-ps5) lo sustituye y usa de aquí solo las
-  # bibliotecas (maxpack_web, maxpack_install, ...). El objetivo sigue para probar esas bibliotecas
-  # con el SDK. Con -DMAXPACK_RUNTIME=<libSceAmpr.sprx> lleva dentro
-  # ese ampr-emu-ng (y -DMAXPACK_RUNTIME_VERSION=<texto> para mostrarlo).
-  set(MAXPACK_RUNTIME "" CACHE FILEPATH "libSceAmpr.sprx de ampr-emu-ng que lleva el instalador")
-  set(MAXPACK_RUNTIME_VERSION "" CACHE STRING "Versión de ese runtime")
+  # maxpack.elf: the phase 2 installer. It is no longer published nor built by this
+  # repository's CI: the console payload (DeLFuS77/maxpack-ps5) replaces it and uses only the
+  # libraries from here (maxpack_web, maxpack_install, ...). The target remains to test those libraries
+  # with the SDK. With -DMAXPACK_RUNTIME=<libSceAmpr.sprx> it carries inside
+  # that ampr-emu-ng (and -DMAXPACK_RUNTIME_VERSION=<text> to show it).
+  set(MAXPACK_RUNTIME "" CACHE FILEPATH "ampr-emu-ng's libSceAmpr.sprx that the installer carries")
+  set(MAXPACK_RUNTIME_VERSION "" CACHE STRING "Version of that runtime")
   set(MP_PS5_SRC src/ps5/main_ps5.c)
   if(MAXPACK_RUNTIME)
     set(MP_RT_C ${CMAKE_BINARY_DIR}/gen/mp_runtime.c)
@@ -96,7 +96,7 @@ if(MAXPACK_PS5)
       COMMAND ${CMAKE_COMMAND} -DIN=${MAXPACK_RUNTIME} -DOUT=${MP_RT_C} -DNAME=mp_runtime_sprx
               -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed.cmake
       DEPENDS ${MAXPACK_RUNTIME} ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed.cmake
-      COMMENT "Incrustando el runtime")
+      COMMENT "Embedding the runtime")
     list(APPEND MP_PS5_SRC ${MP_RT_C})
     file(TIMESTAMP ${MAXPACK_RUNTIME} MP_RT_MTIME "%s" UTC)
   endif()
@@ -110,7 +110,7 @@ if(MAXPACK_PS5)
   mp_warnings(maxpack_elf)
   set(MAXPACK_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 else()
-  # Instalador de PC, solo para probar el motor y la página sin consola.
+  # PC installer, only to test the engine and the page without a console.
   add_executable(maxpack-installer-pc src/web/main_pc.c)
   target_link_libraries(maxpack-installer-pc PRIVATE maxpack_web)
   mp_warnings(maxpack-installer-pc)
@@ -122,14 +122,14 @@ if(NOT MAXPACK_PS5)
   mp_warnings(maxpack)
 endif()
 
-option(MAXPACK_BUILD_TESTS "Compilar las pruebas" ON)
+option(MAXPACK_BUILD_TESTS "Build the tests" ON)
 if(MAXPACK_BUILD_TESTS)
   enable_testing()
   find_package(Python3 3.8 COMPONENTS Interpreter REQUIRED)
   set(MP_FIXTURES_DIR ${CMAKE_BINARY_DIR}/fixtures)
   set(MP_TEST_TMP ${CMAKE_BINARY_DIR}/tmp)
 
-  # mp_add_test(<nombre> [FIXTURES]): compila tests/<nombre>.c y lo registra en CTest.
+  # mp_add_test(<name> [FIXTURES]): builds tests/<name>.c and registers it with CTest.
   function(mp_add_test name)
     cmake_parse_arguments(T "FIXTURES" "" "" ${ARGN})
     add_executable(${name} tests/${name}.c)
@@ -145,7 +145,7 @@ if(MAXPACK_BUILD_TESTS)
     endif()
   endfunction()
 
-  # Fixtures exFAT sintéticas (Python) y contraste del lector de referencia.
+  # Synthetic exFAT fixtures (Python) and comparison with the reference reader.
   add_test(NAME gen_fixtures COMMAND ${Python3_EXECUTABLE} -I
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/tools/make_exfat.py --out ${MP_FIXTURES_DIR})
   set_tests_properties(gen_fixtures PROPERTIES FIXTURES_SETUP exfat)
@@ -212,7 +212,7 @@ if(MAXPACK_BUILD_TESTS)
     ${MP_TEST_TMP}/cli)
   set_tests_properties(test_cli PROPERTIES FIXTURES_REQUIRED exfat TIMEOUT 300)
 
-  # La versión de un paquete sale de la etiqueta (v1.2.3 -> 1.2.3); necesita bash.
+  # A package's version comes from the tag (v1.2.3 -> 1.2.3); needs bash.
   find_program(MP_BASH bash)
   if(MP_BASH)
     add_test(NAME test_version COMMAND ${Python3_EXECUTABLE} -I
@@ -220,7 +220,7 @@ if(MAXPACK_BUILD_TESTS)
       ${CMAKE_CURRENT_SOURCE_DIR}/tools/version.sh ${CMAKE_CURRENT_SOURCE_DIR}/CMakeLists.txt)
   endif()
 
-  # Herramienta de prueba: vuelca un rango de un archivo de un origen a stdout.
+  # Test tool: dumps a range of a source's file to stdout.
   add_executable(mp_cat tests/tools/mp_cat.c)
   target_link_libraries(mp_cat PRIVATE maxpack_core)
   mp_warnings(mp_cat)

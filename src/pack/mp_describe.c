@@ -37,19 +37,19 @@ static int is_p5z_name(const char *path) {
     return n >= 4 && ieq(path + n - 4, ".p5z");
 }
 
-// ---- carpeta e imagen ---------------------------------------------------------------------
+// ---- folder and image ---------------------------------------------------------------------
 
 static int read_entry(mp_source *s, size_t i, size_t max, uint8_t **out, size_t *len, mp_err *e) {
     const mp_entry *en = mp_source_entry(s, i);
     *out = NULL;
     *len = 0;
     if (en->size > max) {
-        mp_err_set(e, "%s es demasiado grande (%llu bytes)", en->path, (unsigned long long)en->size);
+        mp_err_set(e, "%s is too large (%llu bytes)", en->path, (unsigned long long)en->size);
         return -1;
     }
     uint8_t *b = malloc((size_t)en->size + 1);
     if (!b) {
-        mp_err_set(e, "sin memoria");
+        mp_err_set(e, "out of memory");
         return -1;
     }
     if (mp_source_read(s, i, 0, b, (size_t)en->size, e) != 0) {
@@ -72,9 +72,9 @@ static long find_ci(mp_source *s, const char *path) {
 static uint32_t rd32(const uint8_t *p) { return p[0] | p[1] << 8 | p[2] << 16 | (uint32_t)p[3] << 24; }
 static uint64_t rd64(const uint8_t *p) { return rd32(p) | (uint64_t)rd32(p + 4) << 32; }
 
-// Los packs de una carpeta ya empaquetada, como los dice la cabecera de su ampr_zstd.index
-// (AMPRZPK1: volúmenes en +20, archivos en +40). Solo se leen los contadores: comprobar el
-// índice entero es cosa de verify. Una cabecera que no se puede leer deja los dos a 0.
+// The packs of an already packed folder, as its ampr_zstd.index header says
+// (AMPRZPK1: volumes at +20, files at +40). Only the counters are read: checking the
+// whole index is verify's job. A header that cannot be read leaves both at 0.
 static void index_counts(mp_source *s, size_t i, mp_describe *d) {
     uint8_t h[MP_ZPK_HEADER];
     if (mp_source_entry(s, i)->size < sizeof h || mp_source_read(s, i, 0, h, sizeof h, NULL) != 0 ||
@@ -109,7 +109,7 @@ static int describe_source(const char *path, mp_describe *d, mp_err *e) {
     if (pj >= 0) {
         uint8_t *b = NULL;
         size_t len = 0;
-        if (read_entry(s, (size_t)pj, PARAM_MAX, &b, &len, NULL) == 0) {   // ilegible: sin nombre
+        if (read_entry(s, (size_t)pj, PARAM_MAX, &b, &len, NULL) == 0) {   // unreadable: no name
             mp_param_read((const char *)b, len, d->title_id, d->version, d->name);
             free(b);
         }
@@ -130,7 +130,7 @@ typedef struct {
 static int to_mem(void *ctx, const void *p, size_t n, mp_err *e) {
     membuf *m = ctx;
     if (m->n + n > m->max) {
-        mp_err_set(e, "archivo demasiado grande");
+        mp_err_set(e, "file too large");
         return -1;
     }
     if (m->n + n > m->cap) {
@@ -138,7 +138,7 @@ static int to_mem(void *ctx, const void *p, size_t n, mp_err *e) {
         while (cap < m->n + n) cap *= 2;
         uint8_t *nb = realloc(m->b, cap);
         if (!nb) {
-            mp_err_set(e, "sin memoria");
+            mp_err_set(e, "out of memory");
             return -1;
         }
         m->b = nb;
@@ -149,21 +149,21 @@ static int to_mem(void *ctx, const void *p, size_t n, mp_err *e) {
     return 0;
 }
 
-// Índice en files[] del archivo guardado con esa ruta (no el original reemplazado), o -1.
+// Index in files[] of the stored file with that path (not the replaced original), or -1.
 static long p5z_find(const mp_p5z *p, const char *path) {
     for (size_t i = 0; i < p->nfiles; i++)
         if (p->files[i].role != MP_ROLE_ORIGINAL && ieq(p->files[i].path, path)) return (long)i;
     return -1;
 }
 
-// Lee un archivo del .p5z: guardado tal cual o, si va en los packs, descomprimido de ellos.
+// Reads a file from the .p5z: stored as is or, if it is in the packs, decompressed from them.
 static int p5z_slurp(mp_p5z *p, const char *path, size_t max, uint8_t **out, size_t *len, mp_err *e) {
     *out = NULL;
     *len = 0;
     long fi = p5z_find(p, path);
     if (fi >= 0) {
         if (p->files[fi].size > max) {
-            mp_err_set(e, "%s es demasiado grande", path);
+            mp_err_set(e, "%s is too large", path);
             return -1;
         }
         membuf m = {0};
@@ -180,7 +180,7 @@ static int p5z_slurp(mp_p5z *p, const char *path, size_t max, uint8_t **out, siz
     for (size_t i = 0; i < p->man.n; i++) {
         if (!(p->man.v[i].flags & MP_MANIFEST_PACKED) || !ieq(p->man.v[i].path, path)) continue;
         if (p->man.v[i].size > max) {
-            mp_err_set(e, "%s es demasiado grande", path);
+            mp_err_set(e, "%s is too large", path);
             return -1;
         }
         mp_zpk *z = NULL;
@@ -188,12 +188,12 @@ static int p5z_slurp(mp_p5z *p, const char *path, size_t max, uint8_t **out, siz
         long zi = mp_zpk_find(z, p->man.v[i].path);
         int rc = -1;
         if (zi < 0 || mp_zpk_size(z, (size_t)zi) != p->man.v[i].size) {
-            mp_err_set(e, "%s no está en los packs del .p5z", path);
+            mp_err_set(e, "%s is not in the .p5z's packs", path);
         } else {
             size_t sz = (size_t)p->man.v[i].size;
             uint8_t *b = malloc(sz + 1);
             if (!b) {
-                mp_err_set(e, "sin memoria");
+                mp_err_set(e, "out of memory");
             } else if (mp_zpk_read_file(z, (size_t)zi, 0, b, sz, e) != 0) {
                 free(b);
             } else {
@@ -205,7 +205,7 @@ static int p5z_slurp(mp_p5z *p, const char *path, size_t max, uint8_t **out, siz
         mp_zpk_close(z);
         return rc;
     }
-    mp_err_set(e, "el .p5z no tiene %s", path);
+    mp_err_set(e, "the .p5z has no %s", path);
     return -1;
 }
 
@@ -228,7 +228,7 @@ static int describe_p5z(const char *path, mp_describe *d, mp_err *e) {
     }
     d->files = m->n;
     d->p5z_size = p->size;
-    d->packed = 1;   // lo empaquetó MaxPack: lleva ampr_zstd.index
+    d->packed = 1;   // MaxPack packed it: it carries ampr_zstd.index
     snprintf(d->title_id, sizeof d->title_id, "%s", m->title_id);
     snprintf(d->version, sizeof d->version, "%s", m->content_version);
     snprintf(d->name, sizeof d->name, "%s", m->title_name);
@@ -249,7 +249,7 @@ done:
 int mp_describe_path(const char *path, mp_describe *d, mp_err *e) {
     memset(d, 0, sizeof *d);
     if (!path || !*path) {
-        mp_err_set(e, "falta la ruta");
+        mp_err_set(e, "missing path");
         return -1;
     }
     return is_p5z_name(path) ? describe_p5z(path, d, e) : describe_source(path, d, e);
@@ -259,7 +259,7 @@ int mp_describe_icon(const char *path, uint8_t **png, size_t *len, mp_err *e) {
     *png = NULL;
     *len = 0;
     if (!path || !*path) {
-        mp_err_set(e, "falta la ruta");
+        mp_err_set(e, "missing path");
         return -1;
     }
     if (is_p5z_name(path)) {
@@ -273,7 +273,7 @@ int mp_describe_icon(const char *path, uint8_t **png, size_t *len, mp_err *e) {
     if (mp_source_open(path, &s, e) != 0) return -1;
     long i = find_ci(s, ICON_PATH);
     int rc = -1;
-    if (i < 0) mp_err_set(e, "no tiene %s", ICON_PATH);
+    if (i < 0) mp_err_set(e, "it has no %s", ICON_PATH);
     else rc = read_entry(s, (size_t)i, ICON_MAX, png, len, e);
     mp_source_close(s);
     return rc;

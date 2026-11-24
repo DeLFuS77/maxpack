@@ -29,7 +29,7 @@ func TestSettingsRoundtrip(t *testing.T) {
 	}
 	got, err := Load()
 	if err != nil || got != want {
-		t.Fatalf("%+v, %v; esperaba %+v", got, err, want)
+		t.Fatalf("%+v, %v; expected %+v", got, err, want)
 	}
 }
 
@@ -44,7 +44,7 @@ func TestSettingsDefaults(t *testing.T) {
 		lang = "es"
 	}
 	if got.Mode != "p5z" || got.Level != 19 || got.Lang != lang || got.Theme != "system" {
-		t.Fatalf("por defecto: %+v (idioma esperado %s)", got, lang)
+		t.Fatalf("default: %+v (expected language %s)", got, lang)
 	}
 }
 
@@ -80,7 +80,7 @@ func TestSettingsAtomicSave(t *testing.T) {
 	}
 	entries, _ := os.ReadDir(folder)
 	if len(entries) != 1 || entries[0].Name() != "settings.json" {
-		t.Fatalf("quedan restos: %v", entries)
+		t.Fatalf("leftovers remain: %v", entries)
 	}
 }
 
@@ -91,20 +91,20 @@ func TestPortable(t *testing.T) {
 	}
 	folder := filepath.Join(filepath.Dir(executable), "settings")
 	if _, err := os.Stat(folder); err == nil {
-		t.Skip("ya hay una carpeta settings junto al ejecutable de prueba")
+		t.Skip("there is already a settings folder next to the test executable")
 	}
 	if err := os.Mkdir(folder, 0o755); err != nil {
-		t.Skip("no se puede crear la carpeta junto al ejecutable:", err)
+		t.Skip("cannot create the folder next to the executable:", err)
 	}
 	defer os.RemoveAll(folder)
 	if portable.Folder() == "" {
-		t.Fatal("portable no ve la carpeta settings")
+		t.Fatal("portable does not see the settings folder")
 	}
 	if err := Save(Settings{Lang: "es", Theme: "light", Mode: "p5z", Level: 12}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(folder, "settings.json")); err != nil {
-		t.Fatalf("no se guardó en la carpeta portable: %v", err)
+		t.Fatalf("not saved in the portable folder: %v", err)
 	}
 	if got, _ := Load(); got.Level != 12 || got.Theme != "light" {
 		t.Fatalf("%+v", got)

@@ -36,12 +36,12 @@ func textKeys(t *testing.T, lang string) map[string]bool {
 	keys := map[string]bool{}
 	for _, found := range textLine.FindAllStringSubmatch(readPage(t, "i18n/"+lang+".js"), -1) {
 		if keys[found[1]] {
-			t.Errorf("%s: el texto %s está dos veces", lang, found[1])
+			t.Errorf("%s: the text %s appears twice", lang, found[1])
 		}
 		keys[found[1]] = true
 	}
 	if len(keys) == 0 {
-		t.Fatalf("%s: sin textos", lang)
+		t.Fatalf("%s: no texts", lang)
 	}
 	return keys
 }
@@ -97,23 +97,23 @@ let source = "";
 for (const name of ["base", "es", "en"]) source += fs.readFileSync(path.join(dir, "i18n", name + ".js"), "utf8") + "\n;\n";
 vm.runInContext(source + "this.texts = texts; this.languages = languages;", context);
 const { texts, languages } = context;
-if (languages.map(language => language[0]).join() !== "es,en") say("los idiomas son " + languages.map(language => language[0]).join());
+if (languages.map(language => language[0]).join() !== "es,en") say("the languages are " + languages.map(language => language[0]).join());
 const es = texts.es, en = texts.en;
 const keys = JSON.parse(process.argv[2]);
 for (const [code, table] of [["es", es], ["en", en]]) {
   const unread = Object.keys(table).filter(key => !keys[code].includes(key));
-  if (unread.length) say(code + ": textos que no van en una línea propia: " + unread.join(", "));
+  if (unread.length) say(code + ": texts that are not on a line of their own: " + unread.join(", "));
 }
 const braces = text => (text.match(/\{[A-Za-z_]+\}/g) || []).sort().join(" ");
 for (const key of Object.keys(es)) {
   if (!(key in en)) continue;
-  if (typeof es[key] !== typeof en[key]) say(key + ": en es " + typeof es[key] + ", en en " + typeof en[key]);
-  else if (typeof es[key] === "function" && es[key].length !== en[key].length) say(key + ": en es toma " + es[key].length + " argumentos, en en " + en[key].length);
+  if (typeof es[key] !== typeof en[key]) say(key + ": in es " + typeof es[key] + ", in en " + typeof en[key]);
+  else if (typeof es[key] === "function" && es[key].length !== en[key].length) say(key + ": in es it takes " + es[key].length + " arguments, in en " + en[key].length);
 }
 for (const [code, table] of [["es", es], ["en", en]]) {
   for (const [key, value] of Object.entries(table)) {
-    if (typeof value === "string") { if (!value.trim()) say(code + "." + key + " está vacío"); continue; }
-    if (typeof value !== "function") { say(code + "." + key + " no es un texto"); continue; }
+    if (typeof value === "string") { if (!value.trim()) say(code + "." + key + " is empty"); continue; }
+    if (typeof value !== "function") { say(code + "." + key + " is not a text"); continue; }
     for (const args of [[1, 1, 1, 1], [2, 0, 3, 1], [0, 5, 0, 0], [21, 4, 21, 4]]) {
       let text;
       try { text = String(value(...args)); } catch (error) { say(code + "." + key + "(" + args.join(", ") + ") falla: " + error.message); continue; }
@@ -132,12 +132,12 @@ func TestPageTexts(t *testing.T) {
 	es, en := textKeys(t, "es"), textKeys(t, "en")
 	for key := range es {
 		if !en[key] {
-			t.Errorf("en.js no tiene %s", key)
+			t.Errorf("en.js does not have %s", key)
 		}
 	}
 	for key := range en {
 		if !es[key] {
-			t.Errorf("es.js no tiene %s", key)
+			t.Errorf("es.js does not have %s", key)
 		}
 	}
 	page := readPage(t, "app.js") + readPage(t, "index.html")
@@ -147,15 +147,15 @@ func TestPageTexts(t *testing.T) {
 		key := found[1] + found[2]
 		count++
 		if !es[key] || !en[key] {
-			t.Errorf("la página pide el texto %s, que no está en los dos idiomas", key)
+			t.Errorf("the page asks for the text %s, which is not in both languages", key)
 		}
 	}
 	if count < 20 {
-		t.Errorf("la página pide solo %d textos por su nombre", count)
+		t.Errorf("the page asks for only %d texts by name", count)
 	}
 	for _, key := range pageCodes() {
 		if !es[key] || !en[key] {
-			t.Errorf("falta el texto %s en algún idioma", key)
+			t.Errorf("the text %s is missing in some language", key)
 		}
 	}
 	// the end of a queue for the console says where its games are: in homebrew/, where
@@ -166,27 +166,27 @@ func TestPageTexts(t *testing.T) {
 		for _, key := range []string{"nextFolder", "nextMove"} {
 			found := regexp.MustCompile(`(?m)^  ` + key + `: (.*)$`).FindStringSubmatch(source)
 			if found == nil || !strings.Contains(found[1], "homebrew/") {
-				t.Errorf("%s.%s no dice homebrew/", lang, key)
+				t.Errorf("%s.%s does not say homebrew/", lang, key)
 			}
 		}
 		if !regexp.MustCompile(`(?m)^  nextMove: folder => .*\+ folder \+`).MatchString(source) {
-			t.Errorf("%s.nextMove no dice dónde están los juegos", lang)
+			t.Errorf("%s.nextMove does not say where the games are", lang)
 		}
 	}
 	if app := readPage(t, "app.js"); !strings.Contains(app, `t("nextMove")`) || !strings.Contains(app, "row.homebrew") {
-		t.Error("el final de una cola para la consola no mira dónde quedó cada juego")
+		t.Error("the end of a queue for the console does not look at where each game ended up")
 	}
 
 	node, err := exec.LookPath("node")
 	if err != nil {
-		t.Log("sin node: no se comprueba que los scripts se lean ni los argumentos de los textos")
+		t.Log("no node: not checking that the scripts read or the texts' arguments")
 		return
 	}
 	scripts, _ := filepath.Glob(filepath.Join("frontend", "*.js"))
 	more, _ := filepath.Glob(filepath.Join("frontend", "i18n", "*.js"))
 	for _, script := range append(scripts, more...) {
 		if out, err := exec.Command(node, "--check", script).CombinedOutput(); err != nil {
-			t.Errorf("%s no se lee: %s", script, out)
+			t.Errorf("%s does not read: %s", script, out)
 		}
 	}
 	sorted := func(keys map[string]bool) []string {
@@ -234,7 +234,7 @@ func TestPageSafe(t *testing.T) {
 	more, _ := filepath.Glob(filepath.Join("frontend", "i18n", "*.js"))
 	scripts = append(scripts, more...)
 	if len(scripts) < 4 {
-		t.Fatalf("faltan scripts de la página: %v", scripts)
+		t.Fatalf("the page's scripts are missing: %v", scripts)
 	}
 	assign := regexp.MustCompile(`\.innerHTML\s*\+?=\s*`)
 	banned := regexp.MustCompile(`outerHTML|insertAdjacentHTML|document\.write|\beval\s*\(|new\s+Function\b|createContextualFragment|DOMParser`)
@@ -249,38 +249,38 @@ func TestPageSafe(t *testing.T) {
 			}
 			rest := source[at[1]:]
 			if rest == "" || !strings.ContainsRune("\"'`", rune(rest[0])) {
-				t.Errorf("%s:%d: innerHTML recibe algo que no es una plantilla fija", name, line)
+				t.Errorf("%s:%d: innerHTML receives something that is not a fixed template", name, line)
 				continue
 			}
 			end, fixed := literalEnd(rest)
 			after := strings.TrimLeft(rest[end:], " \t")
 			if !fixed || after == "" || !strings.ContainsRune(";\n,)", rune(after[0])) {
-				t.Errorf("%s:%d: innerHTML recibe una plantilla con datos", name, line)
+				t.Errorf("%s:%d: innerHTML receives a template with data", name, line)
 			}
 		}
 		for _, found := range banned.FindAllStringIndex(source, -1) {
-			t.Errorf("%s:%d: usa %s", name, strings.Count(source[:found[0]], "\n")+1, source[found[0]:found[1]])
+			t.Errorf("%s:%d: uses %s", name, strings.Count(source[:found[0]], "\n")+1, source[found[0]:found[1]])
 		}
 	}
 	app := readPage(t, "app.js")
 	for _, field := range []string{"Name", "Path", "TitleID"} {
 		if !regexp.MustCompile(`\.textContent\s*=[^;\n]*\.` + field + `\b`).MatchString(app) {
-			t.Errorf("app.js no escribe %s con textContent", field)
+			t.Errorf("app.js does not write %s with textContent", field)
 		}
 	}
 	network := regexp.MustCompile(`(?i)\b(?:https?:)?//[a-z0-9.-]+\.[a-z]{2,}|@import|url\(\s*["']?(?:https?:|//)`)
 	for _, name := range []string{"index.html", "style.css", "app.js", "i18n/base.js", "i18n/es.js", "i18n/en.js"} {
 		source := readPage(t, name)
 		for _, found := range network.FindAllString(source, -1) {
-			t.Errorf("%s carga algo de fuera: %s", name, found)
+			t.Errorf("%s loads something from outside: %s", name, found)
 		}
 	}
 	page := readPage(t, "index.html")
 	if !strings.Contains(page, `http-equiv="Content-Security-Policy"`) || !strings.Contains(page, "default-src 'self'") {
-		t.Error("index.html no limita lo que carga (Content-Security-Policy)")
+		t.Error("index.html does not limit what it loads (Content-Security-Policy)")
 	}
 	if strings.Contains(page, " style=") || strings.Contains(page, "<style") || strings.Contains(app, "<style") {
-		t.Error("estilos sueltos en la página: la política de seguridad los bloquea")
+		t.Error("loose styles in the page: the security policy blocks them")
 	}
 	for _, name := range append([]string{"index.html", "style.css"}, func() []string {
 		var names []string
@@ -291,7 +291,7 @@ func TestPageSafe(t *testing.T) {
 		return names
 	}()...) {
 		if !strings.Contains(readPage(t, name), "SPDX-License-Identifier: GPL-3.0-or-later") {
-			t.Errorf("%s no tiene la cabecera SPDX", name)
+			t.Errorf("%s does not have the SPDX header", name)
 		}
 	}
 }
@@ -313,7 +313,7 @@ func walk(node *html.Node, visit func(*html.Node)) {
 }
 
 // TestPageSections: the page has the sections compress, decompress, verify, details and
-// settings; «Hecho para» with the installer (p5z) chosen by default and the folder as the other
+// settings; "Made for" with the installer (p5z) chosen by default and the folder as the other
 // choice; and the button cancel. Every dialog hangs from the body (one inside another opens
 // hidden in it, as NXPress learnt), and the scripts load in their order.
 func TestPageSections(t *testing.T) {
@@ -335,13 +335,13 @@ func TestPageSections(t *testing.T) {
 		}
 		if id, ok := attr(node, "id"); ok {
 			if ids[id] != nil {
-				t.Errorf("el id %s está dos veces", id)
+				t.Errorf("the id %s appears twice", id)
 			}
 			ids[id] = node
 		}
 		if name, _ := attr(node, "name"); node.Data == "input" && name == "made-for" {
 			if kind, _ := attr(node, "type"); kind != "radio" {
-				t.Errorf("Hecho para no es una elección: %s", kind)
+				t.Errorf("Made for is not a choice: %s", kind)
 			}
 			value, _ := attr(node, "value")
 			_, checked := attr(node, "checked")
@@ -355,31 +355,31 @@ func TestPageSections(t *testing.T) {
 			dialogs++
 			if node.Parent == nil || node.Parent.Data != "body" {
 				id, _ := attr(node, "id")
-				t.Errorf("el diálogo %s no cuelga del body", id)
+				t.Errorf("the dialog %s does not hang from the body", id)
 			}
 		}
 	})
 	for _, section := range []string{"compress", "decompress", "verify", "details", "settings"} {
 		if !sections[section] {
-			t.Errorf("falta la sección %s", section)
+			t.Errorf("the section %s is missing", section)
 		}
 	}
 	if len(madeFor) != 2 || !madeFor["p5z"] {
-		t.Errorf("Hecho para: %v (p5z marcado por defecto, y folder)", madeFor)
+		t.Errorf("Made for: %v (p5z checked by default, and folder)", madeFor)
 	}
 	if checked, ok := madeFor["folder"]; !ok || checked {
-		t.Errorf("Hecho para sin la carpeta, o marcada: %v", madeFor)
+		t.Errorf("Made for without the folder, or checked: %v", madeFor)
 	}
 	if cancel := ids["cancel"]; cancel == nil || cancel.Data != "button" {
-		t.Error("falta el botón cancel")
+		t.Error("the cancel button is missing")
 	}
 	for _, id := range []string{"settings", "options", "files", "done-dialog", "replace-dialog", "fat32-dialog", "runtime-dialog", "block-dialog", "warn-dialog", "close-dialog"} {
 		if ids[id] == nil {
-			t.Errorf("falta #%s", id)
+			t.Errorf("#%s is missing", id)
 		}
 	}
 	if dialogs < 6 {
-		t.Errorf("solo %d diálogos", dialogs)
+		t.Errorf("only %d dialogs", dialogs)
 	}
 	if strings.Join(scripts, " ") != "i18n/base.js i18n/es.js i18n/en.js app.js" {
 		t.Errorf("scripts: %v", scripts)

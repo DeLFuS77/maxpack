@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Lector exFAT de referencia, independiente del código C, para contrastar resultados.
+"""Reference exFAT reader, independent of the C code, to compare results.
 
-  exfat_ref.py ls  <imagen>                      -> "tamaño<TAB>ruta" por archivo, ordenado por bytes UTF-8
-  exfat_ref.py cat <imagen> <ruta> [off] [len]   -> bytes del archivo a stdout (ceros más allá de VDL)
+  exfat_ref.py ls  <image>                      -> "size<TAB>path" per file, sorted by UTF-8 bytes
+  exfat_ref.py cat <image> <path> [off] [len]   -> the file's bytes to stdout (zeros beyond VDL)
 
-Solo lee. Pensado para imágenes de juegos (cientos de GB): solo carga la FAT y los directorios.
+Read-only. Meant for game images (hundreds of GB): it only loads the FAT and the directories.
 """
 import struct
 import sys
@@ -18,7 +18,7 @@ class Image:
         self.f = open(path, "rb")
         b = self.f.read(512)
         if len(b) < 512 or b[3:11] != b"EXFAT   " or b[510:512] != b"\x55\xAA":
-            raise SystemExit("no es una imagen exFAT: %s" % path)
+            raise SystemExit("not an exFAT image: %s" % path)
         (_, _, fat_off, fat_len, heap_off, self.count, root, _, _, _, bps, spc,
          _) = struct.unpack_from("<QQIIIIIIHHBBB", b, 64)
         self.ss = 1 << bps
@@ -26,7 +26,7 @@ class Image:
         self.heap = heap_off * self.ss
         self.f.seek(fat_off * self.ss)
         self.fat = self.f.read(fat_len * self.ss)
-        self.files = {}   # ruta -> (primer clúster, nofat, DataLength, ValidDataLength)
+        self.files = {}   # path -> (first cluster, nofat, DataLength, ValidDataLength)
         self._dir(self._read(root, False, None), "")
 
     def _next(self, c):
@@ -67,7 +67,7 @@ class Image:
                 vdl = struct.unpack_from("<Q", st, 8)[0]
                 first, dl = struct.unpack_from("<IQ", st, 20)
                 name = b"".join(d[i + 32 * k + 2:i + 32 * k + 32] for k in range(2, sec + 1))
-                # NameLength cuenta unidades UTF-16 (un emoji ocupa dos).
+                # NameLength counts UTF-16 units (an emoji takes two).
                 name = name[:2 * nlen].decode("utf-16-le", "replace")
                 path = prefix + name
                 if attr & 0x10:
@@ -93,7 +93,7 @@ class Image:
             k = pos // self.cs
             c = first + k if nofat else cl[k]
             n = min(end, vdl, (k + 1) * self.cs) - pos
-            if nofat:  # contiguo: lee de una vez
+            if nofat:  # contiguous: reads in one go
                 n = min(end, vdl) - pos
                 n = min(n, 1 << 24)
             self.f.seek(self.heap + (c - 2) * self.cs + pos % self.cs)

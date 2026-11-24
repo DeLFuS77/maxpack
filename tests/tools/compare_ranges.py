@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Contrasta el lector C (mp_cat) con el lector de referencia en una imagen real.
+"""Compares the C reader (mp_cat) with the reference reader on a real image.
 
-Uso: compare_ranges.py <mp_cat> <imagen.exfat>
+Usage: compare_ranges.py <mp_cat> <image.exfat>
 
-Para cada archivo compara el SHA-256 del primer MiB, del último MiB y, si pasa de 4 GiB,
-de los 2 MiB centrados en 2^32. Solo lee.
+For each file it compares the SHA-256 of the first MiB, the last MiB and, if it is over 4 GiB,
+the 2 MiB centered on 2^32. Read-only.
 """
 import hashlib
 import os
@@ -39,7 +39,7 @@ def main():
             if a != b:
                 bad += 1
                 print("DISTINTO: %s [%d, +%d)" % (path, off, n))
-    print("%s: %d archivos, %d rangos, %d distintos"
+    print("%s: %d files, %d ranges, %d different"
           % (os.path.basename(img), len(files), checked, bad))
     return 1 if bad else 0
 

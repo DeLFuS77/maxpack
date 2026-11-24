@@ -62,7 +62,7 @@ MP_TEST(zeros_compress) {
 MP_TEST(partial_window) {
     uint8_t *d = malloc(300000);
     fill_random(d, 300000, 7);
-    for (size_t i = 0; i < 300000; i += 3) d[i] = 'a';   // algo comprimible
+    for (size_t i = 0; i < 300000; i += 3) d[i] = 'a';   // something compressible
     mp_measurer *m = mp_measurer_new(NULL);
     mp_cfg_stat st[MP_CFG_COUNT] = {{0}};
     mp_measure_window(m, d, 300000, 1, st);
@@ -96,8 +96,8 @@ MP_TEST(frame_params) {
 }
 
 MP_TEST(dict_used_by_parity) {
-    // 2000 registros de entrenamiento, uno por muestra.
-    size_t cap = 2000 * 400;   // cada muestra ocupa hasta 400 bytes
+    // 2000 training records, one per sample.
+    size_t cap = 2000 * 400;   // each sample takes up to 400 bytes
     uint8_t *train = malloc(cap);
     size_t sizes[2000], total = 0;
     for (unsigned i = 0; i < 2000; i++) {
@@ -108,7 +108,7 @@ MP_TEST(dict_used_by_parity) {
     void *dict = malloc(110 * 1024);
     size_t ds = ZDICT_trainFromBuffer(dict, 110 * 1024, train, sizes, 2000);
     MP_CHECK(!ZDICT_isError(ds));
-    mp_dict_pair dp = {{NULL, dict}, {0, ds}};   // solo dict[1]: evalúa la paridad 0
+    mp_dict_pair dp = {{NULL, dict}, {0, ds}};   // only dict[1]: evaluates parity 0
     uint8_t *w = malloc(65536);
     size_t n = make_records(w, 65536, 5000000);
     mp_measurer *m = mp_measurer_new(&dp);
@@ -116,22 +116,22 @@ MP_TEST(dict_used_by_parity) {
     mp_measure_window(m, w, n, 0, st0);
     mp_measure_window(m, w, n, 1, st1);
     MP_CHECK(st0[MP_CFG_DICT_L19].stored < st0[MP_CFG_V1_L19].stored);
-    MP_CHECK_EQ_U64(st1[MP_CFG_DICT_L19].stored, st1[MP_CFG_V1_L19].stored);   // sin dict[0]
+    MP_CHECK_EQ_U64(st1[MP_CFG_DICT_L19].stored, st1[MP_CFG_V1_L19].stored);   // without dict[0]
     mp_measurer_free(m);
     free(w);
     free(dict);
     free(train);
 }
 
-// Caracterización: con un diccionario inútil de tamaño realista (110 KiB aleatorios), dict-l19 solo
-// puede perder lo que zstd no evita: con cualquier diccionario, btultra2 no hace su doble pasada
-// del primer bloque (medido: +0,88 % aquí). Si algún día la diferencia crece, los parámetros de
-// búsqueda del contexto con diccionario se habrán debilitado. Margen: 1,5 %.
+// Characterization: with a useless dictionary of realistic size (110 KiB random), dict-l19 can only
+// lose what zstd does not avoid: with any dictionary, btultra2 does not do its double pass
+// over the first block (measured: +0.88 % here). If the difference ever grows, the
+// search parameters of the dictionary context will have weakened. Margin: 1.5 %.
 MP_TEST(useless_dict_costs_only_two_pass) {
     size_t ds = 110 * 1024;
     uint8_t *raw_dict = malloc(ds);
     fill_random(raw_dict, ds, 77);
-    raw_dict[0] ^= 0x55;   // que no empiece por la firma de diccionario zstd
+    raw_dict[0] ^= 0x55;   // so that it does not start with the zstd dictionary signature
     mp_dict_pair dp = {{NULL, raw_dict}, {0, ds}};
     uint8_t *w = malloc(MiB);
     size_t n = make_records(w, MiB, 9000000);

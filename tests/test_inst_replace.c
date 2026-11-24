@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Instalador: reemplazar copias con confirmación y borrar el .p5z verificado.
+// Installer: replace copies with confirmation and delete the verified .p5z.
 #include "mp_fixture.h"
 #include "mp_inst.h"
 
@@ -9,10 +9,10 @@ static uint8_t rt_new[4096];
 static const char *drives[] = {TMP "/usb0"};
 
 typedef struct {
-    const char *corrupt;   // archivo que se estropea al empezar "comprobando"
+    const char *corrupt;   // file that gets corrupted when "comprobando" starts
     uint64_t fail_at;
     int done_corrupt;
-    const char *appear;    // archivo que aparece en cuanto se empieza a escribir
+    const char *appear;    // file that appears as soon as writing starts
 } hook;
 
 static void on_progress(void *ctx, const char *stage, uint64_t done, uint64_t total) {
@@ -34,11 +34,11 @@ static void on_progress(void *ctx, const char *stage, uint64_t done, uint64_t to
 static int on_io(void *ctx, uint64_t written, mp_err *e) {
     hook *h = ctx;
     if (h && h->appear) {
-        mpt_put_text(h->appear, "apareció durante la instalación");
+        mpt_put_text(h->appear, "appeared during the installation");
         h->appear = NULL;
     }
     if (h && h->fail_at && written > h->fail_at) {
-        mp_err_set(e, "fallo inyectado");
+        mp_err_set(e, "injected failure");
         return -1;
     }
     return 0;
@@ -74,12 +74,12 @@ static void setup(void) {
     mp_p5z *p = NULL;
     if (mp_p5z_open(TMP "/rt.p5z", &p, &e) == 0) {
         mp_unpack_folder(p, TMP "/unpacked_rt", 2, 0, &e);
-        mp_unpack_original(p, TMP "/dump", 2, 0, &e);   // el dump sin comprimir
+        mp_unpack_original(p, TMP "/dump", 2, 0, &e);   // the uncompressed dump
         mp_p5z_close(p);
     }
 }
 
-// Copia el dump sin comprimir a dir.
+// Copies the uncompressed dump to dir.
 static void place_dump(const char *dir) {
     mpt_list l = mpt_list_dir(TMP "/dump");
     for (size_t i = 0; i < l.n; i++) {
@@ -246,7 +246,7 @@ MP_TEST(check_dir_counts) {
 MP_TEST(homebrew_param_not_a_copy) {
     setup();
     fresh(TMP "/j");
-    // Un dump descomprimido directamente en homebrew/: homebrew/sce_sys/param.json existe.
+    // A dump decompressed directly into homebrew/: homebrew/sce_sys/param.json exists.
     mpt_put_text(TMP "/usb0/homebrew/sce_sys/param.json", "{\"titleId\":\"TEST00001\"}");
     mpt_put_text(TMP "/usb0/homebrew/Otro/eboot.bin", "otro juego");
     mp_inst_env env = env_for(TMP "/j", NULL);
@@ -255,7 +255,7 @@ MP_TEST(homebrew_param_not_a_copy) {
     mp_err e = {{0}};
     MP_CHECK(mp_inst_find_existing(&env, "TEST00001", NULL, 0, &v, &n, &e) == 0);
     for (size_t i = 0; i < n; i++)
-        if (!strcmp(v[i].path, TMP "/usb0/homebrew")) MP_FAIL_("homebrew entera como copia del juego");
+        if (!strcmp(v[i].path, TMP "/usb0/homebrew")) MP_FAIL_("the whole homebrew/ as a copy of the game");
     mp_inst_existing_free(v, n);
     mp_inst_result r;
     mp_inst_req q;
@@ -263,7 +263,7 @@ MP_TEST(homebrew_param_not_a_copy) {
     q.p5z_path = TMP "/rt.p5z";
     q.dest_root = TMP "/usb0";
     MP_CHECK(mp_inst_install(&env, &q, &r, &e) == 0);
-    if (r.status == MP_INST_NEEDS_CONFIRM) {   // confirmar todo lo que proponga
+    if (r.status == MP_INST_NEEDS_CONFIRM) {   // confirm everything it proposes
         const char *rep[16];
         size_t k = 0;
         for (size_t i = 0; i < r.nexisting && k < 16; i++) rep[k++] = r.existing[i].path;
@@ -294,7 +294,7 @@ MP_TEST(alias_same_dir) {
     setup();
     fresh(TMP "/l");
     mpt_put_text(TMP "/l/homebrew/test00001/sce_sys/param.json", "{\"titleId\":\"TEST00001\"}");
-    if (mp_path_kind(TMP "/l/homebrew/TEST00001") != 2) return;   // sistema de archivos que distingue mayúsculas
+    if (mp_path_kind(TMP "/l/homebrew/TEST00001") != 2) return;   // case-sensitive file system
     mp_inst_result r;
     mp_err e;
     MP_CHECK(install(TMP "/l", TMP "/rt.p5z", NULL, 0, 0, NULL, &r, &e) == 0 && r.status == MP_INST_NEEDS_CONFIRM);

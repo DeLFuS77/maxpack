@@ -26,7 +26,7 @@ static mp_analyze_opts quiet(unsigned threads, int full) {
     return o;
 }
 
-// v1-l19 calculado aquí, bloque a bloque, sin pasar por el analizador.
+// v1-l19 computed here, block by block, without going through the analyzer.
 static uint64_t direct_v1_l19(void) {
     mp_source *s = NULL;
     mp_err e = {{0}};
@@ -48,7 +48,7 @@ static uint64_t direct_v1_l19(void) {
             raw += n;
         }
         (void)raw;
-        total += stored;   // sin regla del 1 %: cada bloque, comprimido solo si mejora (como Forge)
+        total += stored;   // no 1 % rule: each block, compressed only if it improves (like Forge)
     }
     free(buf);
     free(out);
@@ -136,8 +136,8 @@ MP_TEST(small_game_full_sample) {
     mp_report_free(&r);
 }
 
-// El camino que usan todos los juegos reales: muestra < 100 %, escalado por estratos y, para
-// estratos sin ninguna ventana muestreada, la proporción global.
+// The path every real game takes: sample < 100 %, scaled by strata and, for
+// strata with no sampled window, the global ratio.
 MP_TEST(sampled_path_estimates) {
     mp_analyze_opts o = quiet(1, 0), o4 = quiet(4, 0), of = quiet(4, 1);
     o.sample_min = o4.sample_min = 0;
@@ -149,14 +149,14 @@ MP_TEST(sampled_path_estimates) {
     MP_CHECK(a.sample_bytes < a.packable_bytes);
     for (int c = 0; c < MP_CFG_COUNT; c++) MP_CHECK_EQ_U64(a.est_packed[c], b.est_packed[c]);
     double est = (double)a.est_packed[MP_CFG_V1_L19], exact = (double)f.est_packed[MP_CFG_V1_L19];
-    fprintf(stderr, "  muestra %.1f %%: estimado %.0f, exacto %.0f (%+.1f %%)\n",
+    fprintf(stderr, "  sample %.1f %%: estimated %.0f, exact %.0f (%+.1f %%)\n",
             100.0 * a.sample_rate, est, exact, 100.0 * (est - exact) / exact);
-    // Con un fixture tan pequeño y variado el error es grande; en juegos reales hay miles de
-    // ventanas por estrato. Lo que se fija aquí es que el camino funciona y no se desboca.
+    // With such a small and varied fixture the error is large; in real games there are thousands of
+    // windows per stratum. What is checked here is that the path works and does not run away.
     MP_CHECK(est > 0.75 * exact && est < 1.25 * exact);
 
-    // El estrato ".dat" (un solo archivo de 1 byte) debe quedar sin muestrear, para que se use la
-    // proporción global. La selección es determinista, así que esto no cambia entre ejecuciones.
+    // The ".dat" stratum (a single 1-byte file) must stay unsampled, so that the
+    // global ratio is used. The selection is deterministic, so this does not change between runs.
     mp_source *s = NULL;
     mp_err e = {{0}};
     MP_CHECK(mp_source_open(BASIC, &s, &e) == 0);
@@ -183,7 +183,7 @@ MP_TEST(sampled_path_estimates) {
     mp_report_free(&f);
 }
 
-// Un archivo que ahorra menos del 1 % ya no va entero en bruto: su bloque comprimible se comprime.
+// A file that saves less than 1 % no longer goes whole raw: its compressible block is compressed.
 MP_TEST(no_store_only_rule) {
     mp_err e = {{0}};
     const char *dir = MP_TEST_TMP "/analyze/casi";
@@ -207,8 +207,8 @@ MP_TEST(no_store_only_rule) {
     mp_report_free(&r);
 }
 
-// Transporte calculado aquí: cada archivo empaquetable en frames de 32 MiB con zstd 19 y
-// ventana larga; un frame que no mejora va en bruto.
+// Transport computed here: each packable file in 32 MiB frames with zstd 19 and a
+// long window; a frame that does not improve goes raw.
 static uint64_t direct_transport(void) {
     mp_source *s = NULL;
     mp_err e = {{0}};
@@ -244,7 +244,7 @@ MP_TEST(transport_in_report) {
     if (run(&o, &r) != 0) return;
     MP_CHECK(r.xport_done);
     MP_CHECK_EQ_U64(r.xport.est_packed, direct_transport());
-    // dupblocks.bin repite 3 veces el mismo bloque aleatorio: v1 no lo ve, la ventana larga sí.
+    // dupblocks.bin repeats the same random block 3 times: v1 does not see it, the long window does.
     MP_CHECK(r.xport.est_packed < r.est_packed[MP_CFG_V1_L19]);
     MP_CHECK_EQ_U64(r.p5z_transport, r.xport.est_packed + r.loose_compressed);
     mp_report_free(&r);

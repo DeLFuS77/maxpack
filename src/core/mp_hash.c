@@ -86,7 +86,7 @@ void mp_sha256_update(mp_sha256 *s, const void *data, size_t n) {
 void mp_sha256_final(mp_sha256 *s, uint8_t out[32]) {
     uint64_t bits = s->len * 8;
     uint8_t pad = 0x80;
-    uint64_t keep = s->len;   // el relleno pasa por update pero no cuenta como mensaje
+    uint64_t keep = s->len;   // the padding goes through update but does not count as message
     mp_sha256_update(s, &pad, 1);
     uint8_t zero = 0;
     while (s->n != 56) mp_sha256_update(s, &zero, 1);

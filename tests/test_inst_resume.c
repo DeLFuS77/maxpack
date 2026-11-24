@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Instalador: pausa, cortes y reanudación con estado.
+// Installer: pause, cut-offs and resuming with state.
 #include "mp_fixture.h"
 #include "mp_inst.h"
 
@@ -9,10 +9,10 @@ static uint8_t rt_new[4096];
 static const char *no_drives[] = {TMP "/usb1"};
 
 typedef struct {
-    uint64_t stop_at;     // parar (1) al pasar de aquí; 0 = nunca
-    uint64_t fail_at;     // fallar (-1) al pasar de aquí; 0 = nunca
-    uint64_t last;        // último bytes_written visto
-    uint64_t disk;        // si no es 0: espacio libre = disk - lo que ocupe tmpdir
+    uint64_t stop_at;     // stop (1) when going past this; 0 = never
+    uint64_t fail_at;     // fail (-1) when going past this; 0 = never
+    uint64_t last;        // last bytes_written seen
+    uint64_t disk;        // if not 0: free space = disk - what tmpdir takes up
     const char *tmpdir;
 } hook;
 
@@ -29,7 +29,7 @@ static int io_hook(void *ctx, uint64_t written, mp_err *e) {
     h->last = written;
     if (h->stop_at && written > h->stop_at) return 1;
     if (h->fail_at && written > h->fail_at) {
-        mp_err_set(e, "disco lleno (simulado)");
+        mp_err_set(e, "disk full (simulated)");
         return -1;
     }
     return 0;
@@ -118,7 +118,7 @@ MP_TEST(stop_then_resume) {
     mp_inst_result_free(&r);
 }
 
-// Primera ruta del registro de hechos cuyo archivo, dentro de dir, no está vacío.
+// First path in the log of what was done whose file, inside dir, is not empty.
 static int first_done(const char *done_path, const char *dir, char *out, size_t cap) {
     size_t n = 0;
     uint8_t *b = mpt_slurp(done_path, &n);
@@ -154,7 +154,7 @@ MP_TEST(resume_rehashes_done) {
     uint8_t *b = mpt_slurp(path, &n);
     MP_CHECK(b && n > 0);
     if (!b || n == 0) return;
-    b[n - 1] ^= 0xFF;   // mismo tamaño, contenido distinto
+    b[n - 1] ^= 0xFF;   // same size, different content
     mpt_put(path, b, n);
     free(b);
     hook h2 = {0, 0, 0, 0, NULL};
@@ -172,7 +172,7 @@ MP_TEST(write_error_keeps_state) {
     MP_CHECK(run(TMP "/d3", TMP "/rt.p5z", &h, 1, &r, &e) == -1);
     MP_CHECK(r.status == MP_INST_FAILED);
     MP_CHECK_STR(r.code, "io_error");
-    MP_CHECK_CONTAINS(e.msg, "disco lleno");
+    MP_CHECK_CONTAINS(e.msg, "disk full");
     MP_CHECK(mp_path_kind(TMP "/d3/maxpack/state/TEST00001.json") == 1);
     MP_CHECK(mp_path_kind(FINAL(TMP "/d3")) == 0);
     mp_inst_result_free(&r);
@@ -239,7 +239,7 @@ MP_TEST(resume_with_little_space) {
     mp_inst_env probe_env;
     mp_inst_env_default(&probe_env);
     uint64_t total = install_size(TMP "/rt.p5z");
-    // Cabe justo (con 1 MiB de sobra) con la temporal vacía; lo copiado ocupa ya parte del disco.
+    // It fits exactly (with 1 MiB to spare) with the temporary folder empty; what was copied already takes up part of the disk.
     hook h = {total * 4 / 10, 0, 0, total + probe_env.space_margin + (1u << 20), TMP "/d7/maxpack/tmp/TEST00001"};
     mp_inst_result r;
     mp_err e;
@@ -282,7 +282,7 @@ MP_TEST(pending_and_discard) {
 MP_TEST(other_dest_cleans_old_temp) {
     setup();
     mp_err e0 = {{0}};
-    mp_make_dirs(TMP "/usb1", &e0);   // la unidad existe en esta prueba
+    mp_make_dirs(TMP "/usb1", &e0);   // the drive exists in this test
     uint64_t total = install_size(TMP "/rt.p5z");
     hook h = {total * 4 / 10, 0, 0, 0, NULL};
     mp_inst_env env = env_for(TMP "/d9", &h, 1);
@@ -304,7 +304,7 @@ MP_TEST(other_dest_cleans_old_temp) {
 MP_TEST(recover_old_after_cut) {
     setup();
     mpt_clear(TMP "/d10");
-    // Un corte entre apartar el juego viejo y poner el nuevo: el viejo está en <tmp>.old.
+    // A cut-off between setting the old game aside and putting the new one in: the old one is in <tmp>.old.
     mpt_put_text(TMP "/d10/maxpack/tmp/TEST00001.old/eboot.bin", "juego viejo");
     mpt_put_text(TMP "/d10/maxpack/tmp/TEST00001.old.dest", TMP "/d10/homebrew/TEST00001");
     mp_inst_env env = env_for(TMP "/d10", NULL, 0);
@@ -312,7 +312,7 @@ MP_TEST(recover_old_after_cut) {
     MP_CHECK(mp_path_kind(TMP "/d10/homebrew/TEST00001/eboot.bin") == 1);
     MP_CHECK(mp_path_kind(TMP "/d10/maxpack/tmp/TEST00001.old") == 0);
     MP_CHECK(mp_path_kind(TMP "/d10/maxpack/tmp/TEST00001.old.dest") == 0);
-    // Si el destino ya está (el nuevo se puso bien), lo viejo se borra.
+    // If the destination is already there (the new one was put in properly), the old one is deleted.
     mpt_put_text(TMP "/d10/maxpack/tmp/TEST00002.old/eboot.bin", "otro viejo");
     mpt_put_text(TMP "/d10/maxpack/tmp/TEST00002.old.dest", TMP "/d10/homebrew/TEST00002");
     mpt_put_text(TMP "/d10/homebrew/TEST00002/eboot.bin", "nuevo");

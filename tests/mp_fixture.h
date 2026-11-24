@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Utilidades de las pruebas del instalador (y de test_unpack): empaquetar, limpiar, comparar.
+// Utilities for the installer tests (and test_unpack): pack, clean, compare.
 #ifndef MP_FIXTURE_H
 #define MP_FIXTURE_H
 
@@ -15,11 +15,11 @@
 
 #define MPT_BASIC MP_FIXTURES_DIR "/basic.exfat"
 
-// Borra una carpeta o archivo, pero solo dentro de MP_TEST_TMP.
+// Deletes a folder or file, but only inside MP_TEST_TMP.
 static inline void mpt_clear(const char *path) {
     if (strncmp(path, MP_TEST_TMP, strlen(MP_TEST_TMP)) != 0) return;
     mp_err e = {{0}};
-    if (mp_remove_tree(path, &e) != 0) MP_FAIL_("no se pudo limpiar %s: %s", path, e.msg);
+    if (mp_remove_tree(path, &e) != 0) MP_FAIL_("could not clean %s: %s", path, e.msg);
 }
 
 static inline void mpt_parent_dirs(const char *path) {
@@ -59,15 +59,15 @@ static inline void mpt_copy_file(const char *src, const char *dst) {
     size_t n = 0;
     uint8_t *b = mpt_slurp(src, &n);
     if (!b) {
-        MP_FAIL_("no se puede leer %s", src);
+        MP_FAIL_("cannot read %s", src);
         return;
     }
     mpt_put(dst, b, n);
     free(b);
 }
 
-// Empaqueta src (carpeta o .exfat) a dst: .p5z si p5z, si no carpeta. runtime puede ser NULL.
-// volume_limit: tamaño máximo de cada volumen (MP_ZPK_VOLUME_LIMIT, o menos para tener varios).
+// Packs src (folder or .exfat) to dst: .p5z if p5z, otherwise a folder. runtime may be NULL.
+// volume_limit: maximum size of each volume (MP_ZPK_VOLUME_LIMIT, or less to get several).
 static inline int mpt_pack_vol(const char *src, const char *dst, int p5z, const char *runtime,
                                uint64_t volume_limit) {
     mp_err e = {{0}};
@@ -81,7 +81,7 @@ static inline int mpt_pack_vol(const char *src, const char *dst, int p5z, const 
     o.volume_limit = volume_limit;
     mp_pack_out out;
     if ((p5z ? mp_pack_out_p5z(dst, 4, &out, &e) : mp_pack_out_dir(dst, &out, &e)) != 0) {
-        MP_FAIL_("salida de pack: %s", e.msg);
+        MP_FAIL_("pack output: %s", e.msg);
         return -1;
     }
     mp_pack_result r;
@@ -119,11 +119,11 @@ static inline int mpt_cmp_str(const void *a, const void *b) {
     return strcmp(*(char *const *)a, *(char *const *)b);
 }
 
-// Archivos de la carpeta (rutas relativas ordenadas).
+// Files of the folder (sorted relative paths).
 static inline mpt_list mpt_list_dir(const char *dir) {
     mpt_list l = {0};
     mp_dir_walk(dir, mpt_list_cb, &l, NULL);
-    if (l.n > 1) {   // ordena rutas y tamaños juntos
+    if (l.n > 1) {   // sorts paths and sizes together
         for (size_t i = 1; i < l.n; i++)
             for (size_t j = i; j > 0 && strcmp(l.v[j - 1], l.v[j]) > 0; j--) {
                 char *t = l.v[j];
@@ -161,12 +161,12 @@ static inline int mpt_skip(const char *rel, const char *globs) {
     return 0;
 }
 
-// 1 si a y b tienen los mismos archivos con los mismos bytes y fechas (salvo la fecha de los que
-// casan con skip_mtime: patrones separados por '|', p. ej. "*.pak|ampr_emu.index").
+// 1 if a and b have the same files with the same bytes and dates (except the date of those that
+// match skip_mtime: patterns separated by '|', e.g. "*.pak|ampr_emu.index").
 static inline int mpt_dirs_equal(const char *a, const char *b, const char *skip_mtime) {
     mpt_list x = mpt_list_dir(a), y = mpt_list_dir(b);
     int ok = x.n == y.n && x.n > 0;
-    if (x.n != y.n) MP_FAIL_("%s tiene %zu archivos y %s %zu", a, x.n, b, y.n);
+    if (x.n != y.n) MP_FAIL_("%s has %zu files and %s has %zu", a, x.n, b, y.n);
     for (size_t i = 0; i < x.n && i < y.n; i++) {
         char pa[2048], pb[2048];
         snprintf(pa, sizeof pa, "%s/%s", a, x.v[i]);

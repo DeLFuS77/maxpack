@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Compara el ampr_emu.index que escribe test_idx3 (C) con el de tools/ampr_ref.py (Python).
+"""Compares the ampr_emu.index written by test_idx3 (C) with the one from tools/ampr_ref.py (Python).
 
-Uso: check_idx3.py <carpeta con basic.index y basic.tsv>
+Usage: check_idx3.py <folder with basic.index and basic.tsv>
 """
 import os
 import subprocess
@@ -20,9 +20,9 @@ def main():
     b = open(out, "rb").read()
     if a != b:
         first = next((i for i in range(min(len(a), len(b))) if a[i] != b[i]), min(len(a), len(b)))
-        print("check_idx3: DISTINTOS (C %d bytes, Python %d bytes, primera diferencia en %d)" % (len(a), len(b), first))
+        print("check_idx3: DIFFERENT (C %d bytes, Python %d bytes, first difference at %d)" % (len(a), len(b), first))
         return 1
-    print("check_idx3: idénticos (%d bytes)" % len(a))
+    print("check_idx3: identical (%d bytes)" % len(a))
     return 0
 
 

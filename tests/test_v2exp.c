@@ -54,7 +54,7 @@ MP_TEST(small_counts_and_grouping) {
     MP_CHECK_EQ_U64(r.raw, f.small_raw);
     MP_CHECK(r.grouped < r.individual);
     MP_CHECK(r.individual <= r.raw);
-    MP_CHECK_EQ_U64(r.individual_dict, r.individual);   // sin diccionarios
+    MP_CHECK_EQ_U64(r.individual_dict, r.individual);   // without dictionaries
     MP_CHECK(r.dicts == 0);
     close_fixture(&f);
 }

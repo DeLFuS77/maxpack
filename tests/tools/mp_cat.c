@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// mp_cat <origen> <ruta> [off] [len]: vuelca bytes de un archivo de un origen a stdout.
+// mp_cat <source> <path> [off] [len]: dumps bytes of a source's file to stdout.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -14,7 +14,7 @@
 int main(int argc, char **argv) {
     mp_args_utf8(&argc, &argv);
     if (argc < 3) {
-        fprintf(stderr, "uso: mp_cat <origen> <ruta> [off] [len]\n");
+        fprintf(stderr, "usage: mp_cat <source> <path> [off] [len]\n");
         return 2;
     }
 #ifdef _WIN32
@@ -30,7 +30,7 @@ int main(int argc, char **argv) {
     for (size_t i = 0; i < mp_source_count(s); i++)
         if (strcmp(mp_source_entry(s, i)->path, argv[2]) == 0) idx = i;
     if (idx == (size_t)-1) {
-        fprintf(stderr, "error: no está en el origen: %s\n", argv[2]);
+        fprintf(stderr, "error: not in the source: %s\n", argv[2]);
         mp_source_close(s);
         return 1;
     }

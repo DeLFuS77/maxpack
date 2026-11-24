@@ -16,10 +16,10 @@ MP_TEST(classify_table) {
     };
     MP_CHECK(mp_rules_classify(r, "data/e.dat", 0) == MP_LOOSE);
     for (size_t i = 0; i < sizeof loose / sizeof *loose; i++)
-        if (mp_rules_classify(r, loose[i], 100) != MP_LOOSE) MP_FAIL_("debería ser suelto: %s", loose[i]);
+        if (mp_rules_classify(r, loose[i], 100) != MP_LOOSE) MP_FAIL_("should be loose: %s", loose[i]);
     for (size_t i = 0; i < sizeof packable / sizeof *packable; i++)
         if (mp_rules_classify(r, packable[i], 100) != MP_PACKABLE)
-            MP_FAIL_("debería ser empaquetable: %s", packable[i]);
+            MP_FAIL_("should be packable: %s", packable[i]);
     mp_rules_free(r);
 }
 

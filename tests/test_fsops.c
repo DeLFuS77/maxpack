@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Operaciones de archivo del instalador: renombrar, borrar carpetas, espacio libre, fsync, listar.
+// The installer's file operations: rename, delete folders, free space, fsync, list.
 #include <stdlib.h>
 
 #include "mp_platform.h"

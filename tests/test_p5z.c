@@ -62,7 +62,7 @@ MP_TEST(p5z_structure) {
     memset(h + 60, 0, 4);
     MP_CHECK_EQ_U64(mp_crc32(h, 64, 0), rd32(d + 60));
     MP_CHECK(d[20] == 19);
-    // Pie e índice.
+    // Footer and index.
     const uint8_t *f = d + n - 32;
     MP_CHECK(memcmp(f, "P5ZFOOT1", 8) == 0);
     MP_CHECK_EQ_U64(mp_crc32(f, 28, 0), rd32(f + 28));
@@ -76,7 +76,7 @@ MP_TEST(p5z_structure) {
     MP_CHECK(memcmp(ix, "P5ZIDX01", 8) == 0);
     uint32_t nfiles = rd32(ix + 12), nframes = rd32(ix + 16), nman = rd32(ix + 20);
     MP_CHECK_EQ_U64(nman, 213);
-    // Cada SHA-256 del manifiesto es el del archivo original.
+    // Each SHA-256 in the manifest is that of the original file.
     mp_source *s = NULL;
     mp_err e = {{0}};
     MP_CHECK(mp_source_open(BASIC, &s, &e) == 0);
@@ -111,7 +111,7 @@ MP_TEST(p5z_threads_identical) {
 }
 
 MP_TEST(p5z_packs_stored_raw) {
-    // La región de cada volumen en el .p5z es el volumen tal cual (la carpeta da el mismo).
+    // Each volume's region in the .p5z is the volume as is (the folder gives the same one).
     mp_err e = {{0}};
     const char *dir = TMP "/folder";
     mp_pack_opts o;
@@ -120,7 +120,7 @@ MP_TEST(p5z_packs_stored_raw) {
     o.progress = 0;
     mp_pack_out out;
     if (mp_path_kind(TMP "/folder/ampr_zstd-000.pak") == 1) {
-        // De una ejecución anterior: el volumen ya está; basta con compararlo.
+        // From a previous run: the volume is already there; comparing it is enough.
     } else {
         MP_CHECK(mp_pack_out_dir(dir, &out, &e) == 0);
         mp_pack_result r;
@@ -131,7 +131,7 @@ MP_TEST(p5z_packs_stored_raw) {
     uint8_t *vol = slurp(TMP "/folder/ampr_zstd-000.pak", &vl), *p = slurp(TMP "/basic.p5z", &pl);
     MP_CHECK(vol && p && vl > 64 && pl > 96);
     if (!vol || !p || pl <= 96) return;
-    // Busca en el índice la región del volumen 000 (los sueltos van antes que los packs).
+    // Looks in the index for volume 000's region (loose files go before the packs).
     const uint8_t *f = p + pl - 32;
     uint64_t ioff = rd64(f + 8), ilen = rd64(f + 16);
     unsigned long long usize = ZSTD_getFrameContentSize(p + ioff, (size_t)ilen);
@@ -156,7 +156,7 @@ MP_TEST(p5z_packs_stored_raw) {
     free(p);
 }
 
-// Un origen que se rechaza no deja ni rastro: el .p5z no llega a crearse.
+// A rejected source leaves no trace: the .p5z is never created.
 MP_TEST(p5z_not_created_on_refusal) {
     mp_err e = {{0}};
     const char *path = TMP "/rechazado.p5z";
@@ -173,7 +173,7 @@ MP_TEST(p5z_not_created_on_refusal) {
     MP_CHECK(mp_path_kind(path) == 0);
 }
 
-// Un fallo a mitad (imagen truncada) borra el .p5z incompleto, que no serviría para nada.
+// A failure midway (truncated image) deletes the incomplete .p5z, which would be of no use.
 MP_TEST(p5z_partial_removed_on_failure) {
     mp_err e = {{0}};
     const char *path = TMP "/incompleto.p5z";
@@ -189,8 +189,8 @@ MP_TEST(p5z_partial_removed_on_failure) {
     MP_CHECK(mp_path_kind(path) == 0);
 }
 
-// Empaqueta basic.exfat con tope; size es lo que mide el .p5z justo antes de destroy, que es lo
-// más que llega a medir (el escritor nunca lo acorta), y too_big si el escritor paró por el tope.
+// Packs basic.exfat with a cap; size is what the .p5z measures just before destroy, which is the
+// most it ever measures (the writer never shortens it), and too_big if the writer stopped because of the cap.
 static int pack_capped(const char *path, uint64_t cap, uint64_t *size, int *too_big) {
     mp_err e = {{0}};
     remove(path);
@@ -217,28 +217,28 @@ static int pack_capped(const char *path, uint64_t cap, uint64_t *size, int *too_
     return rc;
 }
 
-// Con tope, el .p5z no pasa de él en ningún momento: la escritura que lo pasaría no se hace (en
-// FAT32 fallaría antes en el sistema, como "io"). Un tope del tamaño justo del .p5z se acepta.
+// With a cap, the .p5z never goes over it: the write that would go over it is not done (on
+// FAT32 it would fail earlier in the system, as "io"). A cap of exactly the .p5z's size is accepted.
 MP_TEST(p5z_max_size_never_exceeded) {
     const char *path = TMP "/tope.p5z";
     uint64_t full = 0, size = 0;
     int too_big = 1;
     if (pack_capped(path, 0, &full, &too_big) != 0) return;
     MP_CHECK(full > 1000 && !too_big);
-    // más pequeño que la cabecera, que la cabecera y un frame, y que el .p5z por un byte
+    // smaller than the header, than the header and a frame, and than the .p5z by one byte
     const uint64_t caps[] = {10, P5Z_HEADER, P5Z_HEADER + 200, full / 2, full - P5Z_FOOTER, full - 1};
     for (size_t i = 0; i < sizeof caps / sizeof caps[0]; i++) {
         int rc = pack_capped(path, caps[i], &size, &too_big);
         if (rc != -1 || !too_big || size > caps[i])
-            MP_FAIL_("tope %llu: rc %d, too_big %d, llegó a %llu bytes", (unsigned long long)caps[i], rc, too_big,
+            MP_FAIL_("cap %llu: rc %d, too_big %d, reached %llu bytes", (unsigned long long)caps[i], rc, too_big,
                      (unsigned long long)size);
         MP_CHECK(mp_path_kind(path) == 0);
     }
-    // justo del tamaño: cabe
+    // exactly the size: it fits
     MP_CHECK(pack_capped(path, full, &size, &too_big) == 0);
     MP_CHECK_EQ_U64(size, full);
     MP_CHECK(!too_big && mp_path_kind(path) == 1);
-    // otro fallo no es del tope
+    // another failure is not the cap's
     mp_err e = {{0}};
     mp_pack_opts o;
     mp_pack_opts_default(&o);

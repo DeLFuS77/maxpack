@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// La página del instalador: reglas para el navegador de la PS5 y que la API la sirve.
+// The installer's page: rules for the PS5's browser, and that the API serves it.
 #include <stdlib.h>
 
 #include "mp_api.h"
@@ -14,12 +14,12 @@ MP_TEST(page_rules) {
     MP_CHECK(mp_page_html_len > 1000 && strlen(p) == mp_page_html_len);
     const char *banned[] = {"innerHTML", "=>", "fetch(", "let ", "const ", "`", "outerHTML", "insertAdjacentHTML"};
     for (size_t i = 0; i < sizeof banned / sizeof *banned; i++)
-        if (strstr(p, banned[i])) MP_FAIL_("la página usa \"%s\"", banned[i]);
+        if (strstr(p, banned[i])) MP_FAIL_("the page uses \"%s\"", banned[i]);
     const char *needed[] = {"XMLHttpRequest", "textContent", "navigator.language", "/api/state", "Instalar",
                             "Install",        "Desinstalar", "Uninstall",          "/api/icon", "original_size",
                             "/api/discard",   "pending",     "Descartar",          "Discard"};
     for (size_t i = 0; i < sizeof needed / sizeof *needed; i++)
-        if (!strstr(p, needed[i])) MP_FAIL_("a la página le falta \"%s\"", needed[i]);
+        if (!strstr(p, needed[i])) MP_FAIL_("the page is missing \"%s\"", needed[i]);
 }
 
 MP_TEST(page_served) {
@@ -33,7 +33,7 @@ MP_TEST(page_served) {
     env.ndrive_candidates = 1;
     mp_smp_cfg c;
     mp_smp_cfg_default(&c);
-    c.port = 1;   // nadie escucha
+    c.port = 1;   // nobody is listening
     c.timeout_ms = 100;
     mp_api *a = mp_api_new(&env, &c, 1000, &e);
     MP_CHECK(a != NULL);
@@ -41,7 +41,7 @@ MP_TEST(page_served) {
     mp_http_req rq = {"GET", "/", "", "", 0};
     mp_http_resp rs = {200, NULL, NULL, 0};
     mp_api_handle(a, &rq, &rs);
-    MP_CHECK(rs.status == 404);   // sin página puesta
+    MP_CHECK(rs.status == 404);   // no page set
     free(rs.body);
     mp_api_set_page(a, mp_page_html, mp_page_html_len);
     mp_http_resp rs2 = {200, NULL, NULL, 0};

@@ -30,7 +30,7 @@ void mp_cancel_reset(void) { __atomic_store_n(&g_cancel, 0, __ATOMIC_SEQ_CST); }
 
 int mp_cancel_check(mp_err *e) {
     if (!mp_cancelled()) return 0;
-    mp_err_set(e, "cancelado");
+    mp_err_set(e, "cancelled");
     return -1;
 }
 
@@ -96,7 +96,7 @@ static void worker(void *arg) {
     mp_mutex_unlock(p->mu);
     for (;;) {
         mp_mutex_lock(p->mu);
-        if (!p->err && p->next < p->n && mp_cancelled()) p->err = -1;   // cancelado: no se reparte más
+        if (!p->err && p->next < p->n && mp_cancelled()) p->err = -1;   // cancelled: no more is handed out
         if (p->err || p->next >= p->n) {
             mp_mutex_unlock(p->mu);
             break;
@@ -135,7 +135,7 @@ int mp_parallel_run(unsigned threads, size_t n, int (*work)(void *ctx, size_t it
     unsigned started = 0;
     for (unsigned i = 0; t && i < threads; i++)
         if (mp_thread_start(&t[i], worker, &p) == 0) started++;
-    if (started == 0) {   // sin hilos: se hace todo en este
+    if (started == 0) {   // no threads: everything is done in this one
         worker(&p);
     } else {
         int print = prog && prog->print && prog->mu;

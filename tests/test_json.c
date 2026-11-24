@@ -48,7 +48,7 @@ MP_TEST(json_rejects) {
         mp_err e = {{0}};
         mp_json *j = mp_json_parse(bad[i], strlen(bad[i]), &e);
         if (j) MP_FAIL_("aceptado: %s", bad[i]);
-        else if (!e.msg[0]) MP_FAIL_("sin mensaje: %s", bad[i]);
+        else if (!e.msg[0]) MP_FAIL_("no message: %s", bad[i]);
         mp_json_free(j);
     }
     char deep[80];
@@ -57,7 +57,7 @@ MP_TEST(json_rejects) {
     deep[66] = 0;
     mp_err e = {{0}};
     MP_CHECK(mp_json_parse(deep, strlen(deep), &e) == NULL);
-    deep[0] = ' ';   // 32 niveles: vale
+    deep[0] = ' ';   // 32 levels: valid
     deep[65] = ' ';
     mp_json *ok = mp_json_parse(deep, strlen(deep), &e);
     MP_CHECK(ok != NULL);

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Escritor del .p5z. Los volúmenes van en bruto (instalar = copiar); los demás archivos, en frames
-// zstd 19 con ventana larga de hasta 32 MiB, comprimidos en paralelo y escritos en orden.
+// .p5z writer. Volumes go raw (install = copy); the other files, in zstd 19 frames
+// with a long window of up to 32 MiB, compressed in parallel and written in order.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -30,27 +30,27 @@ typedef struct {
 
 typedef struct {
     mp_wfile *f;
-    unsigned threads;          // hilos de compresión (máximo MP_LONG_MAX_THREADS)
+    unsigned threads;          // compression threads (at most MP_LONG_MAX_THREADS)
     p5file *files;
     size_t nfiles, cap;
     p5frame *frames;
     size_t nframes, fcap;
-    // Archivo en curso.
+    // File in progress.
     int in_file;
-    uint8_t *pend;             // datos pendientes de comprimir (threads × 32 MiB)
+    uint8_t *pend;             // data pending compression (threads × 32 MiB)
     size_t npend;
     fjob *jobs;
     ZSTD_CCtx **cctx;
     size_t out_cap;
-    // Volumen en curso.
+    // Volume in progress.
     mp_sha256 vsha;
-    int64_t vol_file;          // índice en files del volumen abierto
-    // El archivo se crea con la primera escritura (un origen rechazado no deja nada) y se borra
-    // si no se llega a terminar (un .p5z sin pie no sirve).
+    int64_t vol_file;          // index in files of the open volume
+    // The file is created on the first write (a rejected source leaves nothing) and is deleted
+    // if it is never finished (a .p5z without a footer is useless).
     char *path;
     int created, finished;
-    uint64_t max_size;         // tope del .p5z (0 = sin tope)
-    int too_big;               // se paró por el tope
+    uint64_t max_size;         // cap on the .p5z (0 = no cap)
+    int too_big;               // stopped because of the cap
 } p5out;
 
 static void wr32(uint8_t *p, uint32_t v) {
@@ -60,20 +60,20 @@ static void wr64(uint8_t *p, uint64_t v) {
     for (int i = 0; i < 8; i++) p[i] = (uint8_t)(v >> (8 * i));
 }
 
-// Antes de escribir n bytes más al final: falla si el .p5z pasaría del tope, sin escribirlos, así
-// que nunca pasa de él (en FAT32, la escritura que pasara de 4 GiB - 1 fallaría antes en el
-// sistema, como un error de E/S). Lo escrito lo borra el escritor al destruirse.
+// Before writing n more bytes at the end: fails if the .p5z would go over the cap, without writing them, so
+// it never goes over it (on FAT32, a write that went past 4 GiB - 1 would fail earlier in the
+// system, as an I/O error). What was written is deleted by the writer when it is destroyed.
 static int room(p5out *o, size_t n, mp_err *e) {
     uint64_t size = o->f ? mp_wfile_size(o->f) : 0;
     if (o->max_size && (size > o->max_size || (uint64_t)n > o->max_size - size)) {
         o->too_big = 1;
-        mp_err_set(e, "el .p5z pasaría de %llu bytes", (unsigned long long)o->max_size);
+        mp_err_set(e, "the .p5z would go over %llu bytes", (unsigned long long)o->max_size);
         return -1;
     }
     return 0;
 }
 
-// Escribe al final del .p5z, si cabe en el tope.
+// Writes at the end of the .p5z, if it fits under the cap.
 static int put(p5out *o, const void *p, size_t n, mp_err *e) {
     if (room(o, n, e) != 0) return -1;
     return mp_wfile_write(o->f, p, n, e);
@@ -83,7 +83,7 @@ static int ensure_open(p5out *o, mp_err *e) {
     if (o->f) return 0;
     static const uint8_t zero[P5Z_HEADER] = {0};
     if (mp_wfile_create(o->path, &o->f, e) != 0) return -1;
-    o->created = 1;   // CREATE_NEW: lo hemos creado nosotros, así que podemos borrarlo si falla
+    o->created = 1;   // CREATE_NEW: we created it, so we can delete it if it fails
     return put(o, zero, sizeof zero, e);
 }
 
@@ -94,7 +94,7 @@ static p5file *new_file(p5out *o, const char *rel, int role, int storage, uint64
         size_t cap = o->cap ? o->cap * 2 : 256;
         p5file *v = realloc(o->files, cap * sizeof *v);
         if (!v) {
-            mp_err_set(e, "sin memoria");
+            mp_err_set(e, "out of memory");
             return NULL;
         }
         o->files = v;
@@ -103,7 +103,7 @@ static p5file *new_file(p5out *o, const char *rel, int role, int storage, uint64
     p5file *f = &o->files[o->nfiles];
     memset(f, 0, sizeof *f);
     if (!(f->path = mp_strdup(rel))) {
-        mp_err_set(e, "sin memoria");
+        mp_err_set(e, "out of memory");
         return NULL;
     }
     f->role = role;
@@ -116,7 +116,7 @@ static p5file *new_file(p5out *o, const char *rel, int role, int storage, uint64
     return f;
 }
 
-// ---- volúmenes: regiones en bruto ----------------------------------------------------------
+// ---- volumes: raw regions ------------------------------------------------------------------
 
 static int v_begin(void *ctx, uint32_t vol, mp_err *e) {
     p5out *o = ctx;
@@ -124,7 +124,7 @@ static int v_begin(void *ctx, uint32_t vol, mp_err *e) {
     snprintf(name, sizeof name, "ampr_zstd-%03u.pak", vol);
     if (!new_file(o, name, MP_ROLE_VOLUME, P5Z_STORE_RAW, 0, 0, e)) return -1;
     o->vol_file = (int64_t)o->nfiles - 1;
-    mp_sha256_init(&o->vsha);   // SHA-256 de los bytes [64, fin): la cabecera se corrige al final
+    mp_sha256_init(&o->vsha);   // SHA-256 of bytes [64, end): the header is fixed up at the end
     static const uint8_t zero[MP_ZPK_VOL_HEADER] = {0};
     return put(o, zero, sizeof zero, e);
 }
@@ -153,11 +153,11 @@ static int v_header(void *ctx, uint32_t vol, const uint8_t hdr[64], mp_err *e) {
     for (size_t i = 0; i < o->nfiles; i++)
         if (o->files[i].role == MP_ROLE_VOLUME && !strcmp(o->files[i].path, name))
             return mp_wfile_pwrite(o->f, hdr, 64, o->files[i].data_off, e);
-    mp_err_set(e, "volumen desconocido: %s", name);
+    mp_err_set(e, "unknown volume: %s", name);
     return -1;
 }
 
-// ---- demás archivos: frames zstd -----------------------------------------------------------
+// ---- other files: zstd frames --------------------------------------------------------------
 
 static int frame_work(void *vc, size_t i, unsigned tid) {
     p5out *o = vc;
@@ -168,7 +168,7 @@ static int frame_work(void *vc, size_t i, unsigned tid) {
     return 0;
 }
 
-// Comprime y escribe los frames completos pendientes (o todo, si last).
+// Compresses and writes the pending complete frames (or everything, if last).
 static int flush_frames(p5out *o, int last, mp_err *e) {
     size_t nj = 0, off = 0;
     while (off < o->npend && (last || o->npend - off >= MP_LONG_FRAME)) {
@@ -180,7 +180,7 @@ static int flush_frames(p5out *o, int last, mp_err *e) {
     }
     if (!nj) return 0;
     if (mp_parallel_run(o->threads, nj, frame_work, o, NULL) != 0) {
-        if (mp_cancel_check(e) == 0) mp_err_set(e, "error al comprimir para el .p5z");
+        if (mp_cancel_check(e) == 0) mp_err_set(e, "error compressing for the .p5z");
         return -1;
     }
     for (size_t j = 0; j < nj; j++) {
@@ -188,7 +188,7 @@ static int flush_frames(p5out *o, int last, mp_err *e) {
             size_t cap = o->fcap ? o->fcap * 2 : 1024;
             p5frame *v = realloc(o->frames, cap * sizeof *v);
             if (!v) {
-                mp_err_set(e, "sin memoria");
+                mp_err_set(e, "out of memory");
                 return -1;
             }
             o->frames = v;
@@ -240,11 +240,11 @@ static int f_end(void *ctx, const uint8_t sha[32], mp_err *e) {
     return 0;
 }
 
-// ---- índice, pie y cabecera ----------------------------------------------------------------
+// ---- index, footer and header --------------------------------------------------------------
 
 typedef struct {
     const char *path;
-    int group;   // 0 suelto, 1 original reemplazado
+    int group;   // 0 loose, 1 replaced original
     uint32_t idx;
 } pathref;
 
@@ -256,11 +256,11 @@ static int cmp_ref(const void *a, const void *b) {
 
 static int f_finish(void *ctx, const mp_pack_manifest *m, mp_err *e) {
     p5out *o = ctx;
-    // Para cada registro del manifiesto, el archivo guardado que lo contiene.
+    // For each manifest record, the stored file that contains it.
     pathref *refs = malloc((o->nfiles ? o->nfiles : 1) * sizeof *refs);
     size_t nr = 0;
     if (!refs) {
-        mp_err_set(e, "sin memoria");
+        mp_err_set(e, "out of memory");
         return -1;
     }
     for (size_t i = 0; i < o->nfiles; i++)
@@ -279,7 +279,7 @@ static int f_finish(void *ctx, const mp_pack_manifest *m, mp_err *e) {
     uint8_t *ix = calloc(1, (size_t)size);
     if (!ix) {
         free(refs);
-        mp_err_set(e, "sin memoria");
+        mp_err_set(e, "out of memory");
         return -1;
     }
     uint8_t *sp = ix + size - strings;
@@ -328,7 +328,7 @@ static int f_finish(void *ctx, const mp_pack_manifest *m, mp_err *e) {
             pathref key = {me->path, (me->flags & MP_MANIFEST_REPLACED) ? 1 : 0, 0};
             pathref *hit = bsearch(&key, refs, nr, sizeof *refs, cmp_ref);
             if (!hit) {
-                mp_err_set(e, "falta en el .p5z el archivo original %s", me->path);
+                mp_err_set(e, "the original file %s is missing from the .p5z", me->path);
                 rc = -1;
                 break;
             }
@@ -343,7 +343,7 @@ static int f_finish(void *ctx, const mp_pack_manifest *m, mp_err *e) {
     }
 #undef PUT_STR
     free(refs);
-    // Índice comprimido (un frame), pie y cabecera.
+    // Compressed index (one frame), footer and header.
     size_t cap = ZSTD_compressBound((size_t)size);
     uint8_t *cz = rc ? NULL : malloc(cap);
     size_t clen = 0;
@@ -353,7 +353,7 @@ static int f_finish(void *ctx, const mp_pack_manifest *m, mp_err *e) {
     } else if (!rc) {
         rc = -1;
     }
-    if (rc && !e->msg[0]) mp_err_set(e, "no se pudo comprimir el índice del .p5z");
+    if (rc && !e->msg[0]) mp_err_set(e, "could not compress the .p5z's index");
     if (!rc) rc = ensure_open(o, e);
     uint64_t ioff = rc ? 0 : mp_wfile_size(o->f);
     if (!rc) rc = put(o, cz, clen, e);
@@ -390,7 +390,7 @@ static void f_destroy(void *ctx) {
     p5out *o = ctx;
     if (!o) return;
     if (o->f) mp_wfile_close(o->f, NULL);
-    if (o->created && !o->finished) mp_remove_file(o->path);   // .p5z a medias: no sirve
+    if (o->created && !o->finished) mp_remove_file(o->path);   // half-written .p5z: useless
     free(o->path);
     for (size_t i = 0; i < o->nfiles; i++) free(o->files[i].path);
     free(o->files);
@@ -417,7 +417,7 @@ int mp_pack_out_p5z_ex(const char *path, unsigned threads, uint64_t max_size, mp
     memset(out, 0, sizeof *out);
     p5out *o = calloc(1, sizeof *o);
     if (!o) {
-        mp_err_set(e, "sin memoria");
+        mp_err_set(e, "out of memory");
         return -1;
     }
     o->max_size = max_size;
@@ -433,17 +433,17 @@ int mp_pack_out_p5z_ex(const char *path, unsigned threads, uint64_t max_size, mp
     }
     if (!ok) {
         f_destroy(o);
-        mp_err_set(e, "sin memoria");
+        mp_err_set(e, "out of memory");
         return -1;
     }
     if (mp_path_kind(path) != 0) {
-        mp_err_set(e, "el .p5z de salida ya existe: %s", path);
+        mp_err_set(e, "the output .p5z already exists: %s", path);
         f_destroy(o);
         return -1;
     }
     if (!(o->path = mp_strdup(path))) {
         f_destroy(o);
-        mp_err_set(e, "sin memoria");
+        mp_err_set(e, "out of memory");
         return -1;
     }
     out->zpk.vol_begin = v_begin;

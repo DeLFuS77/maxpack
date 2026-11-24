@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Packs de más de 32 volúmenes (un juego de ~180 GB da más de 40): empaquetar como carpeta y como
-// .p5z, verify, unpack, play e instalar. Con volúmenes de 256 KiB, unos 14 MiB sin comprimir dan
-// medio centenar.
+// Packs of more than 32 volumes (a ~180 GB game gives more than 40): pack as a folder and as a
+// .p5z, verify, unpack, play and install. With 256 KiB volumes, about 14 MiB uncompressed gives
+// about fifty.
 #include "mp_fixture.h"
 #include "mp_inst.h"
 #include "mp_play.h"
@@ -10,7 +10,7 @@
 #define SRC TMP "/src"
 #define DIR TMP "/folder"
 #define P5Z TMP "/g.p5z"
-#define LIMIT 262208u   // el mínimo: un bloque de 256 KiB sin comprimir por volumen
+#define LIMIT 262208u   // the minimum: one uncompressed 256 KiB block per volume
 #define WANT_MIN 40u
 
 static uint8_t rt_new[4096];
@@ -20,7 +20,7 @@ static void make_source(void) {
     mpt_put_text(SRC "/sce_sys/param.json", "{\"titleId\":\"TEST00007\",\"contentVersion\":\"01.000.000\"}");
     mpt_put_text(SRC "/eboot.bin", "eboot");
     mpt_put_text(SRC "/datos/pequeno.txt", "texto que se comprime muy bien, muy bien, muy bien, muy bien");
-    // 14 MiB de ruido (xorshift): no se comprime, así que cada bloque llena un volumen.
+    // 14 MiB of noise (xorshift): it does not compress, so each block fills a volume.
     uint8_t *b = malloc(14u << 20);
     if (!b) return;
     uint64_t s = 0x9E3779B97F4A7C15ull;
@@ -63,15 +63,15 @@ static void setup(void) {
 MP_TEST(volumes_folder_has_many) {
     setup();
     uint32_t n = count_paks(DIR);
-    if (n < WANT_MIN) MP_FAIL_("solo %u volúmenes", n);
-    // ni uno más: la carpeta no trae huecos ni sobrantes
+    if (n < WANT_MIN) MP_FAIL_("only %u volumes", n);
+    // not one more: the folder has no gaps or extras
     mpt_list l = mpt_list_dir(DIR);
     size_t paks = 0;
     for (size_t i = 0; i < l.n; i++) {
         size_t k = strlen(l.v[i]);
         if (k > 4 && !strcmp(l.v[i] + k - 4, ".pak")) {
             paks++;
-            if (l.size[i] > LIMIT) MP_FAIL_("%s mide %llu", l.v[i], (unsigned long long)l.size[i]);
+            if (l.size[i] > LIMIT) MP_FAIL_("%s is %llu", l.v[i], (unsigned long long)l.size[i]);
         }
     }
     MP_CHECK_EQ_U64(paks, n);
@@ -150,15 +150,15 @@ MP_TEST(volumes_play_json_all_ids) {
                                   k ? "," : "", k, (unsigned long long)off, (unsigned long long)len);
             size_t pl = 0;
             uint8_t *pb = mpt_slurp(pak, &pl);
-            // la región del .p5z es el .pak, salvo la cabecera: el archive_id y los CRC coinciden
+            // the .p5z's region is the .pak, except the header: the archive_id and the CRCs match
             if (!pb || pl != len || off + len > hl || memcmp(h + off, pb, pl))
-                MP_FAIL_("volumen %u: la región no es su .pak", k);
+                MP_FAIL_("volume %u: the region is not its .pak", k);
             free(pb);
         }
         snprintf(want + w, cap - w, "]}");
         MP_CHECK_CONTAINS(j, want);
         free(want);
-        // no hay un id n
+        // there is no id n
         char extra[32];
         snprintf(extra, sizeof extra, "{\"id\":%u,", n);
         MP_CHECK(strstr(j, extra) == NULL);

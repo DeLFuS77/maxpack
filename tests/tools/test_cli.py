@@ -200,6 +200,19 @@ def has_final_progress(evs):
     return any(e.get("event") == "progress" and e["total"] > 0 and e["done"] == e["total"] for e in evs)
 
 
+def progress_monotonic(evs):
+    """Within each phase, total stays the same and done never goes back nor over total."""
+    last = {}
+    for e in evs:
+        if e.get("event") != "progress":
+            continue
+        done, total = last.get(e["phase"], (0, e["total"]))
+        if e["total"] != total or e["done"] < done or e["done"] > e["total"]:
+            return False
+        last[e["phase"]] = (e["done"], e["total"])
+    return bool(last)
+
+
 pj = os.path.join(TMP, "pj.p5z")
 if os.path.exists(pj):
     os.remove(pj)
@@ -248,6 +261,25 @@ for i in range(6):
         f.write(os.urandom(2 << 20))
 with open(os.path.join(BIG, "sce_sys", "param.json"), "w") as f:
     f.write('{"titleId":"TEST00002"}')
+
+# The JSON progress of a pack with several threads: in order and up to the end of each phase.
+for fmt in ("--p5z", "--folder"):
+    mono = os.path.join(TMP, "mono" + (".p5z" if fmt == "--p5z" else ""))
+    if os.path.isfile(mono):
+        os.remove(mono)
+    rmtree(mono)
+    rc, so, err = run("pack", BIG, "-o", mono, fmt, "--threads", "4", "--level", "3", "--volume-limit", "1000000",
+                      "--progress", "json")
+    try:
+        evs = json_lines(so)
+        phases = [e["phase"] for e in evs if e["event"] == "progress"]
+        check("progress_json_monotonic" + fmt.replace("--", "_"),
+              rc == 0 and last_result(evs).get("ok") is True and progress_monotonic(evs)
+              and has_final_progress(evs) and "packing" in phases
+              and phases.index("packing") > max([i for i, x in enumerate(phases) if x == "copying"] or [-1]),
+              "rc=%d %s %s" % (rc, so[-300:], err[-200:]))
+    except Exception as ex:  # noqa: BLE001
+        check("progress_json_monotonic" + fmt.replace("--", "_"), False, repr(ex) + so[-200:])
 
 cdst = os.path.join(TMP, "cancel_out")
 rmtree(cdst)

@@ -4,6 +4,31 @@ All notable changes to MaxPack are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- **Packing is about twice as fast.** The engine used to read a batch of blocks and compute their
+  SHA-256 on one thread, then start threads to compress the batch and wait for the slowest one, and
+  then write it on one thread, so most cores sat idle most of the time. Now the three overlap: one
+  thread reads ahead and hashes, a pool of threads that lives for the whole pack compresses, and the
+  blocks are written in order as they are ready. The loose files of a `.p5z` (zstd frames of up to
+  32 MiB) go the same way, and one file's frames no longer wait for the previous file's. On a
+  32-thread PC, a generated 3 GB game packs to a `.p5z` in 21.6 s instead of 43.1 s at level 19
+  (139 MB/s instead of 70; the packs alone at 183 MB/s instead of 89) and in 16.0 s instead of
+  29.7 s at level 3.
+- **The output is the same, byte for byte.** Same chunks in the same order, same volumes, same
+  index and same SHA-256s as 1.0.1, with any number of threads: new tests pack the test images and a
+  synthetic game (many small files, a few large ones, frames of exactly 32 MiB and several volumes)
+  at 1, 2 and all the CPU's threads and compare them with hashes recorded with 1.0.1. Cancelling,
+  progress (the same events, always increasing) and errors behave as before.
+- Memory: while the packs are written the engine now holds less (a ring of 4 blocks per thread
+  instead of batches of 8, and the `.p5z` frames' compression contexts are freed before the packs
+  start). While the loose files of a `.p5z` are compressed it can hold more at once than before,
+  because frames of several files are compressed together, up to the same limit as 1.0.1 (8 frames).
+- `tools/bench_pack.py` generates a synthetic game and compares two builds of the engine: time,
+  MB/s, CPU, memory and identical output.
+
 ## [1.0.1] - 2026-11-24
 
 MaxPack for the PC now brings its own ampr-emu-ng, and stops asking for it where it is not needed.
@@ -111,5 +136,6 @@ risk. The authors are not responsible for data loss, lost saves, damage to the c
 bans or any other problem. MaxPack is not affiliated with or endorsed by Sony Interactive
 Entertainment. Full text: [Legal and disclaimer](README.md#legal-and-disclaimer).
 
+[Unreleased]: https://github.com/DeLFuS77/maxpack/compare/v1.0.1...HEAD
 [1.0.1]: https://github.com/DeLFuS77/maxpack/releases/tag/v1.0.1
 [1.0.0]: https://github.com/DeLFuS77/maxpack/releases/tag/v1.0.0

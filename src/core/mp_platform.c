@@ -373,6 +373,20 @@ void mp_mutex_lock(mp_mutex *m) { AcquireSRWLockExclusive(&m->l); }
 void mp_mutex_unlock(mp_mutex *m) { ReleaseSRWLockExclusive(&m->l); }
 void mp_mutex_free(mp_mutex *m) { free(m); }
 
+struct mp_cond {
+    CONDITION_VARIABLE cv;
+};
+
+mp_cond *mp_cond_new(void) {
+    mp_cond *c = malloc(sizeof *c);
+    if (c) InitializeConditionVariable(&c->cv);
+    return c;
+}
+void mp_cond_wait(mp_cond *c, mp_mutex *m) { SleepConditionVariableSRW(&c->cv, &m->l, INFINITE, 0); }
+void mp_cond_signal(mp_cond *c) { WakeConditionVariable(&c->cv); }
+void mp_cond_broadcast(mp_cond *c) { WakeAllConditionVariable(&c->cv); }
+void mp_cond_free(mp_cond *c) { free(c); }
+
 uint64_t mp_now_ns(void) {
     static LARGE_INTEGER freq;
     LARGE_INTEGER c;
@@ -932,6 +946,27 @@ void mp_mutex_free(mp_mutex *m) {
     if (!m) return;
     pthread_mutex_destroy(&m->m);
     free(m);
+}
+
+struct mp_cond {
+    pthread_cond_t c;
+};
+
+mp_cond *mp_cond_new(void) {
+    mp_cond *c = malloc(sizeof *c);
+    if (c && pthread_cond_init(&c->c, NULL) != 0) {
+        free(c);
+        c = NULL;
+    }
+    return c;
+}
+void mp_cond_wait(mp_cond *c, mp_mutex *m) { pthread_cond_wait(&c->c, &m->m); }
+void mp_cond_signal(mp_cond *c) { pthread_cond_signal(&c->c); }
+void mp_cond_broadcast(mp_cond *c) { pthread_cond_broadcast(&c->c); }
+void mp_cond_free(mp_cond *c) {
+    if (!c) return;
+    pthread_cond_destroy(&c->c);
+    free(c);
 }
 
 uint64_t mp_now_ns(void) {

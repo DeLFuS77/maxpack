@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Zstd pack writer. Walks the files' 256 KiB blocks in the index's order
-// (path_hash, path), compresses them in parallel batches and writes them in that same order, so
-// the output does not depend on the number of threads.
+// Zstd pack writer. Walks the files' 256 KiB blocks in the index's order (path_hash, path) and
+// writes them in that same order, so the output does not depend on the number of threads. It is a
+// pipeline: one thread reads the blocks and computes each file's SHA-256, a pool that lives for the
+// whole pack compresses them and this thread writes them, all at the same time.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -55,6 +56,47 @@ static int compress_work(void *vc, size_t i, unsigned tid) {
     return 0;
 }
 
+// The reading thread: fills the pipe's slots with the blocks in the index's order and computes each
+// file's SHA-256 as it goes. On an error (or a cancel) it stops the pipe.
+typedef struct {
+    mp_source *src;
+    const ford *fo;
+    size_t n;
+    uint8_t (*sha)[32];
+    item *items;
+    mp_pipe *pipe;
+    int failed;
+    mp_err err;
+} reader;
+
+static void read_blocks(void *arg) {
+    reader *r = arg;
+    for (size_t fi = 0; fi < r->n; fi++) {
+        mp_sha256 s;
+        mp_sha256_init(&s);
+        for (uint64_t off = 0; off < r->fo[fi].size; off += MP_BLOCK_V1) {
+            long slot = mp_pipe_acquire(r->pipe);
+            if (slot < 0) return;   // the writer stopped
+            item *it = &r->items[slot];
+            uint64_t left = r->fo[fi].size - off;
+            it->len = left < MP_BLOCK_V1 ? (size_t)left : MP_BLOCK_V1;
+            if (mp_cancel_check(&r->err) != 0 ||
+                mp_source_read(r->src, r->fo[fi].src, off, it->in, it->len, &r->err) != 0) {
+                r->failed = 1;
+                mp_pipe_abort(r->pipe);
+                return;
+            }
+            mp_sha256_update(&s, it->in, it->len);
+            mp_pipe_submit(r->pipe, (size_t)slot, 1);
+        }
+        mp_sha256_final(&s, r->sha[r->fo[fi].pos]);
+    }
+    mp_pipe_close(r->pipe);
+}
+
+// Blocks in the ring: enough for every thread to have several ahead of the one being written.
+static size_t ring_slots(unsigned threads) { return (size_t)threads * 4 + 4; }
+
 int mp_zpk_write(mp_source *src, const uint32_t *files, size_t n, const mp_zpk_opts *o,
                  const mp_zpk_sink *sink, uint8_t **index, size_t *index_len, uint8_t (*sha)[32],
                  mp_zpk_stats *st, mp_err *e) {
@@ -106,81 +148,87 @@ int mp_zpk_write(mp_source *src, const uint32_t *files, size_t n, const mp_zpk_o
         return -1;
     }
 
-    size_t batch = (size_t)threads * 8;
+    size_t nslots = ring_slots(threads);
     uint64_t *chunk_rec = malloc((size_t)(nchunks ? nchunks : 1) * sizeof *chunk_rec);
     uint64_t *vol_size = calloc(MP_ZPK_MAX_VOLUMES, sizeof *vol_size);
-    item *items = calloc(batch, sizeof *items);
-    uint8_t *inbuf = malloc(batch * MP_BLOCK_V1);
+    item *items = calloc(nslots, sizeof *items);
+    uint8_t *inbuf = malloc(nslots * MP_BLOCK_V1);
     cctx_set cs = {items, calloc(threads, sizeof(ZSTD_CCtx *)), ZSTD_compressBound(MP_BLOCK_V1), o->level};
-    uint8_t *outbuf = malloc(batch * cs.out_cap);
-    mp_sha256 *shs = malloc((n ? n : 1) * sizeof *shs);
-    int rc = -1;
-    if (!chunk_rec || !vol_size || !items || !inbuf || !cs.cctx || !outbuf || !shs) goto oom;
+    uint8_t *outbuf = malloc(nslots * cs.out_cap);
+    mp_pipe *pipe = NULL;
+    mp_thread *rthread = NULL;
+    reader rd;
+    memset(&rd, 0, sizeof rd);
+    int rc = -1, failed = 0;
+    uint64_t gchunk = 0, stored_total = 0, cur_off = 0;
+    int64_t cur_vol = -1;
+    if (!chunk_rec || !vol_size || !items || !inbuf || !cs.cctx || !outbuf) goto oom;
     for (unsigned t = 0; t < threads; t++)
         if (!(cs.cctx[t] = ZSTD_createCCtx())) goto oom;
-    for (size_t b = 0; b < batch; b++) {
+    for (size_t b = 0; b < nslots; b++) {
         items[b].in = inbuf + b * MP_BLOCK_V1;
         items[b].out = outbuf + b * cs.out_cap;
     }
+    if (mp_cancel_check(e) != 0) goto done;
+    if (!(pipe = mp_pipe_new(threads, nslots, compress_work, &cs))) goto oom;
+    rd.src = src;
+    rd.fo = fo;
+    rd.n = n;
+    rd.sha = sha;
+    rd.items = items;
+    rd.pipe = pipe;
+    if (mp_thread_start(&rthread, read_blocks, &rd) != 0) {
+        mp_err_set(e, "could not start the reading thread");
+        goto done;
+    }
 
-    // Walk in the index's order: file fi, block k.
-    size_t fi = 0;
-    uint64_t k = 0, gchunk = 0, stored_total = 0, cur_off = 0;
-    int64_t cur_vol = -1;
-    if (n) mp_sha256_init(&shs[0]);
-    while (fi < n) {
-        if (mp_cancel_check(e) != 0) goto done;
-        // 1. Read a batch (may cross files) and update the SHA-256 hashes.
-        size_t nb = 0;
-        uint64_t first_g = gchunk;
-        while (nb < batch && fi < n) {
-            uint64_t size = fo[fi].size, off = k * MP_BLOCK_V1;
-            if (off >= size) {   // file finished (or empty)
-                mp_sha256_final(&shs[fi], sha[fo[fi].pos]);
-                fi++;
-                k = 0;
-                if (fi < n) mp_sha256_init(&shs[fi]);
-                continue;
-            }
-            size_t len = size - off < MP_BLOCK_V1 ? (size_t)(size - off) : MP_BLOCK_V1;
-            if (mp_source_read(src, fo[fi].src, off, items[nb].in, len, e) != 0) goto done;
-            mp_sha256_update(&shs[fi], items[nb].in, len);
-            items[nb].len = len;
-            nb++;
-            k++;
-            gchunk++;
-        }
-        if (!nb) break;
-        // 2. Compress in parallel.
-        if (mp_parallel_run(threads, nb, compress_work, &cs, NULL) != 0) {
+    // Writes the blocks in order as they come out of the pipe, opening volumes when the current one
+    // fills up.
+    for (;;) {
+        int wrc = 0;
+        long slot = mp_pipe_next(pipe, 1, &wrc);
+        if (slot < 0) break;   // everything was read, or the reader stopped
+        item *it = &items[slot];
+        failed = 1;
+        if (wrc != 0) {
             if (mp_cancel_check(e) == 0) mp_err_set(e, "compression error");
-            goto done;
+            break;
         }
-        // 3. Write in order, opening volumes when the current one fills up.
-        for (size_t b = 0; b < nb; b++) {
-            item *it = &items[b];
-            if (cur_vol < 0 || cur_off + it->out_len > o->volume_limit) {
-                if (cur_vol >= 0) {
-                    vol_size[cur_vol] = cur_off;
-                    if (sink->vol_end(sink->ctx, (uint32_t)cur_vol, e) != 0) goto done;
-                }
-                if (++cur_vol >= (int64_t)MP_ZPK_MAX_VOLUMES) {
-                    mp_err_set(e, "the pack would need more than %u volumes", MP_ZPK_MAX_VOLUMES);
-                    goto done;
-                }
-                if (sink->vol_begin(sink->ctx, (uint32_t)cur_vol, e) != 0) goto done;
-                cur_off = MP_ZPK_VOL_HEADER;
+        if (mp_cancel_check(e) != 0) break;
+        if (cur_vol < 0 || cur_off + it->out_len > o->volume_limit) {
+            if (cur_vol >= 0) {
+                vol_size[cur_vol] = cur_off;
+                if (sink->vol_end(sink->ctx, (uint32_t)cur_vol, e) != 0) break;
             }
-            if (sink->vol_write(sink->ctx, it->codec ? it->out : it->in, it->out_len, e) != 0) goto done;
-            chunk_rec[first_g + b] = cur_off | (uint64_t)cur_vol << 32 | (uint64_t)(it->out_len - 1) << 44 |
-                                     (uint64_t)it->codec << 62;
-            cur_off += it->out_len;
-            stored_total += it->out_len;
+            if (++cur_vol >= (int64_t)MP_ZPK_MAX_VOLUMES) {
+                mp_err_set(e, "the pack would need more than %u volumes", MP_ZPK_MAX_VOLUMES);
+                break;
+            }
+            if (sink->vol_begin(sink->ctx, (uint32_t)cur_vol, e) != 0) break;
+            cur_off = MP_ZPK_VOL_HEADER;
         }
-        uint64_t batch_bytes = 0;
-        for (size_t b = 0; b < nb; b++) batch_bytes += items[b].len;
-        mp_progress_add(o->prog, batch_bytes);
+        if (sink->vol_write(sink->ctx, it->codec ? it->out : it->in, it->out_len, e) != 0) break;
+        chunk_rec[gchunk++] = cur_off | (uint64_t)cur_vol << 32 | (uint64_t)(it->out_len - 1) << 44 |
+                              (uint64_t)it->codec << 62;
+        cur_off += it->out_len;
+        stored_total += it->out_len;
+        size_t len = it->len;
+        mp_pipe_release(pipe, (size_t)slot);
+        failed = 0;
+        mp_progress_add(o->prog, len);
         mp_progress_maybe_print(o->prog);
+    }
+    if (failed) mp_pipe_abort(pipe);   // the reader may be waiting for a free slot
+    mp_thread_join(rthread);
+    if (failed) goto done;
+    if (rd.failed) {
+        if (e) *e = rd.err;
+        goto done;
+    }
+    if (gchunk != nchunks) {   // cannot happen: the reader closes the pipe after the last block
+        mp_err_set(e, "the pack lost blocks (%llu of %llu)", (unsigned long long)gchunk,
+                   (unsigned long long)nchunks);
+        goto done;
     }
     uint32_t nvol = (uint32_t)(cur_vol + 1);
     if (cur_vol >= 0) {
@@ -262,6 +310,7 @@ int mp_zpk_write(mp_source *src, const uint32_t *files, size_t n, const mp_zpk_o
 oom:
     mp_err_set(e, "out of memory");
 done:
+    mp_pipe_free(pipe);   // joins the compression threads before their buffers are freed
     if (cs.cctx)
         for (unsigned t = 0; t < threads; t++) ZSTD_freeCCtx(cs.cctx[t]);
     free(cs.cctx);
@@ -270,7 +319,6 @@ done:
     free(items);
     free(inbuf);
     free(outbuf);
-    free(shs);
     free(fo);
     return rc;
 }

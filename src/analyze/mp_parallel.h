@@ -51,4 +51,37 @@ void mp_progress_maybe_print(mp_progress *p);
 int mp_parallel_run(unsigned threads, size_t n, int (*work)(void *ctx, size_t item, unsigned tid),
                     void *ctx, mp_progress *prog);
 
+// ---- Ordered pipeline ------------------------------------------------------------------------
+// A ring of nslots slots that one producer fills in order, a pool of threads that lives as long as
+// the pipe processes in any order, and one consumer takes back in the order they were filled. So
+// reading the next items, processing the current ones and writing the previous ones overlap, and the
+// output does not depend on the number of threads. The producer and the consumer may be two threads
+// or the same one (then it must not wait for a free slot or for the next one with nothing pending).
+typedef struct mp_pipe mp_pipe;
+
+// work(ctx, slot, tid) runs on the pool's threads (tid in [0, threads)) and its return is the slot's
+// code. NULL if it cannot be created. If no thread can be started, work runs inside mp_pipe_submit.
+mp_pipe *mp_pipe_new(unsigned threads, size_t nslots, int (*work)(void *ctx, size_t slot, unsigned tid),
+                     void *ctx);
+// Producer: the next slot to fill (one at a time); waits while all of them are in use. -1 if aborted.
+long mp_pipe_acquire(mp_pipe *p);
+// Producer: the slot that mp_pipe_acquire gave is ready. With run = 0 it needs no work and goes
+// straight to the consumer with code 0. A slot that would start after mp_cancelled() is not passed
+// to work: its code is -1.
+void mp_pipe_submit(mp_pipe *p, size_t slot, int run);
+// Producer: no more slots will come.
+void mp_pipe_close(mp_pipe *p);
+// Consumer: the oldest slot submitted, once processed, with its code in *rc. With wait = 0 it does not
+// wait: -1 if that slot is not ready (or there is none). With wait = 1, -1 means closed and every slot
+// already taken, or aborted.
+long mp_pipe_next(mp_pipe *p, int wait, int *rc);
+// Consumer: gives back the slot that mp_pipe_next returned, for the producer to fill again.
+void mp_pipe_release(mp_pipe *p, size_t slot);
+// Slots submitted and not yet released.
+size_t mp_pipe_pending(mp_pipe *p);
+// Stops everything: the threads take no more slots and mp_pipe_acquire and mp_pipe_next return -1.
+void mp_pipe_abort(mp_pipe *p);
+// Waits for the slots being processed, joins the threads and frees the pipe (p may be NULL).
+void mp_pipe_free(mp_pipe *p);
+
 #endif

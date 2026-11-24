@@ -67,6 +67,16 @@ void mp_mutex_lock(mp_mutex *m);
 void mp_mutex_unlock(mp_mutex *m);
 void mp_mutex_free(mp_mutex *m);
 
+// Condition variable, used with an mp_mutex held by the caller. mp_cond_wait releases the mutex while
+// it waits and takes it again before returning; it may also return without a signal, so the condition
+// is checked again in a loop.
+typedef struct mp_cond mp_cond;
+mp_cond *mp_cond_new(void);   // NULL if it cannot be created
+void mp_cond_wait(mp_cond *c, mp_mutex *m);
+void mp_cond_signal(mp_cond *c);      // wakes one waiting thread
+void mp_cond_broadcast(mp_cond *c);   // wakes all of them
+void mp_cond_free(mp_cond *c);
+
 uint64_t mp_now_ns(void);
 unsigned mp_cpu_count(void);
 void mp_sleep_ms(unsigned ms);

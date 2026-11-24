@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// .p5z writer. Volumes go raw (install = copy); the other files, in zstd 19 frames
-// with a long window of up to 32 MiB, compressed in parallel and written in order.
+// .p5z writer. Volumes go raw (install = copy); the other files, in zstd 19 frames with a long
+// window of up to 32 MiB, written in order. The frames are a pipeline: a pool compresses them while
+// this thread reads the next ones and writes those already compressed, also across files.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -23,10 +24,14 @@ typedef struct {
     uint32_t csize, usize;
 } p5frame;
 
+// A piece of a file in the frame pipeline: a frame (ilen > 0) or, with no data, only the end of
+// the file (one that is empty or a multiple of 32 MiB).
 typedef struct {
-    uint8_t *in, *out;
+    uint8_t *in, *out;   // MP_LONG_FRAME and out_cap bytes, allocated when first needed
     size_t ilen, olen;
-} fjob;
+    size_t file;         // index in files
+    int first, last;     // the file's first and last piece
+} fslot;
 
 typedef struct {
     mp_wfile *f;
@@ -35,12 +40,16 @@ typedef struct {
     size_t nfiles, cap;
     p5frame *frames;
     size_t nframes, fcap;
-    // File in progress.
+    // File in progress and frame pipeline. The pool and its contexts (~120 MB each) exist only
+    // while there are frames: they are freed before the volumes.
     int in_file;
-    uint8_t *pend;             // data pending compression (threads × 32 MiB)
-    size_t npend;
-    fjob *jobs;
-    ZSTD_CCtx **cctx;
+    size_t cur_file;           // index in files of the file being received
+    int cur_first;             // its first piece has not been sent yet
+    mp_pipe *pipe;
+    fslot *slots;
+    size_t nslots;
+    long cur;                  // slot being filled, or -1
+    ZSTD_CCtx **cctx;          // one per thread of the pool
     size_t out_cap;
     // Volume in progress.
     mp_sha256 vsha;
@@ -118,8 +127,13 @@ static p5file *new_file(p5out *o, const char *rel, int role, int storage, uint64
 
 // ---- volumes: raw regions ------------------------------------------------------------------
 
+static int drain(p5out *o, int wait, mp_err *e);
+static void frames_stop(p5out *o);
+
 static int v_begin(void *ctx, uint32_t vol, mp_err *e) {
     p5out *o = ctx;
+    if (drain(o, 1, e) != 0) return -1;   // the frames of the files before it go first
+    frames_stop(o);                        // the packs have their own threads
     char name[32];
     snprintf(name, sizeof name, "ampr_zstd-%03u.pak", vol);
     if (!new_file(o, name, MP_ROLE_VOLUME, P5Z_STORE_RAW, 0, 0, e)) return -1;
@@ -161,29 +175,62 @@ static int v_header(void *ctx, uint32_t vol, const uint8_t hdr[64], mp_err *e) {
 
 static int frame_work(void *vc, size_t i, unsigned tid) {
     p5out *o = vc;
-    fjob *j = &o->jobs[i];
-    size_t r = ZSTD_compress2(o->cctx[tid], j->out, o->out_cap, j->in, j->ilen);
+    fslot *sl = &o->slots[i];
+    size_t r = ZSTD_compress2(o->cctx[tid], sl->out, o->out_cap, sl->in, sl->ilen);
     if (ZSTD_isError(r)) return 1;
-    j->olen = r;
+    sl->olen = r;
     return 0;
 }
 
-// Compresses and writes the pending complete frames (or everything, if last).
-static int flush_frames(p5out *o, int last, mp_err *e) {
-    size_t nj = 0, off = 0;
-    while (off < o->npend && (last || o->npend - off >= MP_LONG_FRAME)) {
-        size_t k = o->npend - off < MP_LONG_FRAME ? o->npend - off : MP_LONG_FRAME;
-        o->jobs[nj].in = o->pend + off;
-        o->jobs[nj].ilen = k;
-        nj++;
-        off += k;
+// Starts the pool and the compression contexts for the frames.
+static int frames_start(p5out *o, mp_err *e) {
+    if (o->pipe) return 0;
+    // As many frames in memory as 1.0.1 had: compressing one takes far longer than reading the next.
+    o->nslots = o->threads;
+    o->cur = -1;
+    if (!o->slots) o->slots = calloc(o->nslots, sizeof *o->slots);
+    if (!o->cctx) o->cctx = calloc(o->threads, sizeof *o->cctx);
+    int ok = o->slots && o->cctx;
+    for (unsigned t = 0; ok && t < o->threads; t++)
+        if (!o->cctx[t] && (ok = (o->cctx[t] = ZSTD_createCCtx()) != NULL)) mp_zstd_set_long(o->cctx[t]);
+    if (ok) ok = (o->pipe = mp_pipe_new(o->threads, o->nslots, frame_work, o)) != NULL;
+    if (!ok) mp_err_set(e, "out of memory");
+    return ok ? 0 : -1;
+}
+
+// Joins the pool and frees the contexts and buffers (whatever was still pending is dropped).
+static void frames_stop(p5out *o) {
+    if (o->pipe) {
+        mp_pipe_abort(o->pipe);
+        mp_pipe_free(o->pipe);
+        o->pipe = NULL;
     }
-    if (!nj) return 0;
-    if (mp_parallel_run(o->threads, nj, frame_work, o, NULL) != 0) {
-        if (mp_cancel_check(e) == 0) mp_err_set(e, "error compressing for the .p5z");
-        return -1;
+    for (size_t i = 0; o->slots && i < o->nslots; i++) {
+        free(o->slots[i].in);
+        free(o->slots[i].out);
     }
-    for (size_t j = 0; j < nj; j++) {
+    free(o->slots);
+    o->slots = NULL;
+    if (o->cctx)
+        for (unsigned t = 0; t < o->threads; t++) ZSTD_freeCCtx(o->cctx[t]);
+    free(o->cctx);
+    o->cctx = NULL;
+    o->cur = -1;
+}
+
+// Writes a compressed piece: where its file starts (after the frames of the files before it), its
+// frame and, if it is the last one, the file's size in the .p5z.
+static int write_piece(p5out *o, const fslot *sl, int rc, mp_err *e) {
+    p5file *f = &o->files[sl->file];
+    if (sl->first) {
+        f->data_off = mp_wfile_size(o->f);
+        f->first_frame = (uint32_t)o->nframes;
+    }
+    if (sl->ilen) {
+        if (rc != 0) {
+            if (mp_cancel_check(e) == 0) mp_err_set(e, "error compressing for the .p5z");
+            return -1;
+        }
         if (o->nframes == o->fcap) {
             size_t cap = o->fcap ? o->fcap * 2 : 1024;
             p5frame *v = realloc(o->frames, cap * sizeof *v);
@@ -196,48 +243,109 @@ static int flush_frames(p5out *o, int last, mp_err *e) {
         }
         p5frame *fr = &o->frames[o->nframes++];
         fr->off = mp_wfile_size(o->f);
-        fr->csize = (uint32_t)o->jobs[j].olen;
-        fr->usize = (uint32_t)o->jobs[j].ilen;
-        if (put(o, o->jobs[j].out, o->jobs[j].olen, e) != 0) return -1;
+        fr->csize = (uint32_t)sl->olen;
+        fr->usize = (uint32_t)sl->ilen;
+        if (put(o, sl->out, sl->olen, e) != 0) return -1;
     }
-    memmove(o->pend, o->pend + off, o->npend - off);
-    o->npend -= off;
+    if (sl->last) {
+        f->nframes = (uint32_t)(o->nframes - f->first_frame);
+        f->data_len = mp_wfile_size(o->f) - f->data_off;
+    }
     return 0;
+}
+
+// Writes the oldest piece if it is compressed (with wait, waiting for it). 1 if it wrote one, 0 if
+// not, -1 on error.
+static int write_next(p5out *o, int wait, mp_err *e) {
+    if (!o->pipe || !mp_pipe_pending(o->pipe)) return 0;
+    int rc = 0;
+    long s = mp_pipe_next(o->pipe, wait, &rc);
+    if (s < 0) {
+        if (!wait) return 0;
+        mp_err_set(e, "error compressing for the .p5z");
+        return -1;
+    }
+    int r = write_piece(o, &o->slots[s], rc, e);
+    mp_pipe_release(o->pipe, (size_t)s);
+    return r != 0 ? -1 : 1;
+}
+
+// Writes, in order, the pieces already compressed; with wait, all those sent.
+static int drain(p5out *o, int wait, mp_err *e) {
+    int r;
+    while ((r = write_next(o, wait, e)) > 0) {
+    }
+    return r;
+}
+
+// The slot for the current file's next piece. When all are in use, the oldest is written first:
+// this thread is also the one that empties the pipe, so it never waits for a free slot.
+static fslot *open_slot(p5out *o, mp_err *e) {
+    if (o->cur >= 0) return &o->slots[o->cur];
+    if (frames_start(o, e) != 0) return NULL;
+    if (mp_pipe_pending(o->pipe) >= o->nslots && write_next(o, 1, e) < 0) return NULL;
+    long s = mp_pipe_acquire(o->pipe);
+    if (s < 0) {
+        mp_err_set(e, "error compressing for the .p5z");
+        return NULL;
+    }
+    fslot *sl = &o->slots[s];
+    sl->ilen = sl->olen = 0;
+    sl->file = o->cur_file;
+    sl->first = o->cur_first;
+    sl->last = 0;
+    o->cur_first = 0;
+    o->cur = s;
+    return sl;
+}
+
+// Sends the slot being filled to the pool (a piece without data needs no compression) and writes
+// whatever is already compressed.
+static int send_slot(p5out *o, int last, mp_err *e) {
+    fslot *sl = &o->slots[o->cur];
+    sl->last = last;
+    mp_pipe_submit(o->pipe, (size_t)o->cur, sl->ilen > 0);
+    o->cur = -1;
+    return drain(o, 0, e);
 }
 
 static int f_begin(void *ctx, const char *rel, int role, uint64_t size, int64_t mtime, mp_err *e) {
     p5out *o = ctx;
+    // data_off and first_frame are set again when its first piece is written
     if (!new_file(o, rel, role, P5Z_STORE_FRAMES, size, mtime, e)) return -1;
+    o->cur_file = o->nfiles - 1;
+    o->cur_first = 1;
     o->in_file = 1;
-    o->npend = 0;
     return 0;
 }
 
 static int f_write(void *ctx, const void *p, size_t n, mp_err *e) {
     p5out *o = ctx;
     const uint8_t *b = p;
-    size_t cap = (size_t)o->threads * MP_LONG_FRAME;
     while (n) {
         if (mp_cancel_check(e) != 0) return -1;
-        size_t k = cap - o->npend < n ? cap - o->npend : n;
-        memcpy(o->pend + o->npend, b, k);
-        o->npend += k;
+        fslot *sl = open_slot(o, e);
+        if (!sl) return -1;
+        if ((!sl->in && !(sl->in = malloc(MP_LONG_FRAME))) || (!sl->out && !(sl->out = malloc(o->out_cap)))) {
+            mp_err_set(e, "out of memory");
+            return -1;
+        }
+        size_t k = MP_LONG_FRAME - sl->ilen < n ? MP_LONG_FRAME - sl->ilen : n;
+        memcpy(sl->in + sl->ilen, b, k);
+        sl->ilen += k;
         b += k;
         n -= k;
-        if (o->npend == cap && flush_frames(o, 0, e) != 0) return -1;
+        if (sl->ilen == MP_LONG_FRAME && send_slot(o, 0, e) != 0) return -1;
     }
     return 0;
 }
 
 static int f_end(void *ctx, const uint8_t sha[32], mp_err *e) {
     p5out *o = ctx;
-    if (flush_frames(o, 1, e) != 0) return -1;
-    p5file *f = &o->files[o->nfiles - 1];
-    f->nframes = (uint32_t)(o->nframes - f->first_frame);
-    f->data_len = mp_wfile_size(o->f) - f->data_off;
-    memcpy(f->sha, sha, 32);
+    if (!open_slot(o, e)) return -1;   // with nothing pending, a piece that only ends the file
+    memcpy(o->files[o->cur_file].sha, sha, 32);
     o->in_file = 0;
-    return 0;
+    return send_slot(o, 1, e);
 }
 
 // ---- index, footer and header --------------------------------------------------------------
@@ -256,6 +364,8 @@ static int cmp_ref(const void *a, const void *b) {
 
 static int f_finish(void *ctx, const mp_pack_manifest *m, mp_err *e) {
     p5out *o = ctx;
+    if (drain(o, 1, e) != 0) return -1;
+    frames_stop(o);
     // For each manifest record, the stored file that contains it.
     pathref *refs = malloc((o->nfiles ? o->nfiles : 1) * sizeof *refs);
     size_t nr = 0;
@@ -389,19 +499,13 @@ static int f_finish(void *ctx, const mp_pack_manifest *m, mp_err *e) {
 static void f_destroy(void *ctx) {
     p5out *o = ctx;
     if (!o) return;
+    frames_stop(o);   // joins the pool before anything it uses is freed
     if (o->f) mp_wfile_close(o->f, NULL);
     if (o->created && !o->finished) mp_remove_file(o->path);   // half-written .p5z: useless
     free(o->path);
     for (size_t i = 0; i < o->nfiles; i++) free(o->files[i].path);
     free(o->files);
     free(o->frames);
-    free(o->pend);
-    if (o->jobs)
-        for (unsigned t = 0; t < o->threads; t++) free(o->jobs[t].out);
-    free(o->jobs);
-    if (o->cctx)
-        for (unsigned t = 0; t < o->threads; t++) ZSTD_freeCCtx(o->cctx[t]);
-    free(o->cctx);
     free(o);
 }
 
@@ -423,19 +527,7 @@ int mp_pack_out_p5z_ex(const char *path, unsigned threads, uint64_t max_size, mp
     o->max_size = max_size;
     o->threads = threads == 0 ? 1 : threads > MP_LONG_MAX_THREADS ? MP_LONG_MAX_THREADS : threads;
     o->out_cap = ZSTD_compressBound(MP_LONG_FRAME);
-    o->pend = malloc((size_t)o->threads * MP_LONG_FRAME);
-    o->jobs = calloc(o->threads, sizeof *o->jobs);
-    o->cctx = calloc(o->threads, sizeof *o->cctx);
-    int ok = o->pend && o->jobs && o->cctx;
-    for (unsigned t = 0; ok && t < o->threads; t++) {
-        ok = (o->jobs[t].out = malloc(o->out_cap)) && (o->cctx[t] = ZSTD_createCCtx());
-        if (ok) mp_zstd_set_long(o->cctx[t]);
-    }
-    if (!ok) {
-        f_destroy(o);
-        mp_err_set(e, "out of memory");
-        return -1;
-    }
+    o->cur = -1;
     if (mp_path_kind(path) != 0) {
         mp_err_set(e, "the output .p5z already exists: %s", path);
         f_destroy(o);

@@ -5,6 +5,8 @@ package main
 import (
 	"bytes"
 	"errors"
+	"os"
+	"path/filepath"
 	"reflect"
 	"regexp"
 	"strings"
@@ -174,4 +176,84 @@ func TestMenuTexts(t *testing.T) {
 	if got := menuTexts("xx"); got != english {
 		t.Fatalf("unknown: %+v", got)
 	}
+}
+
+// The installer of Windows (build/windows/installer/maxpack.nsi), which cannot be built here: it
+// offers the three places, none ticked, in the eleven languages; MaxPack adds the ones ticked and
+// takes all of them away; and when MaxPack cannot run, the uninstaller takes away the very keys
+// and values MaxPack writes, and the default of .p5z only while it is MaxPack's.
+func TestInstallerScript(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("build", "windows", "installer", "maxpack.nsi"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := strings.ReplaceAll(strings.ReplaceAll(string(data), "\r\n", "\n"), "${CLASSES}", `Software\Classes`)
+	for _, want := range []string{
+		`nsExec::ExecToLog '"$INSTDIR\MaxPack.exe" --installer add$0 --language $1'`,
+		`nsExec::ExecToLog '"$INSTDIR\MaxPack.exe" --installer remove'`,
+		`StrCpy $0 "$0 menu"`, `StrCpy $0 "$0 sendto"`, `StrCpy $0 "$0 files"`,
+		`Page custom ExplorerPage ExplorerLeave`,
+		`Delete "$SENDTO\MaxPack.lnk"`,
+		`${If} $1 == "MaxPack.p5z"`,
+	} {
+		if !strings.Contains(script, want) {
+			t.Errorf("the installer does not have: %s", want)
+		}
+	}
+	if strings.Contains(script, "NSD_Check") || strings.Count(script, "${BST_UNCHECKED}") != 3 {
+		t.Error("a place is ticked by default")
+	}
+	var removal []explorer.Op
+	removal = append(removal, explorer.RemoveMenuOps("Software")...)
+	removal = append(removal, explorer.RemoveFilesOps("Software")...)
+	for _, op := range removal {
+		var want string
+		switch op.Do {
+		case explorer.DeleteTree:
+			want = `DeleteRegKey HKCU "` + op.Key + `"`
+		case explorer.DeleteValue:
+			want = `DeleteRegValue HKCU "` + op.Key + `" "` + op.Name + `"`
+		case explorer.DeleteOwnValue:
+			want = `DeleteRegValue HKCU "` + op.Key + `" "` + op.Name + `"`
+			if !strings.Contains(script, `ReadRegStr $1 HKCU "`+op.Key+`" "`+op.Name+`"`) || op.Data != "MaxPack.p5z" {
+				t.Errorf("the uninstaller does not check %s before removing it", op.Key)
+			}
+		}
+		if !strings.Contains(script, want) {
+			t.Errorf("the uninstaller does not have: %s", want)
+		}
+	}
+	nsisLanguages := []string{"ENGLISH", "RUSSIAN", "SIMPCHINESE", "GERMAN", "SPANISH", "FRENCH", "JAPANESE", "PORTUGUESEBR", "ITALIAN", "KOREAN", "ARABIC"}
+	if len(nsisLanguages) != len(settings.Languages) {
+		t.Fatal("the installer and the window have other languages")
+	}
+	for _, name := range []string{"ExplorerTitle", "ExplorerSub", "OptMenu", "OptMenuHint", "OptSendTo", "OptSendToHint", "OptFiles", "OptFilesHint", "ExplorerFailed"} {
+		if !strings.Contains(script, "$("+name+")") {
+			t.Errorf("%s is not used", name)
+		}
+		for _, lang := range nsisLanguages {
+			found := regexp.MustCompile(`(?m)^LangString ` + name + ` \$\{LANG_` + lang + `\} "([^"]+)"$`).FindStringSubmatch(script)
+			if found == nil {
+				t.Errorf("%s has no %s", name, lang)
+			} else if strings.Contains(installerEnglish(name), "MaxPack") && !strings.Contains(found[1], "MaxPack") {
+				t.Errorf("%s in %s lost MaxPack", name, lang)
+			}
+		}
+	}
+	// the languages of the installer give the codes of the window
+	for _, lang := range settings.Languages[1:] {
+		if !strings.Contains(script, `StrCpy $1 "`+lang+`"`) {
+			t.Errorf("the installer does not give the menu in %s", lang)
+		}
+	}
+}
+
+// installerEnglish is the English text of the installer for a name.
+func installerEnglish(name string) string {
+	data, _ := os.ReadFile(filepath.Join("build", "windows", "installer", "maxpack.nsi"))
+	found := regexp.MustCompile(`(?m)^LangString ` + name + ` \$\{LANG_ENGLISH\} "([^"]+)"\r?$`).FindStringSubmatch(string(data))
+	if found == nil {
+		return ""
+	}
+	return found[1]
 }

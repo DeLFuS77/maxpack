@@ -195,15 +195,23 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "makensis failed" }
           Get-ChildItem $dist
 
-      # the installer puts MaxPack in the given folder and in "Installed apps", the window
-      # forwards to the engine and compresses an image, and the uninstaller removes everything; all silently
+      # the installer puts MaxPack in the given folder and in "Installed apps", and in the Explorer as asked (the
+      # right-click menu, Send to and .p5z files), the window forwards to the engine and compresses an image, and the
+      # uninstaller removes everything, the Explorer's places too; all silently
       - name: Test the installer
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $folder = Join-Path $env:RUNNER_TEMP "MaxPackProbe"
           $setup = Get-Item dist/maxpack-${{ matrix.name }}-setup.exe
-          Start-Process -FilePath $setup.FullName -ArgumentList "/S", "/D=$folder" -Wait
+          Start-Process -FilePath $setup.FullName -ArgumentList "/S", "/MENU", "/SENDTO", "/OPENP5Z", "/D=$folder" -Wait
+          $classes = "HKCU:\Software\Classes"
+          $sendTo = Join-Path ([Environment]::GetFolderPath("SendTo")) "MaxPack.lnk"
+          $verify = (Get-ItemProperty -LiteralPath "$classes\SystemFileAssociations\.p5z\shell\MaxPack.1Verify\command").'(default)'
+          if ($verify -ne "`"$folder\MaxPack.exe`" --section verify `"%1`"") { throw "the menu is not there: $verify" }
+          $open = (Get-ItemProperty -LiteralPath "$classes\MaxPack.p5z\shell\open\command").'(default)'
+          if ($open -ne "`"$folder\MaxPack.exe`" --open `"%1`"") { throw ".p5z files do not open with MaxPack: $open" }
+          if (-not (Test-Path -LiteralPath $sendTo)) { throw "MaxPack is not in Send to" }
           $key = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\MaxPack"
           foreach ($file in "MaxPack.exe", "maxpack-core.exe", "LICENSE.txt", "THIRD_PARTY_NOTICES.txt", "uninstall.exe") {
             if (-not (Test-Path "$folder\$file")) { throw "missing $file" }
@@ -217,6 +225,10 @@ jobs:
           Start-Process -FilePath "$folder\uninstall.exe" -ArgumentList "/S", "_?=$folder" -Wait
           if (Test-Path "$folder\MaxPack.exe") { throw "was not uninstalled" }
           if (Test-Path $key) { throw "is still in Installed apps" }
+          foreach ($left in "$classes\MaxPack.p5z", "$classes\SystemFileAssociations\.p5z\shell\MaxPack.1Verify", "$classes\Directory\shell\MaxPack.Compress", "HKCU:\Software\MaxPack\Capabilities") {
+            if (Test-Path -LiteralPath $left) { throw "$left is still there" }
+          }
+          if (Test-Path -LiteralPath $sendTo) { throw "MaxPack is still in Send to" }
 
       - name: macOS package
         if: runner.os == 'macOS'

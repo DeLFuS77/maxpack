@@ -4,6 +4,7 @@
 
 #include "mp_describe.h"
 #include "mp_fixture.h"
+#include "mp_p5z_internal.h"
 
 #define TMP MP_TEST_TMP "/describe"
 
@@ -247,6 +248,31 @@ MP_TEST(describe_param_bom_and_padding) {
     }
 }
 
+MP_TEST(describe_loose_bytes) {
+    mp_err e = {{0}};
+    mp_describe d;
+    mpt_pack(MPT_BASIC, TMP "/lb.p5z", 1, NULL);
+    mp_p5z *p = open_p5z(TMP "/lb.p5z");
+    if (!p) return;
+    uint64_t want = 0;
+    for (size_t i = 0; i < p->nfiles; i++)
+        if (p->files[i].role == MP_ROLE_LOOSE || p->files[i].role == MP_ROLE_ZPK_INDEX || p->files[i].role == MP_ROLE_IDX3)
+            want += p->files[i].size;
+    mp_p5z_close(p);
+    MP_CHECK(want > 0);
+    MP_CHECK(mp_describe_path(TMP "/lb.p5z", &d, &e) == 0);
+    MP_CHECK_EQ_U64(d.loose_bytes, want);
+    MP_CHECK(mp_describe_path(MPT_BASIC, &d, &e) == 0);
+    MP_CHECK_EQ_U64(d.loose_bytes, 0);
+    mpt_clear(TMP "/lbf");
+    p = open_p5z(TMP "/lb.p5z");
+    if (!p) return;
+    MP_CHECK(mp_unpack_original(p, TMP "/lbf", 2, 0, &e) == 0);
+    mp_p5z_close(p);
+    MP_CHECK(mp_describe_path(TMP "/lbf", &d, &e) == 0);
+    MP_CHECK_EQ_U64(d.loose_bytes, 0);
+}
+
 int main(void) {
     MP_RUN(describe_param_bom_and_padding);
     MP_RUN(describe_kinds);
@@ -255,5 +281,6 @@ int main(void) {
     MP_RUN(describe_name_chars);
     MP_RUN(describe_default_language);
     MP_RUN(describe_name_truncated_on_boundary);
+    MP_RUN(describe_loose_bytes);
     MP_TEST_MAIN_END();
 }

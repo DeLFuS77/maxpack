@@ -112,3 +112,23 @@ Le siguen, sin huecos, `files`, `frames`, `manifest` y las cadenas.
   - empaquetado: se decodifica de los packs;
   - suelto: es el archivo de `files` que indica el registro;
   - reemplazado: es su original de papel 5.
+
+## Jugar sin instalar (consola)
+
+La consola puede jugar un `.p5z` sin instalarlo, y sin dejar en el disco interno más que lo imprescindible.
+
+- **Lo que se extrae:** solo los sueltos, es decir, los archivos de papel 0 (sueltos del juego), 2
+  (`ampr_zstd.index`) y 3 (`ampr_emu.index`). Cada uno se escribe entero, con su fecha, y se comprueba su SHA-256.
+  Nunca se extraen los volúmenes (papel 1), el runtime (papel 4) ni los originales (papel 5).
+- **Lo que no se extrae:** los volúmenes `ampr_zstd-NNN.pak` se leen en su sitio, dentro del `.p5z`, que es
+  donde están guardados sin comprimir. Cada volumen empieza en `offset` (el `data_off` de su registro) y mide
+  `length` bytes, cabecera de 64 B incluida.
+- **Abrir:** antes de jugar se comprueba la cabecera, el pie, el índice, `ampr_zstd.index`, la cabecera de cada
+  volumen y que el `archive_id` de la cabecera del `.p5z` sea el de `ampr_zstd.index`.
+- **Qué lee la consola:** `maxpack info --play <juego.p5z>` escribe en JSON el título, la versión, el
+  `archive_id`, el tamaño del `.p5z`, los sueltos (`loose`, con `loose_bytes` como suma) y los volúmenes
+  (`volumes`, con `id`, `offset` y `length`). En C, lo mismo está en `mp_play_open`, `mp_play_json` y
+  `mp_play_extract` (`src/pack/mp_play.h`).
+- **`maxpack.image`:** con esos datos el payload escribe el archivo `maxpack.image` que lee `ampr-emu-ng` para
+  localizar los volúmenes dentro del `.p5z`. Su contrato está en `docs/p5z-mode.md` de ampr-emu-ng.
+

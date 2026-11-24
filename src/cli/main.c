@@ -20,6 +20,7 @@
 #include "mp_parallel.h"
 #include "mp_pack.h"
 #include "mp_platform.h"
+#include "mp_play.h"
 #include "mp_report_out.h"
 #include "mp_rules.h"
 #include "mp_version.h"
@@ -32,6 +33,7 @@ static void usage(FILE *out) {
             "  maxpack unpack <juego.p5z> --folder|--original -o <carpeta> [--threads N]\n"
             "  maxpack info <juego.p5z>\n"
             "  maxpack info --json <carpeta|imagen.exfat|juego.p5z>\n"
+            "  maxpack info --play <juego.p5z>   lo que la consola necesita para jugarlo sin instalar (JSON)\n"
             "  maxpack icon <carpeta|imagen.exfat|juego.p5z> -o <icono.png>\n"
             "  maxpack verify <juego.p5z | carpeta> [--against <origen>] [--threads N]\n"
             "  maxpack --version\n"
@@ -627,6 +629,7 @@ static int cmd_info_json(const char *path) {
     printf(",\"original_size\":%llu,\"install_size\":%llu,\"p5z_size\":%llu,\"files\":%llu",
            (unsigned long long)d.original_size, (unsigned long long)d.install_size,
            (unsigned long long)d.p5z_size, (unsigned long long)d.files);
+    if (!strcmp(d.kind, "p5z")) printf(",\"loose_bytes\":%llu", (unsigned long long)d.loose_bytes);
     printf(",\"packed_files\":%llu,\"volumes\":%llu", (unsigned long long)d.packed_files,
            (unsigned long long)d.volumes);
     printf(",\"has_runtime\":%s,\"has_zstd_runtime\":%s,\"packed\":%s}\n", d.has_runtime ? "true" : "false",
@@ -635,10 +638,32 @@ static int cmd_info_json(const char *path) {
     return 0;
 }
 
+// info --play: lo que la consola necesita para jugar el .p5z sin instalarlo.
+static int cmd_info_play(const char *path) {
+    char err[512] = {0};
+    mp_play *p = mp_play_open(path, err, sizeof err);
+    if (!p) {
+        fprintf(stderr, "error: %s\n", err);
+        return 1;
+    }
+    char *j = mp_play_json(p);
+    mp_play_close(p);
+    if (!j) {
+        fprintf(stderr, "error: sin memoria\n");
+        return 1;
+    }
+    puts(j);
+    fflush(stdout);
+    mp_play_free_str(j);
+    return 0;
+}
+
 static int cmd_info(int argc, char **argv) {
+    if (argc == 2 && !strcmp(argv[0], "--play")) return cmd_info_play(argv[1]);
+    if (argc == 2 && !strcmp(argv[1], "--play")) return cmd_info_play(argv[0]);
     if (argc == 2 && !strcmp(argv[0], "--json")) return cmd_info_json(argv[1]);
     if (argc == 2 && !strcmp(argv[1], "--json")) return cmd_info_json(argv[0]);
-    if (argc != 1 || !strcmp(argv[0], "--json")) return bad_usage("info necesita un archivo .p5z (o --json y una ruta)", NULL);
+    if (argc != 1 || !strcmp(argv[0], "--json")) return bad_usage("info necesita un archivo .p5z (o --json o --play y una ruta)", NULL);
     mp_err e = {{0}};
     mp_p5z *p = NULL;
     if (mp_p5z_open(argv[0], &p, &e) != 0) {

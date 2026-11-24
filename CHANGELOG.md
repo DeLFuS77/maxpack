@@ -74,4 +74,13 @@ saved and loaded a save game on a real PS5 (firmware 13.60, ShadowMountPlus 1.7b
 - [maxpack-ps5](https://github.com/DeLFuS77/maxpack-ps5): MaxPack for the console (`maxpack.elf`).
 - [ampr-emu-ng](https://github.com/DeLFuS77/ampr-emu-ng): the runtime (`libSceAmpr.sprx`).
 
+### Legal
+
+MaxPack is for backups of games you own. It includes no games, firmware, keys or other copyrighted
+content, does not help to obtain them and does not bypass encryption, keys or DRM; piracy is not
+supported. It is provided "as is", without warranty, under the GPL-3.0-or-later: use it at your own
+risk. The authors are not responsible for data loss, lost saves, damage to the console or storage,
+bans or any other problem. MaxPack is not affiliated with or endorsed by Sony Interactive
+Entertainment. Full text: [Legal and disclaimer](README.md#legal-and-disclaimer).
+
 [1.0.0]: https://github.com/DeLFuS77/maxpack/releases/tag/v1.0.0

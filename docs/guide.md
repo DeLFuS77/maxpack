@@ -6,7 +6,8 @@ space and can be played without being decompressed. This guide goes from start t
 compress on the PC, take the game to the PS5 and play it. Every step is a single action.
 
 > **Before you start:** the console side has had little testing. What is tested and what is missing is
-> in [section 8](#8-what-is-tested-and-what-is-missing). Always keep your original dump.
+> in [section 8](#8-what-is-tested-and-what-is-missing). Always keep your original dump. MaxPack is for
+> backups of games you own, and you use it at your own risk: see [section 10](#10-legal-and-disclaimer).
 
 ![The MaxPack window](img/window-light.jpg)
 
@@ -21,6 +22,7 @@ compress on the PC, take the game to the PS5 and play it. Every step is a single
 7. [Common problems](#7-common-problems)
 8. [What is tested and what is missing](#8-what-is-tested-and-what-is-missing)
 9. [Licences and credits](#9-licences-and-credits)
+10. [Legal and disclaimer](#10-legal-and-disclaimer)
 
 ## 1. What MaxPack is and what you need
 
@@ -794,7 +796,30 @@ from, which MaxPack generates for each game. [ps5upload](https://github.com/phan
 phantomptr (GPL-3.0), is another tool of the scene.
 
 MaxPack is not affiliated with or endorsed by Sony Interactive Entertainment. It is for compressing
-your own game dumps and homebrew; no game content is included or distributed with it.
+your own game dumps and homebrew; no game content is included or distributed with it. The full legal
+notice is in [section 10](#10-legal-and-disclaimer).
+
+## 10. Legal and disclaimer
+
+> [!IMPORTANT]
+> MaxPack is for backups of games you own. Piracy is not supported.
+
+- **Your own games only.** MaxPack (the PC app, MaxPack for the console and MaxPack's copy of
+  ampr-emu-ng) is meant for backups of games you own, dumped from your own console, and for homebrew.
+- **No content included.** It includes and distributes no games, firmware, keys or other copyrighted
+  content, and it does not help you obtain any.
+- **No circumvention.** It does not bypass, remove or weaken encryption, keys or DRM. It compresses,
+  stores and serves the files of a dump, and never touches keys, encryption or DRM.
+- **Piracy is not supported.** Issues, reports and questions about pirated content will not be
+  answered.
+- **No warranty.** It is free software provided "as is", without warranty of any kind, under the GNU
+  General Public License v3.0 or later (see its sections 15 and 16). You use it at your own risk.
+- **No liability.** The authors and contributors are not responsible for data loss, lost or damaged
+  saves, damage to your console or your storage, bans of accounts or consoles, or any other problem
+  that comes from using it. Keep your original dumps and back up your saves.
+- **Not affiliated.** MaxPack is not affiliated with, endorsed or sponsored by Sony Interactive
+  Entertainment. "PlayStation" and "PS5" are trademarks of their respective owners, as are any other
+  names mentioned.
 
 ## More documentation
 

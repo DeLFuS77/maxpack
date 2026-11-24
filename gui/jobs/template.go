@@ -142,7 +142,7 @@ func paramContentID(folder string) string {
 }
 
 // RenamePlan is what Rename would do with a game: from where to where (in its own folder), and
-// why it cannot when it cannot: "same_name" (it has it already), "exists" (something else has
+// why it cannot when it cannot: "same_name" (it has it already), "name_taken" (something else has
 // it), "duplicate_target" (another game of the list would take it) or "cannot_read" (what it
 // is is not known).
 type RenamePlan struct {
@@ -152,7 +152,7 @@ type RenamePlan struct {
 }
 
 // RenameResult is how the renaming of a game ended: ok, skipped (with why, the Block of its plan
-// or "exists" when a name came meanwhile) or error ("in_use", "gone", or "io: ...").
+// or "name_taken" when a name came meanwhile) or error ("in_use", "gone", or "io: ...").
 type RenameResult struct {
 	From, To      string
 	State, Detail string
@@ -197,9 +197,9 @@ func PlanRename(items []Item, template string) []RenamePlan {
 		case p.To == p.From:
 			p.Block = "same_name"
 		case !same(p.To, p.From) && exists(p.To):
-			p.Block = "exists"
+			p.Block = "name_taken"
 		case same(p.To, p.From) && !sameFile(p.To, p.From) && exists(p.To):
-			p.Block = "exists"
+			p.Block = "name_taken"
 		}
 		for j := 0; j < i && p.Block == ""; j++ {
 			if plans[j].Block == "" && same(plans[j].To, p.To) {
@@ -228,7 +228,7 @@ func Rename(plans []RenamePlan) []RenameResult {
 		case !exists(p.From):
 			r.State, r.Detail = StateError, "gone"
 		case exists(p.To) && !(same(p.To, p.From) && sameFile(p.To, p.From)):
-			r.State, r.Detail = StateSkipped, "exists"
+			r.State, r.Detail = StateSkipped, "name_taken"
 		default:
 			var err error
 			if same(p.To, p.From) {
@@ -241,7 +241,7 @@ func Rename(plans []RenamePlan) []RenameResult {
 			case err == nil:
 				r.State = StateOK
 			case errors.Is(err, os.ErrExist):
-				r.State, r.Detail = StateSkipped, "exists"
+				r.State, r.Detail = StateSkipped, "name_taken"
 			case inUse(err):
 				r.State, r.Detail = StateError, "in_use"
 			default:

@@ -172,7 +172,7 @@ func TestRenamePlan(t *testing.T) {
 		{"Neon Meridian [PPSA10003] [v01.000.000]", ""},
 		{"PPSA10004", ""},
 		{"Quiet Tide [PPSA10005].p5z", "same_name"},
-		{"Glass Orbit [PPSA10006].p5z", "exists"},
+		{"Glass Orbit [PPSA10006].p5z", "name_taken"},
 		{"Starfall Odyssey [PPSA10001] [v01.000.021].p5z", "duplicate_target"},
 		{"", "cannot_read"},
 	}
@@ -209,7 +209,7 @@ func TestRename(t *testing.T) {
 	// between the plan and the click, something takes the name of the second one
 	os.WriteFile(plans[1].To, []byte("ajeno"), 0o644)
 	results := Rename(plans)
-	if results[0].State != StateOK || results[1].State != StateSkipped || results[1].Detail != "exists" || results[2].State != StateOK {
+	if results[0].State != StateOK || results[1].State != StateSkipped || results[1].Detail != "name_taken" || results[2].State != StateOK {
 		t.Fatalf("%+v", results)
 	}
 	if data, _ := os.ReadFile(plans[0].To); string(data) != "a.p5z" {

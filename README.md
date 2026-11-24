@@ -64,6 +64,7 @@ and Linux, the `maxpack` command line, the [complete user guide](docs/guide.md) 
 - [Numbers](#numbers)
 - [Requirements](#requirements)
 - [Download](#download)
+- [What goes on the internet](#what-goes-on-the-internet)
 - [Documentation](#documentation)
 - [FAQ](#faq)
 - [Status](#status)
@@ -284,13 +285,22 @@ line does is there, without typing a command.
 |---|---|
 | ![The Compress section with three games in the light theme](docs/img/window-light.jpg) | ![The same window in the dark theme](docs/img/window-dark.jpg) |
 
-- **Four sections:** **Compress** (dumps to `.p5z` or folder), **Decompress** (`.p5z` back to a dump),
-  **Verify** (`.p5z` files and folders) and **Details** (title, ID, version, sizes, files, packs).
+- **Five sections:** **Compress** (dumps to `.p5z` or folder), **Decompress** (`.p5z` back to a dump),
+  **Verify** (`.p5z` files and folders), **Details** (title, ID, version, sizes, files, packs) and
+  **Rename** (names `.p5z` files, dump folders and images by what each holds, shown before anything
+  changes).
 - **Two outputs**, chosen in **Made for**: **MaxPack installer** (one `.p5z` per game, the smallest)
   or **Play from the USB** (a folder in `homebrew/<TITLE_ID>`, ready for ShadowMountPlus or Kraken
   Mount).
 - **Compression level** 1 to 22 (19 by default), with the shortcuts Light, Medium and Maximum.
-- **Folders and `.exfat` images** as input; **Add folder** also takes a folder full of games.
+- **Folders and `.exfat` images** as input; **Add folder** takes several folders at once, and each one
+  can be a game or a folder full of games. Games added to a section while its queue runs join the
+  queue.
+- **File names by a template** (Settings > File names): `{title} [{id}]` by default, or with the
+  version and the region (`{title} [{id}] [{region}] [v{version}]`), with a preview.
+- **Low priority** (Settings): the engine runs below the other programs, so the PC stays usable.
+- **Copy report** (Details, the end of a queue, Settings > About): a text for an issue with the
+  versions, the system and the settings, and no game names.
 - **Eleven languages** (English, Russian, Chinese, German, Spanish, French, Japanese, Portuguese,
   Italian, Korean and Arabic, written right to left), starting in your system's language.
 - **Light and dark themes**, a single window (opening more games adds them to it), progress on the
@@ -305,8 +315,16 @@ line does is there, without typing a command.
 - **Verified when it finishes.** Each game is read back and checked as soon as it is packed.
 - **Cancel is clean.** It stops the game in progress, deletes what was written and leaves the
   destination as it was.
-- **Replace is safe.** If the game is already at the destination, the new copy is written apart and
-  verified; only then is the old one deleted. If anything fails, the old one stays intact.
+- **Every output is written apart.** The new `.p5z` or folder is written as `<name>.maxpack-tmp`
+  (hidden on Windows) and verified there; only then does it take its name. With **Replace**, only then
+  is the old one deleted. If anything fails, nothing is left half made, and what a crash leaves apart is
+  offered for deletion the next time MaxPack opens.
+- **Originals deleted only once checked**, if you turn it on (off by default): each one goes to the
+  recycle bin, or for good if you choose so, only after its new copy is made, verified and in its place,
+  and never when decompressing or verifying. A folder is listed with its size before the queue starts,
+  and what was removed is written to a log.
+- **The space of the whole queue** is checked before anything starts, drive by drive, with the
+  numbers.
 - **Warnings before trouble:** a FAT32 destination for a game over 4 GiB, too little free space, a
   destination inside the game itself, two games going to the same place, and a `libSceAmpr.sprx` that
   cannot read zstd packs.
@@ -391,7 +409,7 @@ game tried is in the
   WebKitGTK 4.1.
 - Your own game dump, as a folder or an `.exfat` image. PKG, `.ffpkg`, `.ffpfs` and `.ffpfsc` cannot be
   compressed yet.
-- Free space at the destination. MaxPack warns you when there is less than the original game takes.
+- Free space at the destination. MaxPack warns you before it starts when the queue may not fit.
 - Nothing else for the runtime: the window comes with
   [MaxPack's ampr-emu-ng](https://github.com/DeLFuS77/ampr-emu-ng) (`libSceAmpr.sprx`) and puts it in the
   `fakelib/` of games that do not carry one that reads zstd.
@@ -432,6 +450,23 @@ The programs are not signed: Windows shows "Windows protected your PC" (press **
 - **On the console**, the self-update of MaxPack for the console only takes that repository's
   releases, checks the download against their `SHA256SUMS`, and stays off until the console has passed
   **Check secure connections** (it must refuse forged certificates).
+
+## What goes on the internet
+
+Nothing, from MaxPack itself:
+
+- **The window** makes no connection of its own. It does not look for new versions, sends nothing about
+  you or your games, and loads its page from inside the program. That is why Settings has no switch
+  for it: there is nothing to turn off.
+- **The command line** (`maxpack`, the engine) never goes on the internet.
+- **The links** of the window (Settings > About: Report a bug, Report a game) open in your browser, and
+  only when you click them.
+- **Windows only:** the window is drawn by Microsoft's WebView2, which Windows 10 and 11 already have.
+  If it is missing or too old, MaxPack asks before its window opens whether to install it; only if you
+  say yes does Microsoft's installer, which comes inside MaxPack, download it from Microsoft.
+
+MaxPack for the console is another program, with its own self-update: see
+[maxpack-ps5](https://github.com/DeLFuS77/maxpack-ps5).
 
 ## Documentation
 

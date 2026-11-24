@@ -6,6 +6,7 @@ package fakecore
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -26,7 +27,17 @@ import (
 //   - "no-zstd-runtime": pack writes its output and ends well, saying that what it made carries no
 //     runtime that reads zstd (runtime_without_zstd), as the real one does for a dump without one
 //     and no --runtime; verify ends well.
+//   - "priority": ends well at once, saying the priority it runs at ("priority" in its result: see
+//     NormalPriority and LowPriority).
+//   - "writes": pack and unpack write their output (in an empty folder that is there too), tell
+//     some progress and end well; verify ends well.
+//   - "bad-verify": as "writes", but verify finds a damaged file.
+//   - "info": info --json says of a game what the JSON file InfoEnv has under the name of its file
+//     or folder, and fails for any other; icon finds none.
 const Env = "MP_FAKE_CORE"
+
+// InfoEnv is the file of what "info" says of each game: {"<name>": {<info --json>}, ...}.
+const InfoEnv = "MP_FAKE_INFO"
 
 // Main acts as the engine and exits when Env says so; else it returns at once.
 func Main() {
@@ -52,6 +63,44 @@ func run(mode string, args []string) int {
 			return 0
 		}
 		return 2
+	case "priority":
+		fmt.Printf("{\"event\":\"result\",\"ok\":true,\"files_bad\":0,\"priority\":%q}\n", priority())
+		return 0
+	case "info":
+		if len(args) == 3 && args[0] == "info" && args[1] == "--json" {
+			var infos map[string]json.RawMessage
+			data, _ := os.ReadFile(os.Getenv(InfoEnv))
+			json.Unmarshal(data, &infos)
+			if info, ok := infos[filepath.Base(args[2])]; ok {
+				fmt.Println(string(info))
+				return 0
+			}
+			fmt.Fprintln(os.Stderr, "error: not a game:", args[2])
+			return 1
+		}
+		fmt.Fprintln(os.Stderr, "error: no icon")
+		return 1
+	case "writes", "bad-verify":
+		if len(args) > 0 && args[0] == "verify" {
+			if mode == "bad-verify" {
+				fmt.Println(`{"event":"result","ok":false,"files_bad":1}`)
+				return 1
+			}
+			fmt.Println(`{"event":"result","ok":true,"files_bad":0}`)
+			return 0
+		}
+		out := output(args)
+		if out == "" {
+			fmt.Fprintln(os.Stderr, "error: missing -o")
+			return 2
+		}
+		if err := writePart(out, hasArg(args, "--p5z")); err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			return 1
+		}
+		progress()
+		fmt.Println(`{"event":"result","ok":true,"original_size":10,"output_size":8}`)
+		return 0
 	case "stubborn":
 		progress()
 		time.Sleep(time.Minute)

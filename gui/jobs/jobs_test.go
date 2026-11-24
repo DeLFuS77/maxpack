@@ -660,8 +660,8 @@ func runCancelled(t *testing.T, plans []Plan, o Options) (Summary, string, strin
 	return sum, *state, *detail
 }
 
-// An engine that is killed after a cancel (it did not stop in time) leaves what it wrote; the
-// Runner takes the output back to what it was: gone if it was not there, empty if it was an
+// An engine that is killed after a cancel (it did not stop in time) leaves what it wrote apart; the
+// Runner takes it away, and the output is as it was: not there if it was not, empty if it was an
 // empty folder.
 func TestKilledEngineLeavesNothing(t *testing.T) {
 	t.Setenv(fakecore.Env, "writes-stubborn")
@@ -692,24 +692,23 @@ func TestKilledEngineLeavesNothing(t *testing.T) {
 	}
 }
 
-// When what a killed engine wrote cannot be taken away, the detail says where it is.
+// When what a killed engine wrote apart cannot be taken away, the detail says where it is.
 func TestPartialNotDeletedReported(t *testing.T) {
 	t.Setenv(fakecore.Env, "writes-stubborn")
 	shortGrace(t)
 	for _, c := range []struct {
 		mode  Mode
 		empty bool
-		match string
-	}{{ModeP5z, false, ".p5z"}, {ModeFolder, true, "eboot.bin"}} {
+	}{{ModeP5z, false}, {ModeFolder, true}} {
 		dest := t.TempDir()
 		o := Options{Mode: c.mode, Dest: dest}
 		plans := PlanCompress([]Item{item("Juego", "TEST00001", 10)}, o, newFS())
 		if c.empty {
 			os.MkdirAll(plans[0].Out, 0o755)
 		}
-		failingRemove(t, c.match)
+		failingRemove(t, ".maxpack-tmp")
 		_, state, detail := runCancelled(t, plans, o)
-		if state != StateCancelled || !strings.Contains(detail, "partial_not_deleted: "+plans[0].Out) {
+		if state != StateCancelled || !strings.Contains(detail, "tmp_not_deleted: "+plans[0].Tmp) {
 			t.Errorf("%s: %s %q", c.mode, state, detail)
 		}
 	}
@@ -802,8 +801,8 @@ func TestNoTitleIdWarned(t *testing.T) {
 	}
 }
 
-// When the engine refuses with "exists", what is at the output is not ours whatever the Runner
-// saw before: it is not removed, nor emptied. With Replace only Tmp goes.
+// When the engine refuses with "exists", what is at the output is never touched, whatever it is:
+// only what it wrote apart goes.
 func TestExistsRefusalNeverCleansOut(t *testing.T) {
 	t.Setenv(fakecore.Env, "exists")
 	for _, c := range []struct {
@@ -821,13 +820,17 @@ func TestExistsRefusalNeverCleansOut(t *testing.T) {
 		if *state != StateError || *detail != "exists" {
 			t.Errorf("%s empty=%v: %s %q", c.mode, c.empty, *state, *detail)
 		}
-		if _, err := os.Stat(plans[0].Out); err != nil {
-			t.Errorf("%s empty=%v: the foreign output disappeared: %v", c.mode, c.empty, err)
-		}
-		if c.mode == ModeFolder {
-			if _, err := os.Stat(filepath.Join(plans[0].Out, "eboot.bin")); err != nil {
-				t.Errorf("%s: the foreign file disappeared: %v", c.mode, err)
+		entries, err := os.ReadDir(plans[0].Out)
+		switch {
+		case c.empty && (err != nil || len(entries) != 0):
+			t.Errorf("%s: the empty folder was not left empty: %v %v", c.mode, entries, err)
+		case !c.empty:
+			if _, err := os.Stat(plans[0].Out); !errors.Is(err, fs.ErrNotExist) {
+				t.Errorf("%s: something was left at the output: %v", c.mode, err)
 			}
+		}
+		if _, err := os.Stat(plans[0].Tmp); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("%s empty=%v: what it wrote apart was left: %v", c.mode, c.empty, err)
 		}
 	}
 }
@@ -872,23 +875,28 @@ func TestOutStateUnreadableIsFull(t *testing.T) {
 	}
 }
 
-// With an output that cannot be looked at, a failed game takes nothing away.
-func TestUnreadableOutNotCleaned(t *testing.T) {
-	t.Setenv(fakecore.Env, "writes-stubborn")
-	shortGrace(t)
+// An output that cannot be looked at is not "nothing there": the new one does not take its place,
+// what is there stays as it is, and the new one goes.
+func TestUnreadableOutNotReplaced(t *testing.T) {
+	t.Setenv(fakecore.Env, "writes")
 	oldL := lstat
 	t.Cleanup(func() { lstat = oldL })
 	dest := t.TempDir()
 	o := Options{Mode: ModeP5z, Dest: dest}
 	plans := PlanCompress([]Item{item("Juego", "TEST00001", 10)}, o, newFS())
+	os.WriteFile(plans[0].Out, []byte("ajeno"), 0o644)
 	lstat = func(p string) (fs.FileInfo, error) {
 		if p == plans[0].Out {
 			return nil, fs.ErrPermission
 		}
 		return oldL(p)
 	}
-	runCancelled(t, plans, o)
-	if _, err := os.Stat(plans[0].Out); err != nil {
-		t.Errorf("what could not be read was deleted: %v", err)
+	on, state, detail := lastDetail()
+	(&Runner{Core: os.Args[0], OnItem: on}).Run(context.Background(), plans, o)
+	if data, _ := os.ReadFile(plans[0].Out); string(data) != "ajeno" || *state != StateError || *detail != "exists" {
+		t.Errorf("%q, %s %q", data, *state, *detail)
+	}
+	if _, err := os.Stat(plans[0].Tmp); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("the new one was left apart: %v", err)
 	}
 }

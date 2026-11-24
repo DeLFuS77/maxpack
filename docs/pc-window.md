@@ -58,13 +58,46 @@ With command-line options (`MaxPack pack ...`, `MaxPack --version`) it behaves l
 ## 2. Compress
 
 1. Drop games or folders here, or use **Add files** and **Add folder**. PS5 dump folders and `.exfat`
-   images are fine. Each game shows its title, ID, version and size. A folder that is already
+   images are fine. **Add folder** takes several folders at once (on Linux, when `zenity` is there;
+   else one at a time), and each one can be a game or a folder with games right below it; several
+   dropped at once are each taken the same way. Each game shows its title, ID, version and size. A folder that is already
    compressed (with packs) is not compressed again: it shows "it is compressed already" and is
    skipped; to check it, use **Verify**.
 2. Choose **Made for**.
 3. Choose the compression **level**, 1 to 22 (19 by default), or one of the shortcuts **Light**,
    **Medium** and **Maximum**. 20 to 22 use a lot of memory and take much longer to gain little.
 4. Choose the **Destination** and press **Compress**. Each game is verified when it finishes.
+5. If you want, tick **Delete the originals once checked** (see below).
+
+Before anything starts, MaxPack adds up what the games may take on each drive (each one at most its
+original size) and, if the queue may not fit, says so with the numbers: "up to 322.4 GB needed, 118.2
+GB free". You can choose another destination or **Start anyway**: a game that fills its drive fails,
+and its original stays as it was.
+
+While a queue runs, games you add to the same section join it: they show as **Queued**, are done after
+the others with the same options, and count in the progress, the time left and the summary at the end.
+The **✕** of a game that has not started takes it out of the queue. Games added to another section wait
+there, as before.
+
+**Every output is written apart.** The new `.p5z` or folder is written as `<name>.maxpack-tmp`, hidden
+on Windows, and verified there; only then does it take its name. Something that came to that name
+meanwhile is never replaced: the game says so and the new copy goes. If MaxPack is closed by a crash or
+a power cut in the middle, the next time it opens it offers to delete what was left apart, with its
+size; **Not now** asks again the next time.
+
+**Delete the originals once checked** (off by default; Settings has the default, and the box next to
+Compress the choice for this run): each original goes to the recycle bin (the Recycle Bin of Windows,
+the Trash of macOS, the trash of Linux), or for good if Settings says so, only once its new copy is
+made, verified and in its place. Never when decompressing or verifying, and never when anything failed
+or was cancelled.
+- Before the queue starts, MaxPack lists the originals that go, with their size, when one of them is a
+  folder or cannot go to the recycle bin. **Keep the originals** starts the queue without deleting any.
+- Some drives have no recycle bin (network folders, USB drives), and a game can be bigger than the
+  recycle bin of its drive holds (on Windows it is 5 to 10 % of the drive by default). Those are
+  kept, unless you tick "Delete for good the ones that cannot go to the recycle bin".
+- Each game says what became of its original, the summary at the end tells how much went to the
+  recycle bin (its space comes back once it is emptied), and the log of the window (`maxpack.log`, in
+  its settings folder; Settings shows where) keeps every original removed.
 
 ![MaxPack compressing, with the progress of each game](img/window-working.jpg)
 
@@ -126,7 +159,14 @@ Afterwards:
 - **Verify** reads a `.p5z` or a compressed folder and checks that it is still whole. It changes
   nothing.
 - **Details** shows what a game says: title, ID, version, sizes, files, packs and whether it carries a
-  runtime that reads zstd.
+  runtime that reads zstd. **Copy report** under each game copies a text for an issue on GitHub (see
+  [Copy report](#copy-report)).
+- **Rename**, in Check, names `.p5z` files, dump folders and `.exfat` images by what each one holds,
+  with the template of Settings > File names. Add them and each shows its new name before anything
+  changes; **Rename** applies it. A name that something else in the folder already has, two games of
+  the list that would get the same name, a file another program has open and a game that cannot be
+  read are skipped, and the row says why. Nothing is ever replaced, and the game stays in its folder.
+  A folder for the console keeps its `TITLE_ID`.
 
 ## 4. Settings
 
@@ -153,6 +193,34 @@ Afterwards:
   - If you go on without it, it warns you that the game will not start until it has ampr-emu-ng, and
     lets you go on.
 
+- **While working.** **Low priority** runs `maxpack-core` below the other programs, so the PC stays
+  usable while it works (below normal on Windows, `nice` on macOS and Linux); it goes a little slower
+  when the other programs need the processor. **Delete the originals once checked** is the default of
+  the box next to Compress, and **Delete them for good, not to the recycle bin** skips the recycle bin.
+- **File names.** The name of each `.p5z` and of each original dump unpacked comes from a template:
+  `{title}`, `{id}`, `{version}` (the one of `param.json`, such as 01.000.021) and `{region}` (USA,
+  EUR, JPN, ASIA or KOR, from the first two letters of the content ID). A bracket whose placeholders
+  are all empty goes. The default, `{title} [{id}]`, gives the names of before; the other two add the
+  version, and the region and the version. You can write your own; the preview shows what it gives with
+  a game of your lists, or with an invented one. A folder for the console keeps its `TITLE_ID`, which
+  the console looks for. The region is known for a dump folder (its `param.json`); a `.p5z` or an
+  `.exfat` image does not tell it to the window yet, so for them the bracket of the region goes.
+- **Internet.** MaxPack's window goes on the internet for nothing; see
+  [What goes on the internet](../README.md#what-goes-on-the-internet).
+- **About** has **Copy report** and the links to report a bug or a game.
+
+### Copy report
+
+A plain text for an issue on GitHub: MaxPack's version, the engine's, the system and its version, the
+CPU threads, the memory, the settings that matter (mode, level, runtime built in or your own, low
+priority, the originals, the template of the names) and, for the games it is about, what each one is,
+its sizes, its volumes and how it ended. It never has a game's name, its title ID or a path. For a
+`.p5z` (or a game just compressed) it ends with the row for the
+[compatibility list](https://github.com/DeLFuS77/maxpack-ps5/blob/main/docs/compatibility.md), with the
+sizes and the volumes filled in and a `?` for what only the console knows. **Report a bug** and **Report
+a game** open the forms of [maxpack-ps5](https://github.com/DeLFuS77/maxpack-ps5/issues) in your
+browser.
+
 ## 5. Warnings
 
 - **FAT32.** FAT32 does not take files over 4 GiB, and a `.p5z` can go over that. If the destination is
@@ -162,12 +230,13 @@ Afterwards:
     one byte): before going over, it stops, deletes what it wrote and tells you it does not fit.
 
   With an exFAT USB drive there is no limit.
-- **Space.** If the destination has less free space than the original game, it warns that it "may not
-  fit", and you can **Start anyway**. With **Replace**, the new one and the old one have to fit at the
-  same time: if they do not, that game does not start.
+- **Space.** If what the queue may take on a drive is more than is free there, MaxPack says so before
+  it starts, with the numbers, and you can choose another destination or **Start anyway**. With
+  **Replace**, the new one and the old one have to fit at the same time: if they do not, that game does
+  not start.
 - **Replace.** If the game is already at the destination, MaxPack asks before touching anything. If you
-  accept, the new one is written apart, in `<destination>.maxpack-tmp`, verified, and only then is the
-  old one set aside and deleted. If you cancel, or anything fails (for example, you pull out the USB
+  accept, the new one is written apart, in `<destination>.maxpack-tmp` (as every new one is), verified,
+  and only then is the old one set aside and deleted. If you cancel, or anything fails (for example, you pull out the USB
   drive), the old one stays intact and with no leftovers.
 - **The source is never the destination.** If they are the same, or the destination is inside the
   source game, it asks for another.

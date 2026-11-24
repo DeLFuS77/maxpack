@@ -209,7 +209,8 @@ func TestClosingLeavesTheEngineToCleanUp(t *testing.T) {
 	case <-time.After(time.Minute):
 		t.Fatal("the engine never started")
 	}
-	out := filepath.Join(dest, jobs.P5zName(item))
+	// the engine writes apart, until what it made is verified
+	out := filepath.Join(dest, jobs.P5zName(item)) + jobs.TmpSuffix
 	if _, err := os.Stat(out); err != nil {
 		t.Fatalf("the engine wrote nothing: %v", err)
 	}

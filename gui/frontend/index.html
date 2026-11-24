@@ -21,6 +21,7 @@
     <div class="group" data-t="groupCheck"></div>
     <button data-section="verify" class="tone-check"><span class="tile"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4.5 6v6c0 4.3 3.2 7.7 7.5 9 4.3-1.3 7.5-4.7 7.5-9V6z"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg></span><span><b data-t="verify"></b><small data-t="hintVerify"></small></span></button>
     <button data-section="details" class="tone-check"><span class="tile"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></svg></span><span><b data-t="details"></b><small data-t="hintDetails"></small></span></button>
+    <button data-section="rename" class="tone-check"><span class="tile"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></svg></span><span><b data-t="rename"></b><small data-t="hintRename"></small></span></button>
     <div class="side-foot">
       <button data-section="settings" class="tone-neutral side-item"><span class="tile"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h9m4 0h3M4 12h3m4 0h9M4 18h11m4 0h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></svg></span><span><b data-t="settings"></b></span></button>
       <div class="side-core" id="side-core"></div>
@@ -105,6 +106,11 @@
     </section>
 
     <section class="block" data-for="compress">
+      <label class="check top"><input id="delete-originals" type="checkbox"><span data-t="deleteOriginals"></span></label>
+      <p class="hint" id="delete-hint"></p>
+    </section>
+
+    <section class="block" data-for="compress">
       <div class="label">ampr-emu-ng</div>
       <div class="runtime" id="runtime-state"></div>
       <button id="choose-runtime" class="link" data-t="runtimeChoose"></button>
@@ -114,6 +120,13 @@
     <section class="block" data-for="verify">
       <h2 data-t="verify"></h2>
       <p class="hint" data-t="verifyHint"></p>
+    </section>
+
+    <section class="block" data-for="rename">
+      <h2 data-t="prefNames"></h2>
+      <div class="template-in-use" id="rename-template"></div>
+      <p class="hint" data-t="renameHint"></p>
+      <button id="rename-settings" class="link" data-t="renameChange"></button>
     </section>
   </aside>
 
@@ -139,8 +152,42 @@
         </div>
       </section>
       <section class="pref-group">
+        <h2 data-t="prefWork"></h2>
+        <div class="pref-item">
+          <div class="pref-text"><b id="low-name" data-t="lowPriority"></b><small data-t="lowPriorityHint"></small></div>
+          <input id="pref-low" class="switch" type="checkbox" role="switch" aria-labelledby="low-name">
+        </div>
+        <div class="pref-item">
+          <div class="pref-text"><b id="delete-name" data-t="deleteOriginals"></b><small data-t="deleteSettingHint"></small></div>
+          <input id="pref-delete" class="switch" type="checkbox" role="switch" aria-labelledby="delete-name">
+        </div>
+        <div class="pref-item sub" id="pref-forgood-row">
+          <div class="pref-text"><b id="forgood-name" data-t="deletePermanently"></b><small data-t="deletePermanentlyHint"></small></div>
+          <input id="pref-forgood" class="switch" type="checkbox" role="switch" aria-labelledby="forgood-name">
+        </div>
+        <p class="hint pref-path" id="pref-log"></p>
+      </section>
+      <section class="pref-group">
+        <h2 id="names-name" data-t="prefNames"></h2>
+        <p class="hint" data-t="namesHint"></p>
+        <div class="segmented templates" id="templates" role="radiogroup" aria-labelledby="names-name"></div>
+        <label class="template-field"><span data-t="namesCustom"></span><input id="template" type="text" spellcheck="false" autocomplete="off" maxlength="200"></label>
+        <p class="hint" data-t="namesFields"></p>
+        <p class="warning" id="template-bad" data-t="namesBad" hidden></p>
+        <dl class="about-list preview" id="name-preview"><dt data-t="forInstaller"></dt><dd id="preview-p5z"></dd><dt data-t="toOriginal"></dt><dd id="preview-original"></dd><dt data-t="toConsole"></dt><dd id="preview-folder"></dd></dl>
+      </section>
+      <section class="pref-group">
+        <h2 data-t="prefInternet"></h2>
+        <p class="hint plain" data-t="internetText"></p>
+      </section>
+      <section class="pref-group">
         <h2 data-t="prefAbout"></h2>
         <dl class="about-list"><dt>MaxPack</dt><dd id="about-version"></dd><dt>maxpack-core</dt><dd id="about-core"></dd></dl>
+        <div class="pref-item">
+          <div class="pref-text"><small data-t="reportHint"></small></div>
+          <div class="pref-buttons"><button id="pref-report" data-t="copyReport"></button></div>
+        </div>
+        <div class="pref-links"><button id="link-bug" class="link" data-t="reportBug"></button><button id="link-game" class="link" data-t="reportGame"></button></div>
         <p class="hint" data-t="legal"></p>
       </section>
     </div>
@@ -162,6 +209,7 @@
           <div class="list-warn" hidden></div>
           <dl class="facts" hidden></dl>
           <div class="note" hidden></div>
+          <button class="link report" hidden></button>
         </div>
       </div>
     </td>
@@ -214,6 +262,29 @@
   <form method="dialog" class="dialog-actions"><button value="cancel" class="quiet" data-t="cancel" autofocus></button><button value="go" class="primary" data-t="startAnyway"></button></form>
 </dialog>
 
+<!-- the originals that go once checked: what each takes and where it goes; Escape starts nothing -->
+<dialog id="delete-dialog" class="warn-dialog" aria-labelledby="delete-title" aria-describedby="delete-text">
+  <h2 id="delete-title"><svg class="warn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 2.8 19.5h18.4z"/><path d="M12 9.5v4.5M12 16.8v.2"/></svg><span data-t="deleteTitle"></span></h2>
+  <p class="muted" id="delete-text"></p>
+  <ul class="space-list" id="delete-list"></ul>
+  <label class="check" id="delete-nobin-row"><input id="delete-nobin" type="checkbox"><span id="delete-nobin-text"></span></label>
+  <form method="dialog" class="dialog-actions"><button value="cancel" class="quiet" data-t="cancel"></button><button value="keep" data-t="deleteKeep" autofocus></button><button value="delete" class="danger" data-t="deleteGo"></button></form>
+</dialog>
+
+<dialog id="space-dialog" class="warn-dialog" aria-labelledby="space-title" aria-describedby="space-text">
+  <h2 id="space-title"><svg class="warn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 2.8 19.5h18.4z"/><path d="M12 9.5v4.5M12 16.8v.2"/></svg><span data-t="spaceTitle"></span></h2>
+  <p class="muted" id="space-text" data-t="spaceText"></p>
+  <ul class="space-list" id="space-list"></ul>
+  <form method="dialog" class="dialog-actions"><button value="cancel" class="quiet" data-t="cancel"></button><button value="dest" data-t="otherDest" autofocus></button><button value="go" class="primary" data-t="startAnyway"></button></form>
+</dialog>
+
+<dialog id="leftover-dialog" class="warn-dialog" aria-labelledby="leftover-title" aria-describedby="leftover-text">
+  <h2 id="leftover-title"><svg class="warn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 2.8 19.5h18.4z"/><path d="M12 9.5v4.5M12 16.8v.2"/></svg><span data-t="leftoverTitle"></span></h2>
+  <p class="muted" id="leftover-text" data-t="leftoverText"></p>
+  <ul class="space-list" id="leftover-list"></ul>
+  <form method="dialog" class="dialog-actions"><button value="later" class="quiet" data-t="leftoverLater"></button><button value="delete" class="primary" data-t="leftoverDelete" autofocus></button></form>
+</dialog>
+
 <!-- closing the window while a queue runs: the game at work is cancelled without leaving anything
      half made, or the window stays open; Escape keeps working -->
 <dialog id="close-dialog" class="warn-dialog" aria-labelledby="close-title" aria-describedby="close-text">
@@ -233,7 +304,9 @@
   </div>
   <p class="done-saved" id="done-saved"></p>
   <div class="burst" id="done-burst" aria-hidden="true"></div>
+  <div class="done-tiles"><div><small data-t="doneTime"></small><b id="done-tile-time"></b></div><div><small data-t="doneGames"></small><b id="done-tile-games"></b></div><div><small data-t="doneSpeed"></small><b id="done-tile-speed"></b></div></div>
   <p class="muted" id="done-stats"></p>
+  <p class="done-originals" id="done-originals" hidden></p>
   <div id="done-top-block">
     <h3 data-t="doneTop"></h3>
     <ol class="done-top" id="done-top"></ol>
@@ -243,7 +316,7 @@
     <p id="done-next"></p>
   </div>
   <p class="warning" id="done-runtime" hidden></p>
-  <form method="dialog" class="dialog-actions"><button value="close" class="primary" data-t="close" autofocus></button></form>
+  <form method="dialog" class="dialog-actions"><button type="button" id="done-report" class="quiet" data-t="copyReport"></button><button value="close" class="primary" data-t="close" autofocus></button></form>
 </dialog>
 
 <div id="drop-overlay" hidden><div class="drop-card"><svg class="drop-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 19h14"/></svg><b data-t="dropHere"></b></div></div>

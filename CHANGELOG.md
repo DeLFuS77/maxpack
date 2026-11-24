@@ -6,6 +6,44 @@ All notable changes to MaxPack are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Delete the originals once checked** (PC window, off by default): in Settings, and as a box next to
+  Compress for each run. Each original goes to the recycle bin (Windows, macOS and Linux), or for good
+  with **Delete them for good, not to the recycle bin**, only once its new `.p5z` or folder is made,
+  verified and in its place; never when decompressing or verifying, nor when anything failed. Before
+  the queue starts, the originals that go are listed with their size when one is a folder or cannot go
+  to the recycle bin (a network or USB drive, a game bigger than the bin holds), which are kept unless
+  you say to delete those for good. Each game, the card at the end and `maxpack.log` say what was
+  removed.
+- **Low priority** (PC window, Settings, off by default): `maxpack-core` runs below normal priority on
+  Windows and through `nice` on macOS and Linux, so the PC stays usable while it works.
+- **The space of the whole queue** (PC window) is checked before anything starts, drive by drive, and
+  told with the numbers when it may not fit.
+- **The card at the end** (PC window) shows the time the queue took, the games done and the average
+  speed next to the space saved and what saved the most, and what became of the originals.
+- **Copy report** (PC window: Details, the card at the end, Settings > About): a plain text for a GitHub
+  issue with MaxPack's and the engine's versions, the system, CPU threads, memory, the settings that
+  matter and, for the games it is about, their kind, sizes, volumes and result, with the row for the
+  compatibility list; never a game's name, title ID or path. **Report a bug** and **Report a game** open
+  the forms of maxpack-ps5.
+- **What goes on the internet** (README): the window makes no connection of its own and the command
+  line never goes online; Settings > Internet says so. There is no switch, as there is nothing to turn
+  off.
+- **File names by a template** (PC window, Settings > File names): `{title}`, `{id}`, `{version}` and
+  `{region}` (from the content ID: USA, EUR, JPN, ASIA, KOR), a bracket left empty dropped, three
+  ready-made templates and one of your own, with a live preview. The default, `{title} [{id}]`, gives the
+  names of 1.0.1; a folder for the console keeps its `TITLE_ID`.
+- **Rename** (PC window, in Check): names `.p5z` files, dump folders and `.exfat` images by what each
+  holds, with the template of Settings, showing the new names before anything changes. A name taken, a
+  file in use or a game that cannot be read is skipped and said; nothing is replaced.
+- **Add folder takes several folders at once** (PC window): the folder dialog of Windows and of macOS
+  takes several, and so does Linux's with `zenity` (one at a time without it). Several folders dropped
+  at once were already taken; each keeps the rule of one folder.
+- **Games added while a queue runs join it** (PC window): in the same section they show as queued, are
+  done with the same options and count in the progress, the time left, the space check and the card at
+  the end; one taken out before its turn leaves the queue.
+
 ### Changed
 
 - **Packing is more than twice as fast.** The engine used to read a batch of blocks and compute
@@ -35,6 +73,15 @@ All notable changes to MaxPack are listed here. The format follows
   because frames of several files are compressed together, up to the same limit as 1.0.1 (8 frames).
 - `tools/bench_pack.py` generates a synthetic game and compares two builds of the engine: time,
   MB/s, CPU, memory and identical output.
+
+
+- **Every output of the PC window is written apart**, not only one that replaces another: the new
+  `.p5z` or folder is written as `<name>.maxpack-tmp` (hidden on Windows), verified there by the engine,
+  and only then renamed to its name, never over something that came there meanwhile. A cancel, an error
+  or a kill takes away only what was written apart. What a crash or a power cut leaves is offered for
+  deletion the next time MaxPack opens. A folder for the console is now verified every time, not only
+  when it replaces another.
+
 
 ## [1.0.1] - 2026-11-24
 

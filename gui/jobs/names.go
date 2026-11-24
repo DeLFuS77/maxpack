@@ -77,30 +77,16 @@ func baseName(path string) string {
 	return name
 }
 
-// gameName is "<Title> [<TITLE_ID>]" with no characters that Windows refuses and at most room
-// bytes; without a title, the name of the folder or the image.
-func gameName(it Item, room int) string {
-	title := cleanTitle(it.Name)
-	if title == "" {
-		title = cleanTitle(baseName(it.Path))
-	}
-	suffix := ""
-	id := cleanTitle(it.TitleID)
-	if id != "" && !strings.Contains(title, id) {
-		suffix = " [" + id + "]"
-	}
-	title = cut(title, room-len(suffix))
-	if title == "" {
-		title = "game"
-	}
-	return title + suffix
+// P5zName is the name of the .p5z of a game by the default template: "<Title> [<TITLE_ID>].p5z".
+func P5zName(it Item) string { return P5zNameAs(it, DefaultTemplate) }
+
+// P5zNameAs is the name of the .p5z of a game by a template.
+func P5zNameAs(it Item, template string) string {
+	return nameIn(it, template, maxName-len(".p5z")) + ".p5z"
 }
 
-// P5zName is the name of the .p5z of a game: "<Title> [<TITLE_ID>].p5z".
-func P5zName(it Item) string { return gameName(it, maxName-len(".p5z")) + ".p5z" }
-
-// folderName is the name of the folder of an unpacked original: "<Title> [<TITLE_ID>]".
-func folderName(it Item) string { return gameName(it, maxName) }
+// folderName is the name of the folder of an unpacked original by a template.
+func folderName(it Item, template string) string { return nameIn(it, template, maxName) }
 
 // idName is the name of the folder of a game made for the console: its TITLE_ID.
 func idName(it Item) string {

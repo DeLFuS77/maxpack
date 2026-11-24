@@ -298,6 +298,47 @@ label.check { display: flex; align-items: center; gap: 8px; cursor: pointer; mar
 .about-list dd { margin: 0; overflow-wrap: anywhere; }
 .about-list dd.bad { color: var(--bad); }
 
+/* the choices of 1.0.2: switches, a choice under another, the templates of the names and their
+   preview, the links of About */
+input.switch { appearance: none; -webkit-appearance: none; flex: none; position: relative; width: 38px; height: 22px; margin: 0; border-radius: 999px; background: var(--bar); border: 1px solid var(--line); cursor: pointer; transition: background .2s; }
+input.switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--muted); transition: transform .2s var(--ease), background .2s; }
+input.switch:checked { background: var(--accent); border-color: var(--accent); }
+input.switch:checked::after { transform: translateX(16px); background: #fff; }
+input.switch:disabled { opacity: .45; cursor: default; }
+[dir="rtl"] input.switch::after { left: auto; right: 2px; }
+[dir="rtl"] input.switch:checked::after { transform: translateX(-16px); }
+.pref-item.sub { padding-inline-start: 18px; border-inline-start: 2px solid var(--line); }
+.pref-item.sub.off .pref-text { opacity: .55; }
+.segmented.templates { flex-wrap: wrap; gap: 6px; border: none; overflow: visible; margin-top: 4px; }
+.segmented.templates button { flex: 0 1 auto; border: 1px solid var(--line); border-radius: var(--radius-small); font-family: var(--mono, ui-monospace, Consolas, monospace); direction: ltr; unicode-bidi: isolate; }
+.segmented.templates button + button { border-inline-start: 1px solid var(--line); }
+.template-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+.template-field input { font: 13px var(--mono, ui-monospace, Consolas, monospace); padding: 7px 9px; border-radius: var(--radius-small); border: 1px solid var(--line); background: var(--bg); color: var(--text); direction: ltr; }
+.template-field input:focus { outline: 2px solid var(--focus); outline-offset: 0; }
+.about-list.preview { font-size: 12px; padding: 10px 12px; border-radius: var(--radius-small); background: var(--hover); }
+.about-list.preview dd { font-weight: 600; direction: ltr; unicode-bidi: isolate; text-align: start; }
+.template-in-use { font: 13px var(--mono, ui-monospace, Consolas, monospace); padding: 6px 9px; border-radius: var(--radius-small); background: var(--bg); border: 1px solid var(--line); direction: ltr; unicode-bidi: isolate; overflow-wrap: anywhere; }
+.pref-links { display: flex; flex-wrap: wrap; gap: 4px 18px; }
+.pref-links button.link { margin-top: 0; }
+.hint.plain { margin: 0; }
+label.check.top { margin-top: 0; align-items: flex-start; }
+label.check.top input { margin-top: 2px; }
+.game button.link.report { margin-top: 6px; font-size: 12px; }
+.done-tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 12px 0 4px; }
+.done-tiles div { display: flex; flex-direction: column; gap: 2px; padding: 9px 12px; border-radius: var(--radius-small); background: color-mix(in srgb, var(--text) 6%, transparent); }
+.done-tiles small { font-size: 11px; color: var(--muted); font-weight: 600; }
+.done-tiles b { font: 800 18px/1.2 var(--display); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.done-originals { font-size: 13px; padding: 8px 12px; border-radius: var(--radius-small); background: var(--hover); }
+.dialog-actions #done-report { margin-inline-end: auto; }
+/* a narrow window: the options go under the list, and the settings take the whole width */
+@media (max-width: 760px) {
+  main { flex-wrap: wrap; }
+  #work { flex-basis: calc(100% - 196px); }
+  aside { width: 100%; border-inline-start: none; border-top: 1px solid var(--line); }
+  .pref-item { flex-wrap: wrap; }
+  .done-tiles { grid-template-columns: 1fr 1fr; }
+}
+
 /* dialogs: they grow into place, the window behind them fades */
 dialog { max-width: 520px; width: calc(100% - 48px); padding: 22px 24px; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 24px 60px rgba(0, 0, 0, .45); }
 dialog::backdrop { background: rgba(4, 8, 16, .55); }

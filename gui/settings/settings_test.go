@@ -21,7 +21,7 @@ func useFolder(t *testing.T) string {
 
 func TestSettingsRoundtrip(t *testing.T) {
 	useFolder(t)
-	want := Settings{Lang: "en", Theme: "dark", Runtime: `C:\emu\runtime.elf`, LastDest: `D:\Juegos`, Mode: "folder", Level: 7}
+	want := Settings{Lang: "en", Theme: "dark", Runtime: `C:\emu\runtime.elf`, LastDest: `D:\Juegos`, Mode: "folder", Level: 7, NameTemplate: "{title} [{id}]"}
 	if err := Save(want); err != nil {
 		t.Fatal(err)
 	}
@@ -138,5 +138,31 @@ func TestBaseLang(t *testing.T) {
 	}
 	if got := (Settings{Lang: "ja"}).EffectiveLang(); got != "ja" {
 		t.Errorf("the choice is not the language: %q", got)
+	}
+}
+
+// The choices of 1.0.2 are kept, and off by default: deleting the originals once checked (to the
+// recycle bin unless for good), low priority, and the names of the files, today's by default.
+func TestSettingsOfTheQueue(t *testing.T) {
+	useFolder(t)
+	got, err := Load()
+	if err != nil || got.DeleteOriginals || got.DeletePermanently || got.LowPriority || got.NameTemplate != "{title} [{id}]" {
+		t.Fatalf("defaults: %+v, %v", got, err)
+	}
+	want := Defaults()
+	want.DeleteOriginals, want.DeletePermanently, want.LowPriority = true, true, true
+	want.NameTemplate = "{title} [{id}] [{region}] [v{version}]"
+	if err := Save(want); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := Load(); err != nil || got != want {
+		t.Fatalf("%+v, %v; expected %+v", got, err, want)
+	}
+	// a template that is not one goes back to the default
+	for _, bad := range []string{"", "   ", "{name}", "game", "{title}/{id}"} {
+		want.NameTemplate = bad
+		if got := want.Normalize(); got.NameTemplate != "{title} [{id}]" {
+			t.Errorf("%q: %q", bad, got.NameTemplate)
+		}
 	}
 }

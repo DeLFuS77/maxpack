@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/DeLFuS77/maxpack/gui/core"
+	"github.com/DeLFuS77/maxpack/gui/internal/system"
 )
 
 // removeAll is how leftovers are deleted (a variable so the tests can make it fail).
@@ -28,6 +29,7 @@ var (
 // The states of a game in the queue.
 const (
 	StateWaiting   = "waiting"
+	StateQueued    = "queued" // added to a queue that runs, waiting for its turn
 	StatePacking   = "packing"
 	StateVerifying = "verifying"
 	StateUnpacking = "unpacking"
@@ -45,20 +47,37 @@ type TopItem struct {
 
 // Summary is what a queue did. NoZstdRuntime are the folders done that will not start until given
 // a libSceAmpr.sprx that reads zstd (they have none, or one that does not); a .p5z is never one.
+// Trashed, Deleted and Kept are the originals that went to the recycle bin, were deleted for good
+// or stayed because their drive has no bin (with Options.Originals), and TrashedSize and
+// DeletedSize what they take.
 type Summary struct {
 	Done, Failed, Skipped, Cancelled int
 	NoZstdRuntime                    int
 	Saved                            uint64
 	Top                              []TopItem
 	Duration                         time.Duration
+	Trashed, Deleted, Kept           int
+	TrashedSize, DeletedSize         uint64
+}
+
+// Journal keeps what a queue writes apart while it works (the new one of a game while it is made,
+// and an old one it replaced that could not be deleted), so what a crash or a power cut leaves is
+// found at the next start (see Leftovers).
+type Journal interface {
+	Add(path string)
+	Remove(path string)
 }
 
 // Runner runs the plans one at a time. OnEvent gets the progress of the engine for the game
-// i of the plans; OnItem, each change of its state, and with an error or a skip, why.
+// i of the plans; OnItem, each change of its state, and with an error or a skip, why. Journal,
+// when there is one, is told what is written apart; Log gets a line for each original removed or
+// kept.
 type Runner struct {
 	Core    string
 	OnEvent func(i int, e core.Event)
 	OnItem  func(i int, state, detail string)
+	Journal Journal
+	Log     func(line string)
 }
 
 func (r *Runner) item(i int, state, detail string) {
@@ -67,9 +86,32 @@ func (r *Runner) item(i int, state, detail string) {
 	}
 }
 
-// engine runs one command of the engine; ok is whether it said so.
-func (r *Runner) engine(ctx context.Context, i int, args []string) (result core.Event, ok bool, failure string) {
-	result, code, err := core.Run(ctx, r.Core, args, func(e core.Event) {
+func (r *Runner) log(format string, args ...any) {
+	if r.Log != nil {
+		r.Log(fmt.Sprintf(format, args...))
+	}
+}
+
+// keep tells the journal a path written apart, and forget that it is gone.
+func (r *Runner) keep(path string) {
+	if r.Journal != nil {
+		r.Journal.Add(path)
+	}
+}
+
+func (r *Runner) forget(path string) {
+	if _, err := lstat(path); r.Journal != nil && errors.Is(err, fs.ErrNotExist) {
+		r.Journal.Remove(path)
+	}
+}
+
+// engine runs one command of the engine; ok is whether it said so. onEvent, when given, sees
+// each line first.
+func (r *Runner) engine(ctx context.Context, i int, args []string, o Options, onEvent func(core.Event)) (result core.Event, ok bool, failure string) {
+	result, code, err := core.RunWith(ctx, r.Core, args, core.RunOptions{Low: o.LowPriority}, func(e core.Event) {
+		if onEvent != nil {
+			onEvent(e)
+		}
 		if r.OnEvent != nil {
 			r.OnEvent(i, e)
 		}
@@ -97,17 +139,35 @@ func number(e core.Event, key string) uint64 {
 	return uint64(n)
 }
 
+// outcome is how a game ended: its state, why, what it saved and what became of its original.
+type outcome struct {
+	saved         uint64
+	state, detail string
+	original      originalFate
+}
+
 // Run does the plans in order: a game is packed and then verified (or unpacked, or only
 // verified, as o.Mode says), and the next one begins whatever happened to it. A plan with a
-// Block is skipped. With Replace the new one is made in Tmp, verified, and only then put in
-// place of the old one, which stays whole if anything fails or is cancelled.
+// Block is skipped. Every game is made apart, in Tmp, verified, and only then takes its name (with
+// Replace, the place of the old one, which stays whole if anything fails or is cancelled). With
+// o.Originals, the original of a game compressed goes once its new one is in its place.
 func (r *Runner) Run(ctx context.Context, plans []Plan, o Options) Summary {
+	return r.RunQueue(ctx, NewQueue(plans), o)
+}
+
+// RunQueue is Run with a queue that may take more games while it runs (see Queue): each one goes
+// as the ones that were there, and one taken out before its turn is neither done nor counted.
+func (r *Runner) RunQueue(ctx context.Context, q *Queue, o Options) Summary {
 	started := time.Now()
 	var sum Summary
-	for i := range plans {
+	for i, n := 0, q.Len(); i < n; i++ {
 		r.item(i, StateWaiting, "")
 	}
-	for i, p := range plans {
+	for {
+		i, p, more := q.take()
+		if !more {
+			break
+		}
 		switch {
 		case p.Block != "":
 			sum.Skipped++
@@ -118,17 +178,27 @@ func (r *Runner) Run(ctx context.Context, plans []Plan, o Options) Summary {
 			r.item(i, StateCancelled, "")
 			continue
 		}
-		saved, state, detail := r.one(ctx, i, p, o)
-		r.item(i, state, detail)
-		switch state {
+		end := r.one(ctx, i, p, o)
+		r.item(i, end.state, end.detail)
+		switch end.state {
 		case StateOK:
 			sum.Done++
-			if hasPart(detail, "runtime_without_zstd") {
+			if hasPart(end.detail, "runtime_without_zstd") {
 				sum.NoZstdRuntime++
 			}
-			sum.Saved += saved
-			if saved > 0 {
-				sum.Top = append(sum.Top, TopItem{Name: p.Item.Name, TitleID: p.Item.TitleID, Saved: saved})
+			sum.Saved += end.saved
+			if end.saved > 0 {
+				sum.Top = append(sum.Top, TopItem{Name: p.Item.Name, TitleID: p.Item.TitleID, Saved: end.saved})
+			}
+			switch end.original.how {
+			case originalTrashed:
+				sum.Trashed++
+				sum.TrashedSize += end.original.size
+			case originalDeleted:
+				sum.Deleted++
+				sum.DeletedSize += end.original.size
+			case originalKept:
+				sum.Kept++
 			}
 		case StateCancelled:
 			sum.Cancelled++
@@ -144,51 +214,55 @@ func (r *Runner) Run(ctx context.Context, plans []Plan, o Options) Summary {
 	return sum
 }
 
-// one does a plan; it gives what it saved, the state it ended in and why if it was not ok.
-func (r *Runner) one(ctx context.Context, i int, p Plan, o Options) (saved uint64, state, detail string) {
+// writesFolder tells whether the output of a mode is a folder (else it is a .p5z).
+func writesFolder(mode Mode) bool { return mode != ModeP5z }
+
+// one does a plan.
+func (r *Runner) one(ctx context.Context, i int, p Plan, o Options) outcome {
+	fail := func(state, detail string) outcome { return outcome{state: state, detail: detail} }
 	if o.Mode == ModeVerify {
 		r.item(i, StateVerifying, "")
-		_, ok, failure := r.engine(ctx, i, p.Args)
-		return 0, endState(ok, failure), failure
+		_, ok, failure := r.engine(ctx, i, p.Args, o, nil)
+		return fail(endState(ok, failure), failure)
 	}
 	// the drive may be gone (a USB taken out): say so instead of making its folders again
 	if info, err := os.Stat(o.Dest); err != nil || !info.IsDir() {
-		return 0, StateError, "dest_missing"
+		return fail(StateError, "dest_missing")
 	}
-	target := p.Out
-	if p.Tmp != "" {
-		target = p.Tmp
-		// a leftover of an earlier run: if it cannot go, say so, not "exists" from the engine
-		if err := removeAll(p.Tmp); err != nil {
-			return 0, StateError, "tmp_not_deleted: " + p.Tmp + ": " + err.Error()
-		}
+	if p.Tmp == "" {
+		p.Tmp = p.Out + TmpSuffix
 	}
-	// what the output was before: anything that does not end well takes it back to that, whoever
-	// wrote it (the engine for its own failures, but not when it is killed, nor for a verification
-	// that fails). With Replace the new one is made in Tmp, which goes; else what was not there
-	// goes, and an empty folder is emptied. An output with something in it is never touched: the
-	// engine does not write in one. When it cannot be taken back, why goes with the detail.
-	before := outState(p.Out)
+	r.keep(p.Tmp)
+	defer r.forget(p.Tmp)
+	// a leftover of an earlier run: if it cannot go, say so, not "exists" from the engine
+	if err := removeAll(p.Tmp); err != nil {
+		return fail(StateError, "tmp_not_deleted: "+p.Tmp+": "+err.Error())
+	}
+	// anything that does not end well takes away what was written apart, whoever wrote it (the
+	// engine for its own failures, but not when it is killed, nor for a verification that fails):
+	// what is at Out is never touched. When it cannot be taken away, why goes with the detail
 	discard := func(detail string) string {
-		var err error
-		code, path := "partial_not_deleted", p.Out
-		switch {
-		case p.Tmp != "":
-			code, path, err = "tmp_not_deleted", p.Tmp, removeAll(p.Tmp)
-		case before == outMissing:
-			err = removeAll(p.Out)
-		case before == outEmpty:
-			err = emptyFolder(p.Out)
-		default:
-			return detail
+		if err := removeAll(p.Tmp); err != nil {
+			return detail + "; tmp_not_deleted: " + p.Tmp + ": " + err.Error()
 		}
-		if err == nil {
-			return detail
-		}
-		return detail + "; " + code + ": " + path + ": " + err.Error()
+		return detail
 	}
 	if err := os.MkdirAll(filepath.Dir(p.Out), 0o755); err != nil {
-		return 0, StateError, "io: " + err.Error()
+		return fail(StateError, "io: "+err.Error())
+	}
+	// what is made is hidden until it is verified and has its name: a folder is made here (the
+	// engine writes in an empty one), a .p5z as soon as the engine tells its first progress
+	hidden := false
+	if writesFolder(o.Mode) {
+		if err := os.Mkdir(p.Tmp, 0o755); err != nil {
+			return fail(StateError, "io: "+err.Error())
+		}
+		hidden = system.SetHidden(p.Tmp, true) == nil
+	}
+	hide := func(core.Event) {
+		if !hidden {
+			hidden = system.SetHidden(p.Tmp, true) == nil
+		}
 	}
 
 	working, compress := StateUnpacking, o.Mode == ModeP5z || o.Mode == ModeFolder
@@ -196,13 +270,9 @@ func (r *Runner) one(ctx context.Context, i int, p Plan, o Options) (saved uint6
 		working = StatePacking
 	}
 	r.item(i, working, "")
-	result, ok, failure := r.engine(ctx, i, p.Args)
+	result, ok, failure := r.engine(ctx, i, p.Args, o, hide)
 	if !ok {
-		// "exists": what is at Out is not the engine's, nor ours: only Tmp (ours) is taken away
-		if failure == "exists" && p.Tmp == "" {
-			return 0, endState(false, failure), failure
-		}
-		return 0, endState(false, failure), discard(failure)
+		return fail(endState(false, failure), discard(failure))
 	}
 	// a folder made with a runtime that does not read zstd will not start: said, and it goes on. A
 	// .p5z is not: MaxPack for the console puts its own ampr-emu-ng in when it plays one
@@ -210,35 +280,51 @@ func (r *Runner) one(ctx context.Context, i int, p Plan, o Options) (saved uint6
 	if bad, _ := result.Raw["runtime_without_zstd"].(bool); bad && o.Mode == ModeFolder {
 		notes = append(notes, "runtime_without_zstd")
 	}
-	// "unpack --original" already checks every file against its SHA-256; "unpack --folder"
-	// only writes the files, so what replaces an old copy is verified first
-	if compress || (o.Mode == ModeConsole && p.Tmp != "") {
+	// "unpack --original" checks every file against its SHA-256 as it writes it; the others are
+	// verified by the engine before they take their name
+	saved := uint64(0)
+	if o.Mode != ModeOriginal {
 		r.item(i, StateVerifying, "")
-		_, ok, failure = r.engine(ctx, i, []string{"verify", target})
+		_, ok, failure = r.engine(ctx, i, []string{"verify", p.Tmp}, o, nil)
 		if !ok {
 			state := endState(false, failure)
 			if failure != "cancelled" {
 				failure = "verify_failed: " + failure
 			}
-			return 0, state, discard(failure)
+			return fail(state, discard(failure))
 		}
 		if original, output := number(result, "original_size"), number(result, "output_size"); compress && original > output {
 			saved = original - output
 		}
 	}
 	if ctx.Err() != nil {
-		return 0, StateCancelled, discard("cancelled")
+		return fail(StateCancelled, discard("cancelled"))
 	}
-	if p.Tmp != "" {
+	system.SetHidden(p.Tmp, false)
+	if len(p.Replace) > 0 {
 		leftover, err := swap(p.Out, p.Tmp)
 		if err != nil {
-			return 0, StateError, discard("swap_failed: " + err.Error())
+			return fail(StateError, discard("swap_failed: "+err.Error()))
 		}
 		if leftover {
-			notes = append(notes, "old_not_deleted: "+p.Out+".maxpack-old")
+			r.keep(p.Out + OldSuffix)
+			notes = append(notes, "old_not_deleted: "+p.Out+OldSuffix)
+		}
+	} else if err := place(p.Out, p.Tmp); err != nil {
+		if errors.Is(err, errInTheWay) {
+			return fail(StateError, discard("exists"))
+		}
+		return fail(StateError, discard("io: "+err.Error()))
+	}
+	end := outcome{saved: saved, state: StateOK}
+	if compress && o.Originals != OriginalsKeep && !p.KeepOriginal {
+		end.original = r.removeOriginal(p, o)
+		if end.original.note != "" {
+			notes = append(notes, end.original.note)
 		}
 	}
-	return saved, StateOK, strings.Join(notes, "; ")
+	end.detail = strings.Join(notes, "; ")
+	return end
 }
 
 // What an output is before a game starts.
@@ -260,24 +346,6 @@ func outState(path string) int {
 		return outEmpty
 	}
 	return outFull
-}
-
-// emptyFolder takes away what is in a folder, and leaves the folder; the first error, if any.
-func emptyFolder(path string) error {
-	entries, err := os.ReadDir(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	var first error
-	for _, entry := range entries {
-		if err := removeAll(filepath.Join(path, entry.Name())); err != nil && first == nil {
-			first = err
-		}
-	}
-	return first
 }
 
 // hasPart tells whether a detail ("code; code: path; ...") has the code.

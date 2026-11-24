@@ -36,6 +36,8 @@ const queues = ["compress", "decompress", "verify"];
 const writes = ["compress", "decompress"];
 const ended = ["ok", "error", "skipped", "cancelled"];
 const working = ["packing", "verifying", "unpacking"];
+// the states of a game of a queue that did not start: there from the start, or added while it runs
+const notStarted = ["waiting", "queued"];
 // the shortcuts of the level, as in NXPress: the level each one sets, and the ones it covers
 const presets = [[3, 1, 6], [12, 7, 14], [19, 15, 22]];
 // what each section takes, as the empty list says it: [type, its text or none]
@@ -44,8 +46,10 @@ const takes = {
   decompress: [[".p5z", ""]],
   verify: [[".p5z", ""], ["", "typePacked"]],
   details: [["", "typeDump"], [".exfat", ""], [".p5z", ""]],
+  rename: [["", "typeDump"], [".exfat", ""], [".p5z", ""]],
 };
-const defaults = { Lang: "", Theme: "system", Runtime: "", LastDest: "", Mode: "p5z", Level: 19 };
+const defaultTemplate = "{title} [{id}]";
+const defaults = { Lang: "", Theme: "system", Runtime: "", LastDest: "", Mode: "p5z", Level: 19, DeleteOriginals: false, DeletePermanently: false, LowPriority: false, NameTemplate: defaultTemplate };
 
 const $ = id => document.getElementById(id);
 const windows = /win/i.test(navigator.platform || navigator.userAgent || "");
@@ -59,7 +63,10 @@ const state = {
   settings: Object.assign({}, defaults),
   setup: null,
   unpackTo: load("unpackTo", "original") === "console" ? "console" : "original",
-  lists: { compress: [], decompress: [], verify: [], details: [] },
+  lists: { compress: [], decompress: [], verify: [], details: [], rename: [] },
+  // whether this run of Compress deletes the originals once checked: what Settings says, until
+  // it is changed next to Compress
+  deleteOriginals: false,
   // the queue running, or the last one: its section, mode and games in the order of the queue
   job: null,
   busy: false,
@@ -122,8 +129,9 @@ const pathKey = path => (windows ? String(path).toLowerCase() : String(path));
 
 function newRow(path, section) {
   const tr = $("row-template").content.firstElementChild.cloneNode(true);
-  const row = { path, section, game: null, error: "", state: "", detail: "", step: "", phase: "", offset: 0, done: 0, total: 0, out: "", outSize: 0, homebrew: false, warnings: [], replacing: false, tr };
+  const row = { path, section, game: null, error: "", state: "", detail: "", step: "", phase: "", offset: 0, done: 0, total: 0, out: "", outSize: 0, homebrew: false, warnings: [], renameTo: "", renameBlock: "", tr };
   tr.querySelector(".remove button").addEventListener("click", () => removeRow(row));
+  tr.querySelector(".report").addEventListener("click", () => copyReport([row], row.section));
   // the entrance of a row and the pop of what it saved play once: a row put back in the list
   // (every render puts them all back) does not play them again
   tr.addEventListener("animationend", event => {
@@ -148,7 +156,16 @@ function nextDescribe() {
     describing++;
     go.call(row.section === "details" ? "Details" : "Describe", row.path)
       .then(game => { row.game = game; }, error => { row.error = message(error); })
-      .finally(() => { describing--; paintRow(row); paintSummary(); paintStart(); nextDescribe(); });
+      .finally(() => {
+        describing--;
+        paintRow(row);
+        paintSummary();
+        paintStart();
+        // a game added to the section whose queue runs joins it; one of Rename shows its new name
+        if (row.game && running() && state.job.section === row.section && !state.job.rows.includes(row)) join(row);
+        if (row.section === "rename") planRenames();
+        nextDescribe();
+      });
   }
 }
 
@@ -198,7 +215,7 @@ async function addSent(files) {
 // Compress or Decompress by what they are, as the files given to MaxPack
 async function dropped(paths) {
   showDrop(false);
-  if (state.section === "verify" || state.section === "details") {
+  if (state.section === "verify" || state.section === "details" || state.section === "rename") {
     if (!await expandAndAdd(paths, state.section)) toast(t("dropNothing"));
     return;
   }
@@ -209,7 +226,20 @@ async function dropped(paths) {
 }
 
 function removeRow(row) {
-  if (running() && state.job.rows.includes(row)) return;
+  const job = state.job;
+  if (running() && job.rows.includes(row)) {
+    if (!notStarted.includes(row.state)) return;
+    // not started yet: out of the queue, then out of the list
+    go.call("Unqueue", job.section, job.rows.indexOf(row)).then(out => {
+      if (!out) return;
+      row.unqueued = true;
+      dropRow(row);
+    }, error => toast(message(error)));
+    return;
+  }
+  dropRow(row);
+}
+function dropRow(row) {
   const list = state.lists[row.section];
   const at = list.indexOf(row);
   if (at >= 0) list.splice(at, 1);
@@ -225,11 +255,11 @@ function clearList() {
 
 // ---- how far a game is -------------------------------------------------------------------------
 
-// the steps of a game in a queue of a mode, each a part of its bar
+// the steps of a game in a queue of a mode, each a part of its bar: what is made is verified
+// before it takes its name, but the original dump, which the engine checks as it writes it
 function stepsOf(row, mode) {
-  if (mode === "p5z" || mode === "folder") return ["packing", "verifying"];
+  if (mode === "p5z" || mode === "folder" || mode === "console") return [mode === "console" ? "unpacking" : "packing", "verifying"];
   if (mode === "verify") return ["verifying"];
-  if (mode === "console" && row.replacing) return ["unpacking", "verifying"];
   return ["unpacking"];
 }
 // how far the step at work is, from 0 to 1: the phases of a step follow one another (copying the
@@ -244,10 +274,12 @@ function rowShare(row, mode) {
   const steps = stepsOf(row, mode), index = steps.indexOf(row.step);
   return index < 0 ? 0 : (index + stepShare(row)) / steps.length;
 }
+// the games of a queue, without the ones taken out of it before their turn
+const inQueue = job => job.rows.filter(row => row && !row.unqueued);
 // how far the queue is (never going back), and the seconds left at the speed of the engine
 function progressOf(job) {
   let whole = 0, done = 0;
-  for (const row of job.rows) {
+  for (const row of inQueue(job)) {
     const weight = stepsOf(row, job.mode).length * Math.max(1, row.game ? row.game.OriginalSize : 1);
     whole += weight;
     done += rowShare(row, job.mode) * weight;
@@ -352,13 +384,22 @@ function paintRow(row) {
   if (!sizes.hidden) sizes.textContent = size(game.OriginalSize) + " → " + size(row.outSize);
   where.hidden = !row.out;
   if (row.out) where.textContent = t("madeAt")(row.out);
+  if (row.section === "rename") {
+    const to = row.renameTo && !row.renameBlock && row.state !== "ok" ? baseName(row.renameTo) : "";
+    const now = row.state === "ok" ? baseName(row.path) : "";
+    where.hidden = !to && !now;
+    where.textContent = to ? t("renameTo")(to) : now ? t("renamedAs")(now) : "";
+  }
+  const report = tr.querySelector(".report");
+  report.hidden = row.section !== "details" || !game;
+  report.textContent = t("copyReport");
 
   const warnings = rowWarnings(row), warn = tr.querySelector(".list-warn");
   warn.hidden = !warnings.length;
   warn.textContent = warnings.join(" · ");
 
   const note = tr.querySelector(".note");
-  const said = row.error || (row.detail && row.detail !== "cancelled" ? detailText(row.detail) : "");
+  const said = row.error || (row.detail && row.detail !== "cancelled" ? detailText(row.detail) : row.section === "rename" && row.renameBlock && row.state !== "ok" ? detailText(row.renameBlock) : "");
   note.hidden = !said;
   note.textContent = said;
   note.className = "note " + (row.error || row.state === "error" ? "bad" : "warn");
@@ -371,6 +412,7 @@ function paintState(row) {
   const badge = tr.querySelector(".badge");
   badge.hidden = !row.state;
   badge.className = "badge " + (ended.includes(row.state) ? row.state : working.includes(row.state) ? "work" : "waiting");
+  if (row.section === "rename") badge.hidden = !ended.includes(row.state);
   badge.textContent = row.state ? t("state_" + row.state) : "";
   // the bar: a part for each step, the ones done full, the one at work filling up
   const segs = tr.querySelector(".segs"), step = tr.querySelector(".step");
@@ -393,7 +435,7 @@ function paintState(row) {
   const savedText = smaller ? t("smallerBy")(Math.round((1 - row.outSize / game.OriginalSize) * 100)) : "";
   if (savedText && !saved.textContent) saved.classList.add("pop");
   saved.textContent = savedText;
-  tr.querySelector(".remove button").disabled = running() && job.rows.includes(row);
+  tr.querySelector(".remove button").disabled = running() && job.rows.includes(row) && !notStarted.includes(row.state);
 }
 
 // ---- the page ----------------------------------------------------------------------------------
@@ -401,6 +443,7 @@ function paintState(row) {
 function setSection(section) {
   state.section = section;
   render();
+  if (section === "settings") previewNames(state.settings.NameTemplate || defaultTemplate);
 }
 
 function paintTexts() {
@@ -465,6 +508,9 @@ function paintOptions() {
   const section = state.section, s = state.settings;
   document.querySelectorAll("#options [data-for]").forEach(block => { block.hidden = !block.dataset.for.split(" ").includes(section); });
   $("options").hidden = section === "details" || section === "settings";
+  $("delete-originals").checked = state.deleteOriginals;
+  $("delete-hint").textContent = state.deleteOriginals ? t(s.DeletePermanently ? "deleteForGood" : "deleteToBin") : "";
+  $("rename-template").textContent = s.NameTemplate || defaultTemplate;
   const mode = s.Mode === "folder" ? "folder" : "p5z";
   for (const input of document.querySelectorAll('input[name="made-for"]')) input.checked = input.value === mode;
   for (const input of document.querySelectorAll('input[name="unpack-to"]')) input.checked = input.value === state.unpackTo;
@@ -516,6 +562,29 @@ function paintSettings() {
   $("pref-runtime-choose").textContent = runtimeInUse() ? t("runtimeChooseOther") : t("choose");
   $("pref-runtime-clear").textContent = builtIn ? t("runtimeUseBuiltIn") : t("forget");
   $("pref-runtime-clear").hidden = !s.Runtime;
+  $("pref-low").checked = !!s.LowPriority;
+  $("pref-delete").checked = !!s.DeleteOriginals;
+  $("pref-forgood").checked = !!s.DeletePermanently;
+  $("pref-forgood").disabled = !s.DeleteOriginals;
+  $("pref-forgood-row").classList.toggle("off", !s.DeleteOriginals);
+  $("pref-log").textContent = setup && setup.logFile ? t("logAt")(setup.logFile) : "";
+  const templates = (setup && setup.templates) || [defaultTemplate];
+  if ($("templates").children.length !== templates.length) {
+    $("templates").replaceChildren(...templates.map(template => {
+      const button = document.createElement("button");
+      button.setAttribute("role", "radio");
+      button.dataset.template = template;
+      button.textContent = template;
+      button.addEventListener("click", () => setTemplate(template));
+      return button;
+    }));
+  }
+  const template = s.NameTemplate || defaultTemplate;
+  for (const button of $("templates").children) {
+    button.classList.toggle("on", button.dataset.template === template);
+    button.setAttribute("aria-checked", button.dataset.template === template);
+  }
+  if (document.activeElement !== $("template")) $("template").value = template;
   $("about-version").textContent = setup ? setup.version : "—";
   $("about-core").textContent = !setup ? "—" : coreText(setup) || setup.coreVersion;
   $("about-core").classList.toggle("bad", !!(setup && setup.coreError));
@@ -525,10 +594,11 @@ function paintSettings() {
 
 function paintStart() {
   const section = state.section, list = state.lists[section] || [];
-  const start = $("start");
-  start.hidden = !queues.includes(section) || running();
-  start.textContent = queues.includes(section) ? t(section) : "";
-  start.disabled = state.busy || !go.has() || !!(state.setup && state.setup.coreError) || !list.some(row => row.game);
+  const start = $("start"), acts = queues.includes(section) || section === "rename";
+  start.hidden = !acts || (running() && section !== "rename");
+  start.textContent = acts ? t(section) : "";
+  start.disabled = state.busy || !go.has() || !!(state.setup && state.setup.coreError) || !list.some(row => row.game)
+    || (section === "rename" && (running() || !list.some(row => row.renameTo && !row.renameBlock && row.state !== "ok")));
   $("cancel").hidden = !running();
   $("cancel").disabled = state.cancelling;
   for (const id of ["add-files", "add-folder", "empty-files", "empty-folder"]) $(id).disabled = !go.has();
@@ -539,8 +609,8 @@ function paintSummary() {
   const job = state.job, bar = $("total-bar");
   if (running()) {
     const { share, left } = progressOf(job);
-    const finished = job.rows.filter(row => ended.includes(row.state)).length;
-    $("summary-text").textContent = t("working")(finished, job.rows.length, Math.floor(share * 100));
+    const rows = inQueue(job), finished = rows.filter(row => ended.includes(row.state)).length;
+    $("summary-text").textContent = t("working")(finished, rows.length, Math.floor(share * 100));
     bar.hidden = false;
     bar.firstElementChild.style.transform = "scaleX(" + share + ")";
     $("status").textContent = state.cancelling ? t("cancelling")
@@ -604,6 +674,32 @@ function applyTheme() {
   const theme = state.settings.Theme;
   if (theme === "light" || theme === "dark") document.documentElement.dataset.theme = theme;
   else document.documentElement.removeAttribute("data-theme");
+}
+
+// the template of the names: kept when it is one, and what it gives shown with a game of the lists
+function setTemplate(template) {
+  keep({ NameTemplate: template });
+  $("template").value = template;
+  render();
+  previewNames(template);
+  planRenames();
+}
+// the game of the preview: the first read of the section open, else of any list, else an invented one
+function previewGame() {
+  const lists = [state.lists[state.section] || [], ...Object.values(state.lists)];
+  for (const list of lists) for (const row of list) if (row.game) return itemOf(row);
+  return null;
+}
+let previewAsked = 0;
+async function previewNames(template) {
+  const asked = ++previewAsked;
+  const preview = await go.call("NamePreview", template, previewGame()).catch(() => null);
+  if (!preview || asked !== previewAsked) return;
+  $("preview-p5z").textContent = preview.P5z;
+  $("preview-original").textContent = preview.Original;
+  $("preview-folder").textContent = preview.Folder;
+  $("template-bad").hidden = !preview.Error;
+  return preview;
 }
 
 async function chooseDest() {
@@ -716,7 +812,8 @@ async function startQueue() {
   if (state.busy || !queues.includes(section)) return;
   const rows = readyRows(section);
   if (!rows.length) { toast(t("nothingToDo")); return; }
-  const opts = { Mode: modeOf(section), Dest: "", Level: Number(state.settings.Level) || 19, Runtime: state.settings.Runtime || "", ContinueFat32: false, Replace: [] };
+  const opts = { Mode: modeOf(section), Dest: "", Level: Number(state.settings.Level) || 19, Runtime: state.settings.Runtime || "", ContinueFat32: false, Replace: [],
+    DeleteOriginals: section === "compress" && state.deleteOriginals, DeleteNoBin: false };
   if (writes.includes(section)) {
     opts.Dest = state.settings.LastDest || await chooseDest();
     if (!opts.Dest) return;
@@ -725,7 +822,7 @@ async function startQueue() {
   // stays busy until job:done (which may even come before Start answers)
   state.busy = true;
   render();
-  let job = null, started = false;
+  let job = null, started = false, again = "";
   try {
     const plans = await plan(section, rows, opts);
     if (!plans) return;
@@ -756,8 +853,22 @@ async function startQueue() {
       going.push(n);
     }
     if (!going.length) { toast(t("nothingToDo")); return; }
-    // what to know before it starts: it may not fit, two games to one place
-    const told = w => w === "may_not_fit" || w === "duplicate_target" || w === "no_title_id";
+    // the originals that go once checked: said with what each takes and where it goes
+    if (opts.DeleteOriginals) {
+      const answer = await askOriginals(going.map(n => plans[n]), opts);
+      if (answer === "cancel") return;
+      if (answer === "keep") opts.DeleteOriginals = false;
+    }
+    // the space of the whole queue, by drive, before anything starts
+    const short = await go.call("Space", section, going.map(n => rows[n]).map(itemOf), opts).catch(() => []);
+    if (short && short.length) {
+      $("space-list").replaceChildren(...short.map(drive => line(ltr(drive.Root), t("spaceLine")(size(drive.Need), size(drive.Free)))));
+      const answer = await ask($("space-dialog"));
+      if (answer === "dest") { again = await chooseDest(); return; }
+      if (answer !== "go") return;
+    }
+    // what to know before it starts: two games to one place, no ID (the space was told above)
+    const told = w => w === "duplicate_target" || w === "no_title_id";
     const warned = going.filter(n => (plans[n].Warnings || []).some(told));
     if (warned.length) {
       $("warn-list").replaceChildren(...warned.map(n => line(plans[n].Item.Name, plans[n].Warnings.filter(told).map(w => t("warn_" + w)).join(" · "))));
@@ -765,10 +876,11 @@ async function startQueue() {
     }
     // the games left out are said in the list; the others wait for their turn
     for (const [row, detail] of skipped) Object.assign(row, { state: "skipped", detail, out: "", outSize: 0, warnings: [] });
-    job = { section, mode: opts.Mode, dest: opts.Dest, runtime: opts.Runtime || builtInRuntime(), rows: going.map(n => rows[n]), shown: 0, rate: 0 };
+    job = { section, mode: opts.Mode, dest: opts.Dest, runtime: opts.Runtime || builtInRuntime(), rows: going.map(n => rows[n]), shown: 0, rate: 0,
+      opts: Object.assign({}, opts, { Replace: [] }), deletes: opts.DeleteOriginals, early: {} };
     for (const n of going) {
       Object.assign(rows[n], { state: "waiting", detail: "", step: "", phase: "", offset: 0, done: 0, total: 0, out: "", outSize: 0,
-        warnings: plans[n].Warnings || [], replacing: (plans[n].Replace || []).length > 0 });
+        warnings: plans[n].Warnings || [] });
     }
     job.running = true;
     state.job = job;
@@ -784,12 +896,80 @@ async function startQueue() {
     }
     render();
   }
+  // another destination was chosen for the space: the queue is planned again with it
+  if (again && !started) startQueue();
+}
+
+// askOriginals says which originals go once checked, and asks: "delete", "keep" or "cancel". It
+// asks when one of them is a folder, or cannot go to the recycle bin (the user says whether those
+// are deleted for good: opts.DeleteNoBin); an image that goes to the bin is not asked about.
+async function askOriginals(plans, opts) {
+  const forGood = !!state.settings.DeletePermanently;
+  const noBin = plans.filter(p => p.NoBin);
+  if (!plans.some(p => p.Item.Kind === "folder") && !noBin.length) return "delete";
+  $("delete-text").textContent = t(forGood ? "deleteTextGood" : "deleteTextBin");
+  $("delete-list").replaceChildren(...plans.map(p => line(p.Item.Name, size(p.SourceSize || p.Item.OriginalSize) + " · " + (p.NoBin ? t("noBin_" + p.NoBin) : t(forGood ? "goesForGood" : "goesToBin")))));
+  $("delete-nobin-row").hidden = !noBin.length;
+  $("delete-nobin").checked = false;
+  $("delete-nobin-text").textContent = t("deleteNoBin")(noBin.length);
+  const answer = await ask($("delete-dialog"));
+  if (answer === "delete" && opts) opts.DeleteNoBin = $("delete-nobin").checked;
+  return answer;
+}
+
+// The games added to the section whose queue runs join it, a few at a time: with its options, as
+// queued, and counted in its totals, its time left and its summary. When the queue takes the
+// originals away, the user is asked about theirs; the space of the queue is told again.
+const toJoin = [];
+let joinTimer = 0;
+function join(row) {
+  if (!toJoin.includes(row)) toJoin.push(row);
+  clearTimeout(joinTimer);
+  joinTimer = setTimeout(joinQueue, 250);
+}
+async function joinQueue() {
+  const job = state.job;
+  if (!running() || job.joining) return;
+  const rows = toJoin.splice(0).filter(row => row.game && state.lists[job.section].includes(row) && !job.rows.includes(row)
+    && row.state !== "ok" && !(job.section === "compress" && row.game.Packed) && !(job.section === "verify" && row.game.Kind === "folder" && !row.game.Packed));
+  if (!rows.length) return;
+  job.joining = true;
+  try {
+    let keepOriginals = false;
+    if (job.deletes) {
+      const plans = await go.call("Plan", job.section, rows.map(itemOf), Object.assign({}, job.opts, { DeleteOriginals: true }));
+      const opts = { DeleteNoBin: false };
+      const answer = await askOriginals(plans, opts);
+      if (answer === "cancel" || !running()) return;
+      keepOriginals = answer === "keep" || plans.some(p => p.NoBin && !opts.DeleteNoBin);
+    }
+    const first = await go.call("Append", job.section, rows.map(itemOf), [], keepOriginals);
+    rows.forEach((row, n) => {
+      job.rows[first + n] = row;
+      Object.assign(row, { state: "queued", detail: "", step: "", phase: "", offset: 0, done: 0, total: 0, out: "", outSize: 0, warnings: [], unqueued: false });
+      // what the window told of it before the page knew its place
+      for (const event of job.early[first + n] || []) onItem(event);
+    });
+    toast(t("queuedAdded")(rows.length));
+    const short = await go.call("Space", job.section, [], job.opts).catch(() => []);
+    if (short && short.length) toast(t("spaceQueued")(ltr(short[0].Root), size(short[0].Need), size(short[0].Free)));
+  } catch (error) {
+    // the queue ended meanwhile: they stay in the list, to start with the button
+  } finally {
+    job.joining = false;
+    render();
+    if (toJoin.length) joinQueue();
+  }
 }
 
 // ---- what the window tells of a queue -----------------------------------------------------------
 
 function onItem(event) {
   const job = state.job, row = job && job.rows[event.i];
+  if (job && !row && job.running && !job.summary) {
+    (job.early[event.i] = job.early[event.i] || []).push(event);
+    return;
+  }
   if (!row) return;
   if (working.includes(event.state) && event.state !== row.step) Object.assign(row, { step: event.state, phase: "", offset: 0, done: 0, total: 0 });
   row.state = event.state;
@@ -834,7 +1014,18 @@ function showDone(job, summary) {
   $("done-saved").hidden = !summary.Saved;
   $("done-saved").textContent = summary.Saved ? t("saved")(summary.Saved) : "";
   const seconds = Math.round((summary.Duration || 0) / 1e9);
-  $("done-stats").textContent = summaryLine(summary) + " · " + time(seconds);
+  $("done-stats").textContent = summaryLine(summary);
+  // the time it took, the games done, and how fast it went through them on average
+  const through = inQueue(job).filter(row => row.state === "ok" && row.game).reduce((sum, row) => sum + row.game.OriginalSize, 0);
+  $("done-tile-time").textContent = time(seconds);
+  $("done-tile-games").textContent = String(summary.Done || 0);
+  $("done-tile-speed").textContent = seconds > 0 && through ? t("speed")(size(through / seconds)) : "—";
+  const originals = [];
+  if (summary.Trashed) originals.push(t("doneInBin")(summary.TrashedSize));
+  if (summary.Deleted) originals.push(t("doneDeleted")(summary.DeletedSize));
+  if (summary.Kept) originals.push(t("doneKept")(summary.Kept));
+  $("done-originals").hidden = !originals.length;
+  $("done-originals").textContent = originals.join(" ");
   const top = (summary.Top || []).map(game => {
     const item = document.createElement("li");
     const name = document.createElement("span"), saved = document.createElement("b");
@@ -930,6 +1121,77 @@ function nextStep(job) {
   return t("nextMove")(folders.length === 1 ? folders[0] : job.dest);
 }
 
+// a game as a report tells it: what it is, its sizes and how it ended, never its name, ID or path
+// (the window leaves them out); a game of Details says how it ended in another list
+function gameReport(row) {
+  const game = row.game || {};
+  let ran = row;
+  if (!row.state) {
+    for (const section of queues) {
+      const other = state.lists[section].find(r => r.state && pathKey(r.path) === pathKey(row.path));
+      if (other) { ran = other; break; }
+    }
+  }
+  return { Kind: game.Kind || "", Packed: !!game.Packed, OriginalSize: game.OriginalSize || 0, InstallSize: game.InstallSize || 0,
+    P5zSize: game.P5zSize || 0, OutSize: ran.outSize || 0, Volumes: game.Volumes || 0, Files: game.Files || 0,
+    HasZstdRuntime: !!game.HasZstdRuntime, HasRuntime: !!game.HasRuntime, State: ran.state || "", Detail: ran.detail || "", Out: ran.out || "" };
+}
+function copyReport(rows, section, mode) {
+  go.call("CopyReport", { Section: section || "", Mode: mode || "", Games: rows.map(gameReport) })
+    .then(() => toast(t("reportCopied")), error => toast(message(error)));
+}
+
+// ---- Rename ----------------------------------------------------------------------------------------
+
+// planRenames asks the window the new name of each game of Rename, by the template of Settings
+let renamesAsked = 0;
+async function planRenames() {
+  const rows = state.lists.rename.filter(row => row.game);
+  const asked = ++renamesAsked;
+  if (!rows.length) return;
+  const plans = await go.call("RenamePlan", rows.map(itemOf)).catch(() => null);
+  if (!plans || asked !== renamesAsked) return;
+  rows.forEach((row, n) => {
+    if (row.state === "ok" && plans[n].Block === "same_name") return;
+    Object.assign(row, { renameTo: plans[n].To || "", renameBlock: plans[n].Block || "", state: "", detail: "" });
+  });
+  if (state.section === "rename") render();
+}
+
+// renameAll names the games of Rename as shown; a name taken, a file in use or a game that cannot
+// be read is skipped and said
+async function renameAll() {
+  const rows = state.lists.rename.filter(row => row.game && row.renameTo && !row.renameBlock);
+  if (!rows.length || running()) { toast(t("renameNone")); return; }
+  state.busy = true;
+  render();
+  try {
+    const results = await go.call("Rename", rows.map(itemOf));
+    let renamed = 0;
+    results.forEach((result, n) => {
+      const row = rows[n];
+      if (result.State === "ok") {
+        renamed++;
+        // the game is at its new name, in every list that has it
+        for (const list of Object.values(state.lists)) {
+          for (const other of list) {
+            if (pathKey(other.path) !== pathKey(result.From)) continue;
+            other.path = result.To;
+            if (other.game) other.game = Object.assign({}, other.game, { Path: result.To });
+          }
+        }
+      }
+      Object.assign(row, { state: result.State, detail: result.State === "ok" ? "" : result.Detail });
+    });
+    toast(t("renamed")(renamed));
+  } catch (error) {
+    toast(message(error));
+  } finally {
+    state.busy = false;
+    render();
+  }
+}
+
 // closing the window while a queue runs, asked by the window: the game at work is cancelled and
 // the window closes, or it goes on
 function askClose() {
@@ -980,7 +1242,23 @@ function wire() {
   $("add-folder").addEventListener("click", chooseFolder);
   $("empty-folder").addEventListener("click", chooseFolder);
   $("clear").addEventListener("click", clearList);
-  $("start").addEventListener("click", startQueue);
+  $("start").addEventListener("click", () => (state.section === "rename" ? renameAll() : startQueue()));
+  $("delete-originals").addEventListener("change", () => { state.deleteOriginals = $("delete-originals").checked; render(); });
+  $("pref-low").addEventListener("change", () => keep({ LowPriority: $("pref-low").checked }));
+  $("pref-delete").addEventListener("change", () => { keep({ DeleteOriginals: $("pref-delete").checked }); state.deleteOriginals = $("pref-delete").checked; render(); });
+  $("pref-forgood").addEventListener("change", () => { keep({ DeletePermanently: $("pref-forgood").checked }); render(); });
+  // a template of one's own is kept once it is one; meanwhile the preview says what it gives
+  $("template").addEventListener("input", () => previewNames($("template").value));
+  $("template").addEventListener("change", async () => {
+    const template = $("template").value.trim();
+    const preview = await previewNames(template);
+    if (preview && !preview.Error) setTemplate(template);
+  });
+  $("rename-settings").addEventListener("click", () => setSection("settings"));
+  $("pref-report").addEventListener("click", () => copyReport([], ""));
+  $("done-report").addEventListener("click", () => { const job = state.job; if (job) copyReport(inQueue(job), job.section, job.mode); });
+  $("link-bug").addEventListener("click", () => go.call("OpenLink", "bug").catch(error => toast(message(error))));
+  $("link-game").addEventListener("click", () => go.call("OpenLink", "game").catch(error => toast(message(error))));
   $("cancel").addEventListener("click", () => {
     state.cancelling = true;
     paintStart();
@@ -1031,12 +1309,24 @@ async function main() {
     banner(message(error));
   }
   state.lang = chooseLanguage(state.settings.Lang);
+  state.deleteOriginals = !!state.settings.DeleteOriginals;
   tellCloseTexts();
   applyTheme();
   const setup = state.setup;
   banner(setup && setup.coreError ? (setup.coreOtherVersion ? coreText(setup) : t("coreMissing") + " " + setup.coreError) : "");
   render();
   addSent(await go.call("PendingFiles").catch(() => null));
+  offerLeftovers();
+}
+
+// what a run cut short (a crash, a power cut) left apart is offered for deletion as MaxPack opens
+async function offerLeftovers() {
+  const left = await go.call("Leftovers").catch(() => null);
+  if (!left || !left.length) return;
+  $("leftover-list").replaceChildren(...left.map(item => line(ltr(item.Path), size(item.Size))));
+  if (await ask($("leftover-dialog")) !== "delete") return;
+  const failed = await go.call("CleanLeftovers").catch(error => [message(error)]);
+  toast(failed && failed.length ? t("leftoverFailed")(failed.length) + " " + failed.join("; ") : t("leftoverDone"));
 }
 
 if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", main);

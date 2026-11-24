@@ -51,7 +51,7 @@ func textKeys(t *testing.T, lang string) map[string]bool {
 // the phases of its progress, the warnings of a plan and the codes of a detail (why a game
 // failed or was skipped), with the ones the page gives itself.
 func pageCodes() []string {
-	states := []string{jobs.StateWaiting, jobs.StatePacking, jobs.StateVerifying, jobs.StateUnpacking,
+	states := []string{jobs.StateWaiting, jobs.StateQueued, jobs.StatePacking, jobs.StateVerifying, jobs.StateUnpacking,
 		jobs.StateOK, jobs.StateError, jobs.StateSkipped, jobs.StateCancelled}
 	warnings := []string{"fat32", "needs_runtime", "may_not_fit", "duplicate_target", "no_title_id"}
 	details := []string{
@@ -61,6 +61,11 @@ func pageCodes() []string {
 		"dest_missing", "tmp_not_deleted", "partial_not_deleted", "old_not_deleted", "swap_failed",
 		"runtime_without_zstd",
 		"verify_failed", "files_bad", "exit", "cancelled", "io",
+		// what became of an original once checked
+		"original_trashed", "original_deleted", "original_kept_no_bin", "original_kept_too_big",
+		"original_kept_too_long", "original_not_removed",
+		// Rename
+		"same_name", "name_taken", "duplicate_target", "cannot_read", "in_use", "gone",
 		// the engine
 		"bad_input", "too_big",
 		// the page: skipped by the user, a game that cannot go, and anything else
@@ -130,9 +135,14 @@ for (const code of codes) {
       if (/undefined|NaN|\[object/.test(text)) say(code + "." + key + "(" + args.join(", ") + ") gives " + text);
     }
   }
-  // the placeholders of a text with a fixed form are the same as in English: ${…} is not left in a string
+  // the placeholders of a text with a fixed form are the same as in English: ${…} is not left in a
+  // string (the ones of the template of the names, {title} {id} {version} {region}, are its words)
   for (const [key, value] of Object.entries(table)) {
-    if (typeof value === "string" && /\$\{|\{[A-Za-z_]+\}/.test(value)) say(code + "." + key + " has a placeholder left in it");
+    if (typeof value === "string" && /\$\{|\{(?!(?:title|id|version|region)\})[A-Za-z_]+\}/.test(value)) say(code + "." + key + " has a placeholder left in it");
+  }
+  // the texts that name the placeholders of the template say all four, as they are
+  for (const key of ["namesFields"]) {
+    for (const name of ["{title}", "{id}", "{version}", "{region}"]) if (!String(table[key]).includes(name)) say(code + "." + key + " lost " + name);
   }
   // names that are never translated stay as they are in the texts that say them
   for (const key of Object.keys(en)) {
@@ -489,7 +499,7 @@ func TestPageSections(t *testing.T) {
 			}
 		}
 	})
-	for _, section := range []string{"compress", "decompress", "verify", "details", "settings"} {
+	for _, section := range []string{"compress", "decompress", "verify", "details", "rename", "settings"} {
 		if !sections[section] {
 			t.Errorf("the section %s is missing", section)
 		}
@@ -503,7 +513,8 @@ func TestPageSections(t *testing.T) {
 	if cancel := ids["cancel"]; cancel == nil || cancel.Data != "button" {
 		t.Error("the cancel button is missing")
 	}
-	for _, id := range []string{"settings", "options", "files", "done-dialog", "replace-dialog", "fat32-dialog", "runtime-dialog", "block-dialog", "warn-dialog", "close-dialog"} {
+	for _, id := range []string{"settings", "options", "files", "done-dialog", "replace-dialog", "fat32-dialog", "runtime-dialog", "block-dialog", "warn-dialog", "close-dialog",
+		"delete-dialog", "space-dialog", "leftover-dialog", "delete-originals", "pref-low", "pref-delete", "pref-forgood", "template", "pref-report", "done-report"} {
 		if ids[id] == nil {
 			t.Errorf("#%s is missing", id)
 		}

@@ -90,7 +90,9 @@ The `.p5z` stays on its USB drive or its disk. It is not installed.
 2. Open MaxPack on the PC and drop your games on **Compress**.
 3. In **Made for**, leave **MaxPack installer**.
 4. Pick the **Destination**: the root of an exFAT USB drive, or a folder on the PC.
-5. Press **Compress**. Each game is verified when it finishes and ends up as `<Title> [<TITLE_ID>].p5z`.
+5. If you want the originals gone once their copy is checked, tick **Delete the originals once
+   checked** (to the recycle bin; Settings can make it for good).
+6. Press **Compress**. Each game is verified when it finishes and ends up as `<Title> [<TITLE_ID>].p5z`.
 6. If you did not save them on the USB drive already, copy the `.p5z` files to it. Leave them in the
    root, or in `homebrew/`.
 7. Plug the USB drive into the PS5.
@@ -179,7 +181,8 @@ The sidebar has four work sections and Settings. Everything is explained, with s
 ### Compress ([details](pc-window.md#2-compress))
 
 1. Drop the games on the window, or use **Add files** or **Add folder**. Dump folders and `.exfat`
-   images are fine. **Add folder** takes one game, or a folder with games right below it.
+   images are fine. **Add folder** takes several folders at once, and each one can be a game or a
+   folder with games right below it.
 2. In **Made for**, choose "MaxPack installer" (one `.p5z`) or "Play from the USB" (a folder in
    `homebrew/`).
 3. Pick the **Destination**.
@@ -190,10 +193,14 @@ The sidebar has four work sections and Settings. Everything is explained, with s
 
 What it does by itself:
 - A folder that is already compressed is skipped ("it is compressed already").
-- Each game is verified when it finishes.
+- Each game is written apart (`<name>.maxpack-tmp`) and verified, and only then takes its name.
+- Before it starts, it checks that the whole queue fits on the destination drive, and says so with the
+  numbers if it may not.
+- Games you add to Compress while it works join the queue.
 - The PC does not go to sleep while there is work, and progress also shows on the taskbar (Windows) or
   in the Dock (macOS).
-- At the end it says how much was saved and what to do next.
+- At the end it says how much was saved, how long it took, what saved the most and what to do next;
+  **Copy report** there copies a text for an issue, with no game names.
 - **Cancel** stops the game in progress, deletes what it had written and leaves the destination as it
   was.
 
@@ -210,6 +217,14 @@ Reads a `.p5z` or a compressed folder and checks that it is still whole. It chan
 ### Details
 
 Shows the title, ID, version, sizes, files, packs and whether it carries a runtime that reads zstd.
+**Copy report** under a game copies a text for an issue on GitHub, without its name or ID.
+
+### Rename
+
+Names `.p5z` files, dump folders and `.exfat` images by what each holds, with the template of
+Settings > File names (for example `{title} [{id}] [{region}] [v{version}]`). The new names show before
+anything changes; **Rename** applies them. A name already taken, a file in use or a game that cannot be
+read is skipped and said; nothing is replaced.
 
 ### Settings ([details](pc-window.md#4-settings))
 
@@ -217,6 +232,15 @@ Language (11 to choose from, or **System**), theme (System, Light or Dark) and t
 that lack one: the ampr-emu-ng that comes with MaxPack ("Built in: ampr-emu-ng v0.5.1-maxpack.1"), or a
 `libSceAmpr.sprx` you pick with **Choose another…**; **Use the built-in one** goes back to it. MaxPack
 only accepts a `libSceAmpr.sprx` that reads zstd.
+
+- **While working:** **Low priority** (the engine runs below the other programs, so the PC stays
+  usable), **Delete the originals once checked** (off by default) and **Delete them for good, not to
+  the recycle bin**. What is removed is written in `maxpack.log`, in the settings folder.
+- **File names:** the template of the names of the `.p5z` files and the originals unpacked, with
+  `{title}`, `{id}`, `{version}` and `{region}`, three ready-made ones and a preview. `{title} [{id}]`
+  is the default, the names of before. A folder for the console keeps its `TITLE_ID`.
+- **Internet:** MaxPack's window goes on the internet for nothing.
+- **About:** the versions, **Copy report**, and the links to report a bug or a game.
 
 ## 5. MaxPack on the console
 
@@ -694,6 +718,20 @@ What you see: the window does not let you start any job.
 
 What to do: put next to MaxPack the `maxpack-core` that came with it. The easiest way is to reinstall
 MaxPack or to unzip the whole portable zip again.
+
+### Copies left by a run that did not end
+
+If MaxPack was closed by a crash or a power cut while it worked, it left the copy it was making apart,
+as `<name>.maxpack-tmp` (or an old one it was replacing, as `<name>.maxpack-old`). The next time it
+opens it lists them with their size and offers to delete them; they are not games you can use.
+
+### The originals stay
+
+With **Delete the originals once checked**, an original stays when its new copy failed, was cancelled
+or could not take its name, and also when it cannot go to the recycle bin: a network folder or a USB
+drive has none, and a big game may not fit in the recycle bin of its drive (on Windows it holds 5 to
+10 % of the drive by default). Tick "Delete for good the ones that cannot go to the recycle bin" before
+the queue starts, or choose **Delete them for good** in Settings.
 
 ### Cancelling
 

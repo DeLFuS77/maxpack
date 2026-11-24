@@ -146,7 +146,7 @@ static uint64_t scale(uint64_t total, uint64_t stored, uint64_t raw) {
 
 // Estimate by strata (lowercase extension) of a measurement: raw[f]/stored[f] is what was measured
 // of packable file f. Stratum with data: total · stored / measured; without data: global ratio.
-static int strata_estimate(mp_source *src, const uint32_t *packable, size_t npack,
+int mp_strata_estimate(mp_source *src, const uint32_t *packable, size_t npack,
                            const uint64_t *raw, const uint64_t *stored, uint64_t *out, mp_err *e) {
     stratum *g = NULL;
     size_t ng = 0, cap = 0;
@@ -198,7 +198,7 @@ static int extrapolate(mp_source *src, const uint32_t *packable, size_t npack,
             raw[f] = fst[f][c].raw;
             stored[f] = fst[f][c].stored;
         }
-        rc = strata_estimate(src, packable, npack, raw, stored, &est[c], e);
+        rc = mp_strata_estimate(src, packable, npack, raw, stored, &est[c], e);
     }
     free(raw);
     free(stored);
@@ -372,7 +372,7 @@ static int run_transport(mp_source *src, const uint32_t *packable, const uint64_
     x->frames = s.n;
     x->sample_bytes = s.sample_bytes;
     x->rate = s.rate;
-    if (strata_estimate(src, packable, npack, raw_f, st_f, &x->est_packed, e) != 0) goto done;
+    if (mp_strata_estimate(src, packable, npack, raw_f, st_f, &x->est_packed, e) != 0) goto done;
     if (x->sample_raw && x->threads)
         x->est_seconds = (uint64_t)llround((double)x->ns * (double)packable_bytes /
                                            (double)x->sample_raw / x->threads / 1e9);
@@ -388,8 +388,7 @@ done:
 
 // ---- v1 indices ---------------------------------------------------------------------------
 
-static uint64_t v1_index_bytes(mp_source *src, const uint32_t *packable, size_t npack,
-                               uint64_t packed_l19) {
+uint64_t mp_v1_index_bytes(mp_source *src, const uint32_t *packable, size_t npack, uint64_t packed_l19) {
     uint64_t chunks = 0, names = 0, blob = 0, files = mp_source_count(src);
     for (size_t f = 0; f < npack; f++) {
         const mp_entry *en = mp_source_entry(src, packable[f]);
@@ -517,7 +516,7 @@ int mp_analyze(const char *src_path, const mp_analyze_opts *o, mp_report *r, mp_
         r->xport_done = 1;
         r->p5z_transport = r->xport.est_packed + r->loose_compressed;
     }
-    r->v1_index_bytes = v1_index_bytes(src, packable, npack, r->est_packed[MP_CFG_V1_L19]);
+    r->v1_index_bytes = mp_v1_index_bytes(src, packable, npack, r->est_packed[MP_CFG_V1_L19]);
     r->p5z_estimate = r->est_packed[MP_CFG_V1_L19] + r->v1_index_bytes + r->loose_compressed;
     rc = 0;
     goto done;

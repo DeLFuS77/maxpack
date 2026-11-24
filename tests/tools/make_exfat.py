@@ -5,7 +5,7 @@
 Usage: make_exfat.py --out <folder>
 
 Writes basic.exfat (+ basic.manifest.tsv and basic.dirs.tsv), truncated_head.exfat,
-truncated_tail.exfat, fatloop.exfat and fake.pkg. Everything is deterministic.
+truncated_tail.exfat, fatloop.exfat, cid.exfat and fake.pkg. Everything is deterministic.
 """
 import argparse
 import os
@@ -375,6 +375,10 @@ def main():
     # copied from Linux could have them): pack must refuse before writing anything.
     w("casedup.exfat", build(basic_files() + [("x/A.bin", b"A" * 5000, None),
                                               ("x/a.bin", b"a" * 5000, None)])[0])
+    # The param.json of a console's dump also gives its content ID, whose first two letters are
+    # the region: info --json says it.
+    cid = b'{"titleId": "TEST00003", "contentId": "EP9000-TEST00003_00-MAXPACKCONTENTID", "contentVersion": "01.000.000"}'
+    w("cid.exfat", build([(p, cid, None) if p == "sce_sys/param.json" else (p, d, v) for p, d, v in basic_files()])[0])
     print("fixtures: %d files, %d folders, image of %d bytes in %s"
           % (len(files), len(dirs), len(img), args.out))
 

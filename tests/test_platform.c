@@ -175,6 +175,43 @@ MP_TEST(path_kind) {
     MP_CHECK(mp_path_kind(TMP "/kind/no-existe") == 0);
 }
 
+// A file read past the system's cache gives the bytes written and synced, in aligned pieces; what was
+// written to ask the system not to keep it reads the same.
+MP_TEST(read_uncached) {
+    mp_err e = {{0}};
+    mp_make_dirs(TMP, &e);
+    const char *path = TMP "/uncached.bin";
+    mp_remove_file(path);
+    size_t n = 3u << 20;
+    uint8_t *data = malloc(n), *raw = malloc((1u << 20) + 4096);
+    if (!data || !raw) return;
+    for (size_t i = 0; i < n; i++) data[i] = (uint8_t)((i * 2654435761u) >> 13);
+    mp_wfile *w = NULL;
+    MP_CHECK(mp_wfile_create(path, &w, &e) == 0);
+    if (!w) return;
+    MP_CHECK(mp_wfile_uncached(w) == 0);
+    MP_CHECK(mp_wfile_write(w, data, n, &e) == 0);
+    MP_CHECK(mp_wfile_sync(w, &e) == 0);
+    MP_CHECK(mp_wfile_close(w, &e) == 0);
+    uint8_t *buf = raw + (4096 - ((uintptr_t)raw & 4095)) % 4096;   // aligned to 4096
+    mp_file *f = NULL;
+    MP_CHECK(mp_file_open_read_uncached(path, &f, &e) == 0);
+    if (!f) return;
+    for (uint64_t off = 0; off < n; off += 1u << 20) {
+        size_t got = 0;
+        MP_CHECK(mp_file_pread(f, buf, 1u << 20, off, &got, &e) == 0);
+        MP_CHECK_EQ_U64(got, 1u << 20);
+        MP_CHECK(memcmp(buf, data + off, 1u << 20) == 0);
+    }
+    size_t got = 1;
+    MP_CHECK(mp_file_pread(f, buf, 1u << 20, n, &got, &e) == 0);   // at the end: nothing more
+    MP_CHECK_EQ_U64(got, 0);
+    mp_file_close(f);
+    MP_CHECK(mp_remove_file(path) == 0);
+    free(data);
+    free(raw);
+}
+
 int main(void) {
     MP_RUN(walk_lists_unicode_names);
     MP_RUN(pread_at_offsets);
@@ -183,5 +220,6 @@ int main(void) {
     MP_RUN(cond_broadcast_wakes_all);
     MP_RUN(clock_and_sleep);
     MP_RUN(path_kind);
+    MP_RUN(read_uncached);
     MP_TEST_MAIN_END();
 }

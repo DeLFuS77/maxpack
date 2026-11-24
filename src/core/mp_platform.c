@@ -119,7 +119,7 @@ struct mp_file {
     HANDLE h;
 };
 
-int mp_file_open_read(const char *path, mp_file **out, mp_err *e) {
+static int open_read(const char *path, DWORD flags, mp_file **out, mp_err *e) {
     *out = NULL;
     wchar_t *w = long_path(path);
     if (!w) {
@@ -128,7 +128,7 @@ int mp_file_open_read(const char *path, mp_file **out, mp_err *e) {
     }
     // FILE_FLAG_OVERLAPPED allows simultaneous reads from several threads with the same handle.
     HANDLE h = CreateFileW(w, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                           NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED, NULL);
+                           NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED | flags, NULL);
     free(w);
     if (h == INVALID_HANDLE_VALUE) {
         win_err(e, "cannot open", path, GetLastError());
@@ -143,6 +143,12 @@ int mp_file_open_read(const char *path, mp_file **out, mp_err *e) {
     f->h = h;
     *out = f;
     return 0;
+}
+
+int mp_file_open_read(const char *path, mp_file **out, mp_err *e) { return open_read(path, 0, out, e); }
+
+int mp_file_open_read_uncached(const char *path, mp_file **out, mp_err *e) {
+    return open_read(path, FILE_FLAG_NO_BUFFERING, out, e);
 }
 
 int mp_file_size(mp_file *f, uint64_t *out, mp_err *e) {
@@ -595,6 +601,11 @@ int mp_wfile_sync(mp_wfile *f, mp_err *e) {
     return 0;
 }
 
+int mp_wfile_uncached(mp_wfile *f) {
+    (void)f;   // reading with FILE_FLAG_NO_BUFFERING goes past what the cache keeps
+    return 0;
+}
+
 int mp_dir_list(const char *dir, mp_list_cb cb, void *ctx, mp_err *e) {
     if (mp_path_kind(dir) != 2) {
         mp_err_set(e, "not a folder: %s", dir);
@@ -780,6 +791,16 @@ int mp_file_open_read(const char *path, mp_file **out, mp_err *e) {
     }
     f->fd = fd;
     *out = f;
+    return 0;
+}
+
+int mp_file_open_read_uncached(const char *path, mp_file **out, mp_err *e) {
+    if (mp_file_open_read(path, out, e) != 0) return -1;
+#if defined(__APPLE__)
+    fcntl((*out)->fd, F_NOCACHE, 1);
+#elif defined(__linux__)
+    posix_fadvise((*out)->fd, 0, 0, POSIX_FADV_DONTNEED);   // drops the pages of the file that are clean
+#endif
     return 0;
 }
 
@@ -1139,6 +1160,15 @@ int mp_wfile_sync(mp_wfile *f, mp_err *e) {
         return -1;
     }
     return 0;
+}
+
+int mp_wfile_uncached(mp_wfile *f) {
+#if defined(__APPLE__)
+    return fcntl(f->fd, F_NOCACHE, 1) == -1 ? -1 : 0;
+#else
+    (void)f;
+    return 0;
+#endif
 }
 
 int mp_dir_list(const char *dir, mp_list_cb cb, void *ctx, mp_err *e) {

@@ -365,6 +365,111 @@ p.stderr.read()
 p.wait()
 check("control_stdin_eof_cancela", p.returncode == 130 and not os.path.exists(cdst2), str(p.returncode))
 
+# ---- analyze --levels: the levels compared on this PC ---------------------------------------------
+LEVEL_ROW = re.compile(r"^ +(\d+) +\d+\.\d\d [KMGT]?B +-?\d+\.\d % ", re.M)
+rc, out, err = run("analyze", BASIC, "--levels", "--threads", "2")
+check("levels_text", rc == 0 and LEVEL_ROW.findall(out) == ["3", "9", "15", "19"] and "Levels compared" in out
+      and '"event"' not in out, "rc=%d %s %s" % (rc, out[-600:], err[-200:]))
+lj = os.path.join(TMP, "levels.json")
+if os.path.exists(lj):
+    os.remove(lj)
+rc, out, err = run("analyze", BASIC, "--levels", "19,1,12,6", "--threads", "2", "--json", lj)
+try:
+    with open(lj, encoding="utf-8") as f:
+        lv = json.load(f)
+    rows = lv["levels"]
+    keys = {"level", "packed", "p5z_size", "folder_size", "rate", "p5z_seconds", "folder_seconds"}
+    check("levels_json", rc == 0 and [x["level"] for x in rows] == [1, 6, 12, 19] and all(keys <= set(x) for x in rows)
+          and all(0 < x["p5z_size"] < lv["original_size"] and x["rate"] > 0 and x["p5z_seconds"] >= 1 for x in rows)
+          and lv["original_size"] == lv["loose_bytes"] + lv["packable_bytes"] and lv["threads"] == 2
+          and lv["sample_rate"] == 1 and all_finite(lv) and LEVEL_ROW.findall(out) == ["1", "6", "12", "19"],
+          json.dumps(lv)[:600])
+except Exception as ex:  # noqa: BLE001
+    check("levels_json", False, repr(ex) + out[-300:] + err[-300:])
+rc, so, err = run("analyze", BASIC, "--levels", "3,19", "--threads", "2", "--progress", "json")
+try:
+    evs = json_lines(so)
+    res = last_result(evs)
+    check("levels_progress_json", rc == 0 and res.get("ok") is True and [x["level"] for x in res["levels"]] == [3, 19]
+          and [e["level"] for e in evs if e["event"] == "level"] == [3, 19] and progress_monotonic(evs)
+          and has_final_progress(evs) and all(e["event"] in ("progress", "level", "result") for e in evs)
+          and "Levels compared" in err, "rc=%d %s %s" % (rc, so[-400:], err[-200:]))
+except Exception as ex:  # noqa: BLE001
+    check("levels_progress_json", False, repr(ex) + so[-300:])
+for bad in ("0", "23", "3,,9", "3,9,"):
+    rc, _, _ = run("analyze", BASIC, "--levels", bad)
+    check("levels_bad_list_%s_exits_2" % bad, rc == 2, str(rc))
+rc, _, _ = run("analyze", BASIC, "--levels", "x")
+check("levels_extra_argument_exits_2", rc == 2, str(rc))
+rc, _, _ = run("analyze", BASIC, "--levels", "--list")
+check("levels_with_list_exits_2", rc == 2, str(rc))
+rc, so, _ = run("analyze", os.path.join(TMP, "never_there"), "--levels", "--progress", "json")
+check("levels_missing_source", rc == 1 and last_result(json_lines(so)).get("error") == "bad_input", "rc=%d %s" % (rc, so))
+p = subprocess.Popen([EXE, "analyze", BIG, "--levels", "19,20,21,22", "--threads", "1", "--progress", "json",
+                      "--control", "stdin"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+first = p.stdout.readline()
+p.stdin.write(b"cancel\n")
+p.stdin.flush()
+rest = p.stdout.read()
+p.stderr.read()
+p.wait()
+try:
+    res = last_result(json_lines((first + rest).decode("utf-8", "replace")))
+    check("levels_cancel", p.returncode == 130 and res.get("error") == "cancelled", "rc=%s %s" % (p.returncode, rest[-300:]))
+except Exception as ex:  # noqa: BLE001
+    check("levels_cancel", False, repr(ex))
+
+# ---- measure: this PC, with no game; the disk of a folder, where nothing is left ---------------------
+mdir = os.path.join(TMP, "measure_dest")
+rmtree(mdir)
+os.makedirs(mdir)
+mj = os.path.join(TMP, "measure.json")
+if os.path.exists(mj):
+    os.remove(mj)
+rc, so, err = run("measure", mdir, "--seconds", "0.2", "--progress", "json", "--json", mj)
+try:
+    evs = json_lines(so)
+    res = last_result(evs)
+    counts = [t["threads"] for t in res["trials"]]
+    disk = res["disk"]
+    with open(mj, encoding="utf-8") as f:
+        saved = json.load(f)
+    check("measure_progress_json", rc == 0 and res.get("ok") is True and res["cpu_threads"] >= 1 and res["level"] == 19
+          and counts == sorted(set(counts)) and counts[-1] == res["cpu_threads"] and res["recommended_threads"] in counts
+          and res["fastest_threads"] in counts and all(t["rate"] > 0 and t["bytes"] > 0 for t in res["trials"])
+          and [e["threads"] for e in evs if e["event"] == "trial"] == counts and progress_monotonic(evs)
+          and has_final_progress(evs) and disk["write_rate"] > 0 and disk["read_rate"] > 0 and 0 < disk["read"] <= disk["written"]
+          and os.listdir(mdir) == [] and saved["trials"] == res["trials"] and "Recommended" in err,
+          "rc=%d %s %s" % (rc, so[-500:], err[-300:]))
+except Exception as ex:  # noqa: BLE001
+    check("measure_progress_json", False, repr(ex) + so[-300:] + err[-300:])
+rc, so, err = run("measure", "--seconds", "0.1", "--level", "3")
+check("measure_text_no_folder", rc == 0 and "Measured on this PC" in so and "zstd level 3" in so and "Recommended" in so
+      and "disk of" not in so, "rc=%d %s %s" % (rc, so[-400:], err[-200:]))
+rc, so, _ = run("measure", "--seconds", "0.1", "--progress", "json")
+try:
+    check("measure_no_folder_disk_null", rc == 0 and last_result(json_lines(so))["disk"] is None, so[-300:])
+except Exception as ex:  # noqa: BLE001
+    check("measure_no_folder_disk_null", False, repr(ex))
+for name, args in (("missing_folder", [os.path.join(TMP, "never_there")]), ("file", [BASIC]), ("level_23", ["--level", "23"]),
+                   ("seconds_0", ["--seconds", "0"]), ("two_folders", [mdir, mdir]), ("unknown", ["--bogus"])):
+    rc, _, _ = run("measure", *args)
+    check("measure_%s_exits_2" % name, rc == 2, str(rc))
+p = subprocess.Popen([EXE, "measure", mdir, "--seconds", "4", "--progress", "json", "--control", "stdin"],
+                     stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+first = p.stdout.readline()
+p.stdin.write(b"cancel\n")
+p.stdin.flush()
+rest = p.stdout.read()
+p.stderr.read()
+p.wait()
+try:
+    res = last_result(json_lines((first + rest).decode("utf-8", "replace")))
+    check("measure_cancel", p.returncode == 130 and res.get("error") == "cancelled" and os.listdir(mdir) == [],
+          "rc=%s %s %s" % (p.returncode, rest[-300:], os.listdir(mdir)))
+except Exception as ex:  # noqa: BLE001
+    check("measure_cancel", False, repr(ex))
+
 mx = os.path.join(TMP, "max.p5z")
 if os.path.exists(mx):
     os.remove(mx)
@@ -472,7 +577,8 @@ check("human_output_unchanged", rc == 0 and so.startswith("verify:") and '"event
 
 rc, so, _ = run("--help")
 check("help_tiene_todas_las_ordenes", rc == 0 and all(w in so for w in ("analyze", "pack", "unpack", "verify", "info",
-                                                                        "info --json", "icon", "--capabilities")), so[:300])
+                                                                        "info --json", "icon", "--capabilities", "measure",
+                                                                        "--levels")), so[:300])
 check("help_volume_limit_para_pruebas", re.search(r"--volume-limit N .*testing", so) is not None, so[:2000])
 
 # --capabilities: what this version can do, so that the window knows whether it is its own.
@@ -480,7 +586,8 @@ rc, so, err = run("--capabilities")
 try:
     caps = json.loads(so)
     check("capabilities", rc == 0 and all(caps.get(k) is True for k in
-                                          ("progress_json", "control_stdin", "max_file_size", "info_json", "icon", "packs")),
+                                          ("progress_json", "control_stdin", "max_file_size", "info_json", "icon", "packs",
+                                           "content_id", "levels", "measure")),
           so + err)
 except Exception as ex:  # noqa: BLE001
     check("capabilities", False, repr(ex) + so[-200:] + err[-200:])
@@ -523,6 +630,20 @@ try:
     check("info_json_name", rc == 0 and d["kind"] == "folder" and d["name"] == title, repr(so))
 except Exception as ex:
     check("info_json_name", False, repr(ex) + so[-200:])
+# The content ID (its first letters are the region) of an image, the .p5z made of it and a folder;
+# "" when param.json gives none.
+CID = os.path.join(FX, "cid.exfat")
+cid_p5z = os.path.join(TMP, "cid.p5z")
+if os.path.exists(cid_p5z):
+    os.remove(cid_p5z)
+run("pack", CID, "-o", cid_p5z, "--p5z", "--threads", "2")
+for name, path, want in (("image", CID, "EP9000-TEST00003_00-MAXPACKCONTENTID"),
+                         ("p5z", cid_p5z, "EP9000-TEST00003_00-MAXPACKCONTENTID"), ("none", BASIC, ""), ("folder_none", nm, "")):
+    rc, so, err = run("info", "--json", path)
+    try:
+        check("info_json_content_id_" + name, rc == 0 and json.loads(so)["content_id"] == want, so[-300:] + err[-200:])
+    except Exception as ex:  # noqa: BLE001
+        check("info_json_content_id_" + name, False, repr(ex) + so[-200:])
 rc, so, err = run("info", "--json", os.path.join(TMP, "no_existe_nunca"))
 check("info_json_no_existe", rc == 1 and "error:" in err, "rc=%d %s" % (rc, err))
 rc, _, _ = run("info", "--json")

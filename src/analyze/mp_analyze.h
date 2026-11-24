@@ -68,4 +68,13 @@ typedef struct {
 int mp_analyze(const char *src_path, const mp_analyze_opts *o, mp_report *r, mp_err *e);
 void mp_report_free(mp_report *r);
 
+// What the packable files take, from what was measured of each: raw[f] bytes of packable[f] took
+// stored[f]. Extrapolated by strata (the files' extension, in lower case); a stratum with nothing
+// measured takes the ratio of all. Exact when everything was measured.
+int mp_strata_estimate(mp_source *src, const uint32_t *packable, size_t npack, const uint64_t *raw,
+                       const uint64_t *stored, uint64_t *out, mp_err *e);
+// The indices and headers a pack of the packable files adds (AMPRZPK1, AMPRIDX3 and the volume
+// headers), with packed bytes in its volumes.
+uint64_t mp_v1_index_bytes(mp_source *src, const uint32_t *packable, size_t npack, uint64_t packed);
+
 #endif

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -15,7 +16,9 @@
 #endif
 
 #include "mp_analyze.h"
+#include "mp_bench.h"
 #include "mp_describe.h"
+#include "mp_levels.h"
 #include "mp_p5z.h"
 #include "mp_parallel.h"
 #include "mp_pack.h"
@@ -29,6 +32,7 @@ static void usage(FILE *out) {
     fprintf(out,
             "Usage:\n"
             "  maxpack analyze <folder|image.exfat> [options]\n"
+            "  maxpack analyze <folder|image.exfat> --levels [L,L,...] [options]   compare the levels\n"
             "  maxpack pack <folder|image.exfat> -o <output> [options]\n"
             "  maxpack unpack <game.p5z> --folder|--original -o <folder> [--threads N]\n"
             "  maxpack info <game.p5z>\n"
@@ -36,6 +40,7 @@ static void usage(FILE *out) {
             "  maxpack info --play <game.p5z>   what the console needs to play it without installing (JSON)\n"
             "  maxpack icon <folder|image.exfat|game.p5z> -o <icon.png>\n"
             "  maxpack verify <game.p5z | folder> [--against <source>] [--threads N]\n"
+            "  maxpack measure [<folder>] [options]   measure this PC (and the folder's disk), with no game\n"
             "  maxpack --version\n"
             "  maxpack --capabilities   what this version can do, as JSON (for a front end)\n"
             "\n"
@@ -51,7 +56,7 @@ static void usage(FILE *out) {
             "  --volume-limit N   for testing: volumes of at most N bytes (262208 to 4294901760,\n"
             "                     default 4294901760), to get several from a small game\n"
             "\n"
-            "Options for pack, unpack and verify (for a front end):\n"
+            "Options for pack, unpack, verify, analyze --levels and measure (for a front end):\n"
             "  --progress json    one JSON line per event on stdout (the text stays on stderr)\n"
             "  --control stdin    read from stdin: the line \"cancel\" or closing the input cancels\n"
             "  Exit codes: 0 ok, 1 error, 2 usage, 130 cancelled\n"
@@ -64,7 +69,20 @@ static void usage(FILE *out) {
             "  --keep-loose GLOB  also leave whatever matches loose (can be repeated)\n"
             "  --no-dedup         skip the deduplication pass (reads the whole game)\n"
             "  --no-transport     do not measure the transport .p5z (zstd 19, long window)\n"
-            "  --list             only list the files and their class, without measuring\n");
+            "  --list             only list the files and their class, without measuring\n"
+            "\n"
+            "analyze --levels (also takes --sample, --full, --threads, --keep-loose and --json):\n"
+            "  --levels [LIST]    pack a sample at each level with the pack's own pipeline and tell the\n"
+            "                     size of the .p5z and of the folder and the time to pack the whole game\n"
+            "                     on this PC (default 3,9,15,19; levels 1 to 22 separated by commas)\n"
+            "\n"
+            "Options for measure (it packs generated data at 25, 50, 75 and 100 %% of the CPU's threads\n"
+            "and recommends the fewest threads less than 5 %% slower than the fastest):\n"
+            "  <folder>           also measure its disk (the destination): a temporary file is written\n"
+            "                     there, read back and deleted; nothing else is written\n"
+            "  --level N          zstd level, 1 to 22 (default 19)\n"
+            "  --seconds S        about how long each measure lasts, 0.1 to 60 (default 3)\n"
+            "  --json FILE        save the result as JSON\n");
 }
 
 // ---- --progress json and --control stdin -------------------------------------------------------
@@ -321,7 +339,18 @@ static int list_files(const char *src_path, const char *const *keep, size_t nkee
     return 0;
 }
 
+static int run_levels(int argc, char **argv);
+static int has_arg(int argc, char **argv, const char *a) {
+    for (int i = 0; i < argc; i++)
+        if (!strcmp(argv[i], a)) return 1;
+    return 0;
+}
+
 static int cmd_analyze(int argc, char **argv) {
+    if (has_arg(argc, argv, "--levels")) {
+        prescan_json(argc, argv);
+        return finish_cmd(run_levels(argc, argv));
+    }
     mp_analyze_opts o;
     mp_analyze_opts_default(&o);
     const char *src = NULL, *json = NULL;
@@ -398,7 +427,7 @@ static int run_pack(int argc, char **argv);
 static int run_unpack(int argc, char **argv);
 static int run_verify(int argc, char **argv);
 
-static void print_size(FILE *out, uint64_t b) {
+static void size_text(char *s, size_t cap, uint64_t b) {
     double v = (double)b;
     const char *u = "B";
     if (v >= 1e9) {
@@ -411,9 +440,241 @@ static void print_size(FILE *out, uint64_t b) {
         v /= 1e3;
         u = "KB";
     }
+    snprintf(s, cap, "%.2f %s", v, u);
+}
+
+static void print_size(FILE *out, uint64_t b) {
     char s[32];
-    snprintf(s, sizeof s, "%.2f %s", v, u);
+    size_text(s, sizeof s, b);
     fputs(s, out);
+}
+
+// A time for people: "45 s", "12 min 5 s", "2 h 7 min".
+static void duration_text(char *s, size_t cap, uint64_t sec) {
+    if (sec < 60)
+        snprintf(s, cap, "%llu s", (unsigned long long)sec);
+    else if (sec < 3600)
+        snprintf(s, cap, "%llu min %llu s", (unsigned long long)(sec / 60), (unsigned long long)(sec % 60));
+    else
+        snprintf(s, cap, "%llu h %llu min", (unsigned long long)(sec / 3600), (unsigned long long)(sec / 60 % 60));
+}
+
+// Appends to a JSON text being made in a fixed buffer; *at stays at the end (and the text is cut, never
+// overrun, if it does not fit).
+static void add_json(char *buf, size_t cap, size_t *at, const char *fmt, ...) {
+    if (*at >= cap) return;
+    va_list ap;
+    va_start(ap, fmt);
+    int n = vsnprintf(buf + *at, cap - *at, fmt, ap);
+    va_end(ap);
+    if (n > 0) *at = *at + (size_t)n < cap ? *at + (size_t)n : cap;
+}
+
+// ---- analyze --levels ----------------------------------------------------------------------------
+
+// The fields of a level, without the braces.
+static void level_json(char *buf, size_t cap, size_t *at, const mp_level_row *row) {
+    add_json(buf, cap, at,
+             "\"level\":%d,\"packed\":%llu,\"p5z_size\":%llu,\"folder_size\":%llu,\"rate\":%llu,"
+             "\"p5z_seconds\":%llu,\"folder_seconds\":%llu",
+             row->level, (unsigned long long)row->packed, (unsigned long long)row->p5z_size,
+             (unsigned long long)row->folder_size, (unsigned long long)row->rate,
+             (unsigned long long)row->p5z_seconds, (unsigned long long)row->folder_seconds);
+}
+
+// With --progress json, each level as it is measured: {"event":"level", <its fields>}.
+static void on_level_json(void *ctx, const mp_level_row *row) {
+    (void)ctx;
+    char line[512] = "{\"event\":\"level\",";
+    size_t at = strlen(line);
+    level_json(line, sizeof line, &at, row);
+    printf("%s}\n", line);
+    fflush(stdout);
+}
+
+// The fields of the comparison, for the "result" line and for --json (without the braces).
+static void levels_fields(const mp_levels_report *r, char *buf, size_t cap) {
+    size_t at = 0;
+    buf[0] = 0;
+    add_json(buf, cap, &at,
+             "\"threads\":%u,\"original_size\":%llu,\"files\":%llu,\"loose_files\":%llu,\"loose_bytes\":%llu,"
+             "\"packable_files\":%llu,\"packable_bytes\":%llu,\"sample_bytes\":%llu,\"sample_rate\":%.6g,"
+             "\"loose_compressed\":%llu,\"loose_seconds\":%llu,\"read_rate\":%llu,\"levels\":[",
+             r->threads, (unsigned long long)r->original_size, (unsigned long long)r->files,
+             (unsigned long long)r->loose_files, (unsigned long long)r->loose_bytes,
+             (unsigned long long)r->packable_files, (unsigned long long)r->packable_bytes,
+             (unsigned long long)r->sample_bytes, r->sample_rate, (unsigned long long)r->loose_compressed,
+             (unsigned long long)(r->loose_bytes ? (r->loose_ns + 999999999ull) / 1000000000ull : 0),
+             (unsigned long long)r->read_rate);
+    for (size_t i = 0; i < r->nlevels; i++) {
+        add_json(buf, cap, &at, i ? ",{" : "{");
+        level_json(buf, cap, &at, &r->rows[i]);
+        add_json(buf, cap, &at, "}");
+    }
+    add_json(buf, cap, &at, "]");
+}
+
+static void levels_text(FILE *out, const char *name, const mp_levels_report *r) {
+    char a[32], b[32], c[32];
+    size_text(a, sizeof a, r->original_size);
+    fprintf(out, "Levels compared on this PC: %s, %s in %llu files\n", name, a, (unsigned long long)r->files);
+    size_text(a, sizeof a, r->loose_bytes);
+    size_text(b, sizeof b, r->packable_bytes);
+    fprintf(out, "  %s loose (%llu files), %s to pack (%llu files)\n", a, (unsigned long long)r->loose_files, b,
+            (unsigned long long)r->packable_files);
+    size_text(a, sizeof a, r->sample_bytes);
+    size_text(c, sizeof c, r->read_rate);
+    fprintf(out, "  sample: %s of what is packed (%.1f %%)", a, 100.0 * r->sample_rate);
+    if (r->read_rate) fprintf(out, ", read at %s/s", c);
+    fprintf(out, "; %u threads\n", r->threads);
+    if (r->loose_bytes) {
+        size_text(a, sizeof a, r->loose_bytes);
+        size_text(b, sizeof b, r->loose_compressed);
+        fprintf(out, "  loose files in a .p5z: %s -> %s (zstd 19, long window)\n", a, b);
+    }
+    fprintf(out, "\n  level        .p5z    saved  time (.p5z)      folder  time (folder)\n");
+    for (size_t i = 0; i < r->nlevels; i++) {
+        const mp_level_row *row = &r->rows[i];
+        double saved = r->original_size ? 100.0 * (1.0 - (double)row->p5z_size / (double)r->original_size) : 0;
+        char t1[32], t2[32];
+        size_text(a, sizeof a, row->p5z_size);
+        size_text(b, sizeof b, row->folder_size);
+        duration_text(t1, sizeof t1, row->p5z_seconds);
+        duration_text(t2, sizeof t2, row->folder_seconds);
+        fprintf(out, "  %5d  %10s  %5.1f %%  %11s  %10s  %13s\n", row->level, a, saved, t1, b, t2);
+    }
+    fprintf(out, "  The sizes are estimated from the sample; the times are for packing the whole game on this\n"
+                 "  PC with %u threads, at the speed the sample was packed or read at.\n",
+            r->threads);
+}
+
+static int run_levels(int argc, char **argv) {
+    mp_levels_opts o;
+    mp_levels_opts_default(&o);
+    const char *src = NULL, *json = NULL;
+    const char **keep = calloc((size_t)argc + 1, sizeof *keep);
+    if (!keep) return 1;
+    int rc = 2;
+    for (int i = 0; i < argc; i++) {
+        const char *a = argv[i];
+        int has_value = i + 1 < argc;
+        int common = common_opt(argc, argv, &i);
+        if (common < 0) goto out;
+        if (common) continue;
+        if (!strcmp(a, "--levels")) {
+            // an optional list: the next argument when it is digits and commas
+            if (has_value && argv[i + 1][0] && strspn(argv[i + 1], "0123456789,") == strlen(argv[i + 1])) {
+                mp_err e = {{0}};
+                if (mp_levels_parse(argv[++i], &o, &e) != 0) {
+                    bad_usage(e.msg, NULL);
+                    goto out;
+                }
+            }
+        } else if (!strcmp(a, "--full")) {
+            o.full = 1;
+        } else if (!strcmp(a, "--sample") || !strcmp(a, "--json") || !strcmp(a, "--threads") ||
+                   !strcmp(a, "--keep-loose")) {
+            if (!has_value) {
+                bad_usage("missing value for", a);
+                goto out;
+            }
+            const char *v = argv[++i];
+            char *end = NULL;
+            if (!strcmp(a, "--json")) {
+                json = v;
+            } else if (!strcmp(a, "--keep-loose")) {
+                keep[o.nkeep++] = v;
+            } else if (!strcmp(a, "--sample")) {
+                double p = strtod(v, &end);
+                if (end && *end == '%') end++;
+                if (end == v || *end || !(p > 0.0 && p <= 100.0)) {
+                    bad_usage("--sample must be between 0 and 100 %", v);
+                    goto out;
+                }
+                o.sample_fraction = p / 100.0;
+            } else {
+                long t = strtol(v, &end, 10);
+                if (end == v || *end || t < 1 || t > 1024) {
+                    bad_usage("--threads must be between 1 and 1024", v);
+                    goto out;
+                }
+                o.threads = (unsigned)t;
+            }
+        } else if (!strcmp(a, "--list") || !strcmp(a, "--no-dedup") || !strcmp(a, "--no-transport")) {
+            bad_usage("--levels only compares the levels: it does not take", a);
+            goto out;
+        } else if (a[0] == '-' && a[1] == '-') {
+            bad_usage("unknown option", a);
+            goto out;
+        } else if (!src) {
+            src = a;
+        } else {
+            bad_usage("extra argument", a);
+            goto out;
+        }
+    }
+    if (!src) {
+        bad_usage("missing the folder or .exfat image", NULL);
+        goto out;
+    }
+    o.keep_loose = keep;
+    if (mp_path_kind(src) == 0) {
+        g_err_code = "bad_input";
+        fprintf(stderr, "error: does not exist: %s\n", src);
+        rc = 1;
+        goto out;
+    }
+    if (json && (rc = check_json_target(src, json)) != 0) goto out;
+    start_json_and_control();
+    if (g_json) o.on_level = on_level_json;
+    mp_levels_report r;
+    mp_err e = {{0}};
+    if (mp_levels_run(src, &o, &r, &e) != 0) {
+        fprintf(stderr, "\nerror: %s\n", e.msg);
+        rc = 1;
+        goto out;
+    }
+    char *name = mp_strdup(src);
+    if (name) {
+        size_t n = strlen(name);
+        while (n > 1 && (name[n - 1] == '/' || name[n - 1] == '\\')) name[--n] = 0;
+    }
+    const char *base = name ? name : src;
+    for (const char *p = base; *p; p++)
+        if (*p == '/' || *p == '\\') base = p + 1;
+    levels_text(g_json ? stderr : stdout, base, &r);
+    free(name);
+    char *fields = malloc(16384);
+    if (!fields) {
+        fprintf(stderr, "error: out of memory\n");
+        rc = 1;
+        goto out;
+    }
+    levels_fields(&r, fields, 16384);
+    rc = 0;
+    if (json) {
+        size_t n = strlen(fields);
+        char *doc = malloc(n + 4);
+        if (doc) snprintf(doc, n + 4, "{%s}\n", fields);
+        if (!doc || mp_write_file(json, doc, strlen(doc), &e) != 0) {
+            fprintf(stderr, "error: %s\n", doc ? e.msg : "out of memory");
+            rc = 1;
+        }
+        free(doc);
+    }
+    if (g_json && rc == 0) {
+        size_t n = strlen(fields);
+        char *extra = malloc(n + 2);
+        if (extra) {
+            snprintf(extra, n + 2, ",%s", fields);
+            json_result(1, NULL, extra);
+            free(extra);
+        }
+    }
+    free(fields);
+out:
+    free(keep);
+    return rc;
 }
 
 static int cmd_pack(int argc, char **argv) {
@@ -631,6 +892,8 @@ static int cmd_info_json(const char *path) {
     print_json_string(d.version);
     printf(",\"name\":");
     print_json_string(d.name);
+    printf(",\"content_id\":");
+    print_json_string(d.content_id);
     printf(",\"original_size\":%llu,\"install_size\":%llu,\"p5z_size\":%llu,\"files\":%llu",
            (unsigned long long)d.original_size, (unsigned long long)d.install_size,
            (unsigned long long)d.p5z_size, (unsigned long long)d.files);
@@ -853,6 +1116,150 @@ static int run_verify(int argc, char **argv) {
     return r.files_bad ? 1 : 0;
 }
 
+// ---- measure -------------------------------------------------------------------------------------
+
+// Appends s as a JSON string (quotes, backslashes and control characters escaped).
+static void add_json_string(char *buf, size_t cap, size_t *at, const char *s) {
+    add_json(buf, cap, at, "\"");
+    for (const unsigned char *p = (const unsigned char *)s; *p; p++) {
+        if (*p == '"' || *p == '\\') add_json(buf, cap, at, "\\%c", *p);
+        else if (*p < 0x20 || *p == 0x7f) add_json(buf, cap, at, "\\u%04x", *p);
+        else add_json(buf, cap, at, "%c", *p);
+    }
+    add_json(buf, cap, at, "\"");
+}
+
+// With --progress json, each count of threads once tried: {"event":"trial", ...}.
+static void on_trial_json(void *ctx, const mp_bench_trial *t) {
+    (void)ctx;
+    printf("{\"event\":\"trial\",\"threads\":%u,\"bytes\":%llu,\"seconds\":%.3f,\"rate\":%llu}\n", t->threads,
+           (unsigned long long)t->bytes, (double)t->ns / 1e9, (unsigned long long)t->rate);
+    fflush(stdout);
+}
+
+static void bench_fields(const mp_bench_report *r, char *buf, size_t cap) {
+    size_t at = 0;
+    buf[0] = 0;
+    add_json(buf, cap, &at, "\"cpu_threads\":%u,\"level\":%d,\"trials\":[", r->cpu_threads, r->level);
+    for (size_t i = 0; i < r->ntrials; i++)
+        add_json(buf, cap, &at, "%s{\"threads\":%u,\"bytes\":%llu,\"seconds\":%.3f,\"rate\":%llu}", i ? "," : "",
+                 r->trials[i].threads, (unsigned long long)r->trials[i].bytes, (double)r->trials[i].ns / 1e9,
+                 (unsigned long long)r->trials[i].rate);
+    add_json(buf, cap, &at, "],\"recommended_threads\":%u,\"fastest_threads\":%u,\"disk\":", r->best, r->fastest);
+    if (r->disk == 1)
+        add_json(buf, cap, &at, "{\"written\":%llu,\"write_rate\":%llu,\"read\":%llu,\"read_rate\":%llu}",
+                 (unsigned long long)r->written, (unsigned long long)r->write_rate, (unsigned long long)r->read,
+                 (unsigned long long)r->read_rate);
+    else if (r->disk == -1) {
+        add_json(buf, cap, &at, "{\"error\":");
+        add_json_string(buf, cap, &at, r->disk_error);
+        add_json(buf, cap, &at, "}");
+    } else
+        add_json(buf, cap, &at, "null");
+}
+
+static void bench_text(FILE *out, const char *dir, const mp_bench_report *r) {
+    char a[32], b[32];
+    fprintf(out, "Measured on this PC: %u threads, zstd level %d, generated data packed as a game is\n",
+            r->cpu_threads, r->level);
+    fprintf(out, "  threads        speed\n");
+    for (size_t i = 0; i < r->ntrials; i++) {
+        size_text(a, sizeof a, r->trials[i].rate);
+        fprintf(out, "  %7u  %9s/s%s\n", r->trials[i].threads, a, r->trials[i].threads == r->best ? "  <-" : "");
+    }
+    if (r->disk == 1) {
+        size_text(a, sizeof a, r->write_rate);
+        size_text(b, sizeof b, r->read_rate);
+        fprintf(out, "  disk of %s: writes at %s/s, reads at %s/s", dir, a, b);
+        size_text(a, sizeof a, r->written);
+        fprintf(out, " (%s written, then deleted)\n", a);
+    } else if (r->disk == -1) {
+        fprintf(out, "  disk of %s: not measured: %s\n", dir, r->disk_error);
+    }
+    if (r->best == r->cpu_threads)
+        fprintf(out, "Recommended: all the CPU's threads (--threads %u), the default\n", r->best);
+    else if (r->best == r->fastest)
+        fprintf(out, "Recommended: --threads %u, the fastest\n", r->best);
+    else
+        fprintf(out, "Recommended: --threads %u, less than 5 %% slower than the fastest (%u threads) with fewer\n",
+                r->best, r->fastest);
+}
+
+static int run_measure(int argc, char **argv) {
+    mp_bench_opts o;
+    mp_bench_opts_default(&o);
+    const char *dir = NULL, *json = NULL;
+    for (int i = 0; i < argc; i++) {
+        const char *a = argv[i];
+        int common = common_opt(argc, argv, &i);
+        if (common < 0) return 2;
+        if (common) {
+            continue;
+        } else if (!strcmp(a, "--level") || !strcmp(a, "--seconds") || !strcmp(a, "--json")) {
+            if (i + 1 >= argc) return bad_usage("missing value for", a);
+            const char *v = argv[++i];
+            char *end = NULL;
+            if (!strcmp(a, "--json")) {
+                json = v;
+            } else if (!strcmp(a, "--level")) {
+                long l = strtol(v, &end, 10);
+                if (end == v || *end || l < 1 || l > 22) return bad_usage("--level must be between 1 and 22", v);
+                o.level = (int)l;
+            } else {
+                double sec = strtod(v, &end);
+                if (end == v || *end || !(sec >= 0.1 && sec <= 60)) return bad_usage("--seconds must be between 0.1 and 60", v);
+                o.trial_seconds = o.disk_seconds = sec;
+            }
+        } else if (a[0] == '-' && a[1]) {
+            return bad_usage("unknown option", a);
+        } else if (!dir) {
+            dir = a;
+        } else {
+            return bad_usage("extra argument", a);
+        }
+    }
+    if (dir && mp_path_kind(dir) != 2)
+        return bad_usage(mp_path_kind(dir) ? "the folder to measure is a file" : "the folder to measure does not exist", dir);
+    if (json) {
+        char *parent = mp_full_path(json);
+        int ok = parent && mp_path_kind(json) != 2 && to_parent(parent) && mp_path_kind(parent) == 2;
+        free(parent);
+        if (!ok) return bad_usage("--json must be a file in a folder that exists", json);
+    }
+    o.dir = dir;
+    start_json_and_control();
+    if (g_json) o.on_trial = on_trial_json;
+    mp_bench_report r;
+    mp_err e = {{0}};
+    if (mp_bench_run(&o, &r, &e) != 0) {
+        fprintf(stderr, "\nerror: %s\n", e.msg);
+        return 1;
+    }
+    bench_text(g_json ? stderr : stdout, dir ? dir : "", &r);
+    char fields[4096];
+    bench_fields(&r, fields, sizeof fields);
+    int rc = 0;
+    if (json) {
+        char doc[4100];
+        snprintf(doc, sizeof doc, "{%s}\n", fields);
+        if (mp_write_file(json, doc, strlen(doc), &e) != 0) {
+            fprintf(stderr, "error: %s\n", e.msg);
+            rc = 1;
+        }
+    }
+    if (g_json && rc == 0) {
+        char extra[4100];
+        snprintf(extra, sizeof extra, ",%s", fields);
+        json_result(1, NULL, extra);
+    }
+    return rc;
+}
+
+static int cmd_measure(int argc, char **argv) {
+    prescan_json(argc, argv);
+    return finish_cmd(run_measure(argc, argv));
+}
+
 int main(int argc, char **argv) {
     mp_args_utf8(&argc, &argv);
 #ifdef _WIN32
@@ -866,7 +1273,7 @@ int main(int argc, char **argv) {
     if (argc >= 2 && strcmp(argv[1], "--capabilities") == 0) {
         // what the window needs from this version of the engine
         printf("{\"progress_json\":true,\"control_stdin\":true,\"max_file_size\":true,\"info_json\":true,"
-               "\"icon\":true,\"packs\":true}\n");
+               "\"icon\":true,\"packs\":true,\"content_id\":true,\"levels\":true,\"measure\":true}\n");
         return 0;
     }
     if (argc >= 2 && (!strcmp(argv[1], "--help") || !strcmp(argv[1], "-h") || !strcmp(argv[1], "help"))) {
@@ -879,6 +1286,7 @@ int main(int argc, char **argv) {
     if (argc >= 2 && strcmp(argv[1], "info") == 0) return cmd_info(argc - 2, argv + 2);
     if (argc >= 2 && strcmp(argv[1], "icon") == 0) return cmd_icon(argc - 2, argv + 2);
     if (argc >= 2 && strcmp(argv[1], "verify") == 0) return cmd_verify(argc - 2, argv + 2);
+    if (argc >= 2 && strcmp(argv[1], "measure") == 0) return cmd_measure(argc - 2, argv + 2);
     if (argc >= 2) return bad_usage("unknown command", argv[1]);
     usage(stderr);
     return 2;

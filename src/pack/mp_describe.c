@@ -111,6 +111,7 @@ static int describe_source(const char *path, mp_describe *d, mp_err *e) {
         size_t len = 0;
         if (read_entry(s, (size_t)pj, PARAM_MAX, &b, &len, NULL) == 0) {   // unreadable: no name
             mp_param_read((const char *)b, len, d->title_id, d->version, d->name);
+            mp_param_content_id((const char *)b, len, d->content_id);
             free(b);
         }
     }
@@ -232,6 +233,13 @@ static int describe_p5z(const char *path, mp_describe *d, mp_err *e) {
     snprintf(d->title_id, sizeof d->title_id, "%s", m->title_id);
     snprintf(d->version, sizeof d->version, "%s", m->content_version);
     snprintf(d->name, sizeof d->name, "%s", m->title_name);
+    // the manifest has no content ID: the param.json the .p5z carries gives it (unreadable: none)
+    uint8_t *pj = NULL;
+    size_t pl = 0;
+    if (p5z_slurp(p, PARAM_PATH, PARAM_MAX, &pj, &pl, NULL) == 0) {
+        mp_param_content_id((const char *)pj, pl, d->content_id);
+        free(pj);
+    }
     if (p5z_find(p, RUNTIME_PATH) >= 0) {
         uint8_t *b = NULL;
         size_t len = 0;

@@ -248,6 +248,49 @@ MP_TEST(describe_param_bom_and_padding) {
     }
 }
 
+// The content ID of param.json, whose first letters are the region, for every kind of game: a
+// folder, an .exfat image and a .p5z (from the param.json it carries, so a .p5z of before says it
+// too). A game whose param.json gives none, or has none, says "".
+MP_TEST(describe_content_id) {
+    mp_err e = {{0}};
+    mp_describe d;
+    MP_CHECK(mp_describe_path(MP_FIXTURES_DIR "/cid.exfat", &d, &e) == 0);
+    MP_CHECK_STR(d.kind, "exfat");
+    MP_CHECK_STR(d.title_id, "TEST00003");
+    MP_CHECK_STR(d.content_id, "EP9000-TEST00003_00-MAXPACKCONTENTID");
+    mpt_pack(MP_FIXTURES_DIR "/cid.exfat", TMP "/cid.p5z", 1, NULL);
+    MP_CHECK(mp_describe_path(TMP "/cid.p5z", &d, &e) == 0);
+    MP_CHECK_STR(d.kind, "p5z");
+    MP_CHECK_STR(d.content_id, "EP9000-TEST00003_00-MAXPACKCONTENTID");
+    mp_p5z *p = open_p5z(TMP "/cid.p5z");
+    if (!p) return;
+    MP_CHECK(mp_unpack_original(p, TMP "/cidf", 2, 0, &e) == 0);
+    mp_p5z_close(p);
+    MP_CHECK(mp_describe_path(TMP "/cidf", &d, &e) == 0);
+    MP_CHECK_STR(d.kind, "folder");
+    MP_CHECK_STR(d.content_id, "EP9000-TEST00003_00-MAXPACKCONTENTID");
+    // with a BOM and the padding of some tools, and an ID longer than the field: cut, never split
+    mpt_clear(TMP "/cidb");
+    char json[512];
+    snprintf(json, sizeof json, "\xef\xbb\xbf{\"titleId\":\"TEST00004\",\"contentId\":\"UP9000-TEST00004_00-%s\"}  \r\n",
+             "0123456789ABCDEF0123456789ABCDEF");
+    mpt_put_text(TMP "/cidb/sce_sys/param.json", json);
+    mpt_put_text(TMP "/cidb/eboot.bin", "x");
+    MP_CHECK(mp_describe_path(TMP "/cidb", &d, &e) == 0);
+    MP_CHECK_EQ_U64(strlen(d.content_id), sizeof d.content_id - 1);
+    MP_CHECK(!strncmp(d.content_id, "UP9000-TEST00004_00-0123456789ABCDEF", 36));
+    // none
+    MP_CHECK(mp_describe_path(MPT_BASIC, &d, &e) == 0);
+    MP_CHECK_STR(d.content_id, "");
+    mpt_pack(MPT_BASIC, TMP "/nocid.p5z", 1, NULL);
+    MP_CHECK(mp_describe_path(TMP "/nocid.p5z", &d, &e) == 0);
+    MP_CHECK_STR(d.content_id, "");
+    mpt_clear(TMP "/noparam");
+    mpt_put_text(TMP "/noparam/eboot.bin", "x");
+    MP_CHECK(mp_describe_path(TMP "/noparam", &d, &e) == 0);
+    MP_CHECK_STR(d.content_id, "");
+}
+
 MP_TEST(describe_loose_bytes) {
     mp_err e = {{0}};
     mp_describe d;
@@ -282,5 +325,6 @@ int main(void) {
     MP_RUN(describe_default_language);
     MP_RUN(describe_name_truncated_on_boundary);
     MP_RUN(describe_loose_bytes);
+    MP_RUN(describe_content_id);
     MP_TEST_MAIN_END();
 }

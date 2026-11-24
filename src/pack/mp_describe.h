@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Description of a game (folder, .exfat image or .p5z) for a front end: ID, version, name,
-// sizes, its packs and whether it carries a runtime that reads zstd. It is what `maxpack info --json` shows.
+// Description of a game (folder, .exfat image or .p5z) for a front end: ID, content ID, version,
+// name, sizes, its packs and whether it carries a runtime that reads zstd. It is what
+// `maxpack info --json` shows.
 #ifndef MP_DESCRIBE_H
 #define MP_DESCRIBE_H
 
@@ -20,6 +21,7 @@ typedef struct {
     uint64_t loose_bytes;     // .p5z: what the console extracts when playing it (roles 0, 2 and 3); the rest, 0
     uint64_t volumes;         // volumes of the packs, ampr_zstd-NNN.pak (0 if it is not packed)
     int has_runtime, has_zstd_runtime, packed;   // packed: already carries ampr_zstd.index
+    char content_id[48];      // contentId of param.json ("EP0001-PPSA10001_00-..."), "" if it gives none
 } mp_describe;
 
 // 0 if it could describe it; -1 with the reason in e.

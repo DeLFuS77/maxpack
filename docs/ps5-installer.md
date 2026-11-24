@@ -43,7 +43,7 @@ website open on a phone or a PC on your network cannot install or delete anythin
    - A folder goes to `<drive>/homebrew/<TITLE_ID>` and an image to `<drive>/homebrew/<name>`,
      identical to the original. The original is not deleted.
    - A `.ffpkg`, `.ffpfs` or `.ffpfsc` image must have the game's ID in its name, for example
-     `Silksong-PPSA12544.ffpkg`.
+     `StarfallOdyssey-PPSA01234.ffpkg`.
 3. If the game is already on the console (even as your uncompressed dump, or on another drive), the
    installer tells you what will be deleted and how much it takes, and asks for confirmation. The old
    one is deleted only when the new one is installed and verified.
@@ -101,19 +101,19 @@ What the installer stores, always outside the game folders:
 ## 6. Console checklist
 
 - [ ] Load `maxpack.elf` and open the page from the PS5 and from a phone.
-- [ ] Install Silksong (`.p5z`) from the USB drive to the internal storage. Pull the USB drive out
+- [ ] Install Starfall Odyssey (`.p5z`) from the USB drive to the internal storage. Pull the USB drive out
       halfway, plug it back in and resume with Install.
 - [ ] Have ShadowMountPlus register it and play it: start, videos, load a save game, save and 10
       minutes of play. The same with Kraken Mount (without ShadowMountPlus running).
 - [ ] Install a folder dump and a `.ffpkg` image as they are, and play them.
 - [ ] Replace a game's uncompressed dump with its `.p5z` (with confirmation).
 - [ ] Verify and uninstall.
-- [ ] Install RE Requiem (79 GB) and note how long it takes.
+- [ ] Install Iron Harbor (79 GB) and note how long it takes.
 
 ## 7. Still to check on a console
 
 - **P1. ShadowMountPlus fakelib mode. Answered: `full`.**
-  - Checked on 24 Nov 2026 on a PS5 with firmware 13.60 and ShadowMountPlus 1.7beta12, with Silksong
+  - Checked on 24 Nov 2026 on a PS5 with firmware 13.60 and ShadowMountPlus 1.7beta12, with Starfall Odyssey
     packed by MaxPack.
   - With `full` ("Full"; the per-game mode that comes by default is "Default (Full)"), ShadowMountPlus
     uses the game's `fakelib/libSceAmpr.sprx` and only adds its backport (notice "Backport applied:

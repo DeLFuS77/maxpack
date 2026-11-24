@@ -18,10 +18,10 @@ Measured on the PC at the default level (zstd 19):
 
 | Game | Original | Packed |
 |---|---|---|
-| Hollow Knight: Silksong | 8.39 GB | 2.33 GB as a `.p5z` (2.25 GB as a folder, -72.4 %) |
-| RESIDENT EVIL requiem | 133.59 GB | 79.32 GB as a `.p5z` (-40.6 % in the packs) |
+| Starfall Odyssey | 8.39 GB | 2.33 GB as a `.p5z` (2.25 GB as a folder, -72.4 %) |
+| Iron Harbor | 133.59 GB | 79.32 GB as a `.p5z` (-40.6 % in the packs) |
 
-Both were packed, verified and (Silksong) rebuilt bit for bit with zero failures. Silksong also started,
+Both were packed, verified and (Starfall Odyssey) rebuilt bit for bit with zero failures. Starfall Odyssey also started,
 saved and loaded a save game on a real PS5 (firmware 13.60, ShadowMountPlus 1.7beta12). See
 [docs/reports/phase1.md](docs/reports/phase1.md).
 

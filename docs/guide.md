@@ -30,8 +30,8 @@ MaxPack stores the game in zstd packs (format `AMPRZPK1`). On the console, **amp
 while you play, so the game is never fully decompressed. Only the files the system needs as plain
 files stay loose: executables and modules, `sce_sys/`, `fakelib/` and little else.
 
-For reference, on the PC Hollow Knight: Silksong went from 8.39 GB to a 2.33 GB `.p5z`, and
-RESIDENT EVIL requiem from 133.59 GB to 79.32 GB ([report](reports/phase1.md)).
+For reference, on the PC Starfall Odyssey went from 8.39 GB to a 2.33 GB `.p5z`, and
+Iron Harbor from 133.59 GB to 79.32 GB ([report](reports/phase1.md)).
 
 ### The three pieces
 
@@ -281,7 +281,7 @@ What it installs:
 - a `.p5z`: it copies the packs as they are and only decompresses the small files that go loose;
 - as they are, without compressing anything: folders and `.exfat`, `.ffpkg`, `.ffpfs` and `.ffpfsc`
   images. A `.ffpkg`, `.ffpfs` or `.ffpfsc` must have the ID in its name (for example
-  `Silksong-PPSA12544.ffpkg`). MaxPack does not mount the images: ShadowMountPlus plays them.
+  `StarfallOdyssey-PPSA01234.ffpkg`). MaxPack does not mount the images: ShadowMountPlus plays them.
 
 Where it looks: on every USB drive and on extended storage (in the root and one level down), and in
 `/data/maxpack/`. If something does not show up, type its path by hand.
@@ -712,7 +712,7 @@ The full list is in [pc-window.md](pc-window.md#5-warnings).
 ### Tested on a real PS5
 
 Firmware 13.60, ShadowMountPlus 1.7beta12, 24 Nov 2026 ([test-on-ps5.md](test-on-ps5.md)):
-- Hollow Knight: Silksong, packed by MaxPack as a zstd folder and mounted with ShadowMountPlus, starts
+- Starfall Odyssey, packed by MaxPack as a zstd folder and mounted with ShadowMountPlus, starts
   with our ampr-emu-ng, saves and loads the save game again.
 - ShadowMountPlus, with the default fakelib mode ("Default (Full)"), keeps the game's
   `libSceAmpr.sprx` and adds its backport.
@@ -721,9 +721,9 @@ Firmware 13.60, ShadowMountPlus 1.7beta12, 24 Nov 2026 ([test-on-ps5.md](test-on
 
 ### Tested on the PC
 
-- **With real games** ([report](reports/phase1.md)): Silksong (pack, verify and rebuild the original
-  dump, with zero failures; the `ampr_emu.index` came out identical to the dump's) and RESIDENT EVIL
-  requiem (133 GB, with files up to 72 GB; pack to `.p5z` and verify, with zero failures).
+- **With real games** ([report](reports/phase1.md)): Starfall Odyssey (pack, verify and rebuild the original
+  dump, with zero failures; the `ampr_emu.index` came out identical to the dump's) and
+  Iron Harbor (133 GB, with files up to 72 GB; pack to `.p5z` and verify, with zero failures).
 - **On every change, in GitHub Actions:** the engine is built and passes its tests on Windows and Linux;
   the window is built and passes its tests on Windows, Linux and macOS; the packages are installed,
   compress a test image and are uninstalled.

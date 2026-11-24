@@ -3,7 +3,7 @@
 Windows 11, Ryzen 9 7950X3D (32 threads), NVMe. `maxpack` 0.0.1 with zstd 1.5.6, level 19 (the
 default). Times are wall-clock; some coincided with parallel builds.
 
-## Hollow Knight: Silksong (PPSA12544, 2,165 files, 8.39 GB)
+## Starfall Odyssey (PPSA01234, 2,165 files, 8.39 GB)
 
 | Step | Result |
 |---|---|
@@ -17,7 +17,7 @@ default). Times are wall-clock; some coincided with parallel builds.
 | `unpack --original` (29 s) + independent SHA-256 in Python | 2,165 files identical to the image |
 | Analyzer (1 GiB sample) | estimated 2.31 GB of packs: +2.7 % over the real result |
 
-## RESIDENT EVIL requiem (PPSA31246, 49 files, 133.59 GB)
+## Iron Harbor (PPSA05678, 49 files, 133.59 GB)
 
 It has files of up to 72 GB, which cross several 4 GiB volumes.
 
@@ -30,7 +30,7 @@ It has files of up to 72 GB, which cross several 4 GiB volumes.
 ## Pending
 
 - The console test with the `libSceAmpr.sprx` of ampr-emu-ng (see
-  [test-on-ps5.md](../test-on-ps5.md)). The runtimes that Silksong and Wukong carry are the old
+  [test-on-ps5.md](../test-on-ps5.md)). The runtimes that Starfall Odyssey and another dump carry are the old
   ampr_emu and do not read zstd packs.
 - Cross-check with a third-party reader (`ps5-dump-forge inspect`): optional, needs downloading it.
 - Build and test on Linux and macOS.

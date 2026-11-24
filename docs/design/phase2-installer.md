@@ -65,7 +65,7 @@ only left ready to play: **nothing is ever compressed there** (decided by you); 
 - **Runtime:** ampr-emu-ng (GPL-3). Its page shows no releases; there are copies in Dump Forge
   (`vendor/ampr-emu-ng/libSceAmpr.sprx`) and inside Kraken Mount.
 - **Sizes:** the `.pak` volumes are at most 4,294,901,760 bytes, so they fit in FAT32; a big `.p5z` (79 GB
-  in RE Requiem) needs an exFAT USB drive.
+  in Iron Harbor) needs an exFAT USB drive.
 - **Tests:** on a console only the user can do them. The phase 1 console test has not been done yet. The
   work on the PC (5.8, steps 1 and 2) can start now; that test has to pass before step 4, and what
   comes out of it (section 7) may change the runtime and the ShadowMountPlus part.
@@ -109,15 +109,15 @@ WebKit: simple JS, no frameworks, and progress is requested every second.
 ```
 MaxPack · installer                           192.168.1.50:8095   ES | EN
 Games found                                                     [Search again]
-  [icon] Hollow Knight Silksong    PPSA12544 v01.000.010   2.33 GB   USB0
-  [icon] RESIDENT EVIL requiem     PPSA31246 v01.310.000  79.32 GB   USB0
+  [icon] Starfall Odyssey    PPSA01234 v01.000.010   2.33 GB   USB0
+  [icon] Iron Harbor     PPSA05678 v01.310.000  79.32 GB   USB0
   Manual path: [____________________]
 Destination: (o) Internal /data/homebrew - 512 GB free  ( ) USB0 /mnt/usb0/homebrew - 1.2 TB free
 [ ] Delete the .p5z once it is installed and verified
 [ Install ]
-Installing RESIDENT EVIL requiem · 37 % · 412 MB/s · 3 min left        [Pause]
+Installing Iron Harbor · 37 % · 412 MB/s · 3 min left        [Pause]
 Installed with MaxPack
-  Hollow Knight Silksong  PPSA12544  /data/homebrew/PPSA12544  ok   [Verify] [Uninstall]
+  Starfall Odyssey  PPSA01234  /data/homebrew/PPSA01234  ok   [Verify] [Uninstall]
 ```
 
 - The title, the version and the icon come from the `.p5z` (manifest and `sce_sys/icon0.png`).
@@ -160,13 +160,13 @@ those types inside those drives or `/data`.
    **What "verified" means:** the SHA-256 is computed over the data as it is written, and each file is
    forced to disk (`fsync`) before it is noted as finished. If "delete the `.p5z`" is ticked, before
    deleting it the whole installed folder is reread and checked again, because afterwards it will be
-   the only copy. That doubles the reading (79 GB more in RE Requiem), but only in that case.
+   the only copy. That doubles the reading (79 GB more in Iron Harbor), but only in that case.
 6. **Runtime:** if the `.p5z` carries `fakelib/libSceAmpr.sprx` and it reads zstd packs (marker
    `AMPRZPK1`), that one is used. If it does not carry one, or carries the old `ampr_emu`, the copy of
    ampr-emu-ng that the installer carries is put in and a notice is shown. In that case
    **`ampr_emu.index` must be regenerated** with the row of the new runtime (size and date), just like
    `pack --runtime` does: the complete list of files is in the `.p5z` index. **It is the normal case,
-   not an exception:** the Silksong and Wukong dumps carry the old `ampr_emu`.
+   not an exception:** the Starfall Odyssey and another dump carry the old `ampr_emu`.
 7. **Resuming:** a state file in `/data/maxpack/state/<TITLE_ID>.json` notes every finished and verified
    file. If it is cut off (power cut, rest mode, USB drive out, payload closed), when you press Install
    again with the same `.p5z` (same `archive_id`) the finished files are checked again by reading them
@@ -188,7 +188,7 @@ those types inside those drives or `/data`.
 
    If ShadowMountPlus is not running, it warns that it will see it on its next scan, or Kraken Mount will.
 10. **Delete the `.p5z`**, only if it was ticked and everything is verified.
-11. **Console notice:** "Silksong installed" (or the error).
+11. **Console notice:** "Starfall Odyssey installed" (or the error).
 
 There is only one install at a time; another press is queued.
 
@@ -200,7 +200,7 @@ record and ShadowMountPlus), with these differences:
   - in a folder or an `.exfat` image, the `TITLE_ID`, the name and the version come from
     `sce_sys/param.json` (the exFAT reader already exists);
   - in `.ffpkg`, `.ffpfs` and `.ffpfsc`, the `TITLE_ID` comes from the file name (for example
-    `Silksong-PPSA12544.ffpkg`). If it does not carry one, it is not installed and it says to add it
+    `StarfallOdyssey-PPSA01234.ffpkg`). If it does not carry one, it is not installed and it says to add it
     to the name.
 - **Destination:** a folder goes to `<root>/homebrew/<TITLE_ID>`; an image, to `<root>/homebrew/` with its
   file name. An image with the same `TITLE_ID` in its name counts as an existing copy.
@@ -258,10 +258,10 @@ install is left in a state from which it can be resumed or discarded:
 
 **On a console (you do it), after the phase 1 test passes**
 - Load the payload and open the page from the PS5 and from a phone.
-- Install Silksong from the USB drive to internal storage, pull the USB drive out halfway, plug it back
+- Install Starfall Odyssey from the USB drive to internal storage, pull the USB drive out halfway, plug it back
   in and resume.
 - Have ShadowMountPlus register it and have it played (the phase 1 list); the same with Kraken Mount.
-- Uninstall. Install RE Requiem (79 GB) and note the time.
+- Uninstall. Install Iron Harbor (79 GB) and note the time.
 
 ### 5.8 Order of work
 

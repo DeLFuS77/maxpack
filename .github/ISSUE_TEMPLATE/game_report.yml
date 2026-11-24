@@ -19,14 +19,14 @@ body:
     id: title
     attributes:
       label: Game title
-      placeholder: "Hollow Knight: Silksong"
+      placeholder: "Starfall Odyssey"
     validations:
       required: true
   - type: input
     id: title-id
     attributes:
       label: PPSA id (TITLE_ID)
-      placeholder: PPSA12544
+      placeholder: PPSA01234
     validations:
       required: true
   - type: input

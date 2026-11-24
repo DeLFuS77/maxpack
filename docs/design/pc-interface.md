@@ -126,10 +126,10 @@ The window runs `maxpack-core` as a separate process, one job at a time:
 |  Compress      |  PS5 dumps to .p5z or to a ready folder.       | (o) MaxPack installer    |
 |  Decompress    |  [Add files] [Add folder] Clear list           |     .p5z: the smallest   |
 | Check          |  Game                        Size    State     | ( ) Play from the USB    |
-|  Verify        |  [ic] Hollow Knight Silksong 8.39 GB * OK -72% |     folder in homebrew/  |
-|  Details       |       PPSA12544, version 01.000.010            | Compression level    19  |
+|  Verify        |  [ic] Starfall Odyssey 8.39 GB * OK -72%       |     folder in homebrew/  |
+|  Details       |       PPSA01234, version 01.000.010            | Compression level    19  |
 |                |       8.39 GB -> 2.33 GB                       | -----------------o--     |
-|                |  [ic] RESIDENT EVIL requiem  133 GB  * 37 %    | Destination  E:\ [Choose]|
+|                |  [ic] Iron Harbor  133 GB  * 37 %              | Destination  E:\ [Choose]|
 | Settings       |  ...                                           | ampr-emu-ng: ok (path)   |
 |                |  1 of 2 done, 37 %  ###...  410 MB/s  18 min left          [Cancel]      |
 +--------------------------------------------------------------------------------------------+
@@ -166,7 +166,7 @@ The window runs `maxpack-core` as a separate process, one job at a time:
   and deleted. That is why both have to fit; if they do not, it says so and does not start. On cancel
   or on failure, the old one stays intact.
 - **The source is never the destination:** if the game being compressed is in the place where the result
-  would go (for example, compressing `E:\homebrew\PPSA12544` in folder mode to `E:\`), Replace is not
+  would go (for example, compressing `E:\homebrew\PPSA01234` in folder mode to `E:\`), Replace is not
   offered: another destination is asked for.
 - **ampr-emu-ng:**
   - if a dump does not carry a `libSceAmpr.sprx` that reads zstd (`info --json` says so), the one in
@@ -202,7 +202,7 @@ The window runs `maxpack-core` as a separate process, one job at a time:
   - with arguments, it behaves like the command line.
 - **Page:** the same checks that NXPress does on its own (ES and EN texts, no `innerHTML` with data).
 - **By hand:**
-  - compress and decompress the test dumps and Silksong, cancel, themes and languages, and drag files;
+  - compress and decompress the test dumps and Starfall Odyssey, cancel, themes and languages, and drag files;
   - the Windows installer from the GitHub artifact.
 
 ## 6. Decisions I made (you can change them)

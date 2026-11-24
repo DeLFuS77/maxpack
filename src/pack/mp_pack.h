@@ -56,6 +56,9 @@ typedef struct mp_pack_out {
     int (*file_begin)(void *ctx, const char *rel, int role, uint64_t size, int64_t mtime, mp_err *e);
     int (*file_write)(void *ctx, const void *p, size_t n, mp_err *e);
     int (*file_end)(void *ctx, const uint8_t sha[32], mp_err *e);
+    // Optional (NULL = nothing to do): called once after the loose files and before the packs, so
+    // the output finishes what it still holds of the files before them and frees that memory first.
+    int (*packs_begin)(void *ctx, mp_err *e);
     int (*finish)(void *ctx, const mp_pack_manifest *m, mp_err *e);
     void (*destroy)(void *ctx);
     void *ctx;

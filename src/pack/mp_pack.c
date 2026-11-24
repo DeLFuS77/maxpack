@@ -261,6 +261,7 @@ int mp_pack_run(const char *src_path, mp_pack_out *out, const mp_pack_opts *o, m
     mp_zpk_stats st;
     memset(&st, 0, sizeof st);
     if (npack) {
+        if (out->packs_begin && out->packs_begin(out->ctx, e) != 0) goto done;
         uint64_t ptotal = 0;
         for (size_t k = 0; k < npack; k++) ptotal += mp_source_entry(src, packable[k])->size;
         char phase[64];

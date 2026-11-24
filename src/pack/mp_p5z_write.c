@@ -348,6 +348,16 @@ static int f_end(void *ctx, const uint8_t sha[32], mp_err *e) {
     return send_slot(o, 1, e);
 }
 
+// Before the packs: the frames of the files before them are written and the pool and its contexts
+// freed now, so the packs' buffers and read-ahead do not add to them (v_begin would do the same, but
+// only once the first block is compressed, after the read-ahead has filled up).
+static int f_packs_begin(void *ctx, mp_err *e) {
+    p5out *o = ctx;
+    if (drain(o, 1, e) != 0) return -1;
+    frames_stop(o);
+    return 0;
+}
+
 // ---- index, footer and header --------------------------------------------------------------
 
 typedef struct {
@@ -546,6 +556,7 @@ int mp_pack_out_p5z_ex(const char *path, unsigned threads, uint64_t max_size, mp
     out->file_begin = f_begin;
     out->file_write = f_write;
     out->file_end = f_end;
+    out->packs_begin = f_packs_begin;
     out->finish = f_finish;
     out->destroy = f_destroy;
     out->ctx = o;

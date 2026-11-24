@@ -59,7 +59,8 @@ página abierta.
   ampr-emu-ng por su `ampr_emu` antiguo. Si ShadowMountPlus no está en marcha o aplaza el escaneo (por
   ejemplo, porque hay un juego abierto), el juego sale como **Pendiente en ShadowMountPlus** y el
   instalador lo reintenta solo cada minuto. Para hacerlo a mano: añade la ruta del juego en
-  ShadowMountPlus y, en su perfil, elige el modo de fakelib que diga el punto P1.
+  ShadowMountPlus y, en su perfil, usa el modo de fakelib «Completo» (`full`). El que viene,
+  «Predeterminado (Completo)», ya vale (ver P1).
 - **Kraken Mount:** explora las mismas rutas (`/data/homebrew`, `homebrew/` de cada unidad) y trae su
   propio ampr-emu-ng. No hay que hacer nada más.
 
@@ -82,8 +83,8 @@ página abierta.
 { "smp_fakelib_mode": "full" }
 ```
 
-Los valores posibles son `full`, `emulators`, `disabled` y `default`. Hasta hacer la prueba P1 el valor
-por defecto es `full`, y es **provisional**.
+Los valores posibles son `full`, `emulators`, `disabled` y `default`. El valor por defecto es `full`,
+y está comprobado en consola (ver P1): no hace falta cambiarlo.
 
 Lo que guarda el instalador, siempre fuera de las carpetas de los juegos:
 - `/data/maxpack/installed/`: el registro de lo instalado;
@@ -104,11 +105,16 @@ Lo que guarda el instalador, siempre fuera de las carpetas de los juegos:
 
 ## 7. Pendiente de comprobar en consola
 
-- **P1. Modo de fakelib de ShadowMountPlus.** Con un juego instalado desde un `.p5z`, prueba en su
-  perfil de ShadowMountPlus `full`, `emulators` y `disabled`. El bueno es aquel con el que, al
-  arrancar el juego, sale el aviso "ampr-emu-ng: v… (zstd) running" y el juego carga. Ponlo en
-  `config.json`. Mira también si ShadowMountPlus ya le cambia el runtime en el primer escaneo, antes
-  de que el instalador fije el modo.
+- **P1. Modo de fakelib de ShadowMountPlus. Respondida: `full`.**
+  - Comprobado el 24/11/2026 en una PS5 con firmware 13.60 y ShadowMountPlus 1.7beta12, con
+    Silksong empaquetado por MaxPack.
+  - Con `full` («Completo»; el modo por juego que viene es «Predeterminado (Completo)»),
+    ShadowMountPlus usa el `fakelib/libSceAmpr.sprx` del juego y solo le añade su backport (aviso
+    «Backport aplicado: <TITLE_ID>»). Sale «ampr-emu-ng: v… (zstd) running», y el juego carga y
+    guarda partida.
+  - Como el modo que viene ya es ese, el primer escaneo, antes de que el instalador fije el modo,
+    tampoco le cambia el runtime.
+  - No hizo falta probar `emulators` ni `disabled`.
 - **P2. Desinstalar.** Comprueba que, tras desinstalar, el juego desaparece de ShadowMountPlus.
   El instalador llama a `manual/remove` y a `scan`.
 - **P3. Modo reposo.** Comprueba si el instalador sigue cargado después del reposo. Si no, vuelve a

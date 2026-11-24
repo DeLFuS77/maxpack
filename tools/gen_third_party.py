@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Generates THIRD_PARTY_NOTICES: zstd and zlib (from the submodules) and the Go modules in gui/go.mod.
 
-  python tools/gen_third_party.py            # reescribe THIRD_PARTY_NOTICES
+  python tools/gen_third_party.py            # rewrites THIRD_PARTY_NOTICES
   python tools/gen_third_party.py --check    # fails if it does not match what would come out now
 
 Go and the downloaded modules are needed (`go mod download` in gui/). For each module in go.mod its
@@ -185,12 +185,12 @@ def main():
     if "--check" in sys.argv:
         cur = read(OUT) if os.path.exists(OUT) else ""
         if cur.strip() != text.strip():
-            raise SystemExit("THIRD_PARTY_NOTICES no coincide: ejecuta tools/gen_third_party.py")
+            raise SystemExit("THIRD_PARTY_NOTICES is out of date: run tools/gen_third_party.py")
         print("ok")
         return
     with open(OUT, "w", encoding="utf-8", newline="\n") as f:
         f.write(text)
-    print(f"escrito {OUT} ({len(text)} bytes)")
+    print(f"wrote {OUT} ({len(text)} bytes)")
 
 
 main()

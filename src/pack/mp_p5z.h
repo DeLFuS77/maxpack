@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // .p5z: the game packed into a single file to keep on the PC (design 6.4).
-// Full format in docs/formato-p5z.md.
+// Full format in docs/p5z-format.md.
 #ifndef MP_P5Z_H
 #define MP_P5Z_H
 

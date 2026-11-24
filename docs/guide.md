@@ -139,7 +139,7 @@ Then, depending on your system:
 - **Windows (installer).** Run it. It puts MaxPack in your user folder, without administrator
   rights, with a shortcut. Uninstall it from "Installed apps".
 - **Windows (portable).** Unzip it anywhere. `MaxPack.exe` and `maxpack-core.exe` must stay together.
-  Settings are saved in its `settings` folder.
+  Settings are saved in its `settings` folder, which has a short `README.txt` saying what is kept there.
 - **macOS.** Open the `.dmg` and drag `MaxPack.app` to Applications.
 - **Linux.** Unpack the `.tar.gz` and run `sh install.sh`. It puts MaxPack in the applications menu
   and `maxpack` in `~/.local/bin`. `sh install.sh --uninstall` removes it.
@@ -206,7 +206,7 @@ Shows the title, ID, version, sizes, files, packs and whether it carries a runti
 
 ### Settings ([details](pc-window.md#4-settings))
 
-Language, theme (System, Light or Dark) and the `libSceAmpr.sprx` of ampr-emu-ng for the games that
+Language (11 to choose from, or **System**), theme (System, Light or Dark) and the `libSceAmpr.sprx` of ampr-emu-ng for the games that
 lack one. MaxPack only accepts a `libSceAmpr.sprx` that reads zstd.
 
 ## 5. MaxPack on the console
@@ -410,8 +410,8 @@ What it guarantees:
 - With the same options, the result is identical byte for byte.
 
 Warnings it may print at the end:
-- `warning: the runtime fakelib/libSceAmpr.sprx does not seem to read zstd packs: use the libSceAmpr.sprx of ampr-emu-ng (--runtime)`
-- `warning: sce_sys/param.json does not give the game's TITLE_ID (titleId): MaxPack will not accept this .p5z`
+- `warning: the fakelib/libSceAmpr.sprx runtime does not seem to read zstd packs: use ampr-emu-ng's libSceAmpr.sprx (--runtime)`
+- `warning: sce_sys/param.json gives no TITLE_ID for the game (titleId): MaxPack's installer will not accept this .p5z` (the last part appears only with `--p5z`)
 
 With `--progress json`, the lines look like this:
 
@@ -454,6 +454,16 @@ code 1.
 | `info --json` | The same for a `.p5z`, a folder or an `.exfat`, in one JSON line. It is what the window reads. | `maxpack info --json "D:\dumps\MyGame.exfat"` |
 | `info --play` | What the console needs to play a `.p5z` without installing it, in JSON. It is for development. | `maxpack info --play "D:\games\MyGame.p5z"` |
 | `icon` | Saves the game's `sce_sys/icon0.png`. Exits with code 1 if it has none. | `maxpack icon "D:\dumps\MyGame.exfat" -o icon.png` |
+
+Example of `info` on a small test `.p5z` (the numbers are those of a tiny test game; yours will be bigger):
+
+```
+Title:      (no name)
+ID:         TEST00001   version 01.000.000
+Files:      213 (3 loose, 210 packed), original 3.15 MB
+Packs:      zstd level 19, 3.14 MB -> 2.07 MB in 1 volumes
+.p5z:       2.09 MB
+```
 
 The `info --json` line carries `kind` (`folder`, `exfat` or `p5z`), `title_id`, `version`, `name`,
 `original_size`, `install_size`, `p5z_size`, `files`, `packed_files`, `volumes`, `has_runtime`,
@@ -649,7 +659,7 @@ What you see:
   the one of ampr-emu-ng".
 - In Settings, if you pick another file: "That libSceAmpr.sprx does not read zstd: it is not the one of
   ampr-emu-ng. Choose another."
-- On the command line: `warning: the runtime fakelib/libSceAmpr.sprx does not seem to read zstd packs`.
+- On the command line: `warning: the fakelib/libSceAmpr.sprx runtime does not seem to read zstd packs`.
 
 What to do:
 1. Download `libSceAmpr.sprx` from the
@@ -662,7 +672,7 @@ What to do:
 ### A `.p5z` without TITLE_ID
 
 What you see: "its param.json does not give the ID of the game (TITLE_ID)" in the window, or
-`warning: sce_sys/param.json does not give the game's TITLE_ID (titleId)` on the command line.
+`warning: sce_sys/param.json gives no TITLE_ID for the game (titleId)` on the command line.
 
 What to do: check that the dump is complete and that its `sce_sys/param.json` has the `titleId`.
 

@@ -174,7 +174,7 @@ static int run_checks(vctx *v, size_t n, unsigned threads, int progress, uint64_
         mp_progress_free(&prog);
         return -1;
     }
-    if (progress) fprintf(stderr, "\rVerificando: 100.0 %%\n");
+    if (progress) fprintf(stderr, "\rVerifying: 100.0 %%\n");
     r->bytes_checked = prog.done;
     mp_progress_free(&prog);
     report(v->c, n, r);

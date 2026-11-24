@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Installer engine (phase 2): find what can be installed, install, resume, replace, verify and
 // uninstall. Portable: the same code on the PC (tests) and on the PS5.
-// Design: docs/diseno/fase2-instalador.md
+// Design: docs/design/phase2-installer.md
 #ifndef MP_INST_H
 #define MP_INST_H
 
@@ -21,7 +21,8 @@ typedef struct {
 // Returns 0 to continue, 1 to stop (pause) or -1 to fail (with e).
 typedef int (*mp_inst_io_check)(void *ctx, uint64_t bytes_written, mp_err *e);
 
-// progress receives one of these stages: "copiando", "comprobando", "terminando" (identifiers, kept as they are).
+// progress receives one of these stages: "copiando", "comprobando", "terminando" (the API adds "registrando"). They are
+// identifiers, not text for people: the console page maps them to its translated labels, so they keep these names.
 typedef struct {
     const char *internal;                    // "/data"
     const char *const *drive_candidates;     // "/mnt/usb0".."/mnt/ext1"; those that exist count

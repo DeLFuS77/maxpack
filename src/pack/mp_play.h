@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Playing a .p5z without installing it: the console extracts the game's loose files to internal storage and reads the
-// packs' volumes in place, inside the .p5z. Format in docs/formato-p5z.md.
+// packs' volumes in place, inside the .p5z. Format in docs/p5z-format.md.
 #ifndef MP_PLAY_H
 #define MP_PLAY_H
 

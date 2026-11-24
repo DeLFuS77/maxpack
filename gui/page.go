@@ -23,11 +23,10 @@ import (
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-// Game is a game of the list: what jobs plans with, its icon (a data URL, "" when it has none),
-// and whether it is compressed already.
+// Game is a game of the list: what jobs plans with (whether it is compressed already too), and its
+// icon (a data URL, "" when it has none).
 type Game struct {
 	jobs.Item
-	Packed bool
 }
 
 // GameDetails is all the engine says of a game, for Details: with its packs, the files stored
@@ -183,8 +182,7 @@ func (a *App) describe(path string) (Game, map[string]any, error) {
 	if err != nil {
 		return Game{}, nil, err
 	}
-	packed, _ := info["packed"].(bool)
-	game := Game{Item: jobs.FromInfo(path, info), Packed: packed}
+	game := Game{Item: jobs.FromInfo(path, info)}
 	game.Icon = iconURL(engine, path)
 	return game, info, nil
 }

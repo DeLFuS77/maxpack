@@ -26,11 +26,14 @@ const (
 // fat32Max is the most a file may have on FAT32 (4 GiB less one byte).
 const fat32Max = 1<<32 - 1
 
-// Item is a game the user gave.
+// Item is a game the user gave. ContentID is the one of its param.json ("EP0001-PPSA10001_00-..."),
+// which tells its region; "" when it is not known.
 type Item struct {
 	Path, TitleID, Name, Version, Kind string
+	ContentID                          string
 	OriginalSize                       uint64
 	HasZstdRuntime                     bool
+	Packed                             bool
 	Icon                               string
 }
 
@@ -50,6 +53,9 @@ type Options struct {
 	OriginalsNoBin bool
 	// LowPriority runs the engine below the other programs (see core.RunOptions)
 	LowPriority bool
+	// NameTemplate names a .p5z and an unpacked original (see NameOf); "" is DefaultTemplate. A
+	// folder for the console is named by its TITLE_ID whatever it says
+	NameTemplate string
 }
 
 // What becomes of the original of a game once its new one is checked (Options.Originals).
@@ -118,9 +124,14 @@ func FromInfo(path string, info map[string]any) Item {
 	it := Item{
 		Path: path, TitleID: text("title_id"), Name: text("name"), Version: text("version"),
 		Kind: text("kind"), OriginalSize: number("original_size"), HasZstdRuntime: flag("has_zstd_runtime"),
+		Packed: flag("packed"), ContentID: text("content_id"),
 	}
 	if it.Name == "" {
 		it.Name = baseName(path)
+	}
+	// the engine does not say the content ID: a dump folder has it in its param.json
+	if it.ContentID == "" && it.Kind == "folder" {
+		it.ContentID = paramContentID(path)
 	}
 	return it
 }
@@ -239,7 +250,7 @@ func PlanCompress(items []Item, o Options, fs FS) []Plan {
 		if o.Mode == ModeFolder {
 			return consoleOut(it, o, fs)
 		}
-		return filepath.Join(o.Dest, P5zName(it))
+		return filepath.Join(o.Dest, P5zNameAs(it, o.NameTemplate))
 	}
 	args := func(it Item, target string) []string {
 		kind := "--p5z"
@@ -277,7 +288,7 @@ func PlanDecompress(items []Item, o Options, fs FS) []Plan {
 		if o.Mode == ModeConsole {
 			return consoleOut(it, o, fs)
 		}
-		return filepath.Join(o.Dest, folderName(it))
+		return filepath.Join(o.Dest, folderName(it, o.NameTemplate))
 	}
 	args := func(it Item, target string) []string {
 		kind := "--original"

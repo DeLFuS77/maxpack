@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"syscall"
 )
 
 // renameNew gives a file or a folder a new name only when nothing has that name: a file by a hard
@@ -29,4 +30,9 @@ func renameNew(from, to string) error {
 		return &os.LinkError{Op: "rename", Old: from, New: to, Err: fs.ErrExist}
 	}
 	return os.Rename(from, to)
+}
+
+// inUse tells whether a rename failed because the file is busy.
+func inUse(err error) bool {
+	return errors.Is(err, syscall.EBUSY) || errors.Is(err, syscall.ETXTBSY)
 }

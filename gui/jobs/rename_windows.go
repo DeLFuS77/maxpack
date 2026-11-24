@@ -3,6 +3,7 @@
 package jobs
 
 import (
+	"errors"
 	"os"
 
 	"golang.org/x/sys/windows"
@@ -27,4 +28,9 @@ func renameNew(from, to string) error {
 		return &os.LinkError{Op: "rename", Old: from, New: to, Err: err}
 	}
 	return nil
+}
+
+// inUse tells whether a rename failed because another program has the file open.
+func inUse(err error) bool {
+	return errors.Is(err, windows.ERROR_SHARING_VIOLATION) || errors.Is(err, windows.ERROR_LOCK_VIOLATION)
 }

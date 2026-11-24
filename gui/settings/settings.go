@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // Package settings keeps what the user chose between runs: language, theme, mode, level, the
-// runtime of ampr-emu-ng and the last destination.
+// runtime of ampr-emu-ng, the last destination, what becomes of the originals, the priority of the
+// engine and the names of the files.
 package settings
 
 import (
@@ -55,6 +56,14 @@ type Settings struct {
 	LastDest string
 	Mode     jobs.Mode
 	Level    int
+	// DeleteOriginals is what Compress starts with: each original goes once its new one is made,
+	// verified and in its place; to the recycle bin, or for good with DeletePermanently
+	DeleteOriginals   bool
+	DeletePermanently bool
+	// LowPriority runs the engine below the other programs, so the PC stays usable
+	LowPriority bool
+	// NameTemplate names a .p5z and an unpacked original (jobs.NameOf)
+	NameTemplate string
 }
 
 const fileName = "settings.json"
@@ -64,9 +73,9 @@ const fileName = "settings.json"
 var Dir = portable.DataFolder
 
 // Defaults are the settings of a first run: no language chosen (the system's), the system theme,
-// an installer (.p5z) and level 19.
+// an installer (.p5z), level 19, the originals kept, the normal priority and the names of before.
 func Defaults() Settings {
-	return Settings{Theme: "system", Mode: jobs.ModeP5z, Level: 19}
+	return Settings{Theme: "system", Mode: jobs.ModeP5z, Level: 19, NameTemplate: jobs.DefaultTemplate}
 }
 
 // EffectiveLang is the language the window speaks: the one chosen, else the one of the system,
@@ -100,6 +109,9 @@ func (s Settings) Normalize() Settings {
 	}
 	if s.Level < 1 || s.Level > 22 {
 		s.Level = d.Level
+	}
+	if jobs.ValidTemplate(s.NameTemplate) != nil {
+		s.NameTemplate = d.NameTemplate
 	}
 	return s
 }
@@ -143,6 +155,10 @@ func Load() (Settings, error) {
 	read("LastDest", &s.LastDest)
 	read("Mode", &s.Mode)
 	read("Level", &s.Level)
+	read("DeleteOriginals", &s.DeleteOriginals)
+	read("DeletePermanently", &s.DeletePermanently)
+	read("LowPriority", &s.LowPriority)
+	read("NameTemplate", &s.NameTemplate)
 	return s.Normalize(), nil
 }
 

@@ -318,6 +318,36 @@ dialog p { margin: 8px 0; }
 .done-top li span { margin-right: 8px; }
 .done-top li b { color: var(--ok); font-variant-numeric: tabular-nums; }
 .done-next p { padding: 9px 12px; border-radius: var(--radius-small); background: var(--accent-soft); }
+/* The end of a queue that saved space (playDone adds .go): the arrows of the icon close in, the
+   size before is squeezed away and the size now pops up, the full bar squeezes to --squeeze with
+   what was freed striped in mint behind it, and what it saved counts up with a small burst. */
+#done-title { display: flex; align-items: center; gap: 10px; }
+.squeeze-ic { display: grid; place-items: center; width: 34px; height: 34px; flex: none; border-radius: 10px; background: var(--grad); color: #fff; box-shadow: 0 6px 16px var(--glow); }
+.squeeze-ic svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; overflow: visible; }
+.squeeze-ic .down, .squeeze-ic .up { transition: transform .5s cubic-bezier(.5, 0, .3, 1.4) .45s; }
+#done-dialog.go .squeeze-ic .down { transform: translateY(3px); }
+#done-dialog.go .squeeze-ic .up { transform: translateY(-3px); }
+.squeeze { margin: 14px 0 0; }
+.squeeze-nums { position: relative; height: 60px; }
+.squeeze-nums span { position: absolute; left: 0; top: 0; font: 800 48px/1.2 var(--display); letter-spacing: -.04em; font-variant-numeric: tabular-nums; transform-origin: 0 50%; white-space: nowrap; }
+#done-after { opacity: 0; transform: scale(1.25); }
+#done-dialog.go #done-before { opacity: 0; transform: scaleX(.3); transition: transform .7s cubic-bezier(.6, 0, .3, 1) .5s, opacity .5s .55s; }
+#done-dialog.go #done-after { opacity: 1; transform: none; transition: transform .6s var(--ease) 1.05s, opacity .3s 1.05s; }
+.squeeze-bar { position: relative; height: 20px; margin-top: 4px; border-radius: 8px; overflow: hidden; background: var(--bar); }
+.squeeze-bar .free { position: absolute; left: 0; top: 0; bottom: 0; width: 100%; opacity: 0; background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--ok) 38%, transparent) 0 8px, color-mix(in srgb, var(--ok) 16%, transparent) 8px 16px); }
+.squeeze-bar .full { position: absolute; left: 0; top: 0; bottom: 0; width: 100%; border-radius: 8px; background: var(--grad); transform-origin: 0 0; }
+#done-dialog.go .squeeze-bar .free { opacity: 1; transition: opacity .5s 1s; }
+#done-dialog.go .squeeze-bar .full { transform: scaleX(var(--squeeze, .5)); transition: transform 1s cubic-bezier(.65, 0, .25, 1.25) .45s; }
+.squeeze-legend { display: flex; justify-content: space-between; gap: 12px; margin-top: 6px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.done-saved { transform-origin: 0 50%; }
+#done-dialog.go .done-saved { animation: pop .5s var(--ease) 1.35s both; }
+.burst { position: relative; height: 0; pointer-events: none; }
+.burst i { position: absolute; left: 70px; top: -24px; width: 8px; height: 8px; border-radius: 2px; opacity: 0; }
+.burst i:nth-child(3n) { background: var(--ok); }
+.burst i:nth-child(3n+1) { background: var(--accent-2); }
+.burst i:nth-child(3n+2) { background: var(--accent); }
+#done-dialog.go .burst i { animation: burst 1s cubic-bezier(.2, .8, .3, 1) 1.4s both; }
+@keyframes burst { 0% { opacity: 1; transform: translate(0, 0) rotate(0) scale(1); } 100% { opacity: 0; transform: translate(var(--dx), var(--dy)) rotate(220deg) scale(.6); } }
 
 /* a drop over the whole window, and a notice at the bottom */
 #drop-overlay { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; background: color-mix(in srgb, var(--bg) 72%, transparent); backdrop-filter: blur(3px); animation: fade-in .2s ease-out; }

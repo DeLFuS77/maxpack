@@ -36,7 +36,7 @@ func Main() {
 
 func run(mode string, args []string) int {
 	if len(args) > 0 && args[0] == "--version" {
-		fmt.Println("maxpack 0.0.1 (zstd 1.5.6, zlib 1.3.1)")
+		fmt.Println("maxpack 1.0.0 (zstd 1.5.6, zlib 1.3.1)")
 		return 0
 	}
 	switch mode {

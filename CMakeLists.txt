@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 cmake_minimum_required(VERSION 3.20)
-project(maxpack VERSION 0.0.1 LANGUAGES C)
+project(maxpack VERSION 1.0.0 LANGUAGES C)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -82,7 +82,10 @@ target_include_directories(maxpack_page PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/w
 target_link_libraries(maxpack_web PUBLIC maxpack_page)
 
 if(MAXPACK_PS5)
-  # maxpack.elf: el instalador en la consola. Con -DMAXPACK_RUNTIME=<libSceAmpr.sprx> lleva dentro
+  # maxpack.elf: el instalador de la fase 2. Ya no se publica ni lo compila el CI de este
+  # repositorio: el payload de la consola (DeLFuS77/maxpack-ps5) lo sustituye y usa de aquí solo las
+  # bibliotecas (maxpack_web, maxpack_install, ...). El objetivo sigue para probar esas bibliotecas
+  # con el SDK. Con -DMAXPACK_RUNTIME=<libSceAmpr.sprx> lleva dentro
   # ese ampr-emu-ng (y -DMAXPACK_RUNTIME_VERSION=<texto> para mostrarlo).
   set(MAXPACK_RUNTIME "" CACHE FILEPATH "libSceAmpr.sprx de ampr-emu-ng que lleva el instalador")
   set(MAXPACK_RUNTIME_VERSION "" CACHE STRING "Versión de ese runtime")
@@ -208,6 +211,14 @@ if(MAXPACK_BUILD_TESTS)
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/tools/test_cli.py $<TARGET_FILE:maxpack> ${MP_FIXTURES_DIR}
     ${MP_TEST_TMP}/cli)
   set_tests_properties(test_cli PROPERTIES FIXTURES_REQUIRED exfat TIMEOUT 300)
+
+  # La versión de un paquete sale de la etiqueta (v1.2.3 -> 1.2.3); necesita bash.
+  find_program(MP_BASH bash)
+  if(MP_BASH)
+    add_test(NAME test_version COMMAND ${Python3_EXECUTABLE} -I
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/tools/test_version.py ${MP_BASH}
+      ${CMAKE_CURRENT_SOURCE_DIR}/tools/version.sh ${CMAKE_CURRENT_SOURCE_DIR}/CMakeLists.txt)
+  endif()
 
   # Herramienta de prueba: vuelca un rango de un archivo de un origen a stdout.
   add_executable(mp_cat tests/tools/mp_cat.c)

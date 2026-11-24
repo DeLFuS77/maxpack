@@ -142,7 +142,7 @@ int mp_inst_probe_any(const char *path, mp_inst_found *out, mp_err *e) {
                 return -1;
             }
         } else if (title_from_name(base_name(path), out->title_id) != 0) {
-            mp_err_set(e, "cannot tell which game %s is: add its ID (for example PPSA12544) to the file name",
+            mp_err_set(e, "cannot tell which game %s is: add its ID (for example PPSA10001) to the file name",
                        base_name(path));
             return -1;
         }

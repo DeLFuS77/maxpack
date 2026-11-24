@@ -14,28 +14,11 @@ body:
         On the MaxPack page of the console, open the game and press **Copy report**: it has the row
         ready for the list.
 
+        **You do not need to name the game.** The list identifies games only by a number, never by title
+        or title id, so leave both out of this form (a game's size and volumes are enough to tell
+        reports apart).
+
         Only report games you own and dumped yourself. Do not share game files, keys or download links.
-  - type: input
-    id: title
-    attributes:
-      label: Game title
-      placeholder: "Starfall Odyssey"
-    validations:
-      required: true
-  - type: input
-    id: title-id
-    attributes:
-      label: PPSA id (TITLE_ID)
-      placeholder: PPSA01234
-    validations:
-      required: true
-  - type: input
-    id: game-version
-    attributes:
-      label: Game version
-      placeholder: "01.000.010"
-    validations:
-      required: true
   - type: dropdown
     id: dump-type
     attributes:
@@ -49,19 +32,37 @@ body:
   - type: dropdown
     id: packed-as
     attributes:
-      label: Packed as
+      label: Format
       options:
-        - ".p5z file (MaxPack installer)"
-        - "Folder (Play from the USB)"
-        - Not packed (played as it is)
+        - ".p5z (played as it is)"
+        - zstd folder
+        - LZ4 folder
+        - pkg
+        - Plain folder (not packed)
     validations:
       required: true
   - type: input
     id: sizes
     attributes:
-      label: Sizes (optional)
-      description: Original size and size after packing.
-      placeholder: 8.39 GB to 2.33 GB
+      label: Original size and packed size
+      placeholder: 7.8 GiB to 2.3 GiB
+  - type: input
+    id: volumes
+    attributes:
+      label: Volumes (for a .p5z)
+      placeholder: "1"
+  - type: dropdown
+    id: drive
+    attributes:
+      label: Drive the game was played from
+      options:
+        - Internal SSD
+        - USB SSD (M.2 or SATA in an enclosure)
+        - USB hard drive
+        - USB flash drive
+        - Other
+    validations:
+      required: true
   - type: input
     id: maxpack-version
     attributes:
@@ -85,6 +86,24 @@ body:
         - ShadowMountPlus
         - Kraken Mount
         - Other
+    validations:
+      required: true
+  - type: input
+    id: mounter-version
+    attributes:
+      label: Loader or mounter version
+      placeholder: "1.0.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: fakelib
+    attributes:
+      label: Fakelib mode
+      description: The per-game setting in MaxPack for the console, or the ShadowMountPlus fakelib mode.
+      options:
+        - Full
+        - Off (only ampr-emu-ng)
+        - Other or not sure
     validations:
       required: true
   - type: checkboxes

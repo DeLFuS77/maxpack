@@ -153,13 +153,13 @@ MP_TEST(replace_same_place) {
 MP_TEST(replace_other_drive) {
     setup();
     fresh(TMP "/c");
-    place_dump(TMP "/usb0/homebrew/Silksong");
-    const char *rep[] = {TMP "/usb0/homebrew/Silksong"};
+    place_dump(TMP "/usb0/homebrew/Starfall");
+    const char *rep[] = {TMP "/usb0/homebrew/Starfall"};
     mp_inst_result r;
     mp_err e;
     MP_CHECK(install(TMP "/c", TMP "/rt.p5z", rep, 1, 0, NULL, &r, &e) == 0);
     MP_CHECK(r.status == MP_INST_DONE);
-    MP_CHECK(mp_path_kind(TMP "/usb0/homebrew/Silksong") == 0);
+    MP_CHECK(mp_path_kind(TMP "/usb0/homebrew/Starfall") == 0);
     MP_CHECK(mpt_dirs_equal(TMP "/unpacked_rt", TMP "/c/homebrew/TEST00001", "*.pak"));
     mp_inst_result_free(&r);
 }

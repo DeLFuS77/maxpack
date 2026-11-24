@@ -62,7 +62,7 @@ func item(title, id string, size uint64) Item {
 
 func TestP5zNameSanitized(t *testing.T) {
 	cases := []struct{ title, want string }{
-		{"Ratchet: Rift? <Apart>", "Ratchet Rift Apart [PPSA00001].p5z"},
+		{"Comet: Rift? <Apart>", "Comet Rift Apart [PPSA00001].p5z"},
 		{"Fin del juego. ", "Fin del juego [PPSA00001].p5z"},
 		{"Dos\x01 controles\x7f", "Dos controles [PPSA00001].p5z"},
 	}
@@ -126,8 +126,8 @@ func TestDecompressDestRules(t *testing.T) {
 
 func TestSameAsSource(t *testing.T) {
 	f := fakeFS{free: 1000 * gib, typ: "NTFS", roots: []string{"E:/"}}
-	it := item("X", "PPSA12544", 100)
-	it.Path = "E:/homebrew/PPSA12544"
+	it := item("X", "PPSA10001", 100)
+	it.Path = "E:/homebrew/PPSA10001"
 	p := PlanCompress([]Item{it}, Options{Mode: "folder", Dest: "E:/"}, f)[0]
 	if p.Block != "same_as_source" {
 		t.Errorf("Block = %q (Out %q)", p.Block, p.Out)
@@ -139,7 +139,7 @@ func TestSameAsSource(t *testing.T) {
 		t.Errorf("inside the source: Block = %q", p.Block)
 	}
 	// source inside the destination, which would be replaced
-	it.Path = "E:/homebrew/PPSA12544/sub"
+	it.Path = "E:/homebrew/PPSA10001/sub"
 	p = PlanCompress([]Item{it}, Options{Mode: "folder", Dest: "E:/"}, f)[0]
 	if p.Block != "same_as_source" {
 		t.Errorf("source inside the destination: Block = %q", p.Block)

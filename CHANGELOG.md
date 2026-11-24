@@ -63,8 +63,8 @@ saved and loaded a save game on a real PS5 (firmware 13.60, ShadowMountPlus 1.7b
 ### Known limits
 
 - PKG, `.ffpkg`, `.ffpfs` and `.ffpfsc` cannot be compressed yet.
-- On the console side, playing a `.p5z` as it is, the library and the installer have not been tested on
-  a real PS5 yet. See the section "What is tested and what is missing" of the
+- Playing a `.p5z` as it is and the library have been tested on one PS5 (firmware 13.60) with three games
+  of 1, 9 and 19 volumes; the installer has not been tested on a real PS5 yet. See the section "What is tested and what is missing" of the
   [guide](docs/guide.md#8-what-is-tested-and-what-is-missing).
 - The Windows installer has been tested automatically but not by hand with a double click and the
   wizard; if it does not work, use the portable zip.

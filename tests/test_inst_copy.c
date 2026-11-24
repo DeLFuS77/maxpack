@@ -84,7 +84,7 @@ static void setup(void) {
     mpt_pack(MPT_BASIC, TMP "/packed_rt", 0, TMP "/R.sprx");
     // Images.
     mpt_copy_file(MPT_BASIC, USB "/basic.exfat");
-    mpt_put(USB "/x/Silksong-PPSA12544.ffpkg", big, 1u << 20);
+    mpt_put(USB "/x/Starfall-PPSA10001.ffpkg", big, 1u << 20);
 }
 
 MP_TEST(copy_folder_identical) {
@@ -131,7 +131,7 @@ MP_TEST(copy_images_identical) {
     MP_CHECK(install(TMP "/d", USB "/basic.exfat", NULL, 0, NULL, 1, &r, &e) == 0 && r.status == MP_INST_DONE);
     if (e.msg[0]) fprintf(stderr, "  %s: %s\n", r.code ? r.code : "?", e.msg);
     mp_inst_result_free(&r);
-    MP_CHECK(install(TMP "/d", USB "/x/Silksong-PPSA12544.ffpkg", NULL, 0, NULL, 0, &r, &e) == 0 &&
+    MP_CHECK(install(TMP "/d", USB "/x/Starfall-PPSA10001.ffpkg", NULL, 0, NULL, 0, &r, &e) == 0 &&
              r.status == MP_INST_DONE);
     mp_inst_result_free(&r);
     size_t a = 0, b = 0;
@@ -139,13 +139,13 @@ MP_TEST(copy_images_identical) {
     MP_CHECK(x && y && a == b && !memcmp(x, y, a));
     free(x);
     free(y);
-    x = mpt_slurp(USB "/x/Silksong-PPSA12544.ffpkg", &a);
-    y = mpt_slurp(TMP "/d/homebrew/Silksong-PPSA12544.ffpkg", &b);
+    x = mpt_slurp(USB "/x/Starfall-PPSA10001.ffpkg", &a);
+    y = mpt_slurp(TMP "/d/homebrew/Starfall-PPSA10001.ffpkg", &b);
     MP_CHECK(x && y && a == b && !memcmp(x, y, a));
     free(x);
     free(y);
-    MP_CHECK(mp_path_kind(USB "/basic.exfat") == 1 && mp_path_kind(USB "/x/Silksong-PPSA12544.ffpkg") == 1);
-    MP_CHECK(mp_path_kind(TMP "/d/maxpack/tmp/PPSA12544") == 0);
+    MP_CHECK(mp_path_kind(USB "/basic.exfat") == 1 && mp_path_kind(USB "/x/Starfall-PPSA10001.ffpkg") == 1);
+    MP_CHECK(mp_path_kind(TMP "/d/maxpack/tmp/PPSA10001") == 0);
 }
 
 MP_TEST(copy_stop_resume) {
@@ -174,18 +174,18 @@ MP_TEST(copy_verify) {
     mp_inst_env env = env_for(TMP "/d", NULL, 0);
     mp_inst_verify_result v;
     mp_err e = {{0}};
-    MP_CHECK(mp_inst_verify(&env, "PPSA12544", &v, &e) == 0);
+    MP_CHECK(mp_inst_verify(&env, "PPSA10001", &v, &e) == 0);
     if (e.msg[0]) fprintf(stderr, "  %s\n", e.msg);
     MP_CHECK_EQ_U64(v.files_bad, 0);
     MP_CHECK(v.files_ok >= 1);
     size_t n = 0;
-    uint8_t *b = mpt_slurp(TMP "/d/homebrew/Silksong-PPSA12544.ffpkg", &n);
+    uint8_t *b = mpt_slurp(TMP "/d/homebrew/Starfall-PPSA10001.ffpkg", &n);
     if (b && n) {
         b[n / 3] ^= 1;
-        mpt_put(TMP "/d/homebrew/Silksong-PPSA12544.ffpkg", b, n);
+        mpt_put(TMP "/d/homebrew/Starfall-PPSA10001.ffpkg", b, n);
     }
     free(b);
-    MP_CHECK(mp_inst_verify(&env, "PPSA12544", &v, &e) == 0);
+    MP_CHECK(mp_inst_verify(&env, "PPSA10001", &v, &e) == 0);
     MP_CHECK_EQ_U64(v.files_bad, 1);
     env = env_for(TMP "/a", NULL, 0);
     MP_CHECK(mp_inst_verify(&env, "TEST00003", &v, &e) == 0);
@@ -198,15 +198,15 @@ MP_TEST(copy_replace) {
     mp_inst_result r;
     mp_err e;
     mpt_clear(TMP "/g");
-    mpt_put_text(TMP "/g/homebrew/Silksong-PPSA12544.ffpkg", "vieja");
-    MP_CHECK(install(TMP "/g", USB "/x/Silksong-PPSA12544.ffpkg", NULL, 0, NULL, 0, &r, &e) == 0);
+    mpt_put_text(TMP "/g/homebrew/Starfall-PPSA10001.ffpkg", "vieja");
+    MP_CHECK(install(TMP "/g", USB "/x/Starfall-PPSA10001.ffpkg", NULL, 0, NULL, 0, &r, &e) == 0);
     MP_CHECK(r.status == MP_INST_NEEDS_CONFIRM);
     mp_inst_result_free(&r);
-    const char *rep[] = {TMP "/g/homebrew/Silksong-PPSA12544.ffpkg"};
-    MP_CHECK(install(TMP "/g", USB "/x/Silksong-PPSA12544.ffpkg", rep, 1, NULL, 0, &r, &e) == 0);
+    const char *rep[] = {TMP "/g/homebrew/Starfall-PPSA10001.ffpkg"};
+    MP_CHECK(install(TMP "/g", USB "/x/Starfall-PPSA10001.ffpkg", rep, 1, NULL, 0, &r, &e) == 0);
     MP_CHECK(r.status == MP_INST_DONE);
     uint64_t size = 0;
-    MP_CHECK(mp_stat(TMP "/g/homebrew/Silksong-PPSA12544.ffpkg", &size, NULL) == 0 && size == (1u << 20));
+    MP_CHECK(mp_stat(TMP "/g/homebrew/Starfall-PPSA10001.ffpkg", &size, NULL) == 0 && size == (1u << 20));
     mp_inst_result_free(&r);
 }
 

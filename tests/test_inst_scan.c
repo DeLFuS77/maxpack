@@ -104,10 +104,10 @@ MP_TEST(probe_rejects_bad_title) {
     mp_err e2 = {{0}};
     MP_CHECK(mp_inst_probe(TMP "/noid.p5z", &f, &e2) == -1);
     MP_CHECK_CONTAINS(e2.msg, "TITLE_ID");
-    MP_CHECK(mp_inst_title_ok("PPSA12544") == 1);
-    MP_CHECK(mp_inst_title_ok("ppsa12544") == 0);
+    MP_CHECK(mp_inst_title_ok("PPSA10001") == 1);
+    MP_CHECK(mp_inst_title_ok("ppsa10001") == 0);
     MP_CHECK(mp_inst_title_ok("PPSA1254") == 0);
-    MP_CHECK(mp_inst_title_ok("PPSA12544/") == 0);
+    MP_CHECK(mp_inst_title_ok("PPSA10001/") == 0);
     MP_CHECK(mp_inst_title_ok("../EVIL") == 0);
     MP_CHECK(mp_inst_title_ok("") == 0);
 }
@@ -120,8 +120,8 @@ static const mp_inst_existing *find_path(const mp_inst_existing *v, size_t n, co
 
 MP_TEST(existing_by_param) {
     setup();
-    mpt_put_text(TMP "/data/homebrew/Silksong/sce_sys/param.json", "{\"titleId\":\"TEST00001\"}");
-    mpt_put_text(TMP "/data/homebrew/Silksong/eboot.bin", "eboot");
+    mpt_put_text(TMP "/data/homebrew/Starfall/sce_sys/param.json", "{\"titleId\":\"TEST00001\"}");
+    mpt_put_text(TMP "/data/homebrew/Starfall/eboot.bin", "eboot");
     mpt_put_text(TMP "/usb0/homebrew/TEST00001/sce_sys/param.json", "{\"titleId\":\"OTRO00002\"}");
     mpt_put_text(TMP "/usb0/raro/x.bin", "123");
     mpt_put_text(TMP "/usb0/homebrew/Otro/sce_sys/param.json", "{\"titleId\":\"OTRO00003\"}");
@@ -132,11 +132,11 @@ MP_TEST(existing_by_param) {
     mp_err e = {{0}};
     MP_CHECK(mp_inst_find_existing(&env, "TEST00001", known, 1, &v, &n, &e) == 0);
     MP_CHECK_EQ_U64(n, 3);
-    const mp_inst_existing *a = find_path(v, n, TMP "/data/homebrew/Silksong");
+    const mp_inst_existing *a = find_path(v, n, TMP "/data/homebrew/Starfall");
     const mp_inst_existing *b = find_path(v, n, TMP "/usb0/homebrew/TEST00001");
     const mp_inst_existing *c = find_path(v, n, TMP "/usb0/raro");
     MP_CHECK(a && b && c);
-    if (a) MP_CHECK_EQ_U64(a->size, mpt_dir_size(TMP "/data/homebrew/Silksong"));
+    if (a) MP_CHECK_EQ_U64(a->size, mpt_dir_size(TMP "/data/homebrew/Starfall"));
     if (c) MP_CHECK_EQ_U64(c->size, 3);
     if (a) MP_CHECK(a->from_maxpack == 0 && a->is_file == 0);
     mp_inst_existing_free(v, n);
@@ -144,10 +144,10 @@ MP_TEST(existing_by_param) {
     mp_inst_record r;
     memset(&r, 0, sizeof r);
     snprintf(r.title_id, sizeof r.title_id, "TEST00001");
-    snprintf(r.dir, sizeof r.dir, "%s", TMP "/data/homebrew/Silksong");
+    snprintf(r.dir, sizeof r.dir, "%s", TMP "/data/homebrew/Starfall");
     MP_CHECK(mp_inst_record_save(&env, &r, &e) == 0);
     MP_CHECK(mp_inst_find_existing(&env, "TEST00001", NULL, 0, &v, &n, &e) == 0);
-    a = find_path(v, n, TMP "/data/homebrew/Silksong");
+    a = find_path(v, n, TMP "/data/homebrew/Starfall");
     b = find_path(v, n, TMP "/usb0/homebrew/TEST00001");
     MP_CHECK(a && a->from_maxpack == 1);
     MP_CHECK(b && b->from_maxpack == 0);
@@ -217,7 +217,7 @@ MP_TEST(scan_kinds) {
     mpt_copy_file(MPT_BASIC, TMP "/usbk/basic.exfat");
     static char junk[1 << 20];
     for (size_t i = 0; i < sizeof junk; i++) junk[i] = (char)(i * 7);
-    mpt_put(TMP "/usbk/x/Silksong-PPSA12544.ffpkg", junk, sizeof junk);
+    mpt_put(TMP "/usbk/x/Starfall-PPSA10001.ffpkg", junk, sizeof junk);
     mpt_put(TMP "/usbk/sinid.ffpfsc", junk, 1000);
     mp_inst_env env = kinds_env();
     mp_inst_found *v = NULL;
@@ -226,7 +226,7 @@ MP_TEST(scan_kinds) {
     MP_CHECK_EQ_U64(n, 3);
     const mp_inst_found *a = find_found(v, n, TMP "/usbk/Juego");
     const mp_inst_found *b = find_found(v, n, TMP "/usbk/basic.exfat");
-    const mp_inst_found *c = find_found(v, n, TMP "/usbk/x/Silksong-PPSA12544.ffpkg");
+    const mp_inst_found *c = find_found(v, n, TMP "/usbk/x/Starfall-PPSA10001.ffpkg");
     MP_CHECK(a && b && c);
     if (a) {
         MP_CHECK(a->kind == MP_SRC_FOLDER);
@@ -240,7 +240,7 @@ MP_TEST(scan_kinds) {
     }
     if (c) {
         MP_CHECK(c->kind == MP_SRC_IMAGE);
-        MP_CHECK_STR(c->title_id, "PPSA12544");
+        MP_CHECK_STR(c->title_id, "PPSA10001");
         MP_CHECK_EQ_U64(c->install_size, sizeof junk);
     }
     mp_inst_found_free(v, n);
@@ -268,15 +268,15 @@ MP_TEST(probe_any_packed) {
 MP_TEST(existing_images) {
     setup();
     char junk[4096] = {1};
-    mpt_put(TMP "/datak/homebrew/Silksong-PPSA12544.ffpkg", junk, sizeof junk);
+    mpt_put(TMP "/datak/homebrew/Starfall-PPSA10001.ffpkg", junk, sizeof junk);
     mp_inst_env env = kinds_env();
     mp_inst_existing *v = NULL;
     size_t n = 0;
     mp_err e = {{0}};
-    MP_CHECK(mp_inst_find_existing(&env, "PPSA12544", NULL, 0, &v, &n, &e) == 0);
+    MP_CHECK(mp_inst_find_existing(&env, "PPSA10001", NULL, 0, &v, &n, &e) == 0);
     int seen = 0;
     for (size_t i = 0; i < n; i++)
-        if (!strcmp(v[i].path, TMP "/datak/homebrew/Silksong-PPSA12544.ffpkg")) seen = v[i].is_file == 1 && v[i].size == 4096;
+        if (!strcmp(v[i].path, TMP "/datak/homebrew/Starfall-PPSA10001.ffpkg")) seen = v[i].is_file == 1 && v[i].size == 4096;
     MP_CHECK(seen);
     mp_inst_existing_free(v, n);
 }

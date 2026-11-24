@@ -26,9 +26,9 @@ const mock = `
   }
   const settings = { Lang: query.get("lang") || "", Theme: "system", Runtime: "", LastDest: "", Mode: "p5z", Level: 19 };
   const games = {
-    "D:\\\\dumps\\\\Hollow.Knight.Silksong-PPSA12544": { TitleID: "PPSA12544", Name: "Hollow Knight: Silksong", Version: "01.000.010", Kind: "folder", OriginalSize: 8390000000, HasZstdRuntime: false, Icon: "", Packed: false },
-    "D:\\\\dumps\\\\Black.Myth.Wukong-PPSA23226.exfat": { TitleID: "PPSA23226", Name: "Black Myth: Wukong", Version: "01.000.021", Kind: "image", OriginalSize: 180400000000, HasZstdRuntime: true, Icon: "", Packed: false },
-    "D:\\\\dumps\\\\RESIDENT EVIL requiem-PPSA31246": { TitleID: "PPSA31246", Name: "RESIDENT EVIL requiem", Version: "01.000.000", Kind: "folder", OriginalSize: 133590000000, HasZstdRuntime: false, Icon: "", Packed: false },
+    "D:\\\\dumps\\\\Starfall.Odyssey-PPSA10001": { TitleID: "PPSA10001", Name: "Starfall Odyssey", Version: "01.000.010", Kind: "folder", OriginalSize: 8390000000, HasZstdRuntime: false, Icon: "", Packed: false },
+    "D:\\\\dumps\\\\Iron.Harbor-PPSA10002.exfat": { TitleID: "PPSA10002", Name: "Iron Harbor", Version: "01.000.021", Kind: "image", OriginalSize: 180400000000, HasZstdRuntime: true, Icon: "", Packed: false },
+    "D:\\\\dumps\\\\Neon Meridian-PPSA10003": { TitleID: "PPSA10003", Name: "Neon Meridian", Version: "01.000.000", Kind: "folder", OriginalSize: 133590000000, HasZstdRuntime: false, Icon: "", Packed: false },
   };
   const App = {
     Setup: async () => ({ version: "1.0.0-mock", coreVersion: "maxpack 1.0.0", lang: settings.Lang || "en", theme: "system", coreError: "" }),

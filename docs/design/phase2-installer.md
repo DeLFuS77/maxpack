@@ -66,9 +66,8 @@ only left ready to play: **nothing is ever compressed there** (decided by you); 
   (`vendor/ampr-emu-ng/libSceAmpr.sprx`) and inside Kraken Mount.
 - **Sizes:** the `.pak` volumes are at most 4,294,901,760 bytes, so they fit in FAT32; a big `.p5z` (79 GB
   in Iron Harbor) needs an exFAT USB drive.
-- **Tests:** on a console only the user can do them. The phase 1 console test has not been done yet. The
-  work on the PC (5.8, steps 1 and 2) can start now; that test has to pass before step 4, and what
-  comes out of it (section 7) may change the runtime and the ShadowMountPlus part.
+- **Tests:** on a console only the user can do them. The phase 1 console test was done on 24 Nov 2026
+  (see [test-on-ps5.md](../test-on-ps5.md)); the installer itself has not been tested on a real PS5.
 
 ## 4. Approaches considered
 

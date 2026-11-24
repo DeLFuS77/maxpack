@@ -365,7 +365,7 @@ MP_TEST(api_kinds) {
     mpt_put_text(USB "/Juego/sce_sys/param.json", "{\"titleId\":\"TEST00003\",\"contentVersion\":\"01.000.000\"}");
     mpt_put_text(USB "/Juego/eboot.bin", "eboot del juego");
     char junk[5000] = {7};
-    mpt_put(USB "/x/Silksong-PPSA12544.ffpkg", junk, sizeof junk);
+    mpt_put(USB "/x/Starfall-PPSA10001.ffpkg", junk, sizeof junk);
     mpt_put_text(TMP "/src4/sce_sys/param.json", "{\"titleId\":\"TEST00004\",\"contentVersion\":\"01.000.000\"}");
     static char big[600000];
     for (size_t i = 0; i < sizeof big; i++) big[i] = (char)('a' + i % 19);

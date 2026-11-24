@@ -5,8 +5,9 @@ MaxPack compresses PS5 games (your own dump, as a folder or as an `.exfat` image
 space and can be played without being decompressed. This guide goes from start to finish: download,
 compress on the PC, take the game to the PS5 and play it. Every step is a single action.
 
-> **Before you start:** the console side has had little testing. What is tested and what is missing is
-> in [section 8](#8-what-is-tested-and-what-is-missing). Always keep your original dump. MaxPack is for
+> **Before you start:** playing a `.p5z` and the library have been tested on one PS5 (firmware 13.60) with
+> three games, but the console installer has not been tested on a real PS5 yet. What is tested and what is
+> missing is in [section 8](#8-what-is-tested-and-what-is-missing). Always keep your original dump. MaxPack is for
 > backups of games you own, and you use it at your own risk: see [section 10](#10-legal-and-disclaimer).
 
 ![The MaxPack window](img/window-light.jpg)
@@ -711,13 +712,24 @@ The full list is in [pc-window.md](pc-window.md#5-warnings).
 
 ### Tested on a real PS5
 
-Firmware 13.60, ShadowMountPlus 1.7beta12, 24 Nov 2026 ([test-on-ps5.md](test-on-ps5.md)):
-- Starfall Odyssey, packed by MaxPack as a zstd folder and mounted with ShadowMountPlus, starts
-  with our ampr-emu-ng, saves and loads the save game again.
-- ShadowMountPlus, with the default fakelib mode ("Default (Full)"), keeps the game's
-  `libSceAmpr.sprx` and adds its backport.
-- MaxPack for the console, in its first version (mount only), mounted, launched and cleaned up that
-  game 3 times, and going back to ShadowMountPlus worked.
+24 Nov 2026, one PS5 on firmware 13.60 ([test-on-ps5.md](test-on-ps5.md)). Games are identified by letters,
+not by name:
+- **Playing a `.p5z` as it is**, with MaxPack for the console and its ampr-emu-ng, with three games:
+  - Game A: 7.8 to 2.3 GiB (-70 %), 1 volume, internal SSD, Fakelib Full. It plays, saves and loads.
+  - Game B: 69.0 to 33.2 GiB (-51 %), 9 volumes, M.2 SSD over USB-C, Full. Played without problems.
+  - Game C: 124.4 to 74.1 GiB (-40 %), 19 volumes, same M.2 SSD, with only ampr-emu-ng in its `fakelib/`
+    (what Fakelib Off does; set by hand during the test, then with the 1.0.0 setting). It reaches the main
+    menu and opens its saves. With the dump's backport libraries it showed a black screen, and with the
+    bundled PlayGo stub it stalled at the add-on check.
+- **A zstd-packed folder** of game A under ShadowMountPlus 1.7beta12: it boots, saves and loads. The
+  default fakelib mode ("Default (Full)") keeps the game's `libSceAmpr.sprx` and adds its backport.
+- **The library, launching and cleaning up** from MaxPack for the console worked with those games.
+- **Drives:** reads from the M.2 SSD took about 2 ms each. A mechanical USB hard drive was far too slow
+  for a large `.p5z`.
+
+Every game tried is in the
+[compatibility list](https://github.com/DeLFuS77/maxpack-ps5/blob/main/docs/compatibility.md) of the
+console repository, which identifies games only by these numbers.
 
 ### Tested on the PC
 
@@ -730,11 +742,8 @@ Firmware 13.60, ShadowMountPlus 1.7beta12, 24 Nov 2026 ([test-on-ps5.md](test-on
 
 ### Not tested on a console yet
 
-- **Playing a `.p5z` as it is** (the `p5z` mode), from USB, M.2 and internal SSD.
-- The newest parts of MaxPack for the console: the library, **Play** from the page, hide and show,
-  **Copy report**, the installer, excluded paths, living with ShadowMountPlus and Kraken Mount, and its
-  icon. The code exists and is tested on the PC, but it has not run on a PS5.
-- The speed of a `.p5z` compared with a packed folder.
+- **The console installer** (the Install tab): it has not been tested on a real PS5.
+- A side-by-side timing of a `.p5z` against a packed folder, and more games, firmwares and drives.
 - The Windows installer with a double click and the on-screen wizard. If something does not work, use
   the portable zip and report it.
 
@@ -753,7 +762,8 @@ both in the MaxPack for the console repository.
    [DeLFuS77/maxpack-ps5](https://github.com/DeLFuS77/maxpack-ps5/issues) and the runtime in
    [DeLFuS77/ampr-emu-ng](https://github.com/DeLFuS77/ampr-emu-ng/issues). You can write in English or
    Spanish.
-3. Paste the report and say whether it worked, with the game, its version and your firmware.
+3. Paste the report and say whether it worked, with your firmware, drive and Fakelib mode. You do not
+   need to name the game.
 
 Report what works too: it helps fill the compatibility list.
 

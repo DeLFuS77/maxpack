@@ -4,6 +4,47 @@ All notable changes to MaxPack are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- **Reading the game is about four times faster**, above all from an `.exfat` image or from a disk
+  whose data is not already in the system's cache. 1.0.2 read every 256 KiB block with a request of
+  its own on one thread, and computed its SHA-256 before asking for the next one (for a folder it
+  also opened and closed the file for every block), so the disk waited for the hash and the hash for
+  the disk, and the disk only ever had one small request to work on. Now a read-ahead of up to 4
+  threads reads 4 MiB at a time (a whole run of an image's clusters in one request), keeps up to
+  256 MiB read ahead of the compression, and computes each file's SHA-256 on the way, several files
+  at once. On a 32-thread PC with an NVMe, reading a generated 8 GB `.exfat` image (contiguous and
+  fragmented files, thousands of small ones) that the cache did not hold went from 768 to 2820 MB/s,
+  and a 3 GB folder from 737 to 3526 MB/s; from the cache, from 1784 to 3237 and from 1520 to
+  4338 MB/s (SHA-256s included; median of three runs).
+- What that gives when packing, on the same PC with all 32 threads: at level 3 the 8 GB image packs
+  to a `.p5z` in 9.2 s instead of 15.4 (the packs alone at 1766 MB/s instead of 735) and the 3 GB
+  folder in 5.8 s instead of 8.2 (1751 MB/s instead of 710), both read from the disk; to a folder,
+  with the game in the cache, in 3.4 s instead of 5.2 and 1.2 s instead of 2.4. At level 19 an NVMe
+  was already fast enough: the compression is what holds it back, and the times stay the same (34
+  s, 15 s) with the CPU 96-97 % busy. The gain at level 19 is on slower disks, where 1.0.2's
+  compression threads waited for one 256 KiB request at a time: a hard disk now gets several requests
+  of 4 MiB at once.
+- `analyze --levels` reads its sample through the same read-ahead, so its times follow the new
+  reading.
+- **The output is the same, byte for byte.** Same chunks in the same order, volumes, index and
+  SHA-256s as 1.0.2: the identity tests (hashes recorded with 1.0.1) still pass at 1, 2 and all the
+  CPU's threads, and both engines wrote identical bytes from the same input in every benchmark run
+  (levels 3 and 19, `.p5z` and folder, image and folder, 8 and 32 threads). New tests compare the
+  read-ahead with plain reading (bytes, order and SHA-256s, at 1 to 16 threads, several piece sizes
+  and memory limits down to a single piece) and check that a file that vanishes, a truncated image
+  and a cancel stop it with the same message as before. The exFAT reader itself did not change.
+- Memory: up to 256 MiB more while the packs are written (what is read ahead), and less at the start
+  of the packs of a `.p5z`: the frames of its loose files are finished and their compression
+  contexts freed before the packs begin, not when the first block of the packs is written, so the two
+  are no longer in memory together. Measured at 32 threads: a `.p5z` peaks at 1022 MiB instead of
+  1126-1260, a folder at 371-506 MiB instead of 112-247.
+- `tools/bench_pack.py` also generates an `.exfat` image (`gen-exfat`), takes an image as input, and
+  can drop the input from the system's cache before every run (`--cold`, `evict`); `mp_readbench`
+  (built with the tests) measures the reading alone, the 1.0.2 way or through the read-ahead.
+
 ## [1.0.2] - 2026-11-24
 
 ### Added

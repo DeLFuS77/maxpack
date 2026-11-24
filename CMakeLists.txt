@@ -217,4 +217,9 @@ if(MAXPACK_BUILD_TESTS)
   add_executable(mp_cat tests/tools/mp_cat.c)
   target_link_libraries(mp_cat PRIVATE maxpack_core)
   mp_warnings(mp_cat)
+
+  # Benchmark tool: reads a source's packable files the way the packer does and prints how fast.
+  add_executable(mp_readbench tests/tools/mp_readbench.c)
+  target_link_libraries(mp_readbench PRIVATE maxpack_pack)
+  mp_warnings(mp_readbench)
 endif()

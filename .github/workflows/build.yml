@@ -58,8 +58,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Linux always; Windows and macOS only on main, on tags and by hand
-        include: ${{ fromJSON(format('[{{"name":"linux-x64","runner":"ubuntu-24.04"}}{0}]', (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch') && ',{{"name":"windows-x64","runner":"windows-2025"}},{{"name":"macos-apple-silicon","runner":"macos-15"}},{{"name":"macos-intel","runner":"macos-15-intel"}}' || '')) }}
+        # Linux always; Windows and macOS only on main, on tags and by hand. Only format()'s first
+        # argument escapes braces as {{ }}: the inserted text is used as it is, with single braces.
+        include: ${{ fromJSON(format('[{{"name":"linux-x64","runner":"ubuntu-24.04"}}{0}]', (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch') && ',{"name":"windows-x64","runner":"windows-2025"},{"name":"macos-apple-silicon","runner":"macos-15"},{"name":"macos-intel","runner":"macos-15-intel"}' || '')) }}
     name: gui ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
     defaults:

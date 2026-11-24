@@ -143,7 +143,9 @@ To have the game as a folder on the PS5 SSD (for example, to unplug the USB driv
 
 Then, depending on your system:
 - **Windows (installer).** Run it. It puts MaxPack in your user folder, without administrator
-  rights, with a shortcut. Uninstall it from "Installed apps".
+  rights, with a shortcut. If you want, tick its places in the Explorer: the right-click menu, Send to
+  and opening `.p5z` files with a double click (all off unless you tick them; Settings changes them
+  later). Uninstall it from "Installed apps"; that takes them away too.
 - **Windows (portable).** Unzip it anywhere. `MaxPack.exe` and `maxpack-core.exe` must stay together.
   Settings are saved in its `settings` folder, which has a short `README.txt` saying what is kept there.
 - **macOS.** Open the `.dmg` and drag `MaxPack.app` to Applications.
@@ -155,9 +157,10 @@ The first time, Windows and macOS warn you because the program is not signed:
 - **macOS:** right-click `MaxPack.app` and choose **Open**. On macOS 15 or later, if that does not
   work, try to open it once, then in System Settings, Privacy & Security, press **Open Anyway**.
 
-There is only one window: opening MaxPack with games (dragging them to its icon, for example) adds
-them to the window that is already open. More details for each system:
-[pc-window.md](pc-window.md#1-download-and-open).
+There is only one window: opening MaxPack with games (dragging them to its icon, Send to, the
+right-click menu or a double click on a `.p5z`, for example) adds them to the window that is already
+open, which comes to the front. Folders and images go to Compress, and a `.p5z` to Details. More details
+for each system: [pc-window.md](pc-window.md#1-download-and-open).
 
 ### The console
 
@@ -221,7 +224,9 @@ Reads a `.p5z` or a compressed folder and checks that it is still whole. It chan
 ### Details
 
 Shows the title, ID, version, sizes, files, packs and whether it carries a runtime that reads zstd.
-**Copy report** under a game copies a text for an issue on GitHub, without its name or ID.
+**Copy report** under a game copies a text for an issue on GitHub, without its name or ID. A `.p5z` is a
+card that also says what it saved, with **Verify** and **Decompress**, which take it to those sections.
+A double click on a `.p5z` opens it here, when MaxPack opens `.p5z` files (see below).
 
 ### Rename
 
@@ -247,6 +252,15 @@ only accepts a `libSceAmpr.sprx` that reads zstd.
 - **File names:** the template of the names of the `.p5z` files and the originals unpacked, with
   `{title}`, `{id}`, `{version}` and `{region}`, three ready-made ones and a preview. `{title} [{id}]`
   is the default, the names of before. A folder for the console keeps its `TITLE_ID`.
+- **Windows Explorer** (Windows only, each off until you turn it on, for you only, no administrator):
+  - **Right-click menu:** **Compress with MaxPack** on folders and `.exfat` images, **Verify with
+    MaxPack** and **Details** on `.p5z` files. On Windows 11 they are under **Show more options**.
+  - **Send to › MaxPack:** to give it several games at once.
+  - **Open .p5z files with MaxPack:** a double click shows the card of the game in Details. If another
+    program already opens them, choose MaxPack once in **Open with › Choose another app › Always**.
+
+  The portable version writes nothing in Windows and leaves them off. Uninstalling MaxPack takes them
+  away. [Details](pc-window.md#windows-explorer).
 - **Internet:** MaxPack's window goes on the internet for nothing.
 - **About:** the versions, **Copy report**, and the links to report a bug or a game.
 

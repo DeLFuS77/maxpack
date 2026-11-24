@@ -307,9 +307,13 @@ line does is there, without typing a command.
   versions, the system and the settings, and no game names.
 - **Eleven languages** (English, Russian, Chinese, German, Spanish, French, Japanese, Portuguese,
   Italian, Korean and Arabic, written right to left), starting in your system's language.
-- **Light and dark themes**, a single window (opening more games adds them to it), progress on the
-  Windows taskbar or the macOS Dock, a system notification when it ends, and the PC kept awake while
-  there is work.
+- **In the Windows Explorer**, if you want (Settings or the installer, each off until you turn it on,
+  for you only): **Compress with MaxPack** on a right click of a folder or an image, **Verify with
+  MaxPack** and **Details** on a `.p5z`, **Send to › MaxPack**, and a double click on a `.p5z` that shows
+  its card in Details, with Verify and Decompress. The portable version writes nothing in Windows.
+- **Light and dark themes**, a single window (opening more games adds them to it, from the Explorer too),
+  progress on the Windows taskbar or the macOS Dock, a system notification when it ends, and the PC kept
+  awake while there is work.
 
 <p align="center"><img src="docs/img/window-working.jpg" alt="Compressing: one game being verified, two waiting, with speed and time left" width="49%"> <img src="docs/img/window-result.jpg" alt="The summary at the end: size before and after, what saved the most and what to do next" width="49%"></p>
 <p align="center"><sub>Left: work in progress, with speed and time left. Right: the summary at the end. The games in the screenshots are made-up samples.</sub></p>

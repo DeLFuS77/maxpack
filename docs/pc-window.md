@@ -21,11 +21,14 @@ Then follow the steps for your system.
 
 **Windows**
 - `maxpack-windows-x64-setup.exe` is the installer. It installs MaxPack in your user folder, without
-  administrator rights, with a shortcut, and you uninstall it from "Installed apps".
+  administrator rights, with a shortcut, and you uninstall it from "Installed apps". A page of its own
+  offers MaxPack's places in the Windows Explorer (the right-click menu, Send to and opening `.p5z`
+  files), each off until you tick it: see [Windows Explorer](#windows-explorer). The uninstaller takes
+  them all away.
 - `maxpack-windows-x64-portable.zip` is the portable version: unzip it anywhere and open
   `MaxPack.exe`. It has a `settings` folder next to it, and while that is there MaxPack keeps all its
   data (settings, window size and position) in it and nothing in your user profile. It is handy for a
-  USB drive.
+  USB drive. It writes nothing in Windows: no notifications and no places in the Explorer.
 - `MaxPack.exe` and `maxpack-core.exe` must stay together. The window uses `maxpack-core.exe` to do
   its work, and if it is missing the window tells you what is missing. If the one there is of another
   version (an old one that does not do everything the window needs), the window says "maxpack-core of
@@ -35,9 +38,9 @@ Then follow the steps for your system.
 > Neither the installer nor `MaxPack.exe` is signed: Windows SmartScreen will warn you the first time
 > ("Windows protected your PC"). Press **More info** and **Run anyway**.
 
-> The Windows installer is checked automatically on every build (silent install, compress a test image
-> and uninstall), but it has not been tested by hand yet with a double click and the on-screen wizard.
-> If something does not work, use the portable zip and report it.
+> The Windows installer is checked automatically on every build (silent install with its places in the
+> Explorer, compress a test image and uninstall), but it has not been tested by hand yet with a double
+> click and the on-screen wizard. If something does not work, use the portable zip and report it.
 
 **macOS**
 - Open the `.dmg` and drag `MaxPack.app` to Applications. The `.tar.gz` carries the same app.
@@ -51,9 +54,12 @@ Then follow the steps for your system.
   icon, and `maxpack` in `~/.local/bin`. `sh install.sh --uninstall` removes it.
 - It needs GTK 3 and WebKitGTK 4.1, which almost every desktop has.
 
-On all three systems, opening MaxPack with games or folders (dragging them to the icon, or from
-Explorer, Finder or the command line) adds them to the window that is already open: there is only one.
-With command-line options (`MaxPack pack ...`, `MaxPack --version`) it behaves like `maxpack`.
+On all three systems, opening MaxPack with games or folders (dragging them to the icon, Send to, the
+right-click menu or a double click on a `.p5z` on Windows, the Finder, or the command line) adds them to
+the window that is already open, which comes to the front: there is only one. With none open, the window
+opens with them. Folders and `.exfat` images go to **Compress** and a `.p5z` to **Details**, unless the
+right-click menu asked for another section. With command-line options (`MaxPack pack ...`, `MaxPack
+--version`) it behaves like `maxpack`, as always.
 
 ## 2. Compress
 
@@ -116,7 +122,7 @@ or was cancelled.
 While there is work, the PC does not go to sleep. Progress also shows on the taskbar (Windows) or in
 the Dock (macOS), and when it ends the system notifies you. The portable version of Windows does not
 notify: to send notifications it would have to register in the Windows registry, and the portable one
-does not.
+writes nothing there.
 
 Cancelling, or closing the window while work is running, stops the current game without leaving
 anything half made or unverified:
@@ -172,7 +178,9 @@ Afterwards:
   nothing.
 - **Details** shows what a game says: title, ID, version, sizes, files, packs and whether it carries a
   runtime that reads zstd. **Copy report** under each game copies a text for an issue on GitHub (see
-  [Copy report](#copy-report)).
+  [Copy report](#copy-report)). A `.p5z` shows as a card with what it saved against the original and
+  its volumes, and two buttons: **Verify** and **Decompress** take it to those sections, where you start
+  them. A `.p5z` opened with a double click (see [Windows Explorer](#windows-explorer)) opens here.
 - **Rename**, in Check, names `.p5z` files, dump folders and `.exfat` images by what each one holds,
   with the template of Settings > File names. Add them and each shows its new name before anything
   changes; **Rename** applies it. A name that something else in the folder already has, two games of
@@ -227,9 +235,34 @@ Afterwards:
   the console looks for. The region is known for every kind of game: `maxpack-core` reads the content
   ID of its `param.json`, also inside a `.p5z` or an `.exfat` image; a game whose `param.json` gives
   none has no region, and its bracket goes.
+- **Windows Explorer** (Windows only): the right-click menu, Send to › MaxPack and opening `.p5z`
+  files with MaxPack, each a switch, off until you turn it on. See [Windows Explorer](#windows-explorer).
 - **Internet.** MaxPack's window goes on the internet for nothing; see
   [What goes on the internet](../README.md#what-goes-on-the-internet).
 - **About** has **Copy report** and the links to report a bug or a game.
+
+### Windows Explorer
+
+Three places of MaxPack in the Explorer, each one off until you turn it on in Settings, or tick it in the
+installer. Each is for you only (it is written in your part of the registry, or in your own Send to
+folder), needs no administrator, and goes away when you turn it off or uninstall MaxPack.
+
+- **Right-click menu.** **Compress with MaxPack** on a folder or an `.exfat` image, and **Verify with
+  MaxPack** and **Details** on a `.p5z`, each with MaxPack's icon. Several files chosen at once go to the
+  window together. On Windows 11 they are under **Show more options** (or Shift+F10): its compact menu
+  only takes the entries of apps installed as packages, which MaxPack is not. The menu speaks the
+  language of the window, and changes with it.
+- **Send to › MaxPack.** MaxPack in the Send to menu of a right click: the files and folders chosen go to
+  the window, folders and images to Compress and `.p5z` files to Details.
+- **Open .p5z files with MaxPack.** A double click on a `.p5z` opens its card in **Details**. MaxPack is
+  also in **Open with** and in Settings › Apps › Default apps. If another program already opens `.p5z`
+  files, MaxPack leaves it, as Windows wants: choose MaxPack once in **Open with › Choose another app ›
+  Always**, and Settings tells you while that is still to do.
+
+If MaxPack is moved (or another copy put a place there), Settings says the place is for another copy:
+turn it on and it points to this one. The **portable version** writes nothing in Windows, neither in
+the registry nor in your folders: its switches stay off and Settings says why. Install MaxPack to have
+them.
 
 ### Copy report
 

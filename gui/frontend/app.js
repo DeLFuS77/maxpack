@@ -243,7 +243,8 @@ function takeTo(row, section) {
 }
 
 // files dropped on the window: to the section open in Verify and Details; else to
-// Compress or Decompress by what they are, as the files given to MaxPack
+// Compress or Decompress by what they are (the files given to MaxPack from outside the window go
+// to Compress or Details instead, see addSent)
 async function dropped(paths) {
   showDrop(false);
   if (state.section === "verify" || state.section === "details" || state.section === "rename") {

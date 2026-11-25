@@ -78,7 +78,8 @@ func (a *App) SetExplorerPlace(place string, on bool, texts explorer.MenuTexts) 
 }
 
 // RelabelExplorerMenu writes the menu again in the language of the page, when it is there for this
-// copy in other words (the installer wrote it in its own language, or the language changed).
+// copy in other words (the installer wrote it in its own language, or the language changed), and
+// adds the thumbnails to the place of .p5z files when a MaxPack before this one wrote it.
 func (a *App) RelabelExplorerMenu(texts explorer.MenuTexts) {
 	if isPortable() {
 		return

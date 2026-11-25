@@ -195,6 +195,15 @@ func TestInstallerScript(t *testing.T) {
 		`Page custom ExplorerPage ExplorerLeave`,
 		`Delete "$SENDTO\MaxPack.lnk"`,
 		`${If} $1 == "MaxPack.p5z"`,
+		// the thumbnail provider: installed next to MaxPack, set aside when the Explorer has it loaded,
+		// and its keys taken away with the other places
+		`File "/oname=maxpack-thumbs.dll" "${THUMBS}"`,
+		`Rename "$INSTDIR\maxpack-thumbs.dll" "$INSTDIR\maxpack-thumbs-$0.old"`,
+		`Delete /REBOOTOK "$INSTDIR\maxpack-thumbs-$0.old"`,
+		`Delete /REBOOTOK "$INSTDIR\maxpack-thumbs.dll"`,
+		`Delete /REBOOTOK "$INSTDIR\maxpack-thumbs-*.old"`,
+		`DeleteRegKey HKCU "Software\Classes\CLSID\{266D6364-17C0-4B3E-BB33-7EEB90C91837}"`,
+		`DeleteRegKey HKCU "Software\Classes\SystemFileAssociations\.p5z\ShellEx\{e357fccd-a995-4576-b01f-234630154e96}"`,
 	} {
 		if !strings.Contains(script, want) {
 			t.Errorf("the installer does not have: %s", want)

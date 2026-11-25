@@ -165,10 +165,36 @@ func Remove(place string) error {
 	return nil
 }
 
-// Relabel writes the menu again in the texts given (the language of the window), when it is there
-// for this copy of MaxPack in other words, or without the entries a later MaxPack added (the ones
-// on .ffpkg, .ffpfs and .ffpfsc, for a menu written by MaxPack 1.0.4 or before; on .pkg, by 1.0.5).
+// Relabel brings what is there for this copy of MaxPack up to this MaxPack, as the window opens: the
+// menu written again in the texts given (the language of the window), when it is there in other
+// words, or without the entries a later MaxPack added (the ones on .ffpkg, .ffpfs and .ffpfsc, for
+// a menu written by MaxPack 1.0.4 or before; on .pkg, by 1.0.5); and the place of .p5z files
+// completed with the thumbnail provider (see completeFiles).
 func Relabel(executable string, texts MenuTexts) error {
+	return errors.Join(completeFiles(executable), relabelMenu(executable, texts))
+}
+
+// completeFiles registers the thumbnail provider when the place of .p5z files is there for this
+// copy of MaxPack without it (as MaxPack 1.0.6 and before wrote it) or with another copy's DLL, and
+// tells the Explorer; for another copy, or with the place off, it writes nothing.
+func completeFiles(executable string) error {
+	if placeOf(readString(registry.CURRENT_USER, filesCommand(user.software), ""), executable) != Here {
+		return nil
+	}
+	ops := thumbsOps(user.software, executable)
+	for _, op := range ops {
+		if readString(registry.CURRENT_USER, op.Key, op.Name) != op.Data {
+			if err := apply(user.software, ops); err != nil {
+				return err
+			}
+			notifyShell()
+			return nil
+		}
+	}
+	return nil
+}
+
+func relabelMenu(executable string, texts MenuTexts) error {
 	places := menuPlaces(executable)
 	if !texts.valid() || menuPlace(places) != Here {
 		return nil

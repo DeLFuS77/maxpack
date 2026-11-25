@@ -58,7 +58,8 @@ func TestRemoveMenuOps(t *testing.T) {
 }
 
 // .p5z files open with MaxPack: its ProgID with its icon and --open, in Open with and in Default
-// apps; the type opens with it by default only when no program had it (free).
+// apps; the type opens with it by default only when no program had it (free). Whoever opens them,
+// the Explorer shows their icon as their thumbnail with maxpack-thumbs.dll, next to MaxPack.
 func TestAddFilesOps(t *testing.T) {
 	classes := `Software\Classes`
 	want := []Op{
@@ -70,6 +71,10 @@ func TestAddFilesOps(t *testing.T) {
 		{Do: SetValue, Key: `Software\MaxPack\Capabilities`, Name: "ApplicationDescription", Data: "Compress PS5 games into .p5z files, verify them and unpack them"},
 		{Do: SetValue, Key: `Software\MaxPack\Capabilities\FileAssociations`, Name: ".p5z", Data: "MaxPack.p5z"},
 		{Do: SetValue, Key: `Software\RegisteredApplications`, Name: "MaxPack", Data: `Software\MaxPack\Capabilities`},
+		{Do: SetValue, Key: classes + `\CLSID\{266D6364-17C0-4B3E-BB33-7EEB90C91837}`, Data: "MaxPack .p5z thumbnails"},
+		{Do: SetValue, Key: classes + `\CLSID\{266D6364-17C0-4B3E-BB33-7EEB90C91837}\InprocServer32`, Data: `C:\Users\user\AppData\Local\Programs\MaxPack\maxpack-thumbs.dll`},
+		{Do: SetValue, Key: classes + `\CLSID\{266D6364-17C0-4B3E-BB33-7EEB90C91837}\InprocServer32`, Name: "ThreadingModel", Data: "Apartment"},
+		{Do: SetValue, Key: classes + `\SystemFileAssociations\.p5z\ShellEx\{e357fccd-a995-4576-b01f-234630154e96}`, Data: "{266D6364-17C0-4B3E-BB33-7EEB90C91837}"},
 	}
 	if got := AddFilesOps("Software", testExe, false); !reflect.DeepEqual(got, want) {
 		t.Fatalf("another program had .p5z: got\n%v\nwant\n%v", got, want)
@@ -80,7 +85,8 @@ func TestAddFilesOps(t *testing.T) {
 	}
 }
 
-// Removing them takes away what MaxPack wrote, and the default of .p5z only when it is MaxPack's.
+// Removing them takes away what MaxPack wrote, the thumbnails too, and the default of .p5z only
+// when it is MaxPack's.
 func TestRemoveFilesOps(t *testing.T) {
 	want := []Op{
 		{Do: DeleteValue, Key: `Software\Classes\.p5z\OpenWithProgids`, Name: "MaxPack.p5z"},
@@ -88,9 +94,25 @@ func TestRemoveFilesOps(t *testing.T) {
 		{Do: DeleteTree, Key: `Software\Classes\MaxPack.p5z`},
 		{Do: DeleteValue, Key: `Software\RegisteredApplications`, Name: "MaxPack"},
 		{Do: DeleteTree, Key: `Software\MaxPack\Capabilities`},
+		{Do: DeleteTree, Key: `Software\Classes\SystemFileAssociations\.p5z\ShellEx\{e357fccd-a995-4576-b01f-234630154e96}`},
+		{Do: DeleteTree, Key: `Software\Classes\CLSID\{266D6364-17C0-4B3E-BB33-7EEB90C91837}`},
 	}
 	if got := RemoveFilesOps("Software"); !reflect.DeepEqual(got, want) {
 		t.Fatalf("got\n%v\nwant\n%v", got, want)
+	}
+}
+
+// The thumbnail provider is the one next to the copy of MaxPack, whatever its folder.
+func TestThumbsDLL(t *testing.T) {
+	for executable, want := range map[string]string{
+		testExe:                      `C:\Users\user\AppData\Local\Programs\MaxPack\maxpack-thumbs.dll`,
+		`D:\Games\Tools\MaxPack.exe`: `D:\Games\Tools\maxpack-thumbs.dll`,
+		`\\server\share\MaxPack.exe`: `\\server\share\maxpack-thumbs.dll`,
+		`C:/Tools/MaxPack.exe`:       `C:/Tools/maxpack-thumbs.dll`,
+	} {
+		if got := thumbsDLL(executable); got != want {
+			t.Errorf("%s: %s, want %s", executable, got, want)
+		}
 	}
 }
 
@@ -104,8 +126,10 @@ func TestOpsUnderAnotherKey(t *testing.T) {
 			}
 		}
 	}
-	if got := AddFilesOps(software, testExe, false); got[len(got)-1].Data != software+`\MaxPack\Capabilities` {
-		t.Errorf("RegisteredApplications names %q", got[len(got)-1].Data)
+	for _, op := range AddFilesOps(software, testExe, false) {
+		if op.Key == software+`\RegisteredApplications` && op.Data != software+`\MaxPack\Capabilities` {
+			t.Errorf("RegisteredApplications names %q", op.Data)
+		}
 	}
 }
 

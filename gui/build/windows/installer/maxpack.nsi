@@ -3,7 +3,7 @@
 ; MaxPack's installer for Windows. It is built with makensis and these definitions:
 ;   VERSION  (for example dev-1a2b3c4 or 1.2.3)    NUMBERS  (4 numbers: 1.2.3.0)
 ;   PROGRAM  (MaxPack.exe)   CORE (maxpack-core.exe)   PAR2 (maxpack-par2.exe)   LICENSE (LICENSE)
-;   NOTICES (THIRD_PARTY_NOTICES)
+;   THUMBS (maxpack-thumbs.dll, the thumbnail provider of .p5z files)   NOTICES (THIRD_PARTY_NOTICES)
 ;   ICON (appicon.ico)
 ;   OUTFILE  (the installer that comes out)
 ;
@@ -286,7 +286,8 @@ Function ExplorerLeave
 FunctionEnd
 
 ; what MaxPack writes in the Explorer (gui/internal/explorer), taken away by the uninstaller itself when MaxPack
-; cannot run: the keys and values that are MaxPack's, and the default of .p5z only while it is MaxPack's
+; cannot run: the keys and values that are MaxPack's (the thumbnail provider of .p5z files too), and the default
+; of .p5z only while it is MaxPack's
 Function un.RemoveExplorer
   DeleteRegKey HKCU "${CLASSES}\Directory\shell\MaxPack.Compress"
   DeleteRegKey HKCU "${CLASSES}\SystemFileAssociations\.exfat\shell\MaxPack.Compress"
@@ -307,6 +308,9 @@ Function un.RemoveExplorer
   DeleteRegValue HKCU "Software\RegisteredApplications" "MaxPack"
   DeleteRegKey HKCU "Software\MaxPack\Capabilities"
   DeleteRegKey /ifempty HKCU "Software\MaxPack"
+  DeleteRegKey HKCU "${CLASSES}\SystemFileAssociations\.p5z\ShellEx\{e357fccd-a995-4576-b01f-234630154e96}"
+  DeleteRegKey /ifempty HKCU "${CLASSES}\SystemFileAssociations\.p5z\ShellEx"
+  DeleteRegKey HKCU "${CLASSES}\CLSID\{266D6364-17C0-4B3E-BB33-7EEB90C91837}"
   Delete "$SENDTO\MaxPack.lnk"
   ; the Explorer shows the programs of the files as they are now
   System::Call "shell32::SHChangeNotify(i 0x08000000, i 0, p 0, p 0)"
@@ -318,6 +322,17 @@ Section "MaxPack"
   File "/oname=MaxPack.exe" "${PROGRAM}"
   File "/oname=maxpack-core.exe" "${CORE}"
   File "/oname=maxpack-par2.exe" "${PAR2}"
+  ; the thumbnail provider of .p5z files, which the Explorer (dllhost) may have loaded while it is updated: a
+  ; loaded DLL can be renamed but not overwritten, so it is set aside, and goes now if it can, else at the next
+  ; update or uninstall (or at a restart, when Windows lets this user ask for that)
+  Delete "$INSTDIR\maxpack-thumbs-*.old"
+  Delete "$INSTDIR\maxpack-thumbs.dll"
+  ${If} ${FileExists} "$INSTDIR\maxpack-thumbs.dll"
+    System::Call "kernel32::GetTickCount() i .r0"
+    Rename "$INSTDIR\maxpack-thumbs.dll" "$INSTDIR\maxpack-thumbs-$0.old"
+    Delete /REBOOTOK "$INSTDIR\maxpack-thumbs-$0.old"
+  ${EndIf}
+  File "/oname=maxpack-thumbs.dll" "${THUMBS}"
   File "/oname=LICENSE.txt" "${LICENSE}"
   File "/oname=THIRD_PARTY_NOTICES.txt" "${NOTICES}"
   WriteUninstaller "$INSTDIR\uninstall.exe"
@@ -373,6 +388,9 @@ Section "Uninstall"
   Delete "$INSTDIR\MaxPack.exe"
   Delete "$INSTDIR\maxpack-core.exe"
   Delete "$INSTDIR\maxpack-par2.exe"
+  ; the Explorer may still have the thumbnail provider loaded (its keys are gone: it loads it no more)
+  Delete /REBOOTOK "$INSTDIR\maxpack-thumbs.dll"
+  Delete /REBOOTOK "$INSTDIR\maxpack-thumbs-*.old"
   Delete "$INSTDIR\LICENSE.txt"
   Delete "$INSTDIR\THIRD_PARTY_NOTICES.txt"
   Delete "$INSTDIR\uninstall.exe"

@@ -56,6 +56,36 @@ func exists(t *testing.T, path string) bool {
 
 func value(path, name string) string { return readString(registry.CURRENT_USER, path, name) }
 
+const (
+	testCLSID   = `{266D6364-17C0-4B3E-BB33-7EEB90C91837}`
+	testHandler = `\SystemFileAssociations\.p5z\ShellEx\{e357fccd-a995-4576-b01f-234630154e96}`
+)
+
+// checkThumbs checks the thumbnail provider of .p5z files is registered under classes with that
+// DLL, or, with dll "", that none of its keys is there.
+func checkThumbs(t *testing.T, classes, dll string) {
+	t.Helper()
+	clsid := classes + `\CLSID\` + testCLSID
+	if dll == "" {
+		for _, path := range []string{clsid, classes + testHandler} {
+			if exists(t, path) {
+				t.Errorf("%s stays", path)
+			}
+		}
+		return
+	}
+	for _, c := range []struct{ path, name, want string }{
+		{clsid, "", "MaxPack .p5z thumbnails"},
+		{clsid + `\InprocServer32`, "", dll},
+		{clsid + `\InprocServer32`, "ThreadingModel", "Apartment"},
+		{classes + testHandler, "", testCLSID},
+	} {
+		if got := value(c.path, c.name); got != c.want {
+			t.Errorf("%s %q: %q, want %q", c.path, c.name, got, c.want)
+		}
+	}
+}
+
 // Added, the menu holds its entries in the language given, each starting MaxPack with --section;
 // it is for this copy, not for another; it is written again in another language only for this
 // copy; removed, it goes with the keys it left empty, and what another program put stays.
@@ -226,7 +256,8 @@ func TestMenuOfAnEarlierMaxPack(t *testing.T) {
 	}
 }
 
-// With .p5z free, MaxPack opens it with a double click (--open); removed, all of it goes.
+// With .p5z free, MaxPack opens it with a double click (--open), and the Explorer shows its icon
+// with the thumbnail provider next to MaxPack; removed, all of it goes.
 func TestFilesWhenFree(t *testing.T) {
 	software, _ := testKeys(t)
 	classes := software + `\Classes`
@@ -256,6 +287,7 @@ func TestFilesWhenFree(t *testing.T) {
 	if got := value(software+`\MaxPack\Capabilities\FileAssociations`, ".p5z"); got != ProgID {
 		t.Errorf("Default apps: %q", got)
 	}
+	checkThumbs(t, classes, `C:\Tools\MaxPack\maxpack-thumbs.dll`)
 	if got := Read(`D:\Elsewhere\MaxPack.exe`).Files; got != Moved {
 		t.Errorf("for another copy: %q", got)
 	}
@@ -266,7 +298,8 @@ func TestFilesWhenFree(t *testing.T) {
 	if got := Read(exe); got.Files != Missing || got.FilesOther {
 		t.Fatalf("removed: %+v", got)
 	}
-	for _, path := range []string{classes + `\` + ProgID, classes + `\.p5z`, software + `\MaxPack`} {
+	checkThumbs(t, classes, "")
+	for _, path := range []string{classes + `\` + ProgID, classes + `\.p5z`, software + `\MaxPack`, classes + `\CLSID`, classes + `\SystemFileAssociations`} {
 		if exists(t, path) {
 			t.Errorf("%s stays", path)
 		}
@@ -280,13 +313,17 @@ func TestFilesWhenFree(t *testing.T) {
 }
 
 // A .p5z another program opens is left to it, as Windows wants: MaxPack is only in Open with, and
-// says the user has to choose it; once chosen with Open with › Always, it is MaxPack's. Removed,
-// the other program still opens it.
+// says the user has to choose it; once chosen with Open with › Always, it is MaxPack's. The
+// thumbnails are there all the same. Removed, the other program still opens it, and keeps what it
+// put for .p5z.
 func TestFilesOfAnotherProgram(t *testing.T) {
 	software, _ := testKeys(t)
 	classes := software + `\Classes`
 	exe := `C:\Tools\MaxPack\MaxPack.exe`
 	if err := writeString(classes+`\.p5z`, "", "Other.File"); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeString(classes+`\SystemFileAssociations\.p5z\shell\Other\command`, "", `"C:\Other\other.exe" "%1"`); err != nil {
 		t.Fatal(err)
 	}
 	if err := Add(Files, exe, MenuTexts{}); err != nil {
@@ -295,6 +332,7 @@ func TestFilesOfAnotherProgram(t *testing.T) {
 	if got := value(classes+`\.p5z`, ""); got != "Other.File" {
 		t.Fatalf("the program of .p5z was taken: %q", got)
 	}
+	checkThumbs(t, classes, `C:\Tools\MaxPack\maxpack-thumbs.dll`)
 	if state := Read(exe); state.Files != Here || !state.FilesOther {
 		t.Fatalf("added: %+v", state)
 	}
@@ -320,6 +358,68 @@ func TestFilesOfAnotherProgram(t *testing.T) {
 	if exists(t, classes+`\.p5z\OpenWithProgids`) {
 		t.Error("MaxPack stays in Open with")
 	}
+	checkThumbs(t, classes, "")
+	if got := value(classes+`\SystemFileAssociations\.p5z\shell\Other\command`, ""); got != `"C:\Other\other.exe" "%1"` {
+		t.Errorf("the entry of another program went: %q", got)
+	}
+}
+
+// .p5z files opened with MaxPack by MaxPack 1.0.6 or before, which had no thumbnails: Relabel, which
+// the window runs as it opens, adds them for this copy (or puts this copy's DLL in them), and tells
+// the Explorer; for another copy, or with the place off, it writes nothing.
+func TestFilesOfAnEarlierMaxPack(t *testing.T) {
+	software, _ := testKeys(t)
+	classes := software + `\Classes`
+	exe := `C:\Tools\MaxPack\MaxPack.exe`
+	notified := 0
+	notifyShell = func() { notified++ }
+	var earlier []Op
+	for _, op := range AddFilesOps(software, exe, true) {
+		if !strings.Contains(op.Key, `\CLSID\`) && !strings.Contains(op.Key, `\ShellEx\`) {
+			earlier = append(earlier, op)
+		}
+	}
+	if len(earlier) != 9 {
+		t.Fatalf("the files of before have %d operations", len(earlier))
+	}
+	if err := apply(software, earlier); err != nil {
+		t.Fatal(err)
+	}
+	if got := Read(exe).Files; got != Here {
+		t.Fatalf("the files of before: %q", got)
+	}
+	// for another copy, nothing
+	if err := Relabel(`D:\Elsewhere\MaxPack.exe`, MenuTexts{}); err != nil {
+		t.Fatal(err)
+	}
+	checkThumbs(t, classes, "")
+	if err := Relabel(exe, MenuTexts{}); err != nil {
+		t.Fatal(err)
+	}
+	checkThumbs(t, classes, `C:\Tools\MaxPack\maxpack-thumbs.dll`)
+	if notified != 1 {
+		t.Errorf("the Explorer was told %d times", notified)
+	}
+	// complete: nothing to write, nothing to tell
+	if err := Relabel(exe, MenuTexts{}); err != nil || notified != 1 {
+		t.Fatalf("written again: %v, told %d times", err, notified)
+	}
+	// another copy's DLL in them
+	if err := writeString(classes+`\CLSID\`+testCLSID+`\InprocServer32`, "", `D:\Old\maxpack-thumbs.dll`); err != nil {
+		t.Fatal(err)
+	}
+	if err := Relabel(exe, MenuTexts{}); err != nil {
+		t.Fatal(err)
+	}
+	checkThumbs(t, classes, `C:\Tools\MaxPack\maxpack-thumbs.dll`)
+	// with the place off, nothing comes back
+	if err := Remove(Files); err != nil {
+		t.Fatal(err)
+	}
+	if err := Relabel(exe, MenuTexts{}); err != nil {
+		t.Fatal(err)
+	}
+	checkThumbs(t, classes, "")
 }
 
 // "Send to" holds a shortcut to MaxPack, for this copy; removed, it goes.
@@ -465,7 +565,8 @@ func TestRealPlaces(t *testing.T) {
 		if after := Read(exe); after.Menu != Missing || after.SendTo != Missing || after.Files != Missing {
 			t.Errorf("left behind: %+v", after)
 		}
-		for _, path := range []string{`Software\Classes\` + ProgID, `Software\MaxPack`, `Software\Classes\SystemFileAssociations\.p5z\shell\MaxPack.1Verify`} {
+		for _, path := range []string{`Software\Classes\` + ProgID, `Software\MaxPack`, `Software\Classes\SystemFileAssociations\.p5z\shell\MaxPack.1Verify`,
+			`Software\Classes\CLSID\` + testCLSID, `Software\Classes` + testHandler} {
 			if exists(t, path) {
 				t.Errorf("%s stays", path)
 			}

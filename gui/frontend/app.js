@@ -922,10 +922,11 @@ async function setExplorer(place, on) {
   }
   render();
 }
-// the menu speaks the language of the page: the installer wrote it in its own, and the language
-// may change
+// what is there for this copy follows it: the menu speaks the language of the page (the installer
+// wrote it in its own, and the language may change), and .p5z files get the thumbnails that a
+// MaxPack before this one did not add
 function relabelMenu() {
-  if (state.explorer.menu === "here") go.call("RelabelExplorerMenu", menuTexts()).catch(() => { });
+  if (state.explorer.menu === "here" || state.explorer.files === "here") go.call("RelabelExplorerMenu", menuTexts()).catch(() => { });
 }
 async function loadExplorer() {
   if (!state.setup || !state.setup.explorer) return;

@@ -3,7 +3,8 @@
 // Package explorer puts MaxPack in the Explorer of Windows, each place apart and only when the user
 // asks (Settings › Windows Explorer, or the installer): a right-click menu on folders, the images
 // ShadowMountPlus mounts (.exfat, .ffpkg, .ffpfs, .ffpfsc), PS5 packages (.pkg) and .p5z files,
-// MaxPack in "Send to", and .p5z files opened with MaxPack with a double click. On the images and the
+// MaxPack in "Send to", and .p5z files opened with MaxPack with a double click, with the game's icon
+// as their thumbnail. On the images and the
 // packages it is only an entry of the menu: the program that opens them and their icon stay the ones
 // other tools gave them. All
 // of it is written for this user only, under HKEY_CURRENT_USER and in the user's own Send to folder,
@@ -157,10 +158,43 @@ func menuCommands(software string) []string {
 // capabilities is where MaxPack tells Default apps what it opens.
 func capabilities(software string) string { return software + `\MaxPack\Capabilities` }
 
+// The thumbnail provider of .p5z files: maxpack-thumbs.dll (src/thumb/win), next to MaxPack, with
+// which the Explorer shows a .p5z's icon as its thumbnail. Its class is registered for this user
+// and named as the thumbnail handler of .p5z under SystemFileAssociations, which works whatever
+// program opens .p5z. It rides on the place of .p5z files: added and removed with it.
+const (
+	thumbsCLSID   = "{266D6364-17C0-4B3E-BB33-7EEB90C91837}"
+	thumbsFile    = "maxpack-thumbs.dll"
+	thumbsName    = "MaxPack .p5z thumbnails"
+	thumbsHandler = "{e357fccd-a995-4576-b01f-234630154e96}" // IThumbnailProvider
+)
+
+// thumbsDLL is the thumbnail provider of the copy of MaxPack at executable: the one next to it.
+func thumbsDLL(executable string) string {
+	return executable[:strings.LastIndexAny(executable, `\/`)+1] + thumbsFile
+}
+
+func thumbsClass(software string) string { return classes(software) + `\CLSID\` + thumbsCLSID }
+
+func thumbsShellEx(software string) string {
+	return classes(software) + `\SystemFileAssociations\.p5z\ShellEx\` + thumbsHandler
+}
+
+// thumbsOps register the thumbnail provider of the copy of MaxPack at executable.
+func thumbsOps(software, executable string) []Op {
+	return []Op{
+		{Do: SetValue, Key: thumbsClass(software), Data: thumbsName},
+		{Do: SetValue, Key: thumbsClass(software) + `\InprocServer32`, Data: thumbsDLL(executable)},
+		{Do: SetValue, Key: thumbsClass(software) + `\InprocServer32`, Name: "ThreadingModel", Data: "Apartment"},
+		{Do: SetValue, Key: thumbsShellEx(software), Data: thumbsCLSID},
+	}
+}
+
 // AddFilesOps makes MaxPack a program of .p5z files: its ProgID, with its icon, that opens one with
-// --open; MaxPack in Open with and in Settings › Default apps. The type opens with MaxPack with a
-// double click only when free, when no program had it: Windows leaves a program the user chose to
-// the user, who chooses MaxPack in Open with › Always.
+// --open; MaxPack in Open with and in Settings › Default apps; and the thumbnail provider, so the
+// Explorer shows the icon of each. The type opens with MaxPack with a double click only when free,
+// when no program had it: Windows leaves a program the user chose to the user, who chooses MaxPack
+// in Open with › Always.
 func AddFilesOps(software, executable string, free bool) []Op {
 	c := classes(software)
 	ops := []Op{
@@ -173,14 +207,15 @@ func AddFilesOps(software, executable string, free bool) []Op {
 		{Do: SetValue, Key: capabilities(software) + `\FileAssociations`, Name: ".p5z", Data: ProgID},
 		{Do: SetValue, Key: software + `\RegisteredApplications`, Name: appName, Data: capabilities(software)},
 	}
+	ops = append(ops, thumbsOps(software, executable)...)
 	if free {
 		ops = append(ops, Op{Do: SetValue, Key: c + `\.p5z`, Data: ProgID})
 	}
 	return ops
 }
 
-// RemoveFilesOps takes MaxPack away from the programs of .p5z files; what other programs wrote for
-// .p5z stays, and so does a default that is not MaxPack's.
+// RemoveFilesOps takes MaxPack away from the programs of .p5z files, and its thumbnails; what other
+// programs wrote for .p5z stays, and so does a default that is not MaxPack's.
 func RemoveFilesOps(software string) []Op {
 	c := classes(software)
 	return []Op{
@@ -189,6 +224,8 @@ func RemoveFilesOps(software string) []Op {
 		{Do: DeleteTree, Key: c + `\` + ProgID},
 		{Do: DeleteValue, Key: software + `\RegisteredApplications`, Name: appName},
 		{Do: DeleteTree, Key: capabilities(software)},
+		{Do: DeleteTree, Key: thumbsShellEx(software)},
+		{Do: DeleteTree, Key: thumbsClass(software)},
 	}
 }
 

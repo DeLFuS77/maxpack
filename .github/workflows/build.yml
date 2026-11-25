@@ -106,8 +106,10 @@ jobs:
         run: |
           if [ "${RUNNER_OS}" = "Windows" ]; then
             cmake -B build
-            cmake --build build --config Release -j 4 --target maxpack mp_fpkgtool
+            # with the thumbnail provider of .p5z files for the Explorer
+            cmake --build build --config Release -j 4 --target maxpack mp_fpkgtool maxpack-thumbs
             core="${GITHUB_WORKSPACE}/build/Release/maxpack.exe"
+            echo "MAXPACK_THUMBS=${GITHUB_WORKSPACE}/build/Release/maxpack-thumbs.dll" >> "${GITHUB_ENV}"
           else
             cmake -B build -DCMAKE_BUILD_TYPE=Release
             cmake --build build -j 4 --target maxpack mp_fpkgtool
@@ -204,9 +206,12 @@ jobs:
           go vet -tags "${tags}" ./...
           go test -tags "${tags}" ./...
           go build -tags "${tags}" -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o "out/${exe}" .
-          # the engine and maxpack-par2, next to the window
+          # the engine and maxpack-par2, next to the window (on Windows, the thumbnail provider too)
           cp "${MAXPACK_CORE}" "out/${core}"
           cp "${MAXPACK_PAR2}" "out/${par2}"
+          if [ "${RUNNER_OS}" = "Windows" ]; then
+            cp "${MAXPACK_THUMBS}" out/maxpack-thumbs.dll
+          fi
           ls -l out
           "./out/${exe}" --version
 
@@ -215,11 +220,14 @@ jobs:
         working-directory: gui
         run: |
           mkdir -p ../dist
-          # the portable zip: the window, the engine and the settings folder, where it keeps everything of its own
+          # the portable zip: the window, the engine and the settings folder, where it keeps everything of its own;
+          # not the thumbnail provider, which only the Explorer loads once registered, and a portable MaxPack
+          # registers nothing
           mkdir -p out/portable/MaxPack/settings
           cp out/MaxPack.exe out/maxpack-core.exe out/maxpack-par2.exe ../LICENSE out/portable/MaxPack/
           cp ../THIRD_PARTY_NOTICES out/portable/MaxPack/THIRD_PARTY_NOTICES.txt
           printf '%s\r\n' "MaxPack keeps its settings, its copy of ampr-emu-ng, the window's size and position and its page's data here." "If you delete this folder, MaxPack keeps its own in your user folder." > out/portable/MaxPack/settings/README.txt
+          test ! -e out/portable/MaxPack/maxpack-thumbs.dll
           pwsh -NoProfile -Command "Compress-Archive -Path out/portable/MaxPack -DestinationPath ../dist/maxpack-${{ matrix.name }}-portable.zip"
           ls -l ../dist
 
@@ -237,6 +245,7 @@ jobs:
           $dist = (Resolve-Path ../dist).Path
           & $makensis /V2 "/DVERSION=$env:VERSION" "/DNUMBERS=$numbers" `
             "/DPROGRAM=$((Resolve-Path out/MaxPack.exe).Path)" "/DCORE=$((Resolve-Path out/maxpack-core.exe).Path)" "/DPAR2=$((Resolve-Path out/maxpack-par2.exe).Path)" `
+            "/DTHUMBS=$((Resolve-Path out/maxpack-thumbs.dll).Path)" `
             "/DLICENSE=$((Resolve-Path ../LICENSE).Path)" "/DNOTICES=$((Resolve-Path ../THIRD_PARTY_NOTICES).Path)" "/DICON=$((Resolve-Path build/appicon.ico).Path)" `
             "/DOUTFILE=$dist\maxpack-${{ matrix.name }}-setup.exe" `
             build/windows/installer/maxpack.nsi
@@ -244,7 +253,8 @@ jobs:
           Get-ChildItem $dist
 
       # the installer puts MaxPack in the given folder and in "Installed apps", and in the Explorer as asked (the
-      # right-click menu, Send to and .p5z files), the window forwards to the engine and compresses an image, and the
+      # right-click menu, Send to and .p5z files, with their thumbnails), the window forwards to the engine and
+      # compresses an image, an update goes in while the Explorer has the thumbnail provider loaded, and the
       # uninstaller removes everything, the Explorer's places too; all silently
       - name: Test the installer
         if: runner.os == 'Windows'
@@ -261,9 +271,15 @@ jobs:
           if ($open -ne "`"$folder\MaxPack.exe`" --open `"%1`"") { throw ".p5z files do not open with MaxPack: $open" }
           if (-not (Test-Path -LiteralPath $sendTo)) { throw "MaxPack is not in Send to" }
           $key = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\MaxPack"
-          foreach ($file in "MaxPack.exe", "maxpack-core.exe", "maxpack-par2.exe", "LICENSE.txt", "THIRD_PARTY_NOTICES.txt", "uninstall.exe") {
+          foreach ($file in "MaxPack.exe", "maxpack-core.exe", "maxpack-par2.exe", "maxpack-thumbs.dll", "LICENSE.txt", "THIRD_PARTY_NOTICES.txt", "uninstall.exe") {
             if (-not (Test-Path "$folder\$file")) { throw "missing $file" }
           }
+          # .p5z files show the game's icon: the thumbnail provider next to MaxPack, registered for this user
+          $clsid = "{266D6364-17C0-4B3E-BB33-7EEB90C91837}"
+          $server = Get-ItemProperty -LiteralPath "$classes\CLSID\$clsid\InprocServer32"
+          if ($server.'(default)' -ne "$folder\maxpack-thumbs.dll" -or $server.ThreadingModel -ne "Apartment") { throw "the thumbnail provider is not registered: $($server.'(default)')" }
+          $thumbs = "$classes\SystemFileAssociations\.p5z\ShellEx\{e357fccd-a995-4576-b01f-234630154e96}"
+          if ((Get-ItemProperty -LiteralPath $thumbs).'(default)' -ne $clsid) { throw ".p5z files have no thumbnail provider" }
           if ((Get-ItemProperty $key).InstallLocation -ne $folder) { throw "does not appear in Installed apps" }
           & "$folder\MaxPack.exe" --version
           if ($LASTEXITCODE -ne 0) { throw "--version" }
@@ -272,11 +288,22 @@ jobs:
           $out = Join-Path $env:RUNNER_TEMP "probe.p5z"
           & "$folder\MaxPack.exe" pack "$env:MP_FIXTURES\basic.exfat" -o $out --p5z
           if ($LASTEXITCODE -ne 0 -or -not (Test-Path $out)) { throw "pack" }
+          # an update while the Explorer has the thumbnail provider loaded (here, this shell has it): the loaded one
+          # is set aside and the new one put in its place, with the places kept
+          $loaded = [System.Runtime.InteropServices.NativeLibrary]::Load("$folder\maxpack-thumbs.dll")
+          $update = Start-Process -FilePath $setup.FullName -ArgumentList "/S", "/D=$folder" -Wait -PassThru
+          if ($update.ExitCode -ne 0) { throw "the update failed with the thumbnail provider loaded: $($update.ExitCode)" }
+          if (-not (Test-Path "$folder\maxpack-thumbs.dll")) { throw "the update left no thumbnail provider" }
+          if (-not (Get-ChildItem -Path $folder -Filter "maxpack-thumbs-*.old")) { throw "the loaded thumbnail provider was not set aside" }
+          if ((Get-ItemProperty -LiteralPath "$classes\CLSID\$clsid\InprocServer32").'(default)' -ne "$folder\maxpack-thumbs.dll") { throw "the update took the thumbnails away" }
+          [System.Runtime.InteropServices.NativeLibrary]::Free($loaded)
           Start-Process -FilePath "$folder\uninstall.exe" -ArgumentList "/S", "_?=$folder" -Wait
           if (Test-Path "$folder\MaxPack.exe") { throw "was not uninstalled" }
           if (Test-Path "$folder\maxpack-par2.exe") { throw "maxpack-par2 was not uninstalled" }
+          if (Test-Path "$folder\maxpack-thumbs.dll") { throw "the thumbnail provider was not uninstalled" }
+          if (Get-ChildItem -Path $folder -Filter "maxpack-thumbs-*.old" -ErrorAction SilentlyContinue) { throw "the thumbnail provider set aside stays" }
           if (Test-Path $key) { throw "is still in Installed apps" }
-          foreach ($left in "$classes\MaxPack.p5z", "$classes\SystemFileAssociations\.p5z\shell\MaxPack.1Verify", "$classes\Directory\shell\MaxPack.Compress", "HKCU:\Software\MaxPack\Capabilities") {
+          foreach ($left in "$classes\MaxPack.p5z", "$classes\SystemFileAssociations\.p5z\shell\MaxPack.1Verify", "$classes\Directory\shell\MaxPack.Compress", "HKCU:\Software\MaxPack\Capabilities", "$classes\CLSID\$clsid", $thumbs) {
             if (Test-Path -LiteralPath $left) { throw "$left is still there" }
           }
           if (Test-Path -LiteralPath $sendTo) { throw "MaxPack is still in Send to" }

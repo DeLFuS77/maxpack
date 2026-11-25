@@ -77,6 +77,25 @@ target_include_directories(maxpack_thumb PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/
 target_link_libraries(maxpack_thumb PUBLIC mp_zstd mp_zlib)
 mp_warnings(maxpack_thumb)
 
+# Windows: maxpack-thumbs.dll, the Explorer's thumbnail provider of .p5z files (src/thumb/win). It carries
+# its C runtime, since the Explorer may load it where none is installed, so it builds the icon reader with
+# its own copy of zstd's decompression and zlib's crc32, with that runtime; it exports only what COM needs.
+if(WIN32)
+  file(GLOB MP_THUMB_ZSTD_SRC ${MP_ZSTD_DIR}/common/*.c ${MP_ZSTD_DIR}/decompress/*.c)
+  add_library(mp_thumb_deps OBJECT ${MP_THUMB_ZSTD_SRC} ${MP_ZLIB_DIR}/crc32.c)
+  target_include_directories(mp_thumb_deps PRIVATE ${MP_ZSTD_DIR} ${MP_ZLIB_DIR})
+  target_compile_definitions(mp_thumb_deps PRIVATE ZSTD_DISABLE_ASM XXH_NAMESPACE=ZSTD_)
+  mp_quiet(mp_thumb_deps)
+  add_library(maxpack-thumbs SHARED ${CMAKE_CURRENT_SOURCE_DIR}/src/thumb/win/maxpack_thumbs.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/thumb/win/maxpack_thumbs.def ${CMAKE_CURRENT_SOURCE_DIR}/src/thumb/mp_p5z_icon.c
+    $<TARGET_OBJECTS:mp_thumb_deps>)
+  target_include_directories(maxpack-thumbs PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/thumb ${MP_ZSTD_DIR} ${MP_ZLIB_DIR})
+  target_link_libraries(maxpack-thumbs PRIVATE ole32 windowscodecs)
+  set_target_properties(mp_thumb_deps maxpack-thumbs PROPERTIES MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+  set_target_properties(maxpack-thumbs PROPERTIES PREFIX "")
+  mp_warnings(maxpack-thumbs)
+endif()
+
 if(MAXPACK_PS5)
   # maxpack.elf: the phase 2 installer. It is no longer published nor built by this
   # repository's CI: the console payload (DeLFuS77/maxpack-ps5) replaces it and uses only the
@@ -226,6 +245,17 @@ if(MAXPACK_BUILD_TESTS)
   mp_add_test(test_describe FIXTURES)
   mp_add_test(test_p5z_icon)
   target_link_libraries(test_p5z_icon PRIVATE maxpack_thumb)
+  # the DLL as the Explorer loads it: mp_thumbtest <maxpack-thumbs.dll>
+  if(WIN32)
+    add_executable(mp_thumbtest tests/win/thumbtest.c)
+    target_link_libraries(mp_thumbtest PRIVATE maxpack_web ole32 shlwapi)
+    target_include_directories(mp_thumbtest PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests)
+    target_compile_definitions(mp_thumbtest PRIVATE MP_TEST_TMP="${MP_TEST_TMP}" MP_FIXTURES_DIR="${MP_FIXTURES_DIR}")
+    mp_warnings(mp_thumbtest)
+    add_dependencies(mp_thumbtest maxpack-thumbs)
+    add_test(NAME mp_thumbtest COMMAND mp_thumbtest $<TARGET_FILE:maxpack-thumbs>)
+    set_tests_properties(mp_thumbtest PROPERTIES TIMEOUT 300)
+  endif()
   mp_add_test(test_play FIXTURES)
   mp_add_test(test_volumes FIXTURES)
   mp_add_test(test_image_pack IMAGES)

@@ -4,3 +4,6 @@
 [submodule "third_party/zlib"]
 	path = third_party/zlib
 	url = https://github.com/madler/zlib
+[submodule "third_party/par2cmdline-turbo"]
+	path = third_party/par2cmdline-turbo
+	url = https://github.com/animetosho/par2cmdline-turbo

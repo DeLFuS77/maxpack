@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "mp_dlc.h"
 #include "mp_hash.h"
 #include "mp_idx3.h"
 #include "mp_platform.h"
@@ -153,7 +154,22 @@ int mp_pack_run(const char *src_path, mp_pack_out *out, const mp_pack_opts *o, m
     int rc = -1;
 
     if (mp_source_open(src_path, &src, e) != 0) return -1;
-    size_t n = mp_source_count(src);
+    size_t n = 0;
+    // the DLC go in as files of the game: addcont0/... and the dlc_emu.ini MaxPack writes
+    if (o->ndlc) {
+        mp_dlc_list dl;
+        if (mp_dlc_attach(&src, o->dlc, o->ndlc, &dl, &r->dlc_error, e) != 0) goto done;
+        for (size_t k = 0; k < dl.n; k++) {
+            if (dl.v[k].data) {
+                r->dlc_data++;
+                r->dlc_bytes += dl.v[k].bytes;
+            } else {
+                r->dlc_license++;
+            }
+        }
+        mp_dlc_list_free(&dl);
+    }
+    n = mp_source_count(src);
     if (n == 0) {
         mp_err_set(e, "the source has no files: %s", src_path);
         goto done;

@@ -21,6 +21,9 @@ typedef struct {
     // original package's files proves it is not the game's (the dump tool's list does not): without
     // one, everything stays
     int leave_out_leftovers;
+    // --dlc: the game's DLC (packages, folders or images) to pack with it, in this order (mp_dlc.h)
+    const char *const *dlc;
+    size_t ndlc;
 } mp_pack_opts;
 
 void mp_pack_opts_default(mp_pack_opts *o);
@@ -75,6 +78,11 @@ typedef struct {
     char title_id[16];          // the TITLE_ID from sce_sys/param.json ("" if it gives none)
     mp_complete complete;       // the source against its list of the original package (counts only)
     uint64_t left_out_files, left_out_bytes;   // the leftovers left out (leave_out_leftovers)
+    // the DLC packed with it: with files of their own (in addcont0/...), licenses only, and what the
+    // files of the first take; when they stopped it, why, as a code (mp_dlc_attach), else NULL
+    unsigned dlc_data, dlc_license;
+    uint64_t dlc_bytes;
+    const char *dlc_error;
 } mp_pack_result;
 
 int mp_pack_run(const char *src_path, mp_pack_out *out, const mp_pack_opts *o, mp_pack_result *r,

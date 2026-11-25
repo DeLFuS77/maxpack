@@ -117,10 +117,12 @@ func files(p5z string) (index string, volumes []string) {
 	return index, volumes
 }
 
-// safeName tells whether the name of a file in a set is a plain name: repairing writes it in a
-// folder of the window's, so it may not be in another folder or go up from it.
+// safeName tells whether the name of a file in a set is the plain name of a .p5z: repairing writes
+// it in a folder of the window's, so it may not be in another folder or go up from it, and the engine
+// checks what was repaired as a .p5z.
 func safeName(name string) bool {
-	return name != "" && name != "." && name != ".." && !strings.ContainsAny(name, `/\:`) && !strings.ContainsRune(name, 0)
+	return name != "" && !strings.ContainsAny(name, `/\:`) && !strings.ContainsRune(name, 0) &&
+		len(name) > len(".p5z") && strings.EqualFold(name[len(name)-len(".p5z"):], ".p5z")
 }
 
 // Inspect tells what the set next to a .p5z is.

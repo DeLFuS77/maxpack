@@ -157,8 +157,9 @@ func TestInspectDamagedStart(t *testing.T) {
 }
 
 func TestInspectRefusesNames(t *testing.T) {
-	// a set whose file is in a folder, or goes up from it, is not used: repairing writes that name
-	for _, name := range []string{"sub/a.p5z", `sub\a.p5z`, "../a.p5z", "..", ""} {
+	// a set whose file is in a folder, or goes up from it, or is not a .p5z, is not used: repairing
+	// writes that name, and the engine checks it as a .p5z
+	for _, name := range []string{"sub/a.p5z", `sub\a.p5z`, "../a.p5z", "..", "", "a.bin", ".p5z"} {
 		dir := t.TempDir()
 		data := noise(20_000, 12)
 		p5z := writeFile(t, filepath.Join(dir, "a.p5z"), data)

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/DeLFuS77/maxpack/gui/core"
+	"github.com/DeLFuS77/maxpack/gui/internal/par2"
 	"github.com/DeLFuS77/maxpack/gui/internal/system"
 )
 
@@ -21,6 +22,8 @@ const (
 	ModeOriginal Mode = "original" // unpack to the original dump
 	ModeConsole  Mode = "console"  // unpack to a folder for the console
 	ModeVerify   Mode = "verify"   // only check
+	ModeRepair   Mode = "repair"   // repair a .p5z with its repair data (PAR2), then check it
+	ModeProtect  Mode = "protect"  // check a .p5z, then add repair data to it
 )
 
 // fat32Max is the most a file may have on FAT32 (4 GiB less one byte).
@@ -56,6 +59,10 @@ type Options struct {
 	// NameTemplate names a .p5z and an unpacked original (see NameOf); "" is DefaultTemplate. A
 	// folder for the console is named by its TITLE_ID whatever it says
 	NameTemplate string
+	// Repair is the repair data each .p5z gets once it is made, verified and in its place
+	// (ModeP5z), or that is added to each one (ModeProtect), as a percentage of it: 1, 5 or 10; 0 is
+	// none. A folder never has any
+	Repair int
 }
 
 // What becomes of the original of a game once its new one is checked (Options.Originals).
@@ -88,6 +95,9 @@ type Plan struct {
 	Warnings []string
 	Block    string
 	Args     []string // the arguments of the engine, without the ones for the progress
+	// Need is the most the game may take on the drive it is written to (or repaired on), which the
+	// space of a queue adds up: its original size, with its repair data when it gets some
+	Need uint64
 	// KeepOriginal keeps the original of this game whatever Options.Originals says: a game added
 	// to a queue that runs, whose original the user said to keep
 	KeepOriginal bool
@@ -195,7 +205,10 @@ func plan(items []Item, o Options, fs FS, out func(Item) string, args func(it It
 	plans := make([]Plan, len(items))
 	committed := map[string]uint64{}
 	for i, it := range items {
-		p := Plan{Item: it, Out: out(it)}
+		p := Plan{Item: it, Out: out(it), Need: it.OriginalSize}
+		if o.Mode == ModeP5z && o.Repair > 0 {
+			p.Need += par2.SetSize(it.OriginalSize, o.Repair)
+		}
 		if conflicts(it.Path, p.Out) {
 			p.Block = "same_as_source"
 			plans[i] = p
@@ -225,14 +238,14 @@ func plan(items []Item, o Options, fs FS, out func(Item) string, args func(it It
 					left = free - committed[root]
 				}
 				switch {
-				case it.OriginalSize > left && len(p.Replace) > 0:
+				case p.Need > left && len(p.Replace) > 0:
 					p.Block = "no_space"
-				case it.OriginalSize > left:
+				case p.Need > left:
 					p.Warnings = append(p.Warnings, "may_not_fit")
 				}
 			}
 			if p.Block == "" {
-				committed[root] += it.OriginalSize
+				committed[root] += p.Need
 			}
 		}
 		plans[i] = p

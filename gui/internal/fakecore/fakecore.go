@@ -45,8 +45,12 @@ const Env = "MP_FAKE_CORE"
 // InfoEnv is the file of what "info" says of each game: {"<name>": {<info --json>}, ...}.
 const InfoEnv = "MP_FAKE_INFO"
 
-// Main acts as the engine and exits when Env says so; else it returns at once.
+// Main acts as the engine and exits when Env says so, or as maxpack-par2 when Par2Env does and it
+// is run as par2; else it returns at once.
 func Main() {
+	if mode := os.Getenv(Par2Env); mode != "" && par2Call(os.Args[1:]) {
+		os.Exit(par2(mode, os.Args[1:]))
+	}
 	mode := os.Getenv(Env)
 	if mode == "" {
 		return

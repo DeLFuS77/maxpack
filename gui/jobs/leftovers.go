@@ -13,23 +13,74 @@ import (
 )
 
 // Leftovers is the Journal of the window, in a file of its folder: what a queue writes apart
-// (<name>.maxpack-tmp, <name>.maxpack-old) is in it while it is there. What a crash, a power cut
-// or a USB pulled out leaves is found when MaxPack opens again (Found), and taken away when the
-// user says so (Clean).
+// (<name>.maxpack-tmp, <name>.maxpack-old, the folder where the repair data of a .p5z is made,
+// <name>.p5z.maxpack-par2, and the one where a .p5z is repaired, <name>.p5z.maxpack-repair) is in it
+// while it is there. What a crash, a power cut or a USB pulled out leaves is found when MaxPack
+// opens again (Found), and taken away, or put back, when the user says so (Clean).
 type Leftovers struct {
 	File  string
 	mutex sync.Mutex
 }
 
-// Leftover is something a queue left apart: where it is and what it takes.
+// Leftover is something a queue left apart: where it is and what it takes. The folder of a repair
+// cut short may have the .p5z in it: Restore is then the .p5z that Clean puts back (the one that
+// verified, else the damaged one as it was); Keep, that the .p5z is in its place and the folder has
+// a copy of it too, so neither is touched and the user is told.
 type Leftover struct {
-	Path string
-	Size uint64
+	Path    string
+	Size    uint64
+	Restore string
+	Keep    bool
 }
 
 // ours tells whether a path is one a queue writes apart: only those are ever taken away.
 func ours(path string) bool {
-	return strings.HasSuffix(path, TmpSuffix) || strings.HasSuffix(path, OldSuffix)
+	for _, suffix := range []string{TmpSuffix, OldSuffix, Par2Suffix, RepairSuffix} {
+		if strings.HasSuffix(path, suffix) {
+			return true
+		}
+	}
+	return false
+}
+
+// repairFate is what becomes of the folder of a repair cut short (see repair.go): the file in it that
+// goes back to the .p5z's place when the .p5z is not there ("" when none does), or keep when the
+// .p5z is there and the folder may still have a copy of it that is not the damaged one left once
+// the repaired one took its place. Else the folder goes.
+func repairFate(work string) (from string, keep bool) {
+	file := strings.TrimSuffix(work, RepairSuffix)
+	_, err := os.Lstat(file)
+	there := err == nil
+	step, known := readStep(work)
+	if !known {
+		entries, _ := os.ReadDir(work)
+		for _, entry := range entries {
+			if entry.Name() != repairState && entry.Name() != repairState+".tmp" {
+				return "", true
+			}
+		}
+		return "", false
+	}
+	inside := filepath.Join(work, step.Name)
+	repaired, original := inside, inside+".1"
+	_, errRepaired := os.Lstat(repaired)
+	_, errOriginal := os.Lstat(original)
+	if there {
+		if step.Step == stepPlaced || errRepaired != nil && errOriginal != nil || step.Step == stepMoving && errRepaired != nil {
+			return "", false
+		}
+		return "", true
+	}
+	switch {
+	case step.Step == stepVerified && errRepaired == nil:
+		return repaired, false
+	case errOriginal == nil:
+		return original, false
+	case errRepaired == nil:
+		// par2 had not begun: the one in the folder is the .p5z as it was
+		return repaired, false
+	}
+	return "", false
 }
 
 // read gives the paths of the file; none when there is none or it cannot be read.
@@ -133,19 +184,41 @@ func (l *Leftovers) Found() []Leftover {
 	found := []Leftover{}
 	for _, p := range l.paths() {
 		if _, err := os.Lstat(p); err == nil {
-			found = append(found, Leftover{Path: p, Size: SizeOf(p)})
+			left := Leftover{Path: p, Size: SizeOf(p)}
+			if strings.HasSuffix(p, RepairSuffix) {
+				from, keep := repairFate(p)
+				left.Keep = keep
+				if from != "" {
+					left.Restore = strings.TrimSuffix(p, RepairSuffix)
+				}
+			}
+			found = append(found, left)
 		}
 	}
 	return found
 }
 
-// Clean takes away what is left apart and is there now, and forgets it; it gives the paths that
-// could not be taken away, which are kept.
+// Clean takes away what is left apart and is there now, and forgets it: the folder of a repair cut
+// short puts its .p5z back first, and one that may have a copy of a .p5z in its place stays. It
+// gives the paths that could not be taken away (or put back), which are kept, with why.
 func (l *Leftovers) Clean() []string {
 	failed := []string{}
 	for _, p := range l.paths() {
 		if _, err := os.Lstat(p); err != nil {
 			continue
+		}
+		if strings.HasSuffix(p, RepairSuffix) {
+			from, keep := repairFate(p)
+			if keep {
+				failed = append(failed, p+": kept: "+strings.TrimSuffix(p, RepairSuffix)+" is there, and this folder has a copy of it")
+				continue
+			}
+			if from != "" {
+				if err := renameNew(from, strings.TrimSuffix(p, RepairSuffix)); err != nil {
+					failed = append(failed, p+": "+err.Error())
+					continue
+				}
+			}
 		}
 		if err := removeAll(p); err != nil {
 			failed = append(failed, p+": "+err.Error())

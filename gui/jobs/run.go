@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/DeLFuS77/maxpack/gui/core"
+	"github.com/DeLFuS77/maxpack/gui/internal/par2"
 	"github.com/DeLFuS77/maxpack/gui/internal/system"
 )
 
@@ -33,10 +34,13 @@ const (
 	StatePacking   = "packing"
 	StateVerifying = "verifying"
 	StateUnpacking = "unpacking"
-	StateOK        = "ok"
-	StateError     = "error"
-	StateSkipped   = "skipped"
-	StateCancelled = "cancelled"
+	// making the repair data of a .p5z, and repairing one with it (see repair.go)
+	StateProtecting = "protecting"
+	StateRepairing  = "repairing"
+	StateOK         = "ok"
+	StateError      = "error"
+	StateSkipped    = "skipped"
+	StateCancelled  = "cancelled"
 )
 
 // TopItem is a game of the ones that saved the most.
@@ -49,7 +53,9 @@ type TopItem struct {
 // a libSceAmpr.sprx that reads zstd (they have none, or one that does not); a .p5z is never one.
 // Trashed, Deleted and Kept are the originals that went to the recycle bin, were deleted for good
 // or stayed because their drive has no bin (with Options.Originals), and TrashedSize and
-// DeletedSize what they take.
+// DeletedSize what they take. Protected are the games done that got repair data, ProtectedSize what
+// it takes, and Unprotected the ones done that did not get the repair data asked for (their .p5z is
+// good: why is in their detail); Repaired, the .p5z repaired.
 type Summary struct {
 	Done, Failed, Skipped, Cancelled int
 	NoZstdRuntime                    int
@@ -58,6 +64,9 @@ type Summary struct {
 	Duration                         time.Duration
 	Trashed, Deleted, Kept           int
 	TrashedSize, DeletedSize         uint64
+	Protected, Unprotected           int
+	ProtectedSize                    uint64
+	Repaired                         int
 }
 
 // Journal keeps what a queue writes apart while it works (the new one of a game while it is made,
@@ -68,12 +77,13 @@ type Journal interface {
 	Remove(path string)
 }
 
-// Runner runs the plans one at a time. OnEvent gets the progress of the engine for the game
-// i of the plans; OnItem, each change of its state, and with an error or a skip, why. Journal,
+// Runner runs the plans one at a time. OnEvent gets the progress of the engine (and of par2) for the
+// game i of the plans; OnItem, each change of its state, and with an error or a skip, why. Journal,
 // when there is one, is told what is written apart; Log gets a line for each original removed or
-// kept.
+// kept. Par2 is maxpack-par2, "" when there is none (then no repair data is made).
 type Runner struct {
 	Core    string
+	Par2    string
 	OnEvent func(i int, e core.Event)
 	OnItem  func(i int, state, detail string)
 	Journal Journal
@@ -144,6 +154,9 @@ type outcome struct {
 	saved         uint64
 	state, detail string
 	original      originalFate
+	// the repair data made for it (what it takes), and whether some was asked for
+	protected uint64
+	protect   bool
 }
 
 // Run does the plans in order: a game is packed and then verified (or unpacked, or only
@@ -200,8 +213,20 @@ func (r *Runner) RunQueue(ctx context.Context, q *Queue, o Options) Summary {
 			case originalKept:
 				sum.Kept++
 			}
+			switch {
+			case end.protected > 0:
+				sum.Protected++
+				sum.ProtectedSize += end.protected
+			case end.protect:
+				sum.Unprotected++
+			}
+			if o.Mode == ModeRepair && hasPart(end.detail, "repaired") {
+				sum.Repaired++
+			}
 		case StateCancelled:
 			sum.Cancelled++
+		case StateSkipped:
+			sum.Skipped++
 		default:
 			sum.Failed++
 		}
@@ -220,10 +245,15 @@ func writesFolder(mode Mode) bool { return mode != ModeP5z }
 // one does a plan.
 func (r *Runner) one(ctx context.Context, i int, p Plan, o Options) outcome {
 	fail := func(state, detail string) outcome { return outcome{state: state, detail: detail} }
-	if o.Mode == ModeVerify {
+	switch o.Mode {
+	case ModeVerify:
 		r.item(i, StateVerifying, "")
 		_, ok, failure := r.engine(ctx, i, p.Args, o, nil)
 		return fail(endState(ok, failure), failure)
+	case ModeRepair:
+		return r.repairOne(ctx, i, p, o)
+	case ModeProtect:
+		return r.protectOne(ctx, i, p, o)
 	}
 	// the drive may be gone (a USB taken out): say so instead of making its folders again
 	if info, err := os.Stat(o.Dest); err != nil || !info.IsDir() {
@@ -302,6 +332,8 @@ func (r *Runner) one(ctx context.Context, i int, p Plan, o Options) outcome {
 	}
 	system.SetHidden(p.Tmp, false)
 	if len(p.Replace) > 0 {
+		// the repair data of the old .p5z goes with it: it protected that one
+		oldSet := o.Mode == ModeP5z && par2.Inspect(p.Out).State == par2.StateMatch
 		leftover, err := swap(p.Out, p.Tmp)
 		if err != nil {
 			return fail(StateError, discard("swap_failed: "+err.Error()))
@@ -309,6 +341,11 @@ func (r *Runner) one(ctx context.Context, i int, p Plan, o Options) outcome {
 		if leftover {
 			r.keep(p.Out + OldSuffix)
 			notes = append(notes, "old_not_deleted: "+p.Out+OldSuffix)
+		}
+		if oldSet {
+			if note := removeSet(p.Out); note != "" {
+				notes = append(notes, note)
+			}
 		}
 	} else if err := place(p.Out, p.Tmp); err != nil {
 		if errors.Is(err, errInTheWay) {
@@ -321,6 +358,16 @@ func (r *Runner) one(ctx context.Context, i int, p Plan, o Options) outcome {
 		end.original = r.removeOriginal(p, o)
 		if end.original.note != "" {
 			notes = append(notes, end.original.note)
+		}
+	}
+	// the repair data comes last: the .p5z is done and good whatever becomes of it
+	if o.Mode == ModeP5z && o.Repair > 0 {
+		end.protect = true
+		r.item(i, StateProtecting, "")
+		made, note := r.protect(ctx, i, p.Out, o)
+		end.protected = made
+		if note != "" {
+			notes = append(notes, note)
 		}
 	}
 	end.detail = strings.Join(notes, "; ")

@@ -12,6 +12,8 @@ import (
 	"regexp"
 	"strings"
 	"unicode"
+
+	"github.com/DeLFuS77/maxpack/gui/internal/par2"
 )
 
 // The names the window gives a .p5z and an unpacked original come from a template, as NXPress
@@ -143,13 +145,33 @@ func paramContentID(folder string) string {
 
 // RenamePlan is what Rename would do with a game: from where to where (in its own folder), and
 // why it cannot when it cannot: "same_name" (it has it already), "name_taken" (something else has
-// it), "duplicate_target" (another game of the list would take it) or "cannot_read" (what it
-// is is not known).
+// it, or a name its repair data would take), "duplicate_target" (another game of the list would take
+// it) or "cannot_read" (what it is is not known). Set are the files of the repair data of a .p5z,
+// which take its new name with it.
 type RenamePlan struct {
 	Item     Item
 	From, To string
 	Block    string
+	Set      []Move
 }
+
+// Move is a file that takes another name.
+type Move struct{ From, To string }
+
+// setMoves are the files of the set of a .p5z (named after it: see par2.Files) with the names they
+// take when the .p5z is renamed from to to.
+func setMoves(from, to string) []Move {
+	var moves []Move
+	base := filepath.Base(from)
+	for _, file := range par2.Files(from) {
+		name := filepath.Base(file)
+		moves = append(moves, Move{From: file, To: filepath.Join(filepath.Dir(to), filepath.Base(to)+name[len(base):])})
+	}
+	return moves
+}
+
+// taken tells whether a name is had by another file (not the same one at another case).
+func taken(to, from string) bool { return exists(to) && !sameFile(to, from) }
 
 // RenameResult is how the renaming of a game ended: ok, skipped (with why, the Block of its plan
 // or "name_taken" when a name came meanwhile) or error ("in_use", "gone", or "io: ...").
@@ -194,13 +216,21 @@ func PlanRename(items []Item, template string) []RenamePlan {
 			continue
 		}
 		p.To = filepath.Join(filepath.Dir(p.From), newName(it, template))
+		if it.Kind == "p5z" {
+			p.Set = setMoves(p.From, p.To)
+		}
 		switch {
 		case p.To == p.From:
 			p.Block = "same_name"
-		case exists(p.To) && !sameFile(p.To, p.From):
+		case taken(p.To, p.From):
 			// taken by another file; the same file at another case (a file system that ignores
 			// case, as Windows' and macOS' usually do) is only a change of case
 			p.Block = "name_taken"
+		}
+		for _, m := range p.Set {
+			if p.Block == "" && taken(m.To, m.From) {
+				p.Block = "name_taken"
+			}
 		}
 		for j := 0; j < i && p.Block == ""; j++ {
 			if plans[j].Block == "" && same(plans[j].To, p.To) {
@@ -217,27 +247,60 @@ func exists(path string) bool {
 	return err == nil
 }
 
-// Rename does the plans: a game whose new name something took meanwhile is skipped, and nothing
-// is ever replaced.
+// renameFile gives a file a name nothing has (a variable so the tests can make it fail).
+var renameFile = renameNew
+
+// renameOne gives a file or a folder its new name: a change of case only renames the file that is at
+// both names; else nothing that has the new name is ever replaced.
+func renameOne(from, to string) error {
+	if sameFile(to, from) {
+		return os.Rename(from, to)
+	}
+	return renameFile(from, to)
+}
+
+// renameWithSet renames a game and the files of its repair data, all or nothing: the set first, then
+// the game; if any of them fails, the ones done go back.
+func renameWithSet(p RenamePlan) error {
+	var done []Move
+	undo := func() {
+		for n := len(done) - 1; n >= 0; n-- {
+			renameOne(done[n].To, done[n].From)
+		}
+	}
+	for _, m := range p.Set {
+		if err := renameOne(m.From, m.To); err != nil {
+			undo()
+			return err
+		}
+		done = append(done, m)
+	}
+	if err := renameOne(p.From, p.To); err != nil {
+		undo()
+		return err
+	}
+	return nil
+}
+
+// Rename does the plans: a game whose new name (or one of its repair data) something took meanwhile
+// is skipped, and nothing is ever replaced. A .p5z takes the files of its repair data with it.
 func Rename(plans []RenamePlan) []RenameResult {
 	results := make([]RenameResult, len(plans))
 	for i, p := range plans {
 		r := RenameResult{From: p.From, To: p.To}
+		setTaken := false
+		for _, m := range p.Set {
+			setTaken = setTaken || taken(m.To, m.From)
+		}
 		switch {
 		case p.Block != "":
 			r.State, r.Detail = StateSkipped, p.Block
 		case !exists(p.From):
 			r.State, r.Detail = StateError, "gone"
-		case exists(p.To) && !sameFile(p.To, p.From):
+		case taken(p.To, p.From) || setTaken:
 			r.State, r.Detail = StateSkipped, "name_taken"
 		default:
-			var err error
-			if sameFile(p.To, p.From) {
-				// a change of case only: the file is the one at both names
-				err = os.Rename(p.From, p.To)
-			} else {
-				err = renameNew(p.From, p.To)
-			}
+			err := renameWithSet(p)
 			switch {
 			case err == nil:
 				r.State = StateOK

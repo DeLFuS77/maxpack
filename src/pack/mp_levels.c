@@ -324,6 +324,10 @@ int mp_levels_run(const char *src_path, const mp_levels_opts *o, mp_levels_repor
     if (mp_source_open(src_path, &src, e) != 0) return -1;
     size_t n = mp_source_count(src);
     r->kind = mp_source_kind_of(src);
+    if (r->kind != MP_SRC_DIR && mp_source_compressed(src)) {
+        int64_t mtime = 0;
+        if (mp_stat(src_path, &r->image_size, &mtime) != 0) r->image_size = 0;
+    }
     r->files = n;
     r->threads = threads;
     if (n == 0) {

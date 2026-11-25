@@ -48,7 +48,9 @@ Reports of the games analysed are in [reports/](reports/).
     level 19 (it costs 0.75-0.9 %); that is a real cost of using a dictionary and so it is included.
   - *zlib 64 KiB*: a rough reference of `.ffpfsc` (it does not count its block table).
 - **Console total** = loose + packed (+ `AMPRZPK1`/`AMPRIDX3` indexes in v1). **Saved** = 1 - console
-  total / original size.
+  total / original size, the size of the game. For a compressed image (an `.ffpfsc`, or an `.ffpfs`
+  with compressed files) the image file takes less than the game in it: a line says so, and the
+  `.p5z` estimate is also compared with the image file ("83.2% smaller than the image file").
 - **MB/s/thread** and **Est. time** are the measured compression speed and the estimated time to pack
   the whole game with the threads used.
 - **Deduplication** (M4): identical 256 KiB blocks and files, by XXH64, over the whole game.

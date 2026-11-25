@@ -546,6 +546,20 @@ static void levels_text(FILE *out, const char *name, const mp_levels_report *r) 
         duration_text(t2, sizeof t2, row->folder_seconds);
         fprintf(out, "  %5d  %10s  %5.1f %%  %11s  %10s  %13s\n", row->level, a, saved, t1, b, t2);
     }
+    // a compressed image takes less than the game in it: saved is against the game, and each
+    // .p5z is also compared with the image file
+    if (r->image_size) {
+        size_text(a, sizeof a, r->original_size);
+        size_text(b, sizeof b, r->image_size);
+        fprintf(out, "  Saved is against the game in it (%s); the image file is compressed and takes %s.\n", a, b);
+        fprintf(out, "  Against the image file:");
+        for (size_t i = 0; i < r->nlevels; i++) {
+            double change = 100.0 * ((double)r->rows[i].p5z_size / (double)r->image_size - 1.0);
+            fprintf(out, "%s level %d %s%.1f %%", i ? "," : "", r->rows[i].level, change > 0 ? "+" : "-",
+                    change > 0 ? change : -change);
+        }
+        fprintf(out, "\n");
+    }
     fprintf(out, "  The sizes are estimated from the sample; the times are for packing the whole game on this\n"
                  "  PC with %u threads, at the speed the sample was packed or read at.\n",
             r->threads);

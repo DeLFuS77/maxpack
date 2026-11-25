@@ -127,7 +127,12 @@ int mp_report_write_text(const mp_report *r, FILE *out) {
                 pct(save, d), speed, duration(r->est_seconds[k], c));
     }
     fprintf(out, "Saved = 1 - console total / original size. Console total = loose files + "
-                 "packed (+ indices in v1).\n\n");
+                 "packed (+ indices in v1).\n");
+    // a compressed image takes less than the game in it: say what Saved is against
+    if (r->image_size)
+        fprintf(out, "Saved is against the game in it (%s), not the image file, which is compressed (%s).\n",
+                human(r->total_bytes, a), human(r->image_size, b));
+    fprintf(out, "\n");
 
     if (r->dedup_done)
         fprintf(out, "Exact deduplication (whole game): %" PRIu64 " of %" PRIu64
@@ -145,7 +150,12 @@ int mp_report_write_text(const mp_report *r, FILE *out) {
             r->small.dicts);
     fprintf(out, "Loose files for the .p5z (zstd 19, long window): %s -> %s\n",
             human(r->loose_bytes, a), human(r->loose_compressed, b));
-    fprintf(out, ".p5z estimate (v1 level 19): %s\n", human(r->p5z_estimate, a));
+    fprintf(out, ".p5z estimate (v1 level 19): %s", human(r->p5z_estimate, a));
+    if (r->image_size) {
+        double change = 100.0 * ((double)r->p5z_estimate / (double)r->image_size - 1.0);
+        fprintf(out, " (%s %s than the image file)", pct(fabs(change), d), change > 0 ? "larger" : "smaller");
+    }
+    fprintf(out, "\n");
     if (r->xport_done) {
         const mp_xport_stat *xs = &r->xport;
         double vs = r->p5z_estimate ? 100.0 * (1.0 - (double)r->p5z_transport / (double)r->p5z_estimate)

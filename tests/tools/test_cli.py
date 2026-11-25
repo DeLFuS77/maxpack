@@ -722,10 +722,19 @@ try:
     check("analyze_json_ffpfsc", rc == 0 and rep["source"]["kind"] == "pfsc" and rep["source"]["inner"] == "exfat"
           and rep["files"]["total"] == manifest_count(), str(rep.get("source")) + err[-200:])
     check("analyze_text_ffpfsc", "(PFS container with an exFAT image inside, compressed)" in out, out[:300])
+    # a compressed image: what is saved is against the game in it, and the .p5z is also compared with
+    # the image file, which takes less
+    check("analyze_text_ffpfsc_vs_image", "Saved is against the game in it" in out and "than the image file)" in out,
+          out[-1200:])
 except Exception as ex:  # noqa: BLE001
     check("analyze_json_ffpfsc", False, repr(ex) + err[-300:])
+rc, out, err = run("analyze", os.path.join(FX, "basic.ffpkg"), "--no-dedup", "--no-transport")
+check("analyze_text_ffpkg_no_image_note", rc == 0 and "image file" not in out, out[-800:])
 rc, out, err = run("analyze", os.path.join(FX, "basic.ffpkg"), "--levels", "3", "--threads", "2")
-check("levels_ffpkg", rc == 0 and LEVEL_ROW.findall(out) == ["3"], out[-400:] + err[-300:])
+check("levels_ffpkg", rc == 0 and LEVEL_ROW.findall(out) == ["3"] and "image file" not in out, out[-400:] + err[-300:])
+rc, out, err = run("analyze", os.path.join(FX, "basic.exfat.ffpfsc"), "--levels", "3,19", "--threads", "2")
+check("levels_ffpfsc_vs_image", rc == 0 and LEVEL_ROW.findall(out) == ["3", "19"]
+      and "Against the image file: level 3 " in out and ", level 19 " in out, out[-700:] + err[-300:])
 # Damaged images: exit 1 with the reason, nothing written.
 for name, words in (("truncated.bad.ffpkg", "truncated"), ("loop.bad.ffpfs", "reached twice"),
                     ("pfsc_inflate.bad.ffpfsc", "does not inflate"), ("signed.bad.ffpfs", "signed or encrypted"),

@@ -49,6 +49,7 @@ int mp_levels_parse(const char *list, mp_levels_opts *o, mp_err *e);
 
 typedef struct {
     mp_source_kind kind;
+    uint64_t image_size;         // the file of a compressed image (PFSC), 0 for anything else
     uint64_t files, original_size;
     uint64_t loose_files, loose_bytes, packable_files, packable_bytes;
     uint64_t sample_bytes;       // of the packable data, in 1 MiB windows

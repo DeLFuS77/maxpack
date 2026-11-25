@@ -1,8 +1,8 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # MaxPack guide
 
-MaxPack compresses PS5 games (your own dump, as a folder or as an `.exfat` image) so they take less
-space and can be played without being decompressed. This guide goes from start to finish: download,
+MaxPack compresses PS5 games (your own dump, as a folder or as an image: `.exfat`, `.ffpkg`, `.ffpfs`
+or `.ffpfsc`) so they take less space and can be played without being decompressed. This guide goes from start to finish: download,
 compress on the PC, take the game to the PS5 and play it. Every step is a single action.
 
 > **Before you start:** playing a `.p5z` and the library have been tested on one PS5 (firmware 13.60) with
@@ -60,8 +60,11 @@ In the window, you choose in **Made for**:
 **On the PC**
 - 64-bit Windows, macOS 13 or later (Apple silicon or Intel) or 64-bit Linux with GTK 3 and
   WebKitGTK 4.1.
-- Your game: a PS5 dump as a folder or as an `.exfat` image. PKG, `.ffpkg`, `.ffpfs` and `.ffpfsc`
-  cannot be compressed yet.
+- Your game: a PS5 dump as a folder or as an image in one of the formats ShadowMountPlus mounts:
+  `.exfat`, `.ffpkg` (UFS2), `.ffpfs` (PFS) or `.ffpfsc` (a PFS container, usually compressed, with one
+  of the others inside). MaxPack reads them itself, with nothing to mount and no temporary space, and
+  the result is the same as from the dump folder ([source-images.md](source-images.md)). PKGs cannot be
+  compressed yet.
 - Space at the destination. MaxPack warns you if there is less free space than the original game takes.
 - Nothing else for the runtime: the window comes with
   [MaxPack's copy of ampr-emu-ng](https://github.com/DeLFuS77/ampr-emu-ng) (`libSceAmpr.sprx`) and puts
@@ -423,19 +426,23 @@ The examples use `maxpack`. On Windows, type `MaxPack.exe` (or its full path) in
 arguments, `MaxPack` opens the window; `maxpack --help` shows the usage.
 
 ```
-maxpack analyze <folder|image.exfat> [options]
-maxpack analyze <folder|image.exfat> --levels [L,L,...] [options]
-maxpack pack <folder|image.exfat> -o <output> [options]
+maxpack analyze <folder|image> [options]
+maxpack analyze <folder|image> --levels [L,L,...] [options]
+maxpack pack <folder|image> -o <output> [options]
 maxpack unpack <game.p5z> --folder|--original -o <folder> [--threads N]
 maxpack info <game.p5z>
-maxpack info --json <folder|image.exfat|game.p5z>
+maxpack info --json <folder|image|game.p5z>
 maxpack info --play <game.p5z>
-maxpack icon <folder|image.exfat|game.p5z> -o <icon.png>
+maxpack icon <folder|image|game.p5z> -o <icon.png>
 maxpack verify <game.p5z | folder> [--against <source>] [--threads N]
 maxpack measure [<folder>] [options]
 maxpack --version
 maxpack --capabilities
 ```
+
+An image is an `.exfat`, `.ffpkg`, `.ffpfs` or `.ffpfsc`; MaxPack tells which by its contents, so a
+renamed one works too. A damaged image stops with the reason (see
+[source-images.md](source-images.md#what-stops-it)).
 
 Exit codes: 0 success, 1 error, 2 wrong usage and 130 cancelled.
 
@@ -509,7 +516,7 @@ code 1.
 | Command | What it does | Example |
 |---|---|---|
 | `info` | Title, ID, version, files, packs and size of a `.p5z`, for people. | `maxpack info "D:\games\MyGame.p5z"` |
-| `info --json` | The same for a `.p5z`, a folder or an `.exfat`, in one JSON line. It is what the window reads. | `maxpack info --json "D:\dumps\MyGame.exfat"` |
+| `info --json` | The same for a `.p5z`, a folder or an image, in one JSON line. It is what the window reads. | `maxpack info --json "D:\dumps\MyGame.exfat"` |
 | `info --play` | What the console needs to play a `.p5z` without installing it, in JSON. It is for development. | `maxpack info --play "D:\games\MyGame.p5z"` |
 | `icon` | Saves the game's `sce_sys/icon0.png`. Exits with code 1 if it has none. | `maxpack icon "D:\dumps\MyGame.exfat" -o icon.png` |
 
@@ -523,7 +530,9 @@ Packs:      zstd level 19, 3.14 MB -> 2.07 MB in 1 volumes
 .p5z:       2.09 MB
 ```
 
-The `info --json` line carries `kind` (`folder`, `exfat` or `p5z`), `title_id`, `version`, `name`,
+The `info --json` line carries `kind` (`folder`, `p5z`, `exfat`, `ufs2` for an `.ffpkg`, `pfs` for an
+`.ffpfs`, or `pfsc` for an `.ffpfsc`), `inner` (for `pfsc`, the kind of the image inside, else `""`),
+`compressed` (whether reading it decompresses PFSC blocks), `title_id`, `version`, `name`,
 `content_id` (from `param.json`, also of a `.p5z` or an image; its first two letters are the region,
 and it is `""` when `param.json` gives none), `original_size`, `install_size`, `p5z_size`, `files`,
 `packed_files`, `volumes`, `has_runtime`, `has_zstd_runtime` and `packed`.
@@ -865,6 +874,10 @@ console repository, which identifies games only by these numbers.
 - **With real games** ([report](reports/phase1.md)): Starfall Odyssey (pack, verify and rebuild the original
   dump, with zero failures; the `ampr_emu.index` came out identical to the dump's) and
   Iron Harbor (133 GB, with files up to 72 GB; pack to `.p5z` and verify, with zero failures).
+- **Images** ([source-images.md](source-images.md)): `.ffpfs` and `.ffpfsc` made by MkPFS 1.1.0 (with an
+  exFAT, a UFS2 and a PFS image inside) and images from MaxPack's own generators read exactly the
+  game's files and pack to the same `.p5z` as the dump folder. No `.ffpkg` made by UFS2Tool or FreeBSD's
+  `newfs`/`makefs` has been tried yet, only ones that follow FreeBSD's layout, made by the generator.
 - **On every change, in GitHub Actions:** the engine is built and passes its tests on Windows and Linux;
   the window is built and passes its tests on Windows, Linux and macOS; the packages are installed,
   compress a test image and are uninstalled.

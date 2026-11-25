@@ -118,10 +118,10 @@ if(MAXPACK_BUILD_TESTS)
   set(MP_FIXTURES_DIR ${CMAKE_BINARY_DIR}/fixtures)
   set(MP_TEST_TMP ${CMAKE_BINARY_DIR}/tmp)
 
-  # mp_add_test(<name> [FIXTURES|IMAGES]): builds tests/<name>.c and registers it with CTest (IMAGES:
-  # it also needs the UFS2, PFS and PFSC fixtures).
+  # mp_add_test(<name> [FIXTURES|IMAGES|FPKG]): builds tests/<name>.c and registers it with CTest
+  # (IMAGES: it also needs the UFS2, PFS and PFSC fixtures; FPKG: the PS5 packages).
   function(mp_add_test name)
-    cmake_parse_arguments(T "FIXTURES;IMAGES" "" "" ${ARGN})
+    cmake_parse_arguments(T "FIXTURES;IMAGES;FPKG" "" "" ${ARGN})
     add_executable(${name} tests/${name}.c)
     target_link_libraries(${name} PRIVATE maxpack_web)
     target_include_directories(${name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests)
@@ -130,7 +130,9 @@ if(MAXPACK_BUILD_TESTS)
     mp_warnings(${name})
     add_test(NAME ${name} COMMAND ${name})
     set_tests_properties(${name} PROPERTIES TIMEOUT 300)
-    if(T_IMAGES)
+    if(T_FPKG)
+      set_tests_properties(${name} PROPERTIES FIXTURES_REQUIRED "exfat;fpkg")
+    elseif(T_IMAGES)
       set_tests_properties(${name} PROPERTIES FIXTURES_REQUIRED "exfat;images")
     elseif(T_FIXTURES)
       set_tests_properties(${name} PROPERTIES FIXTURES_REQUIRED exfat)
@@ -149,6 +151,10 @@ if(MAXPACK_BUILD_TESTS)
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/tools/make_images.py --out ${MP_FIXTURES_DIR}
     --data ${CMAKE_CURRENT_SOURCE_DIR}/tests/data)
   set_tests_properties(gen_images PROPERTIES FIXTURES_SETUP images)
+  # PS5 debug packages (.pkg) and Kraken blocks, encrypted with the engine's AES (mp_fpkgtool).
+  add_test(NAME gen_fpkg COMMAND ${Python3_EXECUTABLE} -I
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/tools/make_fpkg.py --out ${MP_FIXTURES_DIR} --xts $<TARGET_FILE:mp_fpkgtool>)
+  set_tests_properties(gen_fpkg PROPERTIES FIXTURES_SETUP fpkg TIMEOUT 600)
 
   mp_add_test(test_smoke)
   mp_add_test(test_platform)
@@ -158,6 +164,8 @@ if(MAXPACK_BUILD_TESTS)
   set_tests_properties(test_source_exfat PROPERTIES TIMEOUT 10)
   mp_add_test(test_source_images IMAGES)
   set_tests_properties(test_source_images PROPERTIES TIMEOUT 300)
+  mp_add_test(test_source_fpkg FPKG)
+  set_tests_properties(test_source_fpkg PROPERTIES TIMEOUT 600)
   mp_add_test(test_rules)
   mp_add_test(test_sample)
   mp_add_test(test_measure)
@@ -171,6 +179,7 @@ if(MAXPACK_BUILD_TESTS)
   mp_add_test(test_report)
   mp_add_test(test_hash)
   mp_add_test(test_crypto)
+  mp_add_test(test_kraken FPKG)
   mp_add_test(test_wfile)
   mp_add_test(test_fsops)
   mp_add_test(test_json)
@@ -207,7 +216,7 @@ if(MAXPACK_BUILD_TESTS)
   mp_add_test(test_play FIXTURES)
   mp_add_test(test_volumes FIXTURES)
   mp_add_test(test_image_pack IMAGES)
-  set_tests_properties(test_image_pack PROPERTIES TIMEOUT 600)
+  set_tests_properties(test_image_pack PROPERTIES TIMEOUT 600 FIXTURES_REQUIRED "exfat;images;fpkg")
   mp_add_test(test_identity FIXTURES)
   set_tests_properties(test_identity PROPERTIES TIMEOUT 600)
   mp_add_test(test_cancel FIXTURES)
@@ -216,7 +225,7 @@ if(MAXPACK_BUILD_TESTS)
   add_test(NAME test_cli COMMAND ${Python3_EXECUTABLE} -I
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/tools/test_cli.py $<TARGET_FILE:maxpack> ${MP_FIXTURES_DIR}
     ${MP_TEST_TMP}/cli)
-  set_tests_properties(test_cli PROPERTIES FIXTURES_REQUIRED "exfat;images" TIMEOUT 300)
+  set_tests_properties(test_cli PROPERTIES FIXTURES_REQUIRED "exfat;images;fpkg" TIMEOUT 300)
 
   # A package's version comes from the tag (v1.2.3 -> 1.2.3); needs bash.
   find_program(MP_BASH bash)
@@ -230,6 +239,11 @@ if(MAXPACK_BUILD_TESTS)
   add_executable(mp_cat tests/tools/mp_cat.c)
   target_link_libraries(mp_cat PRIVATE maxpack_core)
   mp_warnings(mp_cat)
+
+  # Test tool for make_fpkg.py: encrypts the packages it writes with the engine's AES.
+  add_executable(mp_fpkgtool tests/tools/mp_fpkgtool.c)
+  target_link_libraries(mp_fpkgtool PRIVATE maxpack_core)
+  mp_warnings(mp_fpkgtool)
 
   # Benchmark tool: reads a source's packable files the way the packer does and prints how fast.
   add_executable(mp_readbench tests/tools/mp_readbench.c)

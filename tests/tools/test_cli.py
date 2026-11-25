@@ -67,7 +67,7 @@ check("fatloop_sale_1", rc == 1 and "FAT" in err, err)
 rc, _, err = run("analyze", os.path.join(FX, "huge_len.exfat"))
 check("tamano_imposible_sale_1", rc == 1 and "error:" in err, err)
 rc, _, err = run("analyze", os.path.join(FX, "fake.pkg"))
-check("pkg_sale_1", rc == 1 and "PKG" in err, err)
+check("pkg_sale_1", rc == 1 and "PS5 package" in err, err)   # 64 bytes: too short to be one
 
 js = os.path.join(TMP, "basic.json")
 if os.path.exists(js):
@@ -746,6 +746,81 @@ for name, words in (("truncated.bad.ffpkg", "truncated"), ("loop.bad.ffpfs", "re
     check("pack_bad_" + name, rc == 1 and words in err and not os.path.exists(dst), "rc=%d %s" % (rc, err[-300:]))
 rc, _, err = run("info", "--json", os.path.join(FX, "notufs.bad.ffpkg"))
 check("info_json_not_ufs2", rc == 1 and "not a UFS2 image" in err, err)
+
+# ---- PS5 debug packages (FPKG, .pkg) -------------------------------------------------------------
+PASSCODE = "MaxPackTestPasscode-0123456789ab"
+check("capabilities_fpkg", isinstance(caps, dict) and caps.get("fpkg") is True and caps.get("passcode") is True, so)
+for name, comp in (("basic.pkg", False), ("basic_k.pkg", True)):
+    rc, so, err = run("info", "--json", os.path.join(FX, name))
+    try:
+        d = json.loads(so)
+        check("info_json_" + name, rc == 0 and d["kind"] == "fpkg" and d["inner"] == "" and d["compressed"] is comp
+              and d["files"] == manifest_count() and set(d) == old_keys and d["title_id"] == "TEST00001"
+              and d["content_id"] == "UP0000-TEST00001_00-MAXPACKTEST00000", so[-300:] + err[-200:])
+    except Exception as ex:  # noqa: BLE001
+        check("info_json_" + name, False, repr(ex) + so[-200:] + err[-200:])
+# The passcode: the default does not open pass.pkg; --passcode does, in any place on the line.
+pass_pkg = os.path.join(FX, "pass.pkg")
+rc, so, err = run("info", "--json", pass_pkg)
+check("fpkg_needs_passcode", rc == 1 and "this package was made with another passcode; give it with --passcode" in err,
+      err)
+rc, so, err = run("info", "--json", pass_pkg, "--passcode", PASSCODE)
+check("fpkg_passcode_info", rc == 0 and json.loads(so or "{}").get("kind") == "fpkg", so + err)
+rc, so, err = run("info", "--passcode", PASSCODE, "--json", pass_pkg)
+check("fpkg_passcode_first", rc == 0, err)
+rc, _, err = run("info", "--json", pass_pkg, "--passcode", "0123")
+check("fpkg_passcode_short_exit_2", rc == 2 and "--passcode must be 32 characters" in err, err[:300])
+rc, _, err = run("info", "--json", pass_pkg, "--passcode")
+check("fpkg_passcode_missing_exit_2", rc == 2 and "missing value for: --passcode" in err, err[:300])
+rc, _, err = run("unpack", os.path.join(TMP, "img_ref.p5z"), "--folder", "-o", os.path.join(TMP, "x"),
+                 "--passcode", PASSCODE)
+check("fpkg_passcode_not_for_unpack", rc == 2 and "unknown option" in err, err[:300])
+dst = os.path.join(TMP, "pass_out")
+rmtree(dst)
+rc, so, err = run("pack", pass_pkg, "-o", dst, "--progress", "json", "--threads", "2")
+res = [json.loads(l) for l in so.splitlines() if l.startswith("{")]
+check("fpkg_pack_passcode_code", rc == 1 and res and res[-1].get("error") == "passcode" and not os.path.exists(dst),
+      so[-300:] + err[-300:])
+rc, _, err = run("pack", pass_pkg, "-o", dst, "--passcode", PASSCODE, "--level", "3", "--threads", "2")
+check("fpkg_pack_with_passcode", rc == 0 and os.path.exists(os.path.join(dst, "eboot.bin")), err[-300:])
+rc, so, err = run("pack", pass_pkg, "-o", dst + "_bad", "--passcode", "x" * 32, "--progress", "json")
+check("fpkg_pack_wrong_passcode", rc == 1 and "than the one given" in err, err[-300:])
+# A package packs to the same .p5z as the basic game's .exfat (its files have the same dates).
+for name in ("basic.pkg", "basic_k.pkg"):
+    dst = os.path.join(TMP, "fpkg_" + name + ".p5z")
+    if os.path.exists(dst):
+        os.remove(dst)
+    rc, _, err = run("pack", os.path.join(FX, name), "-o", dst, "--p5z", "--level", "3", "--threads", "4")
+    same = rc == 0 and os.path.exists(dst) and open(dst, "rb").read() == open(ref_p5z, "rb").read()
+    check("pack_p5z_" + name, same, "rc=%d %s" % (rc, err[-300:]))
+# analyze: the kind, and Saved against the game, the package file beside it.
+js4 = os.path.join(TMP, "fpkg.json")
+rc, out, err = run("analyze", os.path.join(FX, "basic_k.pkg"), "--no-dedup", "--no-transport", "--json", js4)
+try:
+    with open(js4, encoding="utf-8") as f:
+        rep = json.load(f)
+    check("analyze_json_fpkg", rc == 0 and rep["source"]["kind"] == "fpkg" and rep["files"]["total"] == manifest_count(),
+          str(rep.get("source")) + err[-200:])
+    check("analyze_text_fpkg", "(PS5 package (FPKG), compressed)" in out and "not the package file" in out
+          and "than the package file)" in out, out[-1200:])
+except Exception as ex:  # noqa: BLE001
+    check("analyze_json_fpkg", False, repr(ex) + err[-300:])
+rc, out, err = run("analyze", os.path.join(FX, "basic.pkg"), "--levels", "3", "--threads", "2")
+check("levels_fpkg_vs_package", rc == 0 and LEVEL_ROW.findall(out) == ["3"] and "Against the package file: level 3 " in out,
+      out[-700:] + err[-300:])
+rc, out, err = run("analyze", pass_pkg, "--list", "--passcode", PASSCODE)
+check("analyze_list_passcode", rc == 0 and "data/a.bin" in out, err[-300:])
+# What is refused, and damaged packages: exit 1 with the reason, nothing written.
+for name, words in (("retail.pkg", "retail packages need keys this tool does not have"),
+                    ("patch.pkg", "patch (update) package"), ("dlc.pkg", "additional content"),
+                    ("ps4.pkg", "MaxPack is for PS5 games"), ("other.pkg", "content type 0x1A"),
+                    ("notpkg.pkg", "not a PS5 package"), ("loop.bad.pkg", "a loop"),
+                    ("naps.bad.pkg", "shorter than its header"), ("icv.bad.pkg", "checksum does not match")):
+    dst = os.path.join(TMP, "bad_" + name + ".p5z")
+    if os.path.exists(dst):
+        os.remove(dst)
+    rc, _, err = run("pack", os.path.join(FX, name), "-o", dst, "--p5z", "--threads", "2")
+    check("pack_refused_" + name, rc == 1 and words in err and not os.path.exists(dst), "rc=%d %s" % (rc, err[-300:]))
 
 print("test_cli: %d failures" % len(failures))
 sys.exit(1 if failures else 0)

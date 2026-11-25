@@ -25,7 +25,13 @@ Written to <out>:
                           files, and what dump tools leave behind), stored
   dumpindex_broken.pkg    its dumpindex/broken/ (no table; a copy that lacks files of its dump tool's
                           list), Kraken
-  retail.pkg, patch.pkg, dlc.pkg, ps4.pkg, cnt.pkg, other.pkg   what MaxPack refuses
+  retail.pkg, patch.pkg, dlc.pkg, ps4.pkg, cnt.pkg, other.pkg   what MaxPack refuses (as a game)
+  dlc_data/, dlc_data.pkg       a DLC of the mini game (PPSA00000) with files of its own, as a folder and
+                                as the package of it (the same files and dates)
+  dlc_license/, dlc_license.pkg a DLC of it that is a license only: nothing outside sce_sys/
+  dlc_other.pkg                 a DLC of another game (PPSA09999)
+  dlc_badcid/, dlc_noparam/     a DLC folder whose content ID is not 36 characters, and one with no
+                                sce_sys/param.json
   *.bad.pkg and bad_fpkg.tsv   damaged and hostile packages, each with the words of its message
   basic.pkg.meta          the regions of basic.pkg the mutation tests flip bytes in
   kraken.vec              Kraken blocks and what they decode to, for test_kraken
@@ -127,6 +133,9 @@ BUILD_TIME = 1730000000   # when the builder made game.pkg (its files' dates)
 BASIC_CID = "UP0000-TEST00001_00-MAXPACKTEST00000"
 GAME_CID = "UP0000-PPSA00000_00-MAXPACKTEST00000"
 PLAYGO_CID = "UP0000-PPSA00000_00-MAXPACKPLAYGO000"   # the content ID of make_playgo.py's game
+DLC_DATA_CID = "UP0000-PPSA00000_00-MAXPACKDLCDATA01"    # the DLC of the mini game (GAME_CID)
+DLC_LICENSE_CID = "UP0000-PPSA00000_00-MAXPACKLICENSE01"
+DLC_OTHER_CID = "UP0000-PPSA09999_00-MAXPACKOTHERDLC1"   # a DLC of another game
 MODES = [0, kraken.REPEATS, kraken.NO_SCALING, kraken.SUB_LITERALS,
          kraken.REPEATS | kraken.NO_SCALING | kraken.SUB_LITERALS]
 
@@ -143,6 +152,30 @@ def mini():
             ("data/b.bin", bytes(9000)),
             ("data/sub/c.bin", random.Random(6).randbytes(5000)),
             ("empty.txt", b"")]
+
+
+def dlc_param(content_id, name, title_id=None):
+    """The param.json of a DLC: its content ID and its name (a titleId only when given)."""
+    title = b'"titleId": "' + title_id.encode() + b'", ' if title_id else b""
+    return (b'{"contentId": "' + content_id.encode() + b'", ' + title + b'"contentVersion": "01.000.000", '
+            b'"localizedParameters": {"defaultLanguage": "en-US", "en-US": {"titleName": "' + name.encode() + b'"}}}')
+
+
+def dlc_data(content_id=DLC_DATA_CID):
+    """A DLC with files of its own: big and small, empty, a module (loose once packed) and its sce_sys."""
+    r = random.Random(50)
+    return [("sce_sys/param.json", dlc_param(content_id, "MaxPack Test Bonus")),
+            ("sce_sys/icon0.png", b"\x89PNG\r\n\x1a\n" + r.randbytes(3000)),
+            ("data/dlc1.bin", text(300000, 51)),
+            ("data/sub/dlc2.bin", r.randbytes(5000)),
+            ("data/empty.bin", b""),
+            ("module/libdlc.prx", b"\x4f\x15\x3d\x1d" + r.randbytes(4000))]
+
+
+def dlc_license():
+    """A DLC that is a license only: its sce_sys files and nothing else."""
+    return [("sce_sys/param.json", dlc_param(DLC_LICENSE_CID, "MaxPack Test License", "PPSA00000")),
+            ("sce_sys/icon0.png", b"\x89PNG\r\n\x1a\n" + random.Random(52).randbytes(2000))]
 
 
 def game():
@@ -435,6 +468,16 @@ def main():
     retail[5] = 0x80
     w("retail.pkg", retail)
     w("dlc.pkg", build.package(m, GAME_CID, content_type=0x21)[0])
+    # DLC of the mini game, as folders and as packages of them; one of another game; two bad folders
+    write_folder(os.path.join(out, "dlc_data"), dlc_data(), MTIME)
+    w("dlc_data.pkg", build.package(dlc_data(), DLC_DATA_CID, content_type=0x21, t_sec=MTIME)[0])
+    write_folder(os.path.join(out, "dlc_license"), dlc_license(), MTIME)
+    w("dlc_license.pkg", build.package(dlc_license(), DLC_LICENSE_CID, content_type=0x21, t_sec=MTIME)[0])
+    w("dlc_other.pkg", build.package(dlc_data(DLC_OTHER_CID), DLC_OTHER_CID, content_type=0x21, t_sec=MTIME)[0])
+    write_folder(os.path.join(out, "dlc_badcid"),
+                 [("sce_sys/param.json", dlc_param("UP0000-PPSA00000_00-MAXPACKBADCID01", "Bad")),
+                  ("data/x.bin", text(100, 53))], MTIME)
+    write_folder(os.path.join(out, "dlc_noparam"), [("data/x.bin", text(100, 54))], MTIME)
     w("other.pkg", build.package(m, GAME_CID, content_type=0x1A)[0])
     w("patch.pkg", b"\x7fLIH" + bytes(0x10000 - 4))
     w("ps4.pkg", b"\x7fCNT" + bytes(0x1000 - 4))

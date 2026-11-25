@@ -206,6 +206,7 @@ MP_TEST(fpkg_refused) {
         {"retail.pkg", "retail packages need keys this tool does not have"},
         {"patch.pkg", "a patch (update) package"},
         {"dlc.pkg", "additional content (DLC)"},
+        {"dlc_data.pkg", "with --dlc"},
         {"other.pkg", "content type 0x1A"},
         {"ps4.pkg", "MaxPack is for PS5 games"},
         {"notpkg.pkg", "not a PS5 package"},
@@ -528,12 +529,67 @@ MP_TEST(fpkg_mutations) {
     mutate("basic_k.pkg", 1000);
 }
 
+// A DLC package opens as a DLC (or as anything) and never as a game: the files, bytes and dates of the
+// folder it was made of, and its content ID; a license-only one has only sce_sys/ files. A game's
+// package is not a DLC. A folder opens the same whatever it is asked for.
+MP_TEST(fpkg_dlc) {
+    mp_err e = {{0}};
+    mp_source *pkg = NULL, *dir = NULL;
+    MP_CHECK(mp_source_open_as(FX "/dlc_data.pkg", MP_OPEN_DLC, &pkg, &e) == 0);
+    MP_CHECK(mp_source_open_as(FX "/dlc_data", MP_OPEN_DLC, &dir, &e) == 0);
+    if (pkg && dir) {
+        MP_CHECK(mp_source_is_dlc_package(pkg));
+        MP_CHECK(!mp_source_is_dlc_package(dir));
+        MP_CHECK_STR(mp_source_package_id(pkg), "UP0000-PPSA00000_00-MAXPACKDLCDATA01");
+        MP_CHECK_STR(mp_source_kind_name(pkg), "fpkg");
+        MP_CHECK_EQ_U64(mp_source_count(pkg), mp_source_count(dir));
+        for (size_t i = 0; i < mp_source_count(pkg) && i < mp_source_count(dir); i++) {
+            const mp_entry *a = mp_source_entry(pkg, i), *b = mp_source_entry(dir, i);
+            MP_CHECK_STR(a->path, b->path);
+            MP_CHECK_EQ_U64(a->size, b->size);
+            MP_CHECK_EQ_U64(a->mtime, b->mtime);
+            char x[65], y[65];
+            MP_CHECK(sha_of(pkg, i, x, &e) == 0 && sha_of(dir, i, y, &e) == 0);
+            MP_CHECK_STR(x, y);
+        }
+    } else {
+        MP_FAIL_("dlc_data: %s", e.msg);
+    }
+    mp_source_close(pkg);
+    mp_source_close(dir);
+    pkg = NULL;
+    MP_CHECK(mp_source_open_as(FX "/dlc_license.pkg", MP_OPEN_DLC, &pkg, &e) == 0);
+    if (pkg) {
+        MP_CHECK_EQ_U64(mp_source_count(pkg), 2);
+        for (size_t i = 0; i < mp_source_count(pkg); i++) MP_CHECK(!strncmp(mp_source_entry(pkg, i)->path, "sce_sys/", 8));
+        MP_CHECK_STR(mp_source_package_id(pkg), "UP0000-PPSA00000_00-MAXPACKLICENSE01");
+    }
+    mp_source_close(pkg);
+    // anything: a game's package and a DLC's
+    pkg = NULL;
+    MP_CHECK(mp_source_open_as(FX "/mini.pkg", MP_OPEN_ANY, &pkg, &e) == 0);
+    MP_CHECK(pkg && !mp_source_is_dlc_package(pkg));
+    mp_source_close(pkg);
+    pkg = NULL;
+    MP_CHECK(mp_source_open_as(FX "/dlc.pkg", MP_OPEN_ANY, &pkg, &e) == 0);
+    MP_CHECK(pkg && mp_source_is_dlc_package(pkg));
+    mp_source_close(pkg);
+    // a game's package is not a DLC
+    pkg = NULL;
+    MP_CHECK(mp_source_open_as(FX "/mini.pkg", MP_OPEN_DLC, &pkg, &e) == -1 && pkg == NULL);
+    MP_CHECK_CONTAINS(e.msg, "a game's package, not additional content (DLC)");
+    // a DLC's package is not a game
+    MP_CHECK(mp_source_open_as(FX "/dlc_data.pkg", MP_OPEN_GAME, &pkg, &e) == -1 && pkg == NULL);
+    MP_CHECK_CONTAINS(e.msg, "additional content (DLC), not a game");
+}
+
 int main(void) {
     MP_RUN(fpkg_like_manifest);
     MP_RUN(fpkg_kinds);
     MP_RUN(fpkg_ranges);
     MP_RUN(fpkg_passcode);
     MP_RUN(fpkg_refused);
+    MP_RUN(fpkg_dlc);
     MP_RUN(fpkg_bad);
     MP_RUN(fpkg_damaged_block);
     MP_RUN(fpkg_plain_and_mini);

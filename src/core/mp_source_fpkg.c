@@ -511,20 +511,20 @@ static void src_free(fpkg_src *x, size_t nfiles) {
 
 static void fpkg_close(mp_source *s) { src_free(s->impl, s->n); }
 
-const char *mp_fpkg_source_id(const mp_source *s) { return ((const fpkg_src *)s->impl)->pkg->content_id; }
+static const char *fpkg_id(const mp_source *s) { return ((const fpkg_src *)s->impl)->pkg->content_id; }
 
 static int cmp_rec(const void *a, const void *b) {
     return strcmp(((const frec *)a)->en.path, ((const frec *)b)->en.path);
 }
 
-int mp_fpkg_open_source(mp_image *img, const char *passcode, mp_source **out, mp_err *e) {
+int mp_fpkg_open_source(mp_image *img, const char *passcode, int accept, mp_source **out, mp_err *e) {
     *out = NULL;
     fpkg_src *x = calloc(1, sizeof *x);
     if (!x) {
         mp_image_close(img);
         return oom(e);
     }
-    if (mp_fpkg_open(img, passcode, &x->pkg, e) != 0) {
+    if (mp_fpkg_open(img, passcode, accept, &x->pkg, e) != 0) {
         free(x);
         return -1;
     }
@@ -579,6 +579,8 @@ int mp_fpkg_open_source(mp_image *img, const char *passcode, mp_source **out, mp
     }
     s->kind = s->inner = MP_SRC_FPKG;
     s->compressed = x->mount->compressed;
+    s->dlc_package = p->content_type == 0x21;
+    s->package_id = fpkg_id;
     s->entries = entries;
     s->n = x->n;
     s->ndirs = x->ndirs;

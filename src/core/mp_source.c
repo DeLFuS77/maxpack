@@ -79,13 +79,16 @@ int mp_source_set_passcode(const char *passcode) {
     return 0;
 }
 
-static int open_image(mp_image *img, int depth, const char *ext, const char *passcode, mp_source **out, mp_err *e);
+static int open_image(mp_image *img, int depth, const char *ext, const char *passcode, int what, mp_source **out,
+                      mp_err *e);
 
 int mp_source_open_image(mp_image *img, int depth, const char *ext, mp_source **out, mp_err *e) {
-    return open_image(img, depth, ext, g_passcode, out, e);
+    return open_image(img, depth, ext, g_passcode, MP_OPEN_GAME, out, e);
 }
 
-static int open_image(mp_image *img, int depth, const char *ext, const char *passcode, mp_source **out, mp_err *e) {
+// what: MP_OPEN_GAME, MP_OPEN_DLC or MP_OPEN_ANY, which are mp_fpkg_open's MP_FPKG_GAME, MP_FPKG_DLC and both
+static int open_image(mp_image *img, int depth, const char *ext, const char *passcode, int what, mp_source **out,
+                      mp_err *e) {
     *out = NULL;
     if (depth > MP_IMAGE_MAX_DEPTH) {
         mp_err_set(e, "%s: images inside images more than %d deep", img->name, MP_IMAGE_MAX_DEPTH);
@@ -109,7 +112,7 @@ static int open_image(mp_image *img, int depth, const char *ext, const char *pas
         mp_err_set(e, "%s: a big-endian UFS2 image; the PS5's are little-endian", img->name);
         break;
     case MP_IMG_PKG:
-        if (depth == 1) return mp_fpkg_open_source(img, passcode, out, e);
+        if (depth == 1) return mp_fpkg_open_source(img, passcode, what, out, e);
         mp_err_set(e, "%s: a package inside an image: MaxPack reads a package (.pkg) as a file of its own", img->name);
         break;
     default:
@@ -134,7 +137,7 @@ int mp_source_open(const char *path, mp_source **out, mp_err *e) {
     return mp_source_open_passcode(path, g_passcode, out, e);
 }
 
-int mp_source_open_passcode(const char *path, const char *passcode, mp_source **out, mp_err *e) {
+static int open_path(const char *path, const char *passcode, int what, mp_source **out, mp_err *e) {
     *out = NULL;
     int kind = mp_path_kind(path);
     if (kind == 0) {
@@ -146,8 +149,19 @@ int mp_source_open_passcode(const char *path, const char *passcode, mp_source **
     if (mp_image_open_file(path, &img, e) != 0) return -1;
     const char *slash = strrchr(path, '/'), *bslash = strrchr(path, '\\'), *dot = strrchr(path, '.');
     if (dot && ((slash && dot < slash) || (bslash && dot < bslash))) dot = NULL;
-    return open_image(img, 1, dot, passcode, out, e);
+    return open_image(img, 1, dot, passcode, what, out, e);
 }
+
+int mp_source_open_passcode(const char *path, const char *passcode, mp_source **out, mp_err *e) {
+    return open_path(path, passcode, MP_OPEN_GAME, out, e);
+}
+
+int mp_source_open_as(const char *path, int what, mp_source **out, mp_err *e) {
+    what &= MP_OPEN_ANY;
+    return open_path(path, g_passcode, what ? what : MP_OPEN_GAME, out, e);
+}
+
+int mp_source_is_dlc_package(const mp_source *s) { return s->dlc_package; }
 
 mp_source_kind mp_source_kind_of(const mp_source *s) { return s->kind; }
 size_t mp_source_count(const mp_source *s) { return s->n; }
@@ -168,7 +182,7 @@ const char *mp_source_kind_name(const mp_source *s) { return s->container ? "pfs
 
 const char *mp_source_inner_name(const mp_source *s) { return s->container ? kind_word(s->inner) : ""; }
 
-const char *mp_source_package_id(const mp_source *s) { return s->kind == MP_SRC_FPKG ? mp_fpkg_source_id(s) : ""; }
+const char *mp_source_package_id(const mp_source *s) { return s->package_id ? s->package_id(s) : ""; }
 
 const char *mp_source_kind_text(const mp_source *s, char *buf, size_t n) {
     if (s->kind == MP_SRC_FPKG) {
@@ -192,7 +206,10 @@ const char *mp_source_kind_text(const mp_source *s, char *buf, size_t n) {
 int mp_source_compressed(const mp_source *s) { return s->compressed; }
 
 // A package is decrypted (and, compressed, decoded) as it is read: like inflating, work for threads.
-unsigned mp_source_readers(const mp_source *s) { return s->compressed || s->kind == MP_SRC_FPKG ? 16 : 4; }
+unsigned mp_source_readers(const mp_source *s) {
+    if (s->readers) return s->readers;
+    return s->compressed || s->kind == MP_SRC_FPKG ? 16 : 4;
+}
 
 long mp_source_find(const mp_source *s, const char *path) {
     size_t lo = 0, hi = s->n;

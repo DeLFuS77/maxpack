@@ -26,6 +26,13 @@ typedef struct mp_source mp_source;
 // passcode mp_source_set_passcode gave (the default, 32 '0', if none); retail packages, patches,
 // additional content and PS4 packages are refused, each with its message.
 int mp_source_open(const char *utf8_path, mp_source **out, mp_err *e);
+// What mp_source_open_as takes of packages: a game's, additional content's (a DLC), or either. A
+// folder or an image opens the same whatever it is asked for.
+enum { MP_OPEN_GAME = 1, MP_OPEN_DLC = 2, MP_OPEN_ANY = 3 };
+// mp_source_open for the packages `what` says (mp_source_open is MP_OPEN_GAME).
+int mp_source_open_as(const char *utf8_path, int what, mp_source **out, mp_err *e);
+// 1 if it is a package of additional content (CNT content type 0x21).
+int mp_source_is_dlc_package(const mp_source *s);
 // The same with a passcode for a package (NULL or "" = the default).
 int mp_source_open_passcode(const char *utf8_path, const char *passcode, mp_source **out, mp_err *e);
 // The passcode mp_source_open uses for packages from now on (NULL or "" = the default). For a

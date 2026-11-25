@@ -18,6 +18,9 @@ struct mp_source {
     mp_source_kind inner;   // of the image whose files these are (0 = kind)
     int container;          // kind is a PFS image that holds the image `inner`
     int compressed;         // reads decompress PFSC blocks
+    int dlc_package;        // a package of additional content (CNT content type 0x21)
+    unsigned readers;       // reading threads it can keep busy (0: by its kind, see mp_source_readers)
+    const char *(*package_id)(const mp_source *s);   // its package's content ID (NULL: it is no package)
     mp_entry *entries;
     size_t n, ndirs;
     int (*read)(mp_source *s, size_t i, uint64_t off, void *buf, size_t len, mp_err *e);
@@ -32,9 +35,9 @@ int mp_exfat_open_image(mp_image *img, mp_source **out, mp_err *e);
 int mp_ufs2_open_image(mp_image *img, mp_source **out, mp_err *e);
 // depth: images around it, itself included (1 for a file on disk).
 int mp_pfs_open_image(mp_image *img, int depth, mp_source **out, mp_err *e);
-// A PS5 debug package (mp_source_fpkg.c); passcode NULL or "" = the default.
-int mp_fpkg_open_source(mp_image *img, const char *passcode, mp_source **out, mp_err *e);
-const char *mp_fpkg_source_id(const mp_source *s);   // its content ID
+// A PS5 debug package (mp_source_fpkg.c); passcode NULL or "" = the default; accept: MP_FPKG_GAME,
+// MP_FPKG_DLC or both (mp_fpkg.h).
+int mp_fpkg_open_source(mp_image *img, const char *passcode, int accept, mp_source **out, mp_err *e);
 
 // What an image is, by its signature.
 typedef enum {
@@ -43,7 +46,7 @@ typedef enum {
 int mp_image_probe(mp_image *img, mp_image_type *type, mp_err *e);
 // Opens the image by its signature (takes img). depth: as for mp_pfs_open_image. ext: the file's
 // extension or NULL, only to word the message when the signature is not one MaxPack reads. A package
-// is only read as a file on disk (depth 1), with mp_source_set_passcode's passcode.
+// is only read as a file on disk (depth 1), with mp_source_set_passcode's passcode, as a game's.
 int mp_source_open_image(mp_image *img, int depth, const char *ext, mp_source **out, mp_err *e);
 
 // Sorts the entries by strcmp of the path.

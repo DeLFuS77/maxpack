@@ -146,15 +146,21 @@ static int read_cnt(mp_fpkg *p, mp_err *e) {
             mp_err_set(e, "%s: damaged package (it has no valid content ID)", name);
             return -1;
         }
-    if (p->content_type == 0x21) {
-        mp_err_set(e, "%s: additional content (DLC), not a game: MaxPack packs a full game's package; "
-                      "install the additional content on the console",
-                   name);
+    if (p->content_type == 0x21 && !(p->accept & MP_FPKG_DLC)) {
+        mp_err_set(e, "%s: additional content (DLC), not a game: give it to pack with its game, with --dlc", name);
         return -1;
     }
-    if (p->content_type != 0x20) {
-        mp_err_set(e, "%s: not a game's package (content type 0x%" PRIX32 "): MaxPack packs a full game", name,
-                   p->content_type);
+    if (p->content_type == 0x20 && !(p->accept & MP_FPKG_GAME)) {
+        mp_err_set(e, "%s: a game's package, not additional content (DLC)", name);
+        return -1;
+    }
+    if (p->content_type != 0x20 && p->content_type != 0x21) {
+        if (p->accept & MP_FPKG_GAME)
+            mp_err_set(e, "%s: not a game's package (content type 0x%" PRIX32 "): MaxPack packs a full game", name,
+                       p->content_type);
+        else
+            mp_err_set(e, "%s: not a package of additional content (DLC) (content type 0x%" PRIX32 ")", name,
+                       p->content_type);
         return -1;
     }
     uint64_t avail = fsize - p->cnt_off;
@@ -598,7 +604,7 @@ int mp_fpkg_passcode_ok(const char *passcode) {
     return n == MP_FPKG_PASSCODE_LEN;
 }
 
-int mp_fpkg_open(mp_image *img, const char *passcode, mp_fpkg **out, mp_err *e) {
+int mp_fpkg_open(mp_image *img, const char *passcode, int accept, mp_fpkg **out, mp_err *e) {
     *out = NULL;
     const char *name = img->name;
     uint8_t h[0x100] = {0};
@@ -647,6 +653,7 @@ int mp_fpkg_open(mp_image *img, const char *passcode, mp_fpkg **out, mp_err *e) 
         return oom(e);
     }
     p->file = img;
+    p->accept = accept;
     snprintf(p->passcode, sizeof p->passcode, "%s", passcode && passcode[0] ? passcode : "00000000000000000000000000000000");
     p->default_passcode = !strcmp(p->passcode, "00000000000000000000000000000000");
     p->pfs_off = le64(h + 0x10);

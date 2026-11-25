@@ -26,6 +26,9 @@
 
 #define MP_FPKG_BLOCK 0x10000u
 #define MP_FPKG_PASSCODE_LEN 32
+// What mp_fpkg_open accepts (or-ed): a game's package (CNT content type 0x20), additional content (0x21).
+#define MP_FPKG_GAME 1
+#define MP_FPKG_DLC 2
 
 // ---- the package and its outer PFS (mp_fpkg.c) ---------------------------------------------
 
@@ -41,6 +44,7 @@ typedef struct mp_fpkg {
     uint64_t inner_meta_base;   // FIH 0x50: where the inner PFS's superblock is in the mount, in 64 KiB blocks
     char content_id[37];
     uint32_t content_type;
+    int accept;              // what mp_fpkg_open was told to take: MP_FPKG_GAME, MP_FPKG_DLC or both
     char passcode[MP_FPKG_PASSCODE_LEN + 1];
     int default_passcode;    // the passcode is the default (32 '0')
     mp_cnt_entry *entries;
@@ -57,9 +61,9 @@ typedef struct mp_fpkg {
 
 // Reads the header, the CNT and the outer PFS of the package in img (takes img; closed with the
 // package, or on failure), decrypting with passcode (NULL or "" = the default). Refuses retail
-// packages, patches, additional content, PS4 packages, and a passcode that does not open it, each
-// with its message.
-int mp_fpkg_open(mp_image *img, const char *passcode, mp_fpkg **out, mp_err *e);
+// packages, patches, PS4 packages, a content type accept does not take (MP_FPKG_GAME, MP_FPKG_DLC)
+// and a passcode that does not open it, each with its message.
+int mp_fpkg_open(mp_image *img, const char *passcode, int accept, mp_fpkg **out, mp_err *e);
 void mp_fpkg_close(mp_fpkg *p);   // p may be NULL
 // 1 if passcode is one a package can have: 32 printable ASCII characters, no spaces.
 int mp_fpkg_passcode_ok(const char *passcode);

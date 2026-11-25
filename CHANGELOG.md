@@ -4,7 +4,7 @@ All notable changes to MaxPack are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.0.5] - 2026-11-25
 
 ### Added
 
@@ -390,6 +390,7 @@ risk. The authors are not responsible for data loss, lost saves, damage to the c
 bans or any other problem. MaxPack is not affiliated with or endorsed by Sony Interactive
 Entertainment. Full text: [Legal and disclaimer](README.md#legal-and-disclaimer).
 
+[1.0.5]: https://github.com/DeLFuS77/maxpack/releases/tag/v1.0.5
 [1.0.4]: https://github.com/DeLFuS77/maxpack/releases/tag/v1.0.4
 [1.0.3]: https://github.com/DeLFuS77/maxpack/releases/tag/v1.0.3
 [1.0.2]: https://github.com/DeLFuS77/maxpack/releases/tag/v1.0.2

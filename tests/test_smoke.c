@@ -41,7 +41,7 @@ MP_TEST(zlib_roundtrip) {
     free(src); free(dst); free(back);
 }
 
-MP_TEST(version_string) { MP_CHECK_STR(mp_version_string(), "1.0.4"); }
+MP_TEST(version_string) { MP_CHECK_STR(mp_version_string(), "1.0.5"); }
 
 int main(void) {
     MP_RUN(zstd_roundtrip);

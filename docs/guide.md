@@ -196,7 +196,9 @@ The sidebar has four work sections and Settings. Everything is explained, with s
    shows, for each, the size of the `.p5z` (or of the folder), what it saves and how long compressing
    the whole game takes on this PC; **Use** on a row sets that level. It writes nothing, and **Cancel**
    or closing the card stops it.
-5. Press **Compress**.
+5. If you want, tick **Add repair data** and choose **1 %**, **5 %** (what it proposes) or **10 %** (see
+   [Repair data](#repair-data) below). Only for a `.p5z`.
+6. Press **Compress**.
 
 What it does by itself:
 - A folder that is already compressed is skipped ("it is compressed already").
@@ -206,8 +208,11 @@ What it does by itself:
 - Games you add to Compress while it works join the queue.
 - The PC does not go to sleep while there is work, and progress also shows on the taskbar (Windows) or
   in the Dock (macOS).
-- At the end it says how much was saved, how long it took, what saved the most and what to do next;
-  **Copy report** there copies a text for an issue, with no game names.
+- With **Add repair data**, once each `.p5z` is made, verified and in its place, it makes its repair data
+  next to it (a step of its own in its bar). If that fails or you cancel it, the game is still done (its
+  `.p5z` is good) and its row says why; nothing of the set is left behind.
+- At the end it says how much was saved, how long it took, what saved the most, how much repair data it
+  made, and what to do next; **Copy report** there copies a text for an issue, with no game names.
 - **Cancel** stops the game in progress, deletes what it had written and leaves the destination as it
   was.
 
@@ -219,13 +224,18 @@ comes out as a folder with its files, not as an image.
 
 ### Verify
 
-Reads a `.p5z` or a compressed folder and checks that it is still whole. It changes nothing.
+Reads a `.p5z` or a compressed folder and checks that it is still whole. It changes nothing. Under a `.p5z`
+with repair data it says how much it can repair ("Repair data: 5 % — can repair up to 200 blocks of
+1.3 MB, 268.8 MB in all"); a `.p5z` that Verify finds damaged and that has repair data of its own gets
+**Repair**. **Add repair data** and **Repair the damaged ones**, on the right, do it for the whole list.
+See [Repair data](#repair-data).
 
 ### Details
 
 Shows the title, ID, version, sizes, files, packs and whether it carries a runtime that reads zstd.
 **Copy report** under a game copies a text for an issue on GitHub, without its name or ID. A `.p5z` is a
-card that also says what it saved, with **Verify** and **Decompress**, which take it to those sections.
+card that also says what it saved and its repair data (how much, or none), with **Verify** and
+**Decompress**, which take it to those sections.
 A double click on a `.p5z` opens it here, when MaxPack opens `.p5z` files (see below).
 
 ### Rename
@@ -233,7 +243,8 @@ A double click on a `.p5z` opens it here, when MaxPack opens `.p5z` files (see b
 Names `.p5z` files, dump folders and `.exfat` images by what each holds, with the template of
 Settings > File names (for example `{title} [{id}] [{region}] [v{version}]`). The new names show before
 anything changes; **Rename** applies them. A name already taken, a file in use or a game that cannot be
-read is skipped and said; nothing is replaced.
+read is skipped and said; nothing is replaced. The repair data of a `.p5z` is renamed with it, all or
+nothing.
 
 ### Settings ([details](pc-window.md#4-settings))
 
@@ -247,8 +258,9 @@ only accepts a `libSceAmpr.sprx` that reads zstd.
   generated data with a quarter, half, three quarters and all of the processor's threads at the level
   of Compress, measures the disk of the destination with a temporary file it deletes, and keeps the
   fewest threads that go as fast as the most, which Compress then uses; **Use them all** goes back to
-  the default), **Delete the originals once checked** (off by default) and **Delete them for good, not
-  to the recycle bin**. What is removed is written in `maxpack.log`, in the settings folder.
+  the default), **Repair data for each .p5z** (off by default, 1, 5 or 10 %: what Compress starts with),
+  **Delete the originals once checked** (off by default) and **Delete them for good, not to the recycle
+  bin**. What is removed is written in `maxpack.log`, in the settings folder.
 - **File names:** the template of the names of the `.p5z` files and the originals unpacked, with
   `{title}`, `{id}`, `{version}` and `{region}`, three ready-made ones and a preview. `{title} [{id}]`
   is the default, the names of before. A folder for the console keeps its `TITLE_ID`.
@@ -263,6 +275,40 @@ only accepts a `libSceAmpr.sprx` that reads zstd.
   away. [Details](pc-window.md#windows-explorer).
 - **Internet:** MaxPack's window goes on the internet for nothing.
 - **About:** the versions, **Copy report**, and the links to report a bug or a game.
+
+### Repair data
+
+A `.p5z` can carry standard **PAR2** repair data next to it, and MaxPack repairs a damaged `.p5z` with
+it back to the exact bytes it was made with. Nothing else is needed: `maxpack-par2` (par2cmdline-turbo)
+comes with MaxPack, next to `maxpack-core`.
+
+- **What it is:** two files next to the `.p5z`, named after it: `<name>.p5z.par2` (a small index) and
+  `<name>.p5z.volA+B.par2` (the recovery data). Keep them in the same folder as the `.p5z`, and copy them
+  with it. Any PAR2 tool (par2cmdline, MultiPar, QuickPar) can read them too.
+- **How much:** 1, 5 or 10 % of the `.p5z`. That is what it takes, and the most it can repair: the
+  `.p5z` is cut into about 4000 blocks (of about 25 MB for a game of 100 GB, 32 MiB at most), and each
+  damaged spot, from one bad byte to a whole block, uses up one block of repair data. 5 % of 4000 blocks
+  repairs up to 200 damaged blocks anywhere in the file.
+- **Making it** reads the `.p5z` once more and takes about as long as reading it at 600-700 MB/s on a
+  fast PC (about 10 s for 5.6 GB, about 3 minutes for 100 GB), with up to 960 MiB of memory.
+- **Repairing:** in **Verify**, a `.p5z` the engine finds damaged and that has repair data of its own
+  gets **Repair**. Its drive needs room for a whole copy of it (MaxPack checks it first, and says so with
+  the numbers). The repaired `.p5z` is verified before it takes the damaged one's place; if it cannot be
+  repaired (too much damage), the `.p5z` stays exactly as it was. If MaxPack is closed or the PC stops in
+  the middle, the next start offers to put the `.p5z` back (the repaired one if it was already verified,
+  else the damaged one as it was).
+- **A set of another file:** repair data is only used for the `.p5z` it was made for (same size, same
+  start of the file). Repair data with the `.p5z`'s name that is of another file (an older `.p5z` of the
+  same name, say) is shown as "repair data of another file" and never used nor replaced: delete it by
+  hand, then **Add repair data**.
+- **Renamed:** **Rename** renames the repair data with its `.p5z`. Inside, the set still has the name the
+  `.p5z` had when it was made; MaxPack gives par2 the `.p5z` itself, so it still verifies and repairs. In
+  MultiPar or QuickPar, after a rename, add the `.p5z` by hand when they say the file is missing.
+- **On the console:** MaxPack for the console ignores the `.par2` files: it only lists `.p5z` files,
+  images and game folders. You do not need to copy them to the console; keep them with the `.p5z` on the
+  PC or on the USB drive.
+- **On the command line:** the `maxpack` command line does not make or use repair data; `maxpack-par2`
+  does, see [Repair data with par2](#repair-data-with-par2).
 
 ## 5. MaxPack on the console
 
@@ -391,7 +437,8 @@ send `maxpack.elf` again.
 
 ### Where games must be
 
-Each folder game goes in `homebrew/<TITLE_ID>`, in the root of the drive:
+Each folder game goes in `homebrew/<TITLE_ID>`, in the root of the drive. The `.par2` files of the repair
+data of a `.p5z` are ignored on the console: there is no need to copy them there.
 
 | Drive | On the PS5 | On the PC (example) |
 |---|---|---|
@@ -606,6 +653,26 @@ a minute.
 | `--json FILE` | Also saves the result as JSON (`trials`, `recommended_threads`, `fastest_threads`, `disk`). | `--json measure.json` |
 | `--progress json`, `--control stdin` | As in `pack`: one `trial` line per count of threads. | |
 
+### Repair data with par2
+
+The `maxpack` command line does not make or use repair data: `maxpack-par2` (par2cmdline-turbo, next to
+`maxpack-core`: in the folder of MaxPack on Windows and Linux, in `MaxPack.app/Contents/MacOS` on macOS)
+does, with the usual `par2` commands. What the window does, by hand (`-n1` gives one recovery file; the
+window also chooses the blocks, with `-s` and `-c`, about 4000 of them, and `-m960`):
+
+| Use | Command |
+|---|---|
+| Make 5 % | `maxpack-par2 create -r5 -n1 "MyGame.p5z.par2" "MyGame.p5z"` |
+| Check it | `maxpack-par2 verify "MyGame.p5z.par2"` |
+| Check one that was renamed | `maxpack-par2 verify "New name.p5z.par2" "New name.p5z"` |
+| Repair it | `maxpack-par2 repair "MyGame.p5z.par2"`, then `maxpack verify "MyGame.p5z"` |
+
+`repair` keeps the damaged file as `MyGame.p5z.1` and writes the repaired one as `MyGame.p5z`: once
+`maxpack verify` says it is good, delete the `.1`. Do not use `-p`, which deletes the damaged one
+before you could check the repaired one. For a renamed `.p5z`, par2 writes the repaired file under the
+name the set has inside: the window avoids that by repairing in a folder of its own, so use the window
+for those, or rename the file back first.
+
 ### Others
 
 | Command | What it does | Example |
@@ -665,8 +732,27 @@ USB drive that resets) does not count: MaxPack retries first.
 
 What to do:
 1. Verify the `.p5z` on the PC with **Verify**.
-2. If it fails, copy the file to the USB drive again.
-3. If it still fails, compress the game again.
+2. If it fails and it has repair data, press **Repair** under it.
+3. Else, copy the file to the USB drive again.
+4. If it still fails, compress the game again.
+
+### Repair: "too much damage for its repair data"
+
+The damaged spots need more blocks than the repair data has (it says how many more). The `.p5z` is as it
+was. Copy it again from where it came from, or compress the game again; next time choose a bigger share
+of repair data (10 %).
+
+### "Repair data of another file is next to it"
+
+The `.par2` files with the name of this `.p5z` were made for another file (an older `.p5z` with the same
+name, for example): they are never used, nor replaced. Delete them by hand, then **Add repair data**.
+
+### "A repair cut short left its folder"
+
+MaxPack was closed or stopped while it repaired. Close and open MaxPack: it offers to put the `.p5z` back
+where it was (the repaired one if it was already verified, else the damaged one as it was). A folder
+named `<name>.p5z.maxpack-repair` that it keeps has a copy of a `.p5z` that is also in its place: look
+at both before you delete it.
 
 ### The game closes by itself
 
@@ -835,7 +921,7 @@ the queue starts, or choose **Delete them for good** in Settings.
 - "the new one failed its verification and was deleted": try again and, if it happens again, try
   another destination.
 
-The full list is in [pc-window.md](pc-window.md#5-warnings).
+The full list is in [pc-window.md](pc-window.md#6-warnings).
 
 ## 8. What is tested and what is missing
 
@@ -868,6 +954,11 @@ console repository, which identifies games only by these numbers.
 - **On every change, in GitHub Actions:** the engine is built and passes its tests on Windows and Linux;
   the window is built and passes its tests on Windows, Linux and macOS; the packages are installed,
   compress a test image and are uninstalled.
+- **Repair data:** the tests pack a test image to a `.p5z` with 5 % of repair data, damage it in several
+  places, repair it and check that its bytes are the ones made; with more damage than it can repair, the
+  `.p5z` stays as it was; making the set cancelled leaves nothing; a renamed `.p5z` still repairs; and the
+  set of another file is never used. They run with the real `maxpack-par2` in GitHub Actions on Windows,
+  Linux and macOS, and were run on Windows by hand.
 
 ### Not tested on a console yet
 

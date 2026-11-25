@@ -4,6 +4,76 @@ All notable changes to MaxPack are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **Repair data for a `.p5z`** (PC window): a standard PAR2 set next to the `.p5z`
+  (`<name>.p5z.par2`, a small index, and one recovery file `<name>.p5z.volA+B.par2`), and MaxPack
+  repairs a damaged `.p5z` with it back to the exact bytes it was made with. Any PAR2 tool can read
+  and use the set too.
+  - **Compress** has **Add repair data** with **1, 5 or 10 %**, off until you tick it (5 % the first
+    time) and remembered in Settings, which has it too. Only for a `.p5z`: it is disabled, with the
+    reason, for a folder to play from the USB and in Decompress. Once the `.p5z` is made, verified by
+    the engine and in its place, the game gets a step of its own that makes the set, with its
+    progress and Cancel. If making it fails or is cancelled the game is still done (its `.p5z` is
+    good), its row says why, and nothing of the set is left: par2 works in
+    `<name>.p5z.maxpack-par2` and its files take their names next to the `.p5z` only once all are
+    made. The space of the queue counts the set, the card at the end counts the repair data made, and
+    **Copy report** says the setting.
+  - **Verify** says under each `.p5z` what its repair data can repair ("Repair data: 5 % — can repair
+    up to 200 blocks of 1.3 MB, 268.8 MB in all"). A set is the `.p5z`'s own only if it protects one
+    file of its size and of the MD5 of its first 16 KiB (or, when those 16 KiB are damaged, of the MD5
+    of some of its other blocks); any other is "repair data of another file" and is never used, nor
+    replaced.
+  - **Repair** (on a `.p5z` the engine found damaged, or **Repair the damaged ones** for the list)
+    checks first that its drive has room for a whole copy, and says it with the numbers. The `.p5z` is
+    moved, on its own drive, into `<name>.p5z.maxpack-repair`, where par2 repairs it (the damaged one
+    is kept there as `<name>.1`, never purged); the engine verifies the repaired one before it takes
+    the `.p5z`'s place, and only then does the damaged one go. If par2 cannot repair it (too much
+    damage: it says how many more blocks were needed), what it repaired does not verify, or it is
+    cancelled, the `.p5z` goes back exactly as it was. A crash or a kill in the middle leaves the
+    folder with a file that says how far the repair went: the leftovers offered at the next start put
+    back the one that verified, else the damaged one as it was, and keep a folder that may hold a copy
+    of a `.p5z` that is in its place; nothing is deleted unasked.
+  - **Add repair data** (Verify) gives a set to `.p5z` files that are there, several at once: each is
+    verified by the engine first, and only a good one gets a set; one that has its own of the same
+    share keeps it, one of another share is replaced.
+  - **Details** (and the card of a double click on a `.p5z`) says whether it has repair data, and how
+    much.
+  - **Rename** renames the set with its `.p5z` (index and recovery file), all or nothing. The set keeps
+    the name the `.p5z` had inside; MaxPack gives par2 the `.p5z` itself, so a renamed pair still
+    verifies and repairs.
+  - A new `.p5z` written over an old one of the same name takes the old one's set away with it.
+  - **maxpack-par2** is par2cmdline-turbo 1.5.0, built from its source (the submodule
+    `third_party/par2cmdline-turbo`, GPL-2.0-or-later) in the CI of every system and shipped next to
+    `maxpack-core` in the installer, the portable zip, `MaxPack.app` and the Linux package. A build of
+    the window without it offers no repair data and says why. The `maxpack` command line does not
+    change: the guide gives the `par2` commands. MaxPack for the console ignores the `.par2` files.
+- How a set is made, measured on a Ryzen 9 7950X3D (32 threads) with a Samsung 990 PRO and a
+  generated `.p5z` of 5.63 GB that the cache did not hold: about 4000 blocks, each a whole number of
+  4 KiB (a bad sector is in one block only) and 32 MiB at most (a bad byte of a 100 GB game costs one
+  block of about 25 MB; past 128 GB the blocks stay at 32 MiB and there are more of them), and par2
+  limited to 960 MiB of memory.
+
+  | Share | Set | Time | Speed | CPU (of 32 threads) | Peak memory |
+  |---|---|---|---|---|---|
+  | 1 % | 54.3 MiB (40 blocks of 1.34 MiB) | 7.6 s | 738 MB/s | 8 % | 94 MiB |
+  | 5 % | 269.5 MiB (200 blocks) | 9.1 s | 618 MB/s | 22 % | 309 MiB |
+  | 10 % | 538.3 MiB (400 blocks) | 11.9 s | 473 MB/s | 36 % | 578 MiB |
+
+  With 8 threads the times are the same (7.4, 9.2 and 11.2 s). Making the set does not get down to
+  "one more read" of the `.p5z` on this NVMe: the drive reads it in 0.9 s (6.2 GB/s) and the engine
+  verifies it in 3.3 s, but par2 must hash the whole file with MD5, one stream, and goes at that
+  speed whatever its blocks (2000, 4000 or 8000 blocks took 9.4, 10.3 and 11.9 s at 5 % before the
+  blocks were aligned to 4 KiB). The set of a 100 GB game at 5 % needs more than 960 MiB: par2 then
+  hashes in a pass of its own and computes in several, which on this file, given as little memory for
+  its size, took 10.4 s instead of 9.3 and 60 MiB. Repairing 3 damaged spots with the 5 % set took
+  22.8 s (par2 reads the file, writes it again and reads what it wrote), 45 MiB, and the engine's
+  verification of the result 3.0 s. These numbers come from an MSVC build of par2cmdline-turbo; the
+  Windows packages are built with clang-cl, as par2cmdline-turbo's own releases, which also has its
+  assembly MD5 and should be as fast or faster.
+
 ## [1.0.3] - 2026-11-25
 
 ### Added

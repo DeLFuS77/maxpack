@@ -76,6 +76,8 @@ right-click menu asked for another section. With command-line options (`MaxPack 
    levels** (under each game) shows what each level gives that game here (see below).
 4. Choose the **Destination** and press **Compress**. Each game is verified when it finishes.
 5. If you want, tick **Delete the originals once checked** (see below).
+6. If you want, tick **Add repair data** and choose **1 %**, **5 %** or **10 %** (see below). Only for a
+   `.p5z`: for "Play from the USB" it is off, and says why.
 
 **Compare the levels on this PC.** A card compresses a sample of the game (2 % of what is packed, at
 least 1 GiB, read once) at levels 3, 9, 15 and 19, with the same code and the same threads as Compress,
@@ -88,8 +90,8 @@ so a game on a hard drive may compress faster than they say. It is `maxpack anal
 the [guide](guide.md#analyze---levels-compare-the-levels-on-this-pc)).
 
 Before anything starts, MaxPack adds up what the games may take on each drive (each one at most its
-original size) and, if the queue may not fit, says so with the numbers: "up to 322.4 GB needed, 118.2
-GB free". You can choose another destination or **Start anyway**: a game that fills its drive fails,
+original size, with its repair data when it gets some) and, if the queue may not fit, says so with the
+numbers: "up to 322.4 GB needed, 118.2 GB free". You can choose another destination or **Start anyway**: a game that fills its drive fails,
 and its original stays as it was.
 
 While a queue runs, games you add to the same section join it: they show as **Queued**, are done after
@@ -116,6 +118,16 @@ or was cancelled.
 - Each game says what became of its original, the summary at the end tells how much went to the
   recycle bin (its space comes back once it is emptied), and the log of the window (`maxpack.log`, in
   its settings folder; Settings shows where) keeps every original removed.
+
+**Add repair data** (off by default; Settings has the default and keeps the share; 5 % the first time)
+gives each `.p5z` a standard PAR2 set next to it, so a damaged `.p5z` can be repaired back to the exact
+bytes it was made with (see [Repair data](#5-repair-data)). Once the `.p5z` is made, verified and in its
+place, its bar gets a third step, **Repair data**, with its progress; Cancel stops it too. If making it
+fails or is cancelled, the game is still done (its `.p5z` is good), its row says why, and no part of the
+set is left: `maxpack-par2` makes it in `<name>.p5z.maxpack-par2`, and its files take their names next to
+the `.p5z` only once they are all made. Each `.p5z` done says what its set takes ("7.8 GB → 3.3 GB ·
+repair data 168.4 MB"), and the card at the end counts the repair data made and the games left without
+it. A new `.p5z` that replaces an old one of the same name takes the old one's set away with it.
 
 ![MaxPack compressing, with the progress of each game](img/window-working.jpg)
 
@@ -175,18 +187,21 @@ Afterwards:
   - the **Original dump (bit for bit)**, with every file checked against its SHA-256; or
   - the **Folder for the PS5**, the same one that "Play from the USB" produces.
 - **Verify** reads a `.p5z` or a compressed folder and checks that it is still whole. It changes
-  nothing.
+  nothing. Under a `.p5z` with repair data it says what it can repair; a damaged one with repair data of
+  its own gets **Repair**, and **Add repair data** and **Repair the damaged ones** do it for the list (see
+  [Repair data](#5-repair-data)).
 - **Details** shows what a game says: title, ID, version, sizes, files, packs and whether it carries a
   runtime that reads zstd. **Copy report** under each game copies a text for an issue on GitHub (see
-  [Copy report](#copy-report)). A `.p5z` shows as a card with what it saved against the original and
-  its volumes, and two buttons: **Verify** and **Decompress** take it to those sections, where you start
+  [Copy report](#copy-report)). A `.p5z` shows as a card with what it saved against the original, its
+  volumes and its repair data (how much, or none), and two buttons: **Verify** and **Decompress** take it to those sections, where you start
   them. A `.p5z` opened with a double click (see [Windows Explorer](#windows-explorer)) opens here.
 - **Rename**, in Check, names `.p5z` files, dump folders and `.exfat` images by what each one holds,
   with the template of Settings > File names. Add them and each shows its new name before anything
   changes; **Rename** applies it. A name that something else in the folder already has, two games of
   the list that would get the same name, a file another program has open and a game that cannot be
   read are skipped, and the row says why. Nothing is ever replaced, and the game stays in its folder.
-  A folder for the console keeps its `TITLE_ID`.
+  A folder for the console keeps its `TITLE_ID`. The repair data of a `.p5z` is renamed with it, all or
+  nothing; a name of it that is taken blocks the rename as the name of the `.p5z` does.
 
 ## 4. Settings
 
@@ -224,8 +239,9 @@ Afterwards:
   less than 5 % slower than the fastest: on a PC whose last threads add little, Compress goes as fast
   and leaves the PC freer. **Use them all** goes back to all of them. Decompress and Verify always use
   all of them. **Cancel**, Escape or closing the card stops it, and the threads stay as they were.
-  **Delete the originals once checked** is the default of the box next to Compress, and **Delete them
-  for good, not to the recycle bin** skips the recycle bin.
+  **Repair data for each .p5z** is the default of the box next to Compress, with its share (1, 5 or
+  10 %). **Delete the originals once checked** is the default of the box next to Compress, and **Delete
+  them for good, not to the recycle bin** skips the recycle bin.
 - **File names.** The name of each `.p5z` and of each original dump unpacked comes from a template:
   `{title}`, `{id}`, `{version}` (the one of `param.json`, such as 01.000.021) and `{region}` (USA,
   EUR, JPN, ASIA or KOR, from the first two letters of the content ID). A bracket whose placeholders
@@ -276,7 +292,51 @@ sizes and the volumes filled in and a `?` for what only the console knows. **Rep
 a game** open the forms of [maxpack-ps5](https://github.com/DeLFuS77/maxpack-ps5/issues) in your
 browser.
 
-## 5. Warnings
+## 5. Repair data
+
+A `.p5z` can carry standard **PAR2** repair data next to it, and MaxPack repairs a damaged `.p5z` with it
+back to the exact bytes it was made with. `maxpack-par2` (par2cmdline-turbo, built from its source) comes
+with MaxPack, next to `maxpack-core`; a build of the window without it offers no repair data, and says
+why.
+
+- **The files.** `<name>.p5z.par2` (a small index) and `<name>.p5z.volA+B.par2` (the recovery data),
+  next to the `.p5z`. Keep them with it and copy them with it. Any PAR2 tool reads them.
+- **How much.** 1, 5 or 10 % of the `.p5z`: what the set takes, and the most it can repair. The `.p5z` is
+  cut into about 4000 blocks, each a whole number of 4 KiB (so a bad sector is in one block) and 32 MiB
+  at most; each damaged spot, from one byte to a whole block, uses up one block of the set. Under a
+  `.p5z` with repair data, Verify says it: "Repair data: 5 % — can repair up to 200 blocks of 1.3 MB,
+  268.8 MB in all".
+- **Its own set only.** A set is used only for the `.p5z` it protects: one file of its size and of the
+  MD5 of its first 16 KiB (or, when those 16 KiB are damaged, of the MD5 of some of its other blocks).
+  Files named as its set that are of another file show "repair data of another file" and are never
+  used, nor replaced; ones that cannot be read show so.
+- **Repair.** When Verify finds a `.p5z` damaged and it has repair data of its own, **Repair** shows
+  under it; **Repair the damaged ones** does it for all of them in the list. MaxPack first checks that
+  the drive of the `.p5z` has room for a whole copy of it (plus a margin), and if not, says so with the
+  numbers and does not start. The `.p5z` is moved (on its own drive, so at once) into
+  `<name>.p5z.maxpack-repair`, where `maxpack-par2` repairs it as par2 does: it keeps the damaged one as
+  `<name>.1` and writes the repaired one. `maxpack-core` verifies the repaired one before it takes the
+  `.p5z`'s place, and only then does the damaged one go. If it cannot be repaired (too much damage: the
+  row says how many more blocks were needed), what was repaired does not verify, or you cancel, the
+  `.p5z` goes back exactly as it was. The bar has two steps, **Repairing** and **Verifying**.
+- **A repair cut short.** The folder of the repair has a file that says how far it went. At the next
+  start MaxPack offers to put the `.p5z` back: the repaired one if it was already verified, else the
+  damaged one as it was. A folder that may have a copy of a `.p5z` that is also in its place is kept,
+  and said: look at both. Nothing is ever deleted without asking.
+- **Add repair data.** In Verify, **Add repair data** gives a set, of the share chosen above it, to every
+  `.p5z` in the list: each is verified by `maxpack-core` first, and only a good one gets one. One that
+  already has its own of that share keeps it; of another share, it is replaced.
+- **Rename.** Rename takes the set with its `.p5z`. The set keeps, inside, the name the `.p5z` had when
+  it was made; MaxPack gives `maxpack-par2` the `.p5z` itself, so a renamed one still verifies and
+  repairs. In MultiPar or QuickPar, after a rename, add the `.p5z` by hand when they say the file is
+  missing.
+- **Copy report** says the share of repair data of Settings, never a name.
+- **On the console.** MaxPack for the console ignores the `.par2` files: there is no need to copy them
+  there.
+- **By hand.** The `par2` commands that do the same are in the
+  [guide](guide.md#repair-data-with-par2).
+
+## 6. Warnings
 
 - **FAT32.** FAT32 does not take files over 4 GiB, and a `.p5z` can go over that. If the destination is
   FAT32 and the original game is over 4 GiB, MaxPack tells you before starting:

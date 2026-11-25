@@ -28,6 +28,9 @@
   337 MB in 6.4 s); the packs are read from the `.p5z` while you play.
 - **Checked and reversible.** A `.p5z` holds the SHA-256 of every file: `maxpack verify` checked a
   35.5 GB one in 70 s, and `maxpack unpack --original` gives the dump back bit for bit.
+- **Repair data, if you want it.** A `.p5z` can carry standard PAR2 repair data next to it (1, 5 or
+  10 % of its size), and MaxPack repairs a damaged `.p5z` with it back to the exact bytes it was made
+  with.
 
 > [!NOTE]
 > **Status: first public release, help us test.** MaxPack 1.0.0 is the first public release. It has
@@ -126,6 +129,8 @@ What a `.p5z` gives you:
 - **One file per game**, easy to back up, copy and carry on the PC or on a USB drive.
 - **About half the size**: 40–70 % smaller on the games tested ([results](#tested-on-a-real-ps5)).
 - **Checked**: it records the SHA-256 of every file of the dump, and `maxpack verify` checks them all.
+- **Repairable**: with standard PAR2 repair data next to it, a damaged `.p5z` is repaired back to its
+  exact bytes (the PC window makes and uses it; any PAR2 tool can too).
   A cut or damaged `.p5z` is detected as soon as it is opened.
 - **Plays without unpacking**: only the small loose files (`eboot.bin`, modules, `sce_sys/`...) are
   copied once to the console's cache on the internal SSD; the packs are read from the `.p5z` while you
@@ -331,6 +336,13 @@ line does is there, without typing a command.
   recycle bin, or for good if you choose so, only after its new copy is made, verified and in its place,
   and never when decompressing or verifying. A folder is listed with its size before the queue starts,
   and what was removed is written to a log.
+- **Repair data** (Compress, off by default): each `.p5z` can get a standard PAR2 set next to it, of 1,
+  5 or 10 % of its size, made by `maxpack-par2` (par2cmdline-turbo, which comes with MaxPack) once the
+  `.p5z` is made, verified and in its place. **Verify** then says how much each one can repair, offers
+  **Repair** on a damaged one and repairs it back to the exact bytes it was made with, checks the
+  repaired one before it replaces the damaged one, and leaves the `.p5z` as it was when it cannot. It
+  can also add repair data to `.p5z` files you already have. A set is only ever used for the `.p5z` it
+  was made for, and is renamed with it. See [Repair data](docs/guide.md#repair-data).
 - **The space of the whole queue** is checked before anything starts, drive by drive, with the
   numbers.
 - **Warnings before trouble:** a FAT32 destination for a game over 4 GiB, too little free space, a
@@ -654,11 +666,14 @@ ctest --test-dir build --output-on-failure
 </details>
 
 The window is a [Wails](https://wails.io) app in [gui/](gui/) that drives this same engine
-(`maxpack-core`) next to it.
+(`maxpack-core`) next to it, and `maxpack-par2` for the repair data: par2cmdline-turbo, a submodule
+(`third_party/par2cmdline-turbo`) that the CI builds with its own build files (MSBuild on Windows,
+autotools on Linux and macOS: see `.github/workflows/build.yml`).
 
 **Continuous integration.** GitHub Actions, on every change: builds the engine and runs all its tests
-(`ctest`) on Windows and Linux; builds `maxpack` and the window on Windows, Linux and macOS (Apple
-silicon and Intel), runs the window's Go tests with that engine and makes the packages; and, with a
+(`ctest`) on Windows and Linux; builds `maxpack`, `maxpack-par2` and the window on Windows, Linux and
+macOS (Apple silicon and Intel), runs the window's Go tests with that engine and `maxpack-par2` and makes
+the packages; and, with a
 `vX.Y.Z` tag, puts them in a draft release with their `SHA256SUMS` and a build attestation for each.
 
 **Tests.** `ctest` generates synthetic exFAT images (`tests/tools/make_exfat.py`) with long and emoji
@@ -713,7 +728,8 @@ Security problems go privately: see [SECURITY.md](SECURITY.md).
 
 MaxPack is free software by DeLFuS77 under the **GPL-3.0-or-later** licence ([LICENSE](LICENSE)). The
 third-party software that the packages include (zstd, zlib, ampr-emu-ng, Wails and the window's Go
-libraries) and its licences are in [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES), regenerated with
+libraries, and par2cmdline-turbo as `maxpack-par2`) and its licences are in
+[THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES), regenerated with
 `python tools/gen_third_party.py`.
 
 MaxPack stands on the work of others:
@@ -728,5 +744,7 @@ MaxPack stands on the work of others:
 - [zstd](https://github.com/facebook/zstd) (Meta) and [zlib](https://github.com/madler/zlib)
   (Jean-loup Gailly and Mark Adler), the compression.
 - [Wails](https://wails.io) and the window's Go libraries (full list in `THIRD_PARTY_NOTICES`).
+- [par2cmdline-turbo](https://github.com/animetosho/par2cmdline-turbo) (Anime Tosho, on
+  [par2cmdline](https://github.com/Parchive/par2cmdline)), the repair data of a `.p5z`.
 - The PC window follows the design of [NXPress](https://github.com/DeLFuS77/NXPress), by the same
   author.

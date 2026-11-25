@@ -124,6 +124,10 @@ of keeping a dump:
 | Checks its own contents | No | No | No | **Yes:** the SHA-256 of every file, checked by `maxpack verify` |
 | Played on the PS5 with | MaxPack for the console, ShadowMountPlus or Kraken Mount | ShadowMountPlus | ShadowMountPlus | **MaxPack for the console**, straight from the file |
 
+A game kept in any of these goes to a `.p5z` in one step: MaxPack packs a dump folder or any image
+ShadowMountPlus mounts (`.exfat`, `.ffpkg`, `.ffpfs` and the compressed `.ffpfsc`), reading it itself,
+with nothing to mount, no other tool and no temporary space, and with no need to dump the game again.
+
 What a `.p5z` gives you:
 
 - **One file per game**, easy to back up, copy and carry on the PC or on a USB drive.
@@ -237,7 +241,7 @@ its own releases. **This one is the hub**: the guide, the downloads for the PC a
 ```mermaid
 flowchart TD
     subgraph PC["On your PC"]
-        DUMP["Your PS5 game dump<br/>folder or .exfat image"]
+        DUMP["Your PS5 game dump<br/>folder or image<br/>.exfat .ffpkg .ffpfs .ffpfsc"]
         APP["MaxPack<br/>window or maxpack command line"]
         P5Z["One .p5z file per game"]
         FOLDER["Packed folder<br/>homebrew/TITLE_ID"]
@@ -300,9 +304,10 @@ line does is there, without typing a command.
 - **Compression level** 1 to 22 (19 by default), with the shortcuts Light, Medium and Maximum.
   **Compare the levels on this PC** compresses a sample of a game at levels 3, 9, 15 and 19 and shows
   the size, the saving and the time of each here, to choose one from the table.
-- **Folders and `.exfat` images** as input; **Add folder** takes several folders at once, and each one
-  can be a game or a folder full of games. Games added to a section while its queue runs join the
-  queue.
+- **Folders and images** as input: dump folders and the images ShadowMountPlus mounts (`.exfat`,
+  `.ffpkg`, `.ffpfs`, `.ffpfsc`), each told by its contents, with the space counted as the game's size,
+  not the image's; **Add folder** takes several folders at once, and each one can be a game or a folder
+  full of games. Games added to a section while its queue runs join the queue.
 - **File names by a template** (Settings > File names): `{title} [{id}]` by default, or with the
   version and the region (`{title} [{id}] [{region}] [v{version}]`), with a preview.
 - **Low priority** (Settings): the engine runs below the other programs, so the PC stays usable.
@@ -429,8 +434,8 @@ game tried is in the
 
 - 64-bit Windows; macOS 13 or later (Apple silicon or Intel); or 64-bit Linux with GTK 3 and
   WebKitGTK 4.1.
-- Your own game dump, as a folder or an `.exfat` image. PKG, `.ffpkg`, `.ffpfs` and `.ffpfsc` cannot be
-  compressed yet.
+- Your own game dump, as a folder or as an image ShadowMountPlus mounts: `.exfat`, `.ffpkg`, `.ffpfs`
+  or `.ffpfsc` ([source-images.md](docs/source-images.md)). PKGs cannot be compressed yet.
 - Free space at the destination. MaxPack warns you before it starts when the queue may not fit.
 - Nothing else for the runtime: the window comes with
   [MaxPack's ampr-emu-ng](https://github.com/DeLFuS77/ampr-emu-ng) (`libSceAmpr.sprx`) and puts it in the
@@ -554,7 +559,8 @@ Open its sheet on the console page and change **Fakelib** (new in 1.0.0): try **
 
 Yes. **Decompress** a `.p5z` to "Original dump (bit for bit)", or run
 `maxpack unpack game.p5z --original -o <folder>`. Every file is checked against the SHA-256 recorded
-when it was packed. An `.exfat` image comes back as a folder with its files, not as an image.
+when it was packed. An image (`.exfat`, `.ffpkg`, `.ffpfs`, `.ffpfsc`) comes back as a folder with its
+files, not as an image.
 </details>
 
 <details>
@@ -596,8 +602,12 @@ Tried a game? Please [report it](#help-test-maxpack), whether it worked or not.
 <details>
 <summary><b>Can it compress PKG or ShadowMountPlus images?</b></summary>
 
-Not yet: the input is a dump folder or an `.exfat` image. MaxPack for the console can still *install*
-`.ffpkg`, `.ffpfs` and `.ffpfsc` images as they are.
+ShadowMountPlus images, yes: `.exfat`, `.ffpkg` (UFS2), `.ffpfs` (PFS) and `.ffpfsc` (a PFS container,
+usually compressed), in the window and on the command line. MaxPack reads them itself, read-only, with
+nothing to mount, no other tool and no temporary space, and the `.p5z` is the one of the same game as a
+folder; only the files' dates can differ, as the image gives them
+([source-images.md](docs/source-images.md)). PKGs, not yet: they are encrypted. MaxPack for the console
+can also *install* the images as they are.
 </details>
 
 ## Status
@@ -679,7 +689,10 @@ the packages; and, with a
 **Tests.** `ctest` generates synthetic exFAT images (`tests/tools/make_exfat.py`) with long and emoji
 names, fragmented files, a ValidDataLength smaller than the size, truncated images and a looping FAT.
 `tools/exfat_ref.py` is an independent exFAT reader in Python, used to cross-check the C reader against
-real images (`tests/tools/compare_ranges.py`).
+real images (`tests/tools/compare_ranges.py`). The UFS2 and PFS images come from MaxPack's own
+generators (`tests/tools/make_ufs2.py`, `make_pfs.py`, with 45 damaged ones) and from
+[MkPFS](https://github.com/PSBrew/MkPFS), which made the `.ffpfs` and `.ffpfsc` images in `tests/data`;
+the window's tests pack them through its queue with the real engine.
 
 ## Help test MaxPack
 
@@ -746,5 +759,7 @@ MaxPack stands on the work of others:
 - [Wails](https://wails.io) and the window's Go libraries (full list in `THIRD_PARTY_NOTICES`).
 - [par2cmdline-turbo](https://github.com/animetosho/par2cmdline-turbo) (Anime Tosho, on
   [par2cmdline](https://github.com/Parchive/par2cmdline)), the repair data of a `.p5z`.
+- [MkPFS](https://github.com/PSBrew/MkPFS) (PSBrew), the tool the `.ffpfs` and `.ffpfsc` test images in
+  `tests/data` were made with (none of its code is in MaxPack).
 - The PC window follows the design of [NXPress](https://github.com/DeLFuS77/NXPress), by the same
   author.

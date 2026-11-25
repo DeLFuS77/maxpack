@@ -5,7 +5,8 @@
 image in any of the formats [ShadowMountPlus](https://github.com/drakmor/ShadowMountPlus) mounts.
 The engine reads them itself, read-only, without mounting anything, without temporary files and
 without other tools; a game packed from an image is byte for byte the `.p5z` (or the folder for the
-console) of the same game packed from a folder. PKGs are still refused (they are encrypted).
+console) of the same game packed from a folder. PKGs are still refused (they are encrypted). The PC
+window takes the four images wherever it takes a dump folder ([pc-window.md](pc-window.md#images)).
 
 | extension | what it is | made by |
 |---|---|---|

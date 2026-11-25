@@ -65,7 +65,8 @@ In the window, you choose in **Made for**:
   of the others inside). MaxPack reads them itself, with nothing to mount and no temporary space, and
   the result is the same as from the dump folder ([source-images.md](source-images.md)). PKGs cannot be
   compressed yet.
-- Space at the destination. MaxPack warns you if there is less free space than the original game takes.
+- Space at the destination. MaxPack warns you if there is less free space than the original game takes
+  (the game, not its image: an `.ffpfsc` is compressed and usually takes less than the game in it).
 - Nothing else for the runtime: the window comes with
   [MaxPack's copy of ampr-emu-ng](https://github.com/DeLFuS77/ampr-emu-ng) (`libSceAmpr.sprx`) and puts
   it in the `fakelib/` of the games that do not carry one that reads zstd.
@@ -186,9 +187,11 @@ The sidebar has four work sections and Settings. Everything is explained, with s
 
 ### Compress ([details](pc-window.md#2-compress))
 
-1. Drop the games on the window, or use **Add files** or **Add folder**. Dump folders and `.exfat`
-   images are fine. **Add folder** takes several folders at once, and each one can be a game or a
-   folder with games right below it.
+1. Drop the games on the window, or use **Add files** or **Add folder**. Dump folders and images are
+   fine: `.exfat`, `.ffpkg`, `.ffpfs` and `.ffpfsc`, the ones ShadowMountPlus mounts. A game kept as
+   an image goes to a `.p5z` in one step: no dumping it again, no other tool and no temporary space.
+   **Add folder** takes several folders at once, and each one can be a game or a folder with games
+   right below it.
 2. In **Made for**, choose "MaxPack installer" (one `.p5z`) or "Play from the USB" (a folder in
    `homebrew/`).
 3. Pick the **Destination**.
@@ -207,7 +210,8 @@ What it does by itself:
 - A folder that is already compressed is skipped ("it is compressed already").
 - Each game is written apart (`<name>.maxpack-tmp`) and verified, and only then takes its name.
 - Before it starts, it checks that the whole queue fits on the destination drive, and says so with the
-  numbers if it may not.
+  numbers if it may not. It counts each game's own size, as `maxpack-core` reads it, not what its image
+  takes: what is made of an `.ffpfsc` may take more than the `.ffpfsc` did.
 - Games you add to Compress while it works join the queue.
 - The PC does not go to sleep while there is work, and progress also shows on the taskbar (Windows) or
   in the Dock (macOS).
@@ -222,12 +226,13 @@ What it does by itself:
 ### Decompress ([details](pc-window.md#3-decompress-and-verify))
 
 Turns a `.p5z` back into the **Original dump (bit for bit)**, with every file checked against its
-SHA-256, or into the **Folder for the PS5**. If the game was an `.exfat` image, the original dump
-comes out as a folder with its files, not as an image.
+SHA-256, or into the **Folder for the PS5**. If the game was an image (`.exfat`, `.ffpkg`, `.ffpfs` or
+`.ffpfsc`), the original dump comes out as a folder with its files, not as an image.
 
 ### Verify
 
-Reads a `.p5z` or a compressed folder and checks that it is still whole. It changes nothing. Under a `.p5z`
+Reads a `.p5z` or a compressed folder and checks that it is still whole. It changes nothing. An image is
+not checked here, as before: compress it, and what is made of it is verified. Under a `.p5z`
 with repair data it says how much it can repair ("Repair data: 5 % — can repair up to 200 blocks of
 1.3 MB, 268.8 MB in all"); a `.p5z` that Verify finds damaged and that has repair data of its own gets
 **Repair**. **Add repair data** and **Repair the damaged ones**, on the right, do it for the whole list.
@@ -235,7 +240,9 @@ See [Repair data](#repair-data).
 
 ### Details
 
-Shows the title, ID, version, sizes, files, packs and whether it carries a runtime that reads zstd.
+Shows the title, ID, version, sizes, files, packs and whether it carries a runtime that reads zstd. An
+image says what it is (exFAT, UFS2 or PFS image, or PFS container and the image inside it) and what its
+file takes, with "PFSC compression" when it is compressed: its original size is the game's.
 **Copy report** under a game copies a text for an issue on GitHub, without its name or ID. A `.p5z` is a
 card that also says what it saved and its repair data (how much, or none), with **Verify** and
 **Decompress**, which take it to those sections.
@@ -243,11 +250,13 @@ A double click on a `.p5z` opens it here, when MaxPack opens `.p5z` files (see b
 
 ### Rename
 
-Names `.p5z` files, dump folders and `.exfat` images by what each holds, with the template of
+Names `.p5z` files, dump folders and images by what each holds, with the template of
 Settings > File names (for example `{title} [{id}] [{region}] [v{version}]`). The new names show before
-anything changes; **Rename** applies them. A name already taken, a file in use or a game that cannot be
-read is skipped and said; nothing is replaced. The repair data of a `.p5z` is renamed with it, all or
-nothing.
+anything changes; **Rename** applies them. An image keeps its extension, unless it is another kind than
+its extension says (a renamed image): then it gets the extension of what it is, so its name says it
+(MaxPack for the console, for one, finds images by their extension). A name already taken, a file in
+use or a game that cannot be read is skipped and said; nothing is replaced. The repair data of a `.p5z`
+is renamed with it, all or nothing.
 
 ### Settings ([details](pc-window.md#4-settings))
 
@@ -268,8 +277,10 @@ only accepts a `libSceAmpr.sprx` that reads zstd.
   `{title}`, `{id}`, `{version}` and `{region}`, three ready-made ones and a preview. `{title} [{id}]`
   is the default, the names of before. A folder for the console keeps its `TITLE_ID`.
 - **Windows Explorer** (Windows only, each off until you turn it on, for you only, no administrator):
-  - **Right-click menu:** **Compress with MaxPack** on folders and `.exfat` images, **Verify with
-    MaxPack** and **Details** on `.p5z` files. On Windows 11 they are under **Show more options**.
+  - **Right-click menu:** **Compress with MaxPack** on folders and images (`.exfat`, `.ffpkg`,
+    `.ffpfs`, `.ffpfsc`), **Verify with MaxPack** and **Details** on `.p5z` files. On Windows 11 they
+    are under **Show more options**. On the images it is only that entry: the program that opens them
+    and their icon stay as they were.
   - **Send to › MaxPack:** to give it several games at once.
   - **Open .p5z files with MaxPack:** a double click shows the card of the game in Details. If another
     program already opens them, choose MaxPack once in **Open with › Choose another app › Always**.
@@ -842,7 +853,8 @@ On the command line, `--max-file-size 4294967295` does the same as **Go on anywa
 
 What you see:
 - "may not fit in the destination", before starting. The result usually takes less, so you can press
-  **Start anyway**.
+  **Start anyway**. What it counts is the size of the game, not of its image: an `.ffpfsc` is
+  compressed, so the game in it is usually bigger than the file.
 - "the new one and the one there do not fit at once: choose another destination or make room", with
   **Replace**: that game does not start.
 
@@ -964,6 +976,9 @@ console repository, which identifies games only by these numbers.
   exFAT, a UFS2 and a PFS image inside) and images from MaxPack's own generators read exactly the
   game's files and pack to the same `.p5z` as the dump folder. No `.ffpkg` made by UFS2Tool or FreeBSD's
   `newfs`/`makefs` has been tried yet, only ones that follow FreeBSD's layout, made by the generator.
+  The window's tests take them as a user does (a folder with an image given to Compress, the plan, the
+  queue to a `.p5z` and to a folder, the image deleted once its `.p5z` is verified, Details, Rename) with
+  the real engine.
 - **On every change, in GitHub Actions:** the engine is built and passes its tests on Windows and Linux;
   the window is built and passes its tests on Windows, Linux and macOS; the packages are installed,
   compress a test image and are uninstalled.

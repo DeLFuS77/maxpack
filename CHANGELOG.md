@@ -20,6 +20,30 @@ All notable changes to MaxPack are listed here. The format follows
   reason (truncated, loops, blocks out of range or used twice, sizes that overflow, PFSC blocks that
   do not inflate, odd names, links, devices, signed or encrypted PFS...). PKGs are still refused.
   Formats and checks: [docs/source-images.md](docs/source-images.md).
+- **The PC window takes them too**, everywhere it took an `.exfat`: dropping them, **Add files** (the
+  dialogs of Windows, macOS and Linux show `*.exfat;*.ffpkg;*.ffpfs;*.ffpfsc`), **Add folder** and the
+  folders it looks into, the command line, Send to and the right-click menu (they go to Compress, or to
+  Details), Compress, **Compare levels**, Details and Rename. A game moves from its image to a `.p5z` (or
+  a folder for the console) in one step, and with **Delete the originals once checked** the image is the
+  original that goes. The extension only puts a file in a list: what it is comes from the engine.
+  - **Details** says the kind in words in the 11 languages (exFAT, UFS2 or PFS image, or PFS container
+    and the image inside it) and what the image file takes, with "PFSC compression" when it is
+    compressed. **Copy report** says the kind ("PFS container (.ffpfsc) with an exFAT image inside,
+    compressed"), never "dump folder", and no names or paths.
+  - **The size is the game's.** The list, the space of the queue, the end card and the levels compared
+    count the size of the game as the engine reads it, not the image's: an `.ffpfsc` is usually smaller
+    than the game in it, and may be smaller than what is made of it. What deleting an original frees is
+    the image's.
+  - **Rename** keeps an image's extension, or gives a renamed one the extension of what it is, so its
+    name says it (MaxPack for the console finds images by their extension). In **Verify**, anything that
+    is not compressed (an image named as a `.p5z` too) says there is nothing to verify, as a dump folder
+    does; Verify does not take images, as it never took an `.exfat`.
+  - **Windows Explorer:** **Compress with MaxPack** on `.ffpkg`, `.ffpfs` and `.ffpfsc` too, for you
+    only, off until you turn it on, and removed with it and on uninstall; it is only that entry, the
+    program that opens them and their icon stay. A menu that MaxPack 1.0.4 or before wrote gets the new
+    entries the first time the window opens. On macOS the app lists the three extensions among what it
+    can open (as an alternate, never the default).
+  - The window needs an engine that says `images` in `--capabilities`.
 - `info --json` adds `inner` (for a container, the image inside: `exfat`, `ufs2` or `pfs`) and
   `compressed`, and `kind` can be `ufs2`, `pfs` or `pfsc`; `analyze --json` says the same in
   `source.kind` and `source.inner`; `--capabilities` has `images`.

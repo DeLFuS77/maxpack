@@ -318,6 +318,9 @@ input.switch:disabled { opacity: .45; cursor: default; }
 .template-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
 .template-field input { font: 13px var(--mono, ui-monospace, Consolas, monospace); padding: 7px 9px; border-radius: var(--radius-small); border: 1px solid var(--line); background: var(--bg); color: var(--text); direction: ltr; }
 .template-field input:focus { outline: 2px solid var(--focus); outline-offset: 0; }
+/* the passcode of PS5 packages: 32 characters, as typed */
+input.passcode { font: 13px var(--mono, ui-monospace, Consolas, monospace); padding: 7px 9px; border-radius: var(--radius-small); border: 1px solid var(--line); background: var(--bg); color: var(--text); direction: ltr; width: 34ch; max-width: 100%; flex: none; }
+input.passcode:focus { outline: 2px solid var(--focus); outline-offset: 0; }
 .about-list.preview { font-size: 12px; padding: 10px 12px; border-radius: var(--radius-small); background: var(--hover); }
 .about-list.preview dd { font-weight: 600; direction: ltr; unicode-bidi: isolate; text-align: start; }
 .template-in-use { font: 13px var(--mono, ui-monospace, Consolas, monospace); padding: 6px 9px; border-radius: var(--radius-small); background: var(--bg); border: 1px solid var(--line); direction: ltr; unicode-bidi: isolate; overflow-wrap: anywhere; }

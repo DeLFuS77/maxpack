@@ -2,9 +2,10 @@
 
 // Package explorer puts MaxPack in the Explorer of Windows, each place apart and only when the user
 // asks (Settings › Windows Explorer, or the installer): a right-click menu on folders, the images
-// ShadowMountPlus mounts (.exfat, .ffpkg, .ffpfs, .ffpfsc) and .p5z files, MaxPack in "Send to",
-// and .p5z files opened with MaxPack with a double click. On the images it is only an entry of the
-// menu: the program that opens them and their icon stay the ones other tools gave them. All
+// ShadowMountPlus mounts (.exfat, .ffpkg, .ffpfs, .ffpfsc), PS5 packages (.pkg) and .p5z files,
+// MaxPack in "Send to", and .p5z files opened with MaxPack with a double click. On the images and the
+// packages it is only an entry of the menu: the program that opens them and their icon stay the ones
+// other tools gave them. All
 // of it is written for this user only, under HKEY_CURRENT_USER and in the user's own Send to folder,
 // so it needs no administrator, and it names the copy of MaxPack that wrote it.
 //
@@ -80,7 +81,7 @@ type Op struct {
 
 // a verb of the menu: the class of the files it shows on (under Classes), the name of its key,
 // the section of the window it opens in, its text, and whether a later MaxPack added it (1.0.5: the
-// images besides .exfat), so a menu an earlier one wrote may lack it
+// images besides .exfat; 1.0.6: the packages), so a menu an earlier one wrote may lack it
 type verb struct {
 	class, name, section string
 	text                 func(MenuTexts) string
@@ -99,6 +100,7 @@ var verbs = []verb{
 	{`SystemFileAssociations\.ffpkg`, "MaxPack.Compress", "compress", compressText, true},
 	{`SystemFileAssociations\.ffpfs`, "MaxPack.Compress", "compress", compressText, true},
 	{`SystemFileAssociations\.ffpfsc`, "MaxPack.Compress", "compress", compressText, true},
+	{`SystemFileAssociations\.pkg`, "MaxPack.Compress", "compress", compressText, true},
 	{`SystemFileAssociations\.p5z`, "MaxPack.1Verify", "verify", func(m MenuTexts) string { return m.Verify }, false},
 	{`SystemFileAssociations\.p5z`, "MaxPack.2Details", "details", func(m MenuTexts) string { return m.Details }, false},
 }

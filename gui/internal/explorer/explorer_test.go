@@ -12,8 +12,8 @@ const testExe = `C:\Users\user\AppData\Local\Programs\MaxPack\MaxPack.exe`
 
 var testTexts = MenuTexts{Compress: "Compress with MaxPack", Verify: "Verify with MaxPack", Details: "Details"}
 
-// The menu is one entry on folders and on the images ShadowMountPlus mounts (.exfat, .ffpkg, .ffpfs,
-// .ffpfsc), and two on a .p5z, each with the icon of MaxPack, shown for any number of files chosen,
+// The menu is one entry on folders, on the images ShadowMountPlus mounts (.exfat, .ffpkg, .ffpfs,
+// .ffpfsc) and on PS5 packages (.pkg), and two on a .p5z, each with the icon of MaxPack, shown for any number of files chosen,
 // and starting MaxPack with --section and the file.
 func TestAddMenuOps(t *testing.T) {
 	classes := `Software\Classes`
@@ -32,6 +32,7 @@ func TestAddMenuOps(t *testing.T) {
 	want = append(want, verb(classes+`\SystemFileAssociations\.ffpkg\shell\MaxPack.Compress`, "Compress with MaxPack", "compress")...)
 	want = append(want, verb(classes+`\SystemFileAssociations\.ffpfs\shell\MaxPack.Compress`, "Compress with MaxPack", "compress")...)
 	want = append(want, verb(classes+`\SystemFileAssociations\.ffpfsc\shell\MaxPack.Compress`, "Compress with MaxPack", "compress")...)
+	want = append(want, verb(classes+`\SystemFileAssociations\.pkg\shell\MaxPack.Compress`, "Compress with MaxPack", "compress")...)
 	want = append(want, verb(classes+`\SystemFileAssociations\.p5z\shell\MaxPack.1Verify`, "Verify with MaxPack", "verify")...)
 	want = append(want, verb(classes+`\SystemFileAssociations\.p5z\shell\MaxPack.2Details`, "Details", "details")...)
 	if got := AddMenuOps("Software", testExe, testTexts); !reflect.DeepEqual(got, want) {
@@ -47,6 +48,7 @@ func TestRemoveMenuOps(t *testing.T) {
 		{Do: DeleteTree, Key: `Software\Classes\SystemFileAssociations\.ffpkg\shell\MaxPack.Compress`},
 		{Do: DeleteTree, Key: `Software\Classes\SystemFileAssociations\.ffpfs\shell\MaxPack.Compress`},
 		{Do: DeleteTree, Key: `Software\Classes\SystemFileAssociations\.ffpfsc\shell\MaxPack.Compress`},
+		{Do: DeleteTree, Key: `Software\Classes\SystemFileAssociations\.pkg\shell\MaxPack.Compress`},
 		{Do: DeleteTree, Key: `Software\Classes\SystemFileAssociations\.p5z\shell\MaxPack.1Verify`},
 		{Do: DeleteTree, Key: `Software\Classes\SystemFileAssociations\.p5z\shell\MaxPack.2Details`},
 	}
@@ -212,10 +214,11 @@ func TestPlaceNames(t *testing.T) {
 	}
 }
 
-// On the images MaxPack only adds its entry to the menu: it never writes the program that opens
-// them nor their icon (other tools open them), and every key it writes there is its own verb.
+// On the images and the packages MaxPack only adds its entry to the menu: it never writes the
+// program that opens them nor their icon (other tools open them), and every key it writes there is
+// its own verb.
 func TestMenuLeavesTheImagesAlone(t *testing.T) {
-	images := []string{".exfat", ".ffpkg", ".ffpfs", ".ffpfsc"}
+	images := []string{".exfat", ".ffpkg", ".ffpfs", ".ffpfsc", ".pkg"}
 	for _, ops := range [][]Op{AddMenuOps("Software", testExe, testTexts), RemoveMenuOps("Software")} {
 		for _, op := range ops {
 			for _, ext := range images {
@@ -235,7 +238,7 @@ func TestMenuLeavesTheImagesAlone(t *testing.T) {
 }
 
 // The menu is this copy's when all its entries are; a menu an earlier MaxPack wrote, without the
-// entries on .ffpkg, .ffpfs and .ffpfsc, is still this copy's (it is completed when the window
+// entries on .ffpkg, .ffpfs, .ffpfsc and .pkg, is still this copy's (it is completed when the window
 // opens, see Relabel), and complete only with them. Anything else is moved: for another copy, or
 // only in part.
 func TestMenuPlace(t *testing.T) {
@@ -262,7 +265,7 @@ func TestMenuPlace(t *testing.T) {
 			later = append(later, v.class)
 		}
 	}
-	if strings.Join(later, " ") != `SystemFileAssociations\.ffpkg SystemFileAssociations\.ffpfs SystemFileAssociations\.ffpfsc` {
+	if strings.Join(later, " ") != `SystemFileAssociations\.ffpkg SystemFileAssociations\.ffpfs SystemFileAssociations\.ffpfsc SystemFileAssociations\.pkg` {
 		t.Fatalf("the entries a later MaxPack added: %v", later)
 	}
 	partFirst := all(Here)

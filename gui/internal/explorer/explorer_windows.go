@@ -167,7 +167,7 @@ func Remove(place string) error {
 
 // Relabel writes the menu again in the texts given (the language of the window), when it is there
 // for this copy of MaxPack in other words, or without the entries a later MaxPack added (the ones
-// on .ffpkg, .ffpfs and .ffpfsc, for a menu written by MaxPack 1.0.4 or before).
+// on .ffpkg, .ffpfs and .ffpfsc, for a menu written by MaxPack 1.0.4 or before; on .pkg, by 1.0.5).
 func Relabel(executable string, texts MenuTexts) error {
 	places := menuPlaces(executable)
 	if !texts.valid() || menuPlace(places) != Here {

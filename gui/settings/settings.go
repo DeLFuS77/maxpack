@@ -2,7 +2,8 @@
 
 // Package settings keeps what the user chose between runs: language, theme, mode, level, the
 // runtime of ampr-emu-ng, the last destination, what becomes of the originals, the priority of the
-// engine, the names of the files, the threads it compresses with and the repair data of a .p5z.
+// engine, the names of the files, the threads it compresses with, the repair data of a .p5z and the
+// passcode of PS5 packages.
 package settings
 
 import (
@@ -12,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/DeLFuS77/maxpack/gui/core"
 	"github.com/DeLFuS77/maxpack/gui/internal/par2"
 	"github.com/DeLFuS77/maxpack/gui/internal/portable"
 	"github.com/DeLFuS77/maxpack/gui/internal/system"
@@ -71,6 +73,9 @@ type Settings struct {
 	// RepairPercent of it: 1, 5 or 10, kept also while it is off
 	RepairData    bool
 	RepairPercent int
+	// Passcode is the one the engine opens a PS5 debug package (.pkg) with when it was not made
+	// with the default (32 zeros): 32 printable characters, or "" for the default
+	Passcode string
 }
 
 const fileName = "settings.json"
@@ -127,6 +132,9 @@ func (s Settings) Normalize() Settings {
 	if !par2.ValidPercent(s.RepairPercent) {
 		s.RepairPercent = d.RepairPercent
 	}
+	if s.Passcode != "" && !core.ValidPasscode(s.Passcode) {
+		s.Passcode = d.Passcode
+	}
 	return s
 }
 
@@ -176,6 +184,7 @@ func Load() (Settings, error) {
 	read("Threads", &s.Threads)
 	read("RepairData", &s.RepairData)
 	read("RepairPercent", &s.RepairPercent)
+	read("Passcode", &s.Passcode)
 	return s.Normalize(), nil
 }
 

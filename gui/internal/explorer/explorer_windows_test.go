@@ -91,6 +91,7 @@ func TestMenuAddedAndRemoved(t *testing.T) {
 		`\SystemFileAssociations\.ffpkg\shell\MaxPack.Compress`:  "Compress with MaxPack",
 		`\SystemFileAssociations\.ffpfs\shell\MaxPack.Compress`:  "Compress with MaxPack",
 		`\SystemFileAssociations\.ffpfsc\shell\MaxPack.Compress`: "Compress with MaxPack",
+		`\SystemFileAssociations\.pkg\shell\MaxPack.Compress`:    "Compress with MaxPack",
 		`\SystemFileAssociations\.p5z\shell\MaxPack.1Verify`:     "Verify with MaxPack",
 		`\SystemFileAssociations\.p5z\shell\MaxPack.2Details`:    "Details",
 	} {
@@ -107,8 +108,8 @@ func TestMenuAddedAndRemoved(t *testing.T) {
 	if got := value(classes+`\SystemFileAssociations\.ffpfsc\shell\MaxPack.Compress\command`, ""); got != `"C:\Tools\MaxPack\MaxPack.exe" --section compress "%1"` {
 		t.Errorf("command on .ffpfsc: %s", got)
 	}
-	// the program that opens an image and its icon are not MaxPack's to write
-	for _, ext := range []string{".exfat", ".ffpkg", ".ffpfs", ".ffpfsc"} {
+	// the program that opens an image or a package and its icon are not MaxPack's to write
+	for _, ext := range []string{".exfat", ".ffpkg", ".ffpfs", ".ffpfsc", ".pkg"} {
 		if exists(t, classes+`\`+ext) {
 			t.Errorf("%s has a key of its own", ext)
 		}
@@ -162,9 +163,9 @@ func TestMenuAddedAndRemoved(t *testing.T) {
 	}
 }
 
-// A menu an earlier MaxPack wrote (without the entries on .ffpkg, .ffpfs and .ffpfsc) is still
-// this copy's: Relabel, which the window runs as it opens, adds them, even in the same words; an
-// entry of those for another copy makes it moved.
+// A menu an earlier MaxPack wrote (without the entries on .ffpkg, .ffpfs and .ffpfsc, 1.0.4; or on
+// .pkg, 1.0.5) is still this copy's: Relabel, which the window runs as it opens, adds them, even in
+// the same words; an entry of those for another copy makes it moved.
 func TestMenuOfAnEarlierMaxPack(t *testing.T) {
 	software, _ := testKeys(t)
 	classes := software + `\Classes`
@@ -172,7 +173,7 @@ func TestMenuOfAnEarlierMaxPack(t *testing.T) {
 	texts := MenuTexts{Compress: "Compress with MaxPack", Verify: "Verify with MaxPack", Details: "Details"}
 	var earlier []Op
 	for _, op := range AddMenuOps(software, exe, texts) {
-		if !strings.Contains(op.Key, `.ffpf`) && !strings.Contains(op.Key, `.ffpkg`) {
+		if !strings.Contains(op.Key, `.ffpf`) && !strings.Contains(op.Key, `.ffpkg`) && !strings.Contains(op.Key, `\.pkg\`) {
 			earlier = append(earlier, op)
 		}
 	}
@@ -188,7 +189,7 @@ func TestMenuOfAnEarlierMaxPack(t *testing.T) {
 	if err := Relabel(exe, texts); err != nil {
 		t.Fatal(err)
 	}
-	for _, ext := range []string{".ffpkg", ".ffpfs", ".ffpfsc"} {
+	for _, ext := range []string{".ffpkg", ".ffpfs", ".ffpfsc", ".pkg"} {
 		key := classes + `\SystemFileAssociations\` + ext + `\shell\MaxPack.Compress`
 		if got := value(key, "MUIVerb"); got != "Compress with MaxPack" {
 			t.Errorf("%s: %q", ext, got)
@@ -199,6 +200,16 @@ func TestMenuOfAnEarlierMaxPack(t *testing.T) {
 	}
 	if got := Read(exe).Menu; got != Here {
 		t.Fatalf("completed: %q", got)
+	}
+	// a menu of 1.0.5: with the images, without .pkg; still this copy's, and Relabel adds .pkg
+	if err := deleteTree(classes + `\SystemFileAssociations\.pkg\shell\MaxPack.Compress`); err != nil {
+		t.Fatal(err)
+	}
+	if got := Read(exe).Menu; got != Here {
+		t.Fatalf("the menu of 1.0.5: %q", got)
+	}
+	if err := Relabel(exe, texts); err != nil || value(classes+`\SystemFileAssociations\.pkg\shell\MaxPack.Compress`, "MUIVerb") != "Compress with MaxPack" {
+		t.Fatalf("the menu of 1.0.5 is not completed: %v", err)
 	}
 	// one of the new entries for another copy
 	if err := writeString(classes+`\SystemFileAssociations\.ffpkg\shell\MaxPack.Compress\command`, "", Command(`D:\Old\MaxPack.exe`, "--section", "compress")); err != nil {

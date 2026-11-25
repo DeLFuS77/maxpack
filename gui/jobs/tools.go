@@ -140,6 +140,7 @@ func CompareLevels(ctx context.Context, engine string, it Item, threads int, onR
 	if threads > 0 {
 		args = append(args, "--threads", strconv.Itoa(threads))
 	}
+	args = append(args, core.PasscodeArgs()...)
 	raw, err := tool(ctx, engine, args, func(e core.Event) {
 		if e.Kind == "level" && onRow != nil {
 			onRow(levelOf(e.Raw))

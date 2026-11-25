@@ -4,6 +4,28 @@ All notable changes to MaxPack are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **`.p5z` covers in the file manager.** With **Open .p5z files with MaxPack** on (Settings › Windows
+  Explorer, or the installer), the Windows Explorer shows each `.p5z` with its game's cover, its
+  `sce_sys/icon0.png`, as its thumbnail, in the views with medium icons or larger, whichever program
+  opens `.p5z` files. It is `maxpack-thumbs.dll`, next to `MaxPack.exe`: a thumbnail provider of the
+  Explorer, registered for you only (under `HKEY_CURRENT_USER`, no administrator) with that place and
+  taken away with it, or when you uninstall MaxPack. It reads only the header, the footer and the index
+  of the `.p5z` and the cover itself, never the game, within caps (an index of 64 MiB compressed or
+  128 MiB unpacked, a cover of 8 MiB and 4096 pixels a side): a `.p5z` still being copied, damaged,
+  over a cap or not a `.p5z` at all shows the normal icon. The cover is decoded with WIC, which comes
+  with Windows, and the DLL carries its own C runtime. A place that MaxPack 1.0.6 or before turned on
+  gets the covers the first time the window opens. An update goes in while the Explorer has the DLL
+  loaded: the installer sets the loaded one aside and deletes it when it can. The portable version has
+  no DLL, and still writes nothing in Windows.
+- **Linux:** `install.sh` also installs, in `~/.local/share`, the type of `.p5z` files
+  (`application/x-maxpack-p5z`, by the name and by the first bytes) and a freedesktop thumbnailer
+  that runs `maxpack-core icon`, so file managers that use thumbnailers show the covers too;
+  `install.sh --uninstall` removes them. The menu entry says MaxPack opens `.p5z` files.
+
 ## [1.0.6] - 2026-11-25
 
 ### Added
@@ -476,7 +498,7 @@ risk. The authors are not responsible for data loss, lost saves, damage to the c
 bans or any other problem. MaxPack is not affiliated with or endorsed by Sony Interactive
 Entertainment. Full text: [Legal and disclaimer](README.md#legal-and-disclaimer).
 
-[Unreleased]: https://github.com/DeLFuS77/maxpack/compare/v1.0.5...HEAD
+[Unreleased]: https://github.com/DeLFuS77/maxpack/compare/v1.0.6...HEAD
 [1.0.6]: https://github.com/DeLFuS77/maxpack/releases/tag/v1.0.6
 [1.0.5]: https://github.com/DeLFuS77/maxpack/releases/tag/v1.0.5
 [1.0.4]: https://github.com/DeLFuS77/maxpack/releases/tag/v1.0.4

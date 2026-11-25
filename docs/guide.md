@@ -153,13 +153,15 @@ To have the game as a folder on the PS5 SSD (for example, to unplug the USB driv
 Then, depending on your system:
 - **Windows (installer).** Run it. It puts MaxPack in your user folder, without administrator
   rights, with a shortcut. If you want, tick its places in the Explorer: the right-click menu, Send to
-  and opening `.p5z` files with a double click (all off unless you tick them; Settings changes them
-  later). Uninstall it from "Installed apps"; that takes them away too.
+  and opening `.p5z` files with a double click, which also shows each `.p5z` with its game's cover (all
+  off unless you tick them; Settings changes them later). Uninstall it from "Installed apps"; that
+  takes them away too.
 - **Windows (portable).** Unzip it anywhere. `MaxPack.exe` and `maxpack-core.exe` must stay together.
   Settings are saved in its `settings` folder, which has a short `README.txt` saying what is kept there.
 - **macOS.** Open the `.dmg` and drag `MaxPack.app` to Applications.
 - **Linux.** Unpack the `.tar.gz` and run `sh install.sh`. It puts MaxPack in the applications menu
-  and `maxpack` in `~/.local/bin`. `sh install.sh --uninstall` removes it.
+  and `maxpack` in `~/.local/bin`, and a thumbnailer so file managers show each `.p5z` with its game's
+  cover. `sh install.sh --uninstall` removes it all.
 
 The first time, Windows and macOS warn you because the program is not signed:
 - **Windows:** "Windows protected your PC" appears. Press **More info**, then **Run anyway**.
@@ -318,6 +320,9 @@ only accepts a `libSceAmpr.sprx` that reads zstd.
   - **Send to › MaxPack:** to give it several games at once.
   - **Open .p5z files with MaxPack:** a double click shows the card of the game in Details. If another
     program already opens them, choose MaxPack once in **Open with › Choose another app › Always**.
+    With it on, the Explorer shows each `.p5z` with its game's cover (its `sce_sys/icon0.png`) in the
+    views with medium icons or larger, whichever program opens them; a `.p5z` still being copied or
+    damaged shows the normal icon.
 
   The portable version writes nothing in Windows and leaves them off. Uninstalling MaxPack takes them
   away. [Details](pc-window.md#windows-explorer).

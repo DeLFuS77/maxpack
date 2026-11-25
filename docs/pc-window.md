@@ -23,12 +23,13 @@ Then follow the steps for your system.
 - `maxpack-windows-x64-setup.exe` is the installer. It installs MaxPack in your user folder, without
   administrator rights, with a shortcut, and you uninstall it from "Installed apps". A page of its own
   offers MaxPack's places in the Windows Explorer (the right-click menu, Send to and opening `.p5z`
-  files), each off until you tick it: see [Windows Explorer](#windows-explorer). The uninstaller takes
-  them all away.
+  files, with their covers as thumbnails), each off until you tick it: see
+  [Windows Explorer](#windows-explorer). The uninstaller takes them all away.
 - `maxpack-windows-x64-portable.zip` is the portable version: unzip it anywhere and open
   `MaxPack.exe`. It has a `settings` folder next to it, and while that is there MaxPack keeps all its
   data (settings, window size and position) in it and nothing in your user profile. It is handy for a
-  USB drive. It writes nothing in Windows: no notifications and no places in the Explorer.
+  USB drive. It writes nothing in Windows: no notifications and no places in the Explorer (so no
+  covers on `.p5z` files either).
 - `MaxPack.exe` and `maxpack-core.exe` must stay together. The window uses `maxpack-core.exe` to do
   its work, and if it is missing the window tells you what is missing. If the one there is of another
   version (an old one that does not do everything the window needs), the window says "maxpack-core of
@@ -39,8 +40,10 @@ Then follow the steps for your system.
 > ("Windows protected your PC"). Press **More info** and **Run anyway**.
 
 > The Windows installer is checked automatically on every build (silent install with its places in the
-> Explorer, compress a test image and uninstall), but it has not been tested by hand yet with a double
-> click and the on-screen wizard. If something does not work, use the portable zip and report it.
+> Explorer, an update while the covers' DLL is in use, compress a test image and uninstall), but it has
+> not been tested by hand yet with a double click and the on-screen wizard. If something does not work,
+> use the portable zip and report it. The covers are checked by a test that loads their DLL as the
+> Explorer does, and on Linux by running the thumbnailer's command; not yet by hand in a file manager.
 
 **macOS**
 - Open the `.dmg` and drag `MaxPack.app` to Applications. The `.tar.gz` carries the same app.
@@ -51,7 +54,10 @@ Then follow the steps for your system.
 
 **Linux**
 - Unpack the `.tar.gz` and run `sh install.sh`. It puts MaxPack in the applications menu, with its
-  icon, and `maxpack` in `~/.local/bin`. `sh install.sh --uninstall` removes it.
+  icon, and `maxpack` in `~/.local/bin`; and, in `~/.local/share`, the type of `.p5z` files and a
+  thumbnailer, so file managers that use freedesktop thumbnailers show each `.p5z` with its game's
+  cover (its `sce_sys/icon0.png`, which `maxpack-core icon` takes out). `sh install.sh --uninstall`
+  removes it all.
 - It needs GTK 3 and WebKitGTK 4.1, which almost every desktop has.
 
 On all three systems, opening MaxPack with games or folders (dragging them to the icon, Send to, the
@@ -342,7 +348,8 @@ Afterwards:
   `maxpack-core` as `--passcode` for every game it reads; **Copy report** says whether one was given,
   never which.
 - **Windows Explorer** (Windows only): the right-click menu, Send to › MaxPack and opening `.p5z`
-  files with MaxPack, each a switch, off until you turn it on. See [Windows Explorer](#windows-explorer).
+  files with MaxPack (with their covers as thumbnails), each a switch, off until you turn it on. See
+  [Windows Explorer](#windows-explorer).
 - **Internet.** MaxPack's window goes on the internet for nothing; see
   [What goes on the internet](../README.md#what-goes-on-the-internet).
 - **About** has **Copy report** and the links to report a bug or a game.
@@ -368,6 +375,15 @@ folder), needs no administrator, and goes away when you turn it off or uninstall
   also in **Open with** and in Settings › Apps › Default apps. If another program already opens `.p5z`
   files, MaxPack leaves it, as Windows wants: choose MaxPack once in **Open with › Choose another app ›
   Always**, and Settings tells you while that is still to do.
+
+  With it, the Explorer also shows each `.p5z` with its game's cover (its `sce_sys/icon0.png`) as its
+  thumbnail, in the views with medium icons or larger, whichever program opens `.p5z` files. The covers
+  come from `maxpack-thumbs.dll`, next to `MaxPack.exe`, which the Explorer runs in a process of its
+  own. It reads only the start and the end of the `.p5z`, its index and the cover, never the game: a
+  `.p5z` still being copied, damaged or that is not a `.p5z` shows the normal icon. If MaxPack 1.0.6 or
+  before turned this on, the covers come the first time the window opens. The Explorer keeps the
+  thumbnails it made: a folder it had already shown may keep the old icons until Windows makes them
+  again (Disk Cleanup › Thumbnails empties that cache).
 
 If MaxPack is moved (or another copy put a place there), Settings says the place is for another copy:
 turn it on and it points to this one. The **portable version** writes nothing in Windows, neither in

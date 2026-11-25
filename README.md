@@ -327,6 +327,8 @@ line does is there, without typing a command.
   for you only): **Compress with MaxPack** on a right click of a folder or an image, **Verify with
   MaxPack** and **Details** on a `.p5z`, **Send to › MaxPack**, and a double click on a `.p5z` that shows
   its card in Details, with Verify and Decompress. The portable version writes nothing in Windows.
+- **Covers in the file manager:** with `.p5z` files opened with MaxPack, the Explorer shows each `.p5z`
+  with its game's cover as its thumbnail; on Linux, `install.sh` adds a thumbnailer that does the same.
 - **Light and dark themes**, a single window (opening more games adds them to it, from the Explorer too),
   progress on the Windows taskbar or the macOS Dock, a system notification when it ends, and the PC kept
   awake while there is work.

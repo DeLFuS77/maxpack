@@ -574,6 +574,22 @@ func (a *App) ChooseFiles(section string) ([]string, error) {
 	return a.Expand(paths, section), nil
 }
 
+// ChooseDLC asks for DLC packages (.pkg), for the button of a game of Compress, and gives the ones of
+// Compress among them: the page tells a DLC from a game once the engine reads it, and puts it with
+// the game of its title ID. A dumped DLC folder is added as any folder is.
+func (a *App) ChooseDLC() ([]string, error) {
+	if a.ctx == nil {
+		return []string{}, errNoWindow
+	}
+	paths, err := wailsruntime.OpenMultipleFilesDialog(a.ctx, wailsruntime.OpenDialogOptions{
+		Filters: []wailsruntime.FileFilter{{DisplayName: "*.pkg", Pattern: "*.pkg"}},
+	})
+	if err != nil {
+		return []string{}, err
+	}
+	return a.Expand(paths, "compress"), nil
+}
+
 // ChooseFolder asks for folders, several at once where the dialog of the system takes them (on
 // Windows, macOS, and Linux with zenity; else one, with the dialog of the window): each one a
 // game, or a folder with games one level below.

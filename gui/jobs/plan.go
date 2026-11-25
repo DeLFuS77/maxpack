@@ -36,6 +36,11 @@ const fat32Max = 1<<32 - 1
 // OriginalSize is the size of the game, which for a compressed image is more than its file takes;
 // ImageSize, what the file of an image takes on disk (0 for a folder or a .p5z). Completeness is
 // whether it has every file of the original package, nil when the engine does not say it.
+//
+// Content is "dlc" for a DLC (a package of additional content, or a dumped DLC folder), which is never
+// compressed alone but with its game, "game" or "" for a game; DLCData, a DLC with files of its own
+// (else a license only). DLC are the DLC a game carries already (a .p5z made with them). AddDLC are the
+// DLC to compress into it (their paths, as the page gives them), and AddDLCSize what they take.
 type Item struct {
 	Path, TitleID, Name, Version, Kind string
 	Inner                              string
@@ -47,6 +52,44 @@ type Item struct {
 	Packed                             bool
 	Icon                               string
 	Completeness                       *Completeness
+	Content                            string
+	DLCData                            bool
+	DLC                                []DLC
+	AddDLC                             []string
+	AddDLCSize                         uint64
+}
+
+// DLC is a DLC a game carries, as info --json says it: its content ID and, when it has files of its
+// own (Data), the folder they are in and what they take; else it is a license only.
+type DLC struct {
+	ContentID string
+	Data      bool
+	Folder    string
+	Size      uint64
+}
+
+// IsDLC tells whether the item is a DLC, not a game.
+func (it Item) IsDLC() bool { return it.Content == "dlc" }
+
+// dlcOf reads the "dlc" list of info --json (nil when there is none).
+func dlcOf(info map[string]any) []DLC {
+	raw, ok := info["dlc"].([]any)
+	if !ok {
+		return nil
+	}
+	list := []DLC{}
+	for _, entry := range raw {
+		d, ok := entry.(map[string]any)
+		if !ok {
+			continue
+		}
+		id, _ := d["content_id"].(string)
+		data, _ := d["data"].(bool)
+		folder, _ := d["folder"].(string)
+		size, _ := d["size"].(float64)
+		list = append(list, DLC{ContentID: id, Data: data, Folder: folder, Size: uint64(size)})
+	}
+	return list
 }
 
 // Completeness is a game against a list of its files, as the engine says it. Source is the list:
@@ -199,7 +242,7 @@ func FromInfo(path string, info map[string]any) Item {
 		Path: path, TitleID: text("title_id"), Name: text("name"), Version: text("version"),
 		Kind: text("kind"), Inner: text("inner"), Compressed: flag("compressed"), OriginalSize: number("original_size"),
 		HasZstdRuntime: flag("has_zstd_runtime"), Packed: flag("packed"), ContentID: text("content_id"),
-		Completeness: completenessOf(info),
+		Completeness: completenessOf(info), Content: text("content"), DLCData: flag("dlc_data"), DLC: dlcOf(info),
 	}
 	if it.Name == "" {
 		it.Name = baseName(path)
@@ -285,8 +328,11 @@ func plan(items []Item, o Options, fs FS, out func(Item) string, args func(it It
 	committed := map[string]uint64{}
 	for i, it := range items {
 		p := Plan{Item: it, Out: out(it), Need: it.OriginalSize}
+		if o.Mode == ModeP5z || o.Mode == ModeFolder {
+			p.Need += it.AddDLCSize // the DLC compressed into it
+		}
 		if o.Mode == ModeP5z && o.Repair > 0 {
-			p.Need += par2.SetSize(it.OriginalSize, o.Repair)
+			p.Need += par2.SetSize(p.Need, o.Repair)
 		}
 		if conflicts(it.Path, p.Out) {
 			p.Block = "same_as_source"
@@ -354,6 +400,10 @@ func PlanCompress(items []Item, o Options, fs FS) []Plan {
 			kind = "--folder"
 		}
 		a := []string{"pack", it.Path, "-o", target, kind, "--level", level(o)}
+		// its DLC inside it, in the order given (addcont0/, addcont1/...)
+		for _, dlc := range it.AddDLC {
+			a = append(a, "--dlc", dlc)
+		}
 		if o.Threads > 0 {
 			a = append(a, "--threads", strconv.Itoa(o.Threads))
 		}

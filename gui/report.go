@@ -36,7 +36,8 @@ var links = map[string]string{
 // it, and whether the image is compressed), its sizes, how it ended in a queue (State and Detail,
 // "" when it was not in one) and whether it has every file of the original package (its counts;
 // nil when the engine did not say). Out is what the queue made, read for its volumes; it is never
-// written in the report.
+// written in the report. DLC is how many DLC it carries, or is compressed with, and DLCData how many of
+// them have files of their own (the rest are licenses): counts only, never which.
 type ReportGame struct {
 	Kind, Inner               string
 	Compressed                bool
@@ -49,6 +50,25 @@ type ReportGame struct {
 	HasRuntime                bool
 	State, Detail, Out        string
 	Completeness              *jobs.Completeness
+	DLC, DLCData              int
+}
+
+// dlcLine is what a report says of a game's DLC: "DLC: 3 (1 with data, 2 licenses only)"; "" for none.
+func dlcLine(g ReportGame) string {
+	if g.DLC <= 0 {
+		return ""
+	}
+	data := min(max(g.DLCData, 0), g.DLC)
+	var parts []string
+	if data > 0 {
+		parts = append(parts, fmt.Sprintf("%d with data", data))
+	}
+	if licenses := g.DLC - data; licenses == 1 {
+		parts = append(parts, "1 license only")
+	} else if licenses > 1 {
+		parts = append(parts, fmt.Sprintf("%d licenses only", licenses))
+	}
+	return fmt.Sprintf("DLC: %d (%s)", g.DLC, strings.Join(parts, ", "))
 }
 
 // ReportRequest is what a report is about: the section and mode of the games, and the games; none
@@ -322,6 +342,9 @@ func (a *App) reportText(r ReportRequest) string {
 			line("Files: %d", g.Files)
 		}
 		for _, l := range completenessLines(g.Completeness) {
+			line("%s", l)
+		}
+		if l := dlcLine(g); l != "" {
 			line("%s", l)
 		}
 		if g.Kind != "" {

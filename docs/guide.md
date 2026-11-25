@@ -210,7 +210,8 @@ What it does by itself:
 - A folder that is already compressed is skipped ("it is compressed already").
 - A dump that lacks files of the original game says so on its row ("3 files of the original game are
   missing") before anything starts, and is compressed all the same: dump it again if you can (see
-  [Whether a dump is complete](#whether-a-dump-is-complete)).
+  [Whether a dump is complete](#whether-a-dump-is-complete)). A copy that lacks files its dump tool
+  wrote, or has them cut short, says so too ("2 files the dump tool wrote are missing"): copy it again.
 - What dump tools leave behind (a `decrypted/` folder, `.auth_info` files) is left out, when the game's
   own list of the original package's files proves it is not the game's; Settings can keep it.
 - Each game is written apart (`<name>.maxpack-tmp`) and verified, and only then takes its name.
@@ -245,14 +246,17 @@ with repair data it says how much it can repair ("Repair data: 5 % — can repai
 **Repair**. **Add repair data** and **Repair the damaged ones**, on the right, do it for the whole list.
 See [Repair data](#repair-data). Under a game made from a dump that carried the list of the original
 package's files it also says whether that dump was complete ("Complete: all 1234 files of the original
-package", or how many are missing).
+package", or how many are missing); without it, from the list the dump tool wrote, whether the copy
+had every file it wrote ("All 95 files the dump tool wrote are here", or "Damaged copy: ...").
 
 ### Details
 
 Shows the title, ID, version, sizes, files, packs and whether it carries a runtime that reads zstd, and
 whether it is complete: **Complete** says yes, how many files of the original package are missing, or
 why it cannot tell; **Not in the original package** and **Left by dump tools** say what of it is not
-the game's and what it takes. An image says what it is (exFAT, UFS2 or PFS image, or PFS container and the image inside it) and what its
+the game's and what it takes. A dump without the original package's list but with its dump tool's shows
+**Dump tool's list** instead (every file it wrote is there, or what is missing or of another size) and
+**Not in the dump tool's list**; it never says complete from it. An image says what it is (exFAT, UFS2 or PFS image, or PFS container and the image inside it) and what its
 file takes, with "PFSC compression" when it is compressed: its original size is the game's.
 **Copy report** under a game copies a text for an issue on GitHub, without its name or ID. A `.p5z` is a
 card that also says what it saved and its repair data (how much, or none), with **Verify** and
@@ -551,7 +555,8 @@ Warnings it may print at the end:
 - `warning: the fakelib/libSceAmpr.sprx runtime does not seem to read zstd packs: use ampr-emu-ng's libSceAmpr.sprx (--runtime)`
 - `warning: sce_sys/param.json gives no TITLE_ID for the game (titleId): MaxPack's installer will not accept this .p5z` (the last part appears only with `--p5z`)
 - `warning: the dump is incomplete: 3 of the 1234 files of the original package are missing: what was made of it lacks them too`
-- `note: kept: 1 file (7.00 KB) looks like what dump tools leave behind, ... (--leave-out-leftovers needs the game's sce_sys/playgo-hash-table.dat)`
+- `warning: damaged copy: 2 of the 95 files the dump tool wrote are missing, 1 has another size: what was made of it lacks them too`
+- `note: kept: 1 file (7.00 KB) that looks like what dump tools leave behind: only the game's sce_sys/playgo-hash-table.dat proves it is not the game's (--leave-out-leftovers)`
 
 With `--progress json`, the lines look like this:
 
@@ -634,15 +639,35 @@ carries it, MaxPack checks the dump's files against it, in `analyze`, `info --js
   window) leaves them out, only when the list proves they are not the game's: a file the list has is
   the game's, whatever its name.
 - `sce_sys/about/right.sprx` is not counted, listed or not: package builders add their own.
-- **Not checked**: a dump without the table (`no_table`), with a file of that name in another format
-  (`unknown_format`), or with one whose size does not match its count (`damaged`). Most dumps do not
-  carry the table, so most say "not checked". Then the leftovers by those names are said, but kept.
+- **Without the table, the dump tool's list.** Most dumps do not carry the table, but most carry the
+  list their dump tool wrote: `ampr_emu.index` at the root (every file it wrote, with its size; the
+  index ampr_emu and ampr-emu-ng read). Then the dump is checked against it, and `source` says so
+  (`dump_index`; `playgo` for the table). It proves less: that the copy has every file the dump tool
+  wrote, with the size it wrote (`missing`, `size_mismatch`), which finds a copy cut short or damaged.
+  It does not prove the dump tool got every file of the game, so MaxPack never says "complete" from it:
+  "all 95 files the dump tool wrote are here", or "damaged copy: ...".
+  - Not counted, as a fine dump differs from its list in them: release files (`*.nfo`, `*.sfv`,
+    `*.diz`), the emulators you change (`fakelib/`, `fakelib2/`, `dlc_emu.ini`), what the game writes
+    while it runs (anything under a `Saved/` folder, `*.log`), the runtime's files (`ampr_commands.bin`,
+    `apr_emu.log`) and the list itself. The dates are never compared: copies and archives change them.
+  - Extra are the files the list does not have (added after the dump, such as backports in
+    `fakelib/`); leftovers are only said by their names: the dump tool writes them too, so this list
+    does not prove they are not the game's, and `--leave-out-leftovers` keeps them.
+  - The table wins when there is one. A `.p5z` keeps the dump tool's list (the original
+    `ampr_emu.index`) and says the same as the dump it was made of; a compressed folder carries
+    MaxPack's own list, which is not used.
+- **Not checked**: a dump without either list (`no_table`), with a table in another format
+  (`unknown_format`) or whose size does not match its count (`damaged`), and no dump tool's list; or
+  with a dump tool's list that cannot be trusted: damaged (`dump_index_damaged`), one of which nothing
+  is there or that most files disagree with in size, as another game's or version's would
+  (`dump_index_mismatch`), or one whose files are in AMPRPAK4 or zstd packs, not loose
+  (`dump_index_packed`). Then the leftovers by those names are said, but kept.
 
 The `completeness` object of `info --json` (and of `analyze --json`, and of the result line of `verify`
 and `pack` with `--progress json`, without the paths):
 
 ```
-"completeness":{"checkable":true,"reason":"","listed":1234,"present":1231,"missing":3,"extra_count":2,"extra_bytes":10240,"leftover_count":1,"leftover_bytes":8192,"extra_paths":["decrypted/eboot.bin","dlc_emu.ini"]}
+"completeness":{"checkable":true,"reason":"","source":"playgo","listed":1234,"present":1231,"missing":3,"size_mismatch":0,"extra_count":2,"extra_bytes":10240,"leftover_count":1,"leftover_bytes":8192,"extra_paths":["decrypted/eboot.bin","dlc_emu.ini"]}
 ```
 
 `extra_paths` are the first 20 extra files, by path. A `.p5z` is checked against the table it carries
@@ -998,6 +1023,15 @@ of them are not in it: the dump, or its copy to the PC, did not finish. MaxPack 
 same, and what it makes lacks them too. What to do: dump the game again, or copy it again from the
 console, and check it in Details before compressing. The list has no names, so MaxPack cannot say
 which files they are. See [Whether a dump is complete](#whether-a-dump-is-complete).
+
+### "N files the dump tool wrote are missing" or "not the size the dump tool wrote"
+
+The dump has no list of the original package's files, so MaxPack checked it against the list its dump
+tool wrote (`ampr_emu.index`), and the copy lacks some of those files, or has some of another size: the
+copy from the console to the PC, or between drives, did not finish or was damaged. MaxPack compresses it
+all the same, and what it makes lacks them too. What to do: copy the dump again from the console, or
+from where it was whole, and check it in Details. See
+[Whether a dump is complete](#whether-a-dump-is-complete).
 
 ### Other window warnings
 

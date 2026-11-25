@@ -49,29 +49,37 @@ type Item struct {
 	Completeness                       *Completeness
 }
 
-// Completeness is a game against the list of the files of the original package's image that it
-// carries (sce_sys/playgo-hash-table.dat), as the engine says it: with no list, or one it cannot
-// read, it is not Checkable and Reason says why ("no_table", "unknown_format", "damaged",
-// "unreadable"). The list has hashes, not names: Missing is a count. Extra are files of the game
-// that the list does not have (not OS junk nor the package's own entries in sce_sys/); Leftover,
-// what dump tools leave behind (a decrypted/ folder, *.auth_info): of the extra ones when it is
-// checkable, else only the files by those names, which nothing proves are not the game's. Never a
-// path: what is said of a game never names its files.
+// Completeness is a game against a list of its files, as the engine says it. Source is the list:
+// "playgo", the files of the original package's image that the game carries
+// (sce_sys/playgo-hash-table.dat), whose hashes have no names, so Missing is a count; or
+// "dump_index", without that table, the list the dump tool wrote (ampr_emu.index), which only tells
+// whether the copy has every file the dump tool wrote (Missing) with its size (SizeMismatch), never
+// that the dump has every file of the game. With no list, or one it cannot use, it is not Checkable
+// and Reason says why ("no_table", "unknown_format", "damaged", "unreadable", "dump_index_damaged",
+// "dump_index_mismatch", "dump_index_packed"). Extra are files of the game that the list does not
+// have; Leftover, what dump tools leave behind (a decrypted/ folder, *.auth_info), which only the
+// table proves are not the game's. Never a path: what is said of a game never names its files.
 type Completeness struct {
 	Checkable                    bool
 	Reason                       string
+	Source                       string
 	Listed, Present, Missing     uint64
+	SizeMismatch                 uint64
 	ExtraCount, ExtraBytes       uint64
 	LeftoverCount, LeftoverBytes uint64
 }
 
-// MissingFiles is how many files of the original package the game lacks: 0 when that is not known.
+// MissingFiles is how many files of its list the game lacks: 0 when that is not known.
 func (c *Completeness) MissingFiles() uint64 {
 	if c == nil || !c.Checkable {
 		return 0
 	}
 	return c.Missing
 }
+
+// DumpTool tells whether it was checked against the dump tool's list, which proves less than the
+// original package's.
+func (c *Completeness) DumpTool() bool { return c != nil && c.Checkable && c.Source == "dump_index" }
 
 // completenessOf reads the "completeness" object of info --json (nil when there is none).
 func completenessOf(info map[string]any) *Completeness {
@@ -82,9 +90,10 @@ func completenessOf(info map[string]any) *Completeness {
 	number := func(key string) uint64 { n, _ := raw[key].(float64); return uint64(n) }
 	checkable, _ := raw["checkable"].(bool)
 	reason, _ := raw["reason"].(string)
-	return &Completeness{Checkable: checkable, Reason: reason, Listed: number("listed"), Present: number("present"),
-		Missing: number("missing"), ExtraCount: number("extra_count"), ExtraBytes: number("extra_bytes"),
-		LeftoverCount: number("leftover_count"), LeftoverBytes: number("leftover_bytes")}
+	source, _ := raw["source"].(string)
+	return &Completeness{Checkable: checkable, Reason: reason, Source: source, Listed: number("listed"), Present: number("present"),
+		Missing: number("missing"), SizeMismatch: number("size_mismatch"), ExtraCount: number("extra_count"),
+		ExtraBytes: number("extra_bytes"), LeftoverCount: number("leftover_count"), LeftoverBytes: number("leftover_bytes")}
 }
 
 // Options are what the user chose for a queue.

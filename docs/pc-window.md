@@ -95,7 +95,10 @@ files of the original game are missing" on its row, before anything starts. It i
 same, and what is made lacks them too: dump it again if you can. Details says more (below). What dump
 tools leave behind (a `decrypted/` folder, `.auth_info` files) is left out of what is made, when the
 list proves it is not the game's; **Leave out what dump tools leave behind**, in Settings, keeps it.
-Most dumps do not carry the list: then nothing is said, and nothing is left out. See
+Most dumps do not carry that list, but most carry the one their dump tool wrote (`ampr_emu.index`):
+then the copy is checked against it, and a copy that lacks files the dump tool wrote, or has them of
+another size, says so ("2 files the dump tool wrote are missing"); that list does not prove the dump has
+every file of the game, so it never says complete, and nothing is left out because of it. See
 [the guide](guide.md#whether-a-dump-is-complete).
 
 Before anything starts, MaxPack adds up what the games may take on each drive (each one at most its
@@ -235,7 +238,8 @@ Afterwards:
   nothing. It does not take images (see [Images](#images)). When the dump it was made of carried the
   list of the original package's files, a line under it says whether that dump was complete ("Complete:
   all 1234 files of the original package", or "Incomplete: 3 of the 1234 files of the original package
-  are missing"). Under a `.p5z` with repair data it says what
+  are missing"); without it, from the dump tool's list, "All 95 files the dump tool wrote are here" or
+  "Damaged copy: ...". Under a `.p5z` with repair data it says what
   it can repair; a damaged one with repair data of its own gets **Repair**, and **Add repair data** and
   **Repair the damaged ones** do it for the list (see [Repair data](#5-repair-data)).
 - **Details** shows what a game says: title, ID, version, sizes, files, packs and whether it carries a
@@ -243,7 +247,9 @@ Afterwards:
   all 1234 files...", how many are missing, or why it cannot tell: no list, a list of another format, a
   damaged one); **Not in the original package** what it has that the package does not, with its size;
   **Left by dump tools** what of that dump tools leave behind, with its size and whether Compress leaves
-  it out (only when the list proves it is not the game's). An image says what it is (a container, also the image inside it) and what its
+  it out (only when the list proves it is not the game's). Without the original package's list, **Dump
+  tool's list** says whether the copy has every file its dump tool wrote, with its size, and **Not in the
+  dump tool's list** what was added since; it never says complete. An image says what it is (a container, also the image inside it) and what its
   file takes. **Copy report** under each game copies a text for an issue on GitHub (see
   [Copy report](#copy-report)). A `.p5z` shows as a card with what it saved against the original, its
   volumes and its repair data (how much, or none), and two buttons: **Verify** and **Decompress** take it to those sections, where you start

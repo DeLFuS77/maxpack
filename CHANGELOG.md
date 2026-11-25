@@ -31,6 +31,21 @@ All notable changes to MaxPack are listed here. The format follows
     compressed folder it can check. Settings › While working has **Leave out what dump tools leave
     behind** (on): what Compress does with them when the table proves they are not the game's. **Copy
     report** has the counts, never a name or a path. In the 11 languages.
+  - **Without that table, the dump tool's list.** Most dumps do not carry the table; most carry the
+    list their dump tool wrote, `ampr_emu.index` (every file it wrote, with its size). It is checked
+    instead, and said so (`source`: `playgo` or `dump_index`): it tells whether the copy has every
+    file the dump tool wrote with the size it wrote (`missing`, and the new `size_mismatch`), which
+    finds copies cut short or damaged; never that the dump is complete. What a fine dump differs from
+    its list in is not counted: release files (`*.nfo`, `*.sfv`, `*.diz`), the emulators the user
+    changes (`fakelib/`, `fakelib2/`, `dlc_emu.ini`), what the game writes while it runs (`Saved/`,
+    `*.log`) and the runtime's own files; on 15 real dumps it raised no false alarm
+    (12 checked, 3 without a list). A list that cannot be trusted is not used, and the reason says why
+    (`dump_index_damaged`, `dump_index_mismatch` for another game or version, `dump_index_packed`).
+    The table wins when there is one, and only the table proves leftovers are not the game's. A
+    `.p5z` keeps the dump tool's list, and says the same as its dump; a compressed folder has
+    MaxPack's own list, which is not used. The window says "All 95 files the dump tool wrote are
+    here" or "Damaged copy: 2 files the dump tool wrote are missing", never "complete", in Compress,
+    Details, Verify and Copy report.
   - The hash and the table's layout are adapted from
     [ProsperoPkgTool](https://github.com/pearlxcore/ProsperoPkgTool) by pearlxcore (MIT); its notice is
     in `src/core/mp_playgo.c` and in `THIRD_PARTY_NOTICES`.

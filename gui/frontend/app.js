@@ -398,7 +398,11 @@ function rowWarnings(row) {
   if (row.section === "compress" && game.Packed) list.push(t("detail_already_packed"));
   // a dump that lacks files of the original game makes a backup that lacks them too: said before
   // it is packed, which it still is
-  if (row.section === "compress" && !game.Packed && missingOf(game)) list.push(t("warn_missing_files")(missingOf(game)));
+  if (row.section === "compress" && !game.Packed) {
+    const c = game.Completeness;
+    if (fromDumpTool(c)) list.push(...copyProblems(c));
+    else if (missingOf(game)) list.push(t("warn_missing_files")(missingOf(game)));
+  }
   // only a .p5z or a compressed folder can be verified: what the engine says is neither (a dump, or
   // an image named as a .p5z) has nothing to verify
   if (row.section === "verify" && !game.Packed) list.push(t("detail_not_packed"));
@@ -442,10 +446,27 @@ function missingOf(game) {
   const c = game && game.Completeness;
   return c && c.Checkable ? Number(c.Missing) || 0 : 0;
 }
-// whether it is complete, for its card in Details: yes, how many are missing, or why it cannot be told
+// whether it was checked against the dump tool's list (ampr_emu.index), not the original package's:
+// that list proves only that the copy has every file the dump tool wrote, with its size, never that
+// the dump is complete
+const fromDumpTool = c => !!(c && c.Checkable && c.Source === "dump_index");
+// what a copy lacks against the dump tool's list: the files missing, and the ones of another size
+function copyProblems(c) {
+  const list = [];
+  if (Number(c.Missing) > 0) list.push(t("copyMissing")(Number(c.Missing)));
+  if (Number(c.SizeMismatch) > 0) list.push(t("copyOtherSize")(Number(c.SizeMismatch)));
+  return list;
+}
+// whether it is complete, for its card in Details: yes, how many are missing, or why it cannot be told;
+// against the dump tool's list, whether the copy has every file it wrote
 function completenessText(c) {
+  if (fromDumpTool(c)) {
+    const problems = copyProblems(c);
+    return problems.length ? t("damagedCopy") + ": " + problems.join(", ") : t("dumpListAll")(c.Listed) + " · " + t("dumpListHint");
+  }
   if (c.Checkable) return c.Missing ? t("completeNo")(c.Missing, c.Listed) : t("completeYes")(c.Listed);
-  const why = { no_table: "completeNoTable", unknown_format: "completeUnknownFormat", damaged: "completeDamaged", unreadable: "completeUnreadable" }[c.Reason];
+  const why = { no_table: "completeNoTable", unknown_format: "completeUnknownFormat", damaged: "completeDamaged", unreadable: "completeUnreadable",
+    dump_index_damaged: "completeDumpIndexDamaged", dump_index_mismatch: "completeDumpIndexMismatch", dump_index_packed: "completeDumpIndexPacked" }[c.Reason];
   return t(why || "completeOther");
 }
 // the facts of Details of a game against its list, as [name, value]: whether it is complete, what of
@@ -455,11 +476,14 @@ function completenessText(c) {
 function completenessFacts(game) {
   const c = game && game.Completeness;
   if (!c) return [];
-  const facts = [[t("factComplete"), completenessText(c)]];
-  if (c.Checkable && c.ExtraCount) facts.push([t("factExtra"), t("extraOf")(c.ExtraCount, size(c.ExtraBytes))]);
+  const dumpTool = fromDumpTool(c);
+  const facts = [[t(dumpTool ? "factDumpList" : "factComplete"), completenessText(c)]];
+  if (c.Checkable && c.ExtraCount) facts.push([t(dumpTool ? "factNotInDumpList" : "factExtra"), t("extraOf")(c.ExtraCount, size(c.ExtraBytes))]);
   if (c.LeftoverCount) {
     const what = t("leftoversOf")(size(c.LeftoverBytes), c.LeftoverCount);
-    const fate = game.Kind === "p5z" || game.Packed ? "" : !c.Checkable ? t("leftoversUnproven") : state.settings.KeepLeftovers ? t("leftoversKept") : t("leftoversOut");
+    // only the original package's list proves they are not the game's
+    const proven = c.Checkable && !dumpTool;
+    const fate = game.Kind === "p5z" || game.Packed ? "" : !proven ? t("leftoversUnproven") : state.settings.KeepLeftovers ? t("leftoversKept") : t("leftoversOut");
     facts.push([t("factLeftovers"), fate ? what + " · " + fate : what]);
   }
   return facts;
@@ -468,6 +492,10 @@ function completenessFacts(game) {
 function completeLineText(row) {
   const c = row.game && row.game.Completeness;
   if (row.section !== "verify" || !c || !c.Checkable) return "";
+  if (fromDumpTool(c)) {
+    const problems = copyProblems(c);
+    return problems.length ? t("damagedCopy") + ": " + problems.join(", ") : t("dumpListAll")(c.Listed);
+  }
   return c.Missing ? t("incompleteLine")(c.Missing, c.Listed) : t("completeLine")(c.Listed);
 }
 
@@ -554,7 +582,7 @@ function paintRow(row) {
   const completeLine = tr.querySelector(".complete-line"), completeText = completeLineText(row);
   completeLine.hidden = !completeText;
   completeLine.textContent = completeText;
-  completeLine.classList.toggle("incomplete", !!completeText && missingOf(game) > 0);
+  completeLine.classList.toggle("incomplete", !!completeText && (missingOf(game) > 0 || Number(game.Completeness.SizeMismatch) > 0));
   const repairLine = tr.querySelector(".repair-line"), repairText = repairLineText(row);
   repairLine.hidden = !repairText;
   repairLine.textContent = repairText;
@@ -1465,8 +1493,8 @@ function gameReport(row) {
 function completenessCounts(c) {
   if (!c) return null;
   const n = key => Number(c[key]) || 0;
-  return { Checkable: !!c.Checkable, Reason: String(c.Reason || ""), Listed: n("Listed"), Present: n("Present"), Missing: n("Missing"),
-    ExtraCount: n("ExtraCount"), ExtraBytes: n("ExtraBytes"), LeftoverCount: n("LeftoverCount"), LeftoverBytes: n("LeftoverBytes") };
+  return { Checkable: !!c.Checkable, Reason: String(c.Reason || ""), Source: String(c.Source || ""), Listed: n("Listed"), Present: n("Present"),
+    Missing: n("Missing"), SizeMismatch: n("SizeMismatch"), ExtraCount: n("ExtraCount"), ExtraBytes: n("ExtraBytes"), LeftoverCount: n("LeftoverCount"), LeftoverBytes: n("LeftoverBytes") };
 }
 function copyReport(rows, section, mode) {
   go.call("CopyReport", { Section: section || "", Mode: mode || "", Games: rows.map(gameReport) })

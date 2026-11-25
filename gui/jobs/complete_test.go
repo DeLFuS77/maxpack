@@ -35,8 +35,17 @@ func TestFromInfoCompleteness(t *testing.T) {
 		t.Error("MissingFiles")
 	}
 	var none *Completeness
-	if none.MissingFiles() != 0 {
+	if none.MissingFiles() != 0 || none.DumpTool() {
 		t.Error("MissingFiles of nil")
+	}
+	// against the dump tool's list: which list it was, and the files of another size
+	it = FromInfo("x", map[string]any{"kind": "folder", "completeness": map[string]any{"checkable": true, "reason": "", "source": "dump_index",
+		"listed": float64(13), "present": float64(10), "missing": float64(2), "size_mismatch": float64(1)}})
+	if c := it.Completeness; c == nil || c.Source != "dump_index" || c.SizeMismatch != 1 || c.MissingFiles() != 2 || !c.DumpTool() {
+		t.Errorf("%+v", c)
+	}
+	if c := completenessOf(map[string]any{"completeness": map[string]any{"checkable": true, "source": "playgo"}}); c.DumpTool() {
+		t.Errorf("playgo: %+v", c)
 	}
 }
 
@@ -59,6 +68,30 @@ func TestCompressLeavesOutLeftovers(t *testing.T) {
 		if hasArg(plans[0].Args, "--leave-out-leftovers") {
 			t.Errorf("%v", plans[0].Args)
 		}
+	}
+}
+
+// With the real engine, the dump tool's list of a dump without the table: a fine dump, and a copy cut
+// short, whose .p5z says the same (it keeps the dump tool's list).
+func TestDumpIndexWithTheEngine(t *testing.T) {
+	engine, fixtures := needCore(t)
+	di := filepath.Join(fixtures, "dumpindex")
+	if c := describe(t, engine, filepath.Join(di, "ok")).Completeness; c == nil || !c.DumpTool() || c.Listed != 13 || c.MissingFiles() != 0 || c.SizeMismatch != 0 {
+		t.Errorf("ok: %+v", c)
+	}
+	broken := describe(t, engine, filepath.Join(di, "broken"))
+	if c := broken.Completeness; c == nil || !c.DumpTool() || c.Missing != 2 || c.SizeMismatch != 1 {
+		t.Fatalf("broken: %+v", c)
+	}
+	o := Options{Mode: ModeP5z, Dest: t.TempDir(), Level: 3}
+	plans := PlanCompress([]Item{broken}, o, newFS())
+	s := &states{list: map[int][]string{}}
+	r := &Runner{Core: engine, OnItem: s.on}
+	if sum := r.Run(context.Background(), plans, o); sum.Done != 1 {
+		t.Fatalf("%+v, states %v", sum, s.list)
+	}
+	if c := describe(t, engine, plans[0].Out).Completeness; c == nil || !c.DumpTool() || c.Missing != 2 || c.SizeMismatch != 1 || c.LeftoverCount != 1 {
+		t.Errorf("the .p5z: %+v", c)
 	}
 }
 

@@ -56,8 +56,9 @@ console.log(vm.runInContext(` + "`" + `(() => {
   }
   if (facts({ Completeness: complete }).join(" | ") !== "Complete: Yes: all 1234 files of the original package") say("details, complete: " + facts({ Completeness: complete }).join(" | "));
   const unproven = facts({ Completeness: none }).join(" | ");
-  if (!unproven.includes("Complete: Cannot tell: it has no list of the original package's files") || !unproven.includes("kept: nothing proves")) say("details, no table: " + unproven);
-  for (const [reason, words] of [["unknown_format", "format MaxPack does not know"], ["damaged", "damaged"], ["unreadable", "could not be read"], ["later", "Cannot tell"]]) {
+  if (!unproven.includes("Complete: Cannot tell: it has no list of its files") || !unproven.includes("kept: nothing proves")) say("details, no table: " + unproven);
+  for (const [reason, words] of [["unknown_format", "format MaxPack does not know"], ["damaged", "damaged"], ["unreadable", "could not be read"], ["later", "Cannot tell"],
+    ["dump_index_damaged", "the dump tool's list of its files (ampr_emu.index) is damaged"], ["dump_index_mismatch", "does not match it"], ["dump_index_packed", "in packs"]]) {
     const text = facts({ Completeness: { Checkable: false, Reason: reason } }).join(" | ");
     if (!text.includes(words)) say("details, " + reason + ": " + text);
   }
@@ -74,6 +75,22 @@ console.log(vm.runInContext(` + "`" + `(() => {
   if (c.Missing !== 3 || c.Listed !== 1234 || c.LeftoverBytes !== 2000000000 || c.Checkable !== true) say("the report: " + JSON.stringify(report));
   if (JSON.stringify(report).includes("decrypted") || JSON.stringify(report).includes("Iron Harbor")) say("the report has a name: " + JSON.stringify(report));
   if (gameReport(row("details", {})).Completeness !== null) say("the report of a game the engine said nothing of: " + JSON.stringify(gameReport(row("details", {}))));
+  // against the dump tool's list: never "complete"; a copy with files missing or of another size is
+  // a damaged copy, said before it is packed, in Details and in Verify
+  const fine = { Checkable: true, Reason: "", Source: "dump_index", Listed: 95, Present: 95, Missing: 0, SizeMismatch: 0, ExtraCount: 1, ExtraBytes: 4096, LeftoverCount: 1, LeftoverBytes: 7000 };
+  const cut = Object.assign({}, fine, { Present: 92, Missing: 2, SizeMismatch: 1 });
+  if (warns({ Completeness: fine }).length) say("compress warns of a fine copy: " + warns({ Completeness: fine }).join(" · "));
+  const cutWarns = warns({ Completeness: cut }).join(" · ");
+  if (cutWarns !== "2 files the dump tool wrote are missing · 1 file is not the size the dump tool wrote") say("compress, damaged copy: " + cutWarns);
+  const fineFacts = facts({ Completeness: fine }).join(" | ");
+  if (fineFacts !== "Dump tool's list: All 95 files the dump tool wrote are here · it does not prove the dump tool got every file of the game | Not in the dump tool's list: 1 file · 4.0 KB | Left by dump tools: 6.8 KB · 1 file · kept: nothing proves they are not the game's") say("details, dump tool's list: " + fineFacts);
+  if (/Complete/.test(fineFacts)) say("the dump tool's list says complete: " + fineFacts);
+  const cutFacts = facts({ Completeness: cut }).join(" | ");
+  if (!cutFacts.includes("Dump tool's list: Damaged copy: 2 files the dump tool wrote are missing, 1 file is not the size the dump tool wrote")) say("details, damaged copy: " + cutFacts);
+  if (line("verify", fine) !== "All 95 files the dump tool wrote are here") say("verify, dump tool's list: " + line("verify", fine));
+  if (line("verify", cut) !== "Damaged copy: 2 files the dump tool wrote are missing, 1 file is not the size the dump tool wrote") say("verify, damaged copy: " + line("verify", cut));
+  const cutReport = gameReport(row("details", { Completeness: cut })).Completeness || {};
+  if (cutReport.Source !== "dump_index" || cutReport.SizeMismatch !== 1) say("the report of a damaged copy: " + JSON.stringify(cutReport));
   // the setting starts on: the leftovers go
   if (defaults.KeepLeftovers !== false) say("the default keeps the leftovers");
   return problems.join("\\n");

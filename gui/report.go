@@ -74,12 +74,33 @@ func files(n uint64) string {
 	return fmt.Sprintf("%d files", n)
 }
 
-// completenessLines are what a report says of a game against the list of the original package's
-// files: whether it is complete (or why it could not be told), what is not in the package and what
-// of it dump tools left; counts and sizes only, as the list has no names.
+// completenessLines are what a report says of a game against a list of its files: whether it is
+// complete against the original package's (or why it could not be told), or, against the dump tool's,
+// whether the copy has every file it wrote, never that it is complete; what is not in the list and
+// what dump tools left. Counts and sizes only, never a name.
 func completenessLines(c *jobs.Completeness) []string {
 	if c == nil {
 		return nil
+	}
+	if c.DumpTool() {
+		lines := []string{}
+		switch {
+		case c.Missing == 0 && c.SizeMismatch == 0:
+			lines = append(lines, fmt.Sprintf("Dump tool's list: all %d files it wrote are here (it does not prove it got every file of the game)", c.Listed))
+		case c.Missing > 0 && c.SizeMismatch > 0:
+			lines = append(lines, fmt.Sprintf("Dump tool's list: damaged copy, %d of the %d files it wrote missing, %d of another size", c.Missing, c.Listed, c.SizeMismatch))
+		case c.Missing > 0:
+			lines = append(lines, fmt.Sprintf("Dump tool's list: damaged copy, %d of the %d files it wrote missing", c.Missing, c.Listed))
+		default:
+			lines = append(lines, fmt.Sprintf("Dump tool's list: damaged copy, %d of the %d files it wrote of another size", c.SizeMismatch, c.Listed))
+		}
+		if c.ExtraCount > 0 {
+			lines = append(lines, fmt.Sprintf("Not in the dump tool's list: %s, %s", files(c.ExtraCount), sized(c.ExtraBytes)))
+		}
+		if c.LeftoverCount > 0 {
+			lines = append(lines, fmt.Sprintf("Left by dump tools, not proven: %s, %s", files(c.LeftoverCount), sized(c.LeftoverBytes)))
+		}
+		return lines
 	}
 	var lines []string
 	switch {

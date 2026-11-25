@@ -33,7 +33,9 @@
 //   ?images=1           the images of ShadowMountPlus in Details (.exfat, .ffpkg, .ffpfsc), to see their cards
 //   ?complete=1         Details with what each game says against the list of the original package's files: a
 //                       complete dump, one that lacks three files (Compress warns of it too), one without a
-//                       list, one whose list proves its leftovers are not the game's, and a .p5z of each kind
+//                       list, one whose list proves its leftovers are not the game's, and a .p5z of each kind;
+//                       and, without that list, against the dump tool's (ampr_emu.index): a copy with every
+//                       file it wrote, and a damaged one (Compress warns of it too)
 // Start runs a queue made up here: each game packs and verifies in a few seconds (and gets its repair
 // data), the games added meanwhile join it, and the card of the end shows; in Verify the damaged
 // .p5z fails, and Repair and Add repair data run their own steps. Compare levels and Measure this PC tell made-up
@@ -77,13 +79,18 @@ const mock = `
   // what the engine says of each against the list of the original package's files it carries
   // (sce_sys/playgo-hash-table.dat): complete, three files missing, no list, leftovers it proves
   // are not the game's
-  const counts = (listed, missing, extra, extraBytes, left, leftBytes) => ({ Checkable: true, Reason: "", Listed: listed, Present: listed - missing, Missing: missing,
+  const counts = (listed, missing, extra, extraBytes, left, leftBytes) => ({ Checkable: true, Reason: "", Source: "playgo", Listed: listed, Present: listed - missing, Missing: missing, SizeMismatch: 0,
     ExtraCount: extra, ExtraBytes: extraBytes, LeftoverCount: left, LeftoverBytes: leftBytes });
-  const noList = (left, leftBytes) => ({ Checkable: false, Reason: "no_table", Listed: 0, Present: 0, Missing: 0, ExtraCount: 0, ExtraBytes: 0, LeftoverCount: left, LeftoverBytes: leftBytes });
+  const noList = (left, leftBytes) => ({ Checkable: false, Reason: "no_table", Source: "", Listed: 0, Present: 0, Missing: 0, SizeMismatch: 0, ExtraCount: 0, ExtraBytes: 0, LeftoverCount: left, LeftoverBytes: leftBytes });
+  // against the dump tool's list: every file it wrote, or a copy that lacks some and has one cut short
+  const dumpList = (listed, missing, other, extra, extraBytes) => ({ Checkable: true, Reason: "", Source: "dump_index", Listed: listed, Present: listed - missing - other,
+    Missing: missing, SizeMismatch: other, ExtraCount: extra, ExtraBytes: extraBytes, LeftoverCount: 0, LeftoverBytes: 0 });
   games["D:\\\\dumps\\\\Starfall.Odyssey-PPSA10001"].Completeness = counts(2165, 0, 0, 0, 0, 0);
   games["D:\\\\dumps\\\\Iron.Harbor-PPSA10002.exfat"].Completeness = counts(5120, 3, 2, 41000, 0, 0);
   games["D:\\\\dumps\\\\Neon Meridian-PPSA10003"].Completeness = noList(12, 3300000000);
   games["D:\\\\more\\\\Lost Signal-PPSA10004"].Completeness = counts(1880, 0, 15, 2900000000, 14, 2890000000);
+  games["D:\\\\dumps\\\\Quiet Tide [PPSA10005].ffpfsc"].Completeness = dumpList(955, 0, 0, 1, 3759);
+  games["D:\\\\more\\\\Glass Orbit.ffpkg"].Completeness = dumpList(2023, 2, 1, 0, 0);
   const first = Object.keys(games).slice(0, 4);
   const imagesShown = Object.keys(games).filter(file => /\\.(exfat|ffpkg|ffpfs|ffpfsc)$/i.test(file));
   // the .p5z of Verify (?verify=1): good, damaged, and one with the set of another file next to it
@@ -106,7 +113,7 @@ const mock = `
     InstallSize: 6400000000, P5zSize: 61000000000, Files: 3811, PackedFiles: 3770, Volumes: 15, HasRuntime: true };
   for (const file of [good, damaged, foreign]) games[file].Completeness = listOf[file];
   const completeShown = ["D:\\\\dumps\\\\Starfall.Odyssey-PPSA10001", "D:\\\\dumps\\\\Iron.Harbor-PPSA10002.exfat", "D:\\\\dumps\\\\Neon Meridian-PPSA10003",
-    "D:\\\\more\\\\Lost Signal-PPSA10004", good, damaged, foreign];
+    "D:\\\\more\\\\Lost Signal-PPSA10004", "D:\\\\dumps\\\\Quiet Tide [PPSA10005].ffpfsc", "D:\\\\more\\\\Glass Orbit.ffpkg", good, damaged, foreign];
   // MaxPack in the Explorer: each place "" (not there), "here" or "moved"
   const listed = name => (query.get(name) || "").split(",");
   const explorer = { available: query.get("explorer") !== "none", menu: "", sendTo: "", files: "", filesOther: !!query.get("other") };
@@ -238,7 +245,7 @@ const mock = `
     SetSettings: async next => { Object.assign(settings, next); if (!validTemplate(settings.NameTemplate)) settings.NameTemplate = templates[0]; },
     PendingFiles: async () => (query.get("opened") ? { compress: [], verify: [], details: [p5z], show: "details" } : query.get("empty") ? null
       : query.get("images") ? { compress: first, verify: [], details: imagesShown, show: "details" }
-      : query.get("complete") ? { compress: first, verify: [good, damaged, foreign], details: completeShown, show: "details" }
+      : query.get("complete") ? { compress: first.concat(["D:\\\\more\\\\Glass Orbit.ffpkg"]), verify: [good, damaged, foreign], details: completeShown, show: "details" }
       : { compress: first, verify: query.get("verify") ? [good, damaged, foreign] : [], details: query.get("verify") ? [damaged] : [], show: query.get("verify") ? "verify" : "" }),
     RepairInfo: async file => repairs[file] || { state: /\\.p5z$/i.test(file) ? "none" : "", percent: 0, blocks: 0, blockSize: 0, capacity: 0, bytes: 0 },
     Expand: async paths => paths,

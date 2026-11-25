@@ -79,6 +79,11 @@ func TestReportSaysCompleteness(t *testing.T) {
 		{Kind: "folder", OriginalSize: 10 << 30, Completeness: &jobs.Completeness{Reason: "no_table", LeftoverCount: 4, LeftoverBytes: 1 << 30}},
 		{Kind: "folder", OriginalSize: 10 << 30, Completeness: &jobs.Completeness{Reason: "unknown_format"}},
 		{Kind: "folder", OriginalSize: 10 << 30},
+		{Kind: "folder", OriginalSize: 10 << 30, Completeness: &jobs.Completeness{Checkable: true, Source: "dump_index", Listed: 95, Present: 95,
+			ExtraCount: 1, ExtraBytes: 4096}},
+		{Kind: "folder", OriginalSize: 10 << 30, Completeness: &jobs.Completeness{Checkable: true, Source: "dump_index", Listed: 95, Present: 92,
+			Missing: 2, SizeMismatch: 1, LeftoverCount: 1, LeftoverBytes: 1 << 30}},
+		{Kind: "folder", OriginalSize: 10 << 30, Completeness: &jobs.Completeness{Reason: "dump_index_mismatch"}},
 	}
 	text := a.reportText(ReportRequest{Section: "details", Games: games})
 	for _, want := range []string{
@@ -88,12 +93,16 @@ func TestReportSaysCompleteness(t *testing.T) {
 		"Completeness: not checked (no_table)\n",
 		"Left by dump tools, not proven: 4 files, 1.0 GiB (1073741824 bytes)\n",
 		"Completeness: not checked (unknown_format)\n",
+		"Dump tool's list: all 95 files it wrote are here (it does not prove it got every file of the game)\n",
+		"Not in the dump tool's list: 1 file, 0.0 GiB (4096 bytes)\n",
+		"Dump tool's list: damaged copy, 2 of the 95 files it wrote missing, 1 of another size\n",
+		"Completeness: not checked (dump_index_mismatch)\n",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("the report does not say %q:\n%s", want, text)
 		}
 	}
-	if strings.Count(text, "Completeness: ") != 4 {
+	if strings.Contains(text, "Completeness: complete, all 95") || strings.Count(text, "Completeness: ") != 5 {
 		t.Errorf("a game the engine said nothing of has a completeness:\n%s", text)
 	}
 }

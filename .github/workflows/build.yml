@@ -157,6 +157,7 @@ jobs:
       - name: Test images
         run: |
           python -I tests/tools/make_exfat.py --out build/fixtures
+          python -I tests/tools/make_images.py --out build/fixtures --data tests/data
           echo "MP_FIXTURES=${GITHUB_WORKSPACE}/build/fixtures" >> "${GITHUB_ENV}"
 
       # the icon, the manifest and the version of the Windows program

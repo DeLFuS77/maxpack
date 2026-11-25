@@ -3,6 +3,7 @@
 // sources.
 #include <stdlib.h>
 
+#include "mp_describe.h"
 #include "mp_dlc.h"
 #include "mp_fixture.h"
 #include "mp_hash.h"
@@ -345,6 +346,16 @@ MP_TEST(dlc_refusals) {
     const char *folder[] = {"AddCont0/x.bin"};
     write_game(TMP "/g_addcont", folder, 1);
     refused("a folder of its own where the DLC go", TMP "/g_addcont", data, 1, "dlc_refused", "already has AddCont0/");
+    // names in another case are the same names: a game with EBOOT.BIN is no DLC; a DLC whose files are
+    // in Sce_Sys/ is one
+    mpt_clear(TMP "/dlc_caps");
+    mpt_put_text(TMP "/dlc_caps/Sce_Sys/Param.json", "{\"contentId\": \"" DATA_CID "\"}");
+    mpt_put_text(TMP "/dlc_caps/EBOOT.BIN", "x");
+    const char *caps[] = {TMP "/dlc_caps"};
+    refused("a game in capitals", FX "/mini", caps, 1, "dlc_refused", "it has eboot.bin");
+    mpt_clear(TMP "/dlc_caps/EBOOT.BIN");
+    packed ok = pack_dlc(FX "/mini", caps, 1, TMP "/caps.p5z", 1);
+    MP_CHECK(ok.rc == 0 && ok.r.dlc_license == 1 && ok.r.dlc_data == 0);
     // a game with no title ID cannot be told its DLC
     mpt_clear(TMP "/g_noid");
     mpt_put_text(TMP "/g_noid/eboot.bin", "x");
@@ -382,6 +393,136 @@ MP_TEST(dlc_hundred) {
     for (size_t i = 0; i < 100; i++) free(many[i]);
 }
 
+// ---- what describe (info --json) says ------------------------------------------------------------
+
+static int describe_ok(const char *path, mp_describe *d, mp_dlc_list *l) {
+    mp_err e = {{0}};
+    mp_complete c;
+    int rc = mp_describe_full(path, d, &c, l, &e);
+    if (rc != 0) MP_FAIL_("%s: %s", path, e.msg);
+    else mp_complete_free(&c);
+    return rc == 0;
+}
+
+// A DLC says it is one, whether it has files of its own, and is of its game's title ID (its content
+// ID's); a game says it is none; its icon is read as a game's.
+MP_TEST(describe_dlc) {
+    mp_describe d;
+    mp_dlc_list l;
+    if (describe_ok(FX "/dlc_data.pkg", &d, &l)) {
+        MP_CHECK(d.dlc && d.dlc_data);
+        MP_CHECK_STR(d.kind, "fpkg");
+        MP_CHECK_STR(d.title_id, "PPSA00000");
+        MP_CHECK_STR(d.content_id, DATA_CID);
+        MP_CHECK_STR(d.name, "MaxPack Test Bonus");
+        MP_CHECK_EQ_U64(l.n, 0);
+        mp_dlc_list_free(&l);
+    }
+    if (describe_ok(FX "/dlc_data", &d, &l)) {
+        MP_CHECK(d.dlc && d.dlc_data);
+        MP_CHECK_STR(d.title_id, "PPSA00000");
+        mp_dlc_list_free(&l);
+    }
+    if (describe_ok(FX "/dlc_license", &d, &l)) {
+        MP_CHECK(d.dlc && !d.dlc_data);
+        MP_CHECK_STR(d.content_id, LICENSE_CID);
+        mp_dlc_list_free(&l);
+    }
+    if (describe_ok(FX "/dlc_license.pkg", &d, &l)) {
+        MP_CHECK(d.dlc && !d.dlc_data);
+        mp_dlc_list_free(&l);
+    }
+    if (describe_ok(FX "/mini", &d, &l)) {
+        MP_CHECK(!d.dlc && !d.dlc_data && l.n == 0);
+        mp_dlc_list_free(&l);
+    }
+    if (describe_ok(FX "/mini.pkg", &d, &l)) {
+        MP_CHECK(!d.dlc);
+        mp_dlc_list_free(&l);
+    }
+    uint8_t *png = NULL;
+    size_t len = 0;
+    mp_err e = {{0}};
+    MP_CHECK(mp_describe_icon(FX "/dlc_data.pkg", &png, &len, &e) == 0 && len > 8 && !memcmp(png, "\x89PNG", 4));
+    free(png);
+}
+
+// A .p5z made with DLC lists them from its dlc_emu.ini, with what each one's folder holds; so does the
+// folder for the console made of the same, whose files are partly in its packs.
+MP_TEST(describe_carried) {
+    const char *dlc[] = {FX "/dlc_data.pkg", FX "/dlc_license"};
+    packed k = pack_dlc(FX "/mini", dlc, 2, TMP "/c.p5z", 1);
+    MP_CHECK(k.rc == 0);
+    packed f = pack_dlc(FX "/mini", dlc, 2, TMP "/c_folder", 0);
+    MP_CHECK(f.rc == 0);
+    mpt_list files = mpt_list_dir(FX "/dlc_data");
+    for (int i = 0; i < 2; i++) {
+        mp_describe d;
+        mp_dlc_list l;
+        if (!describe_ok(i ? TMP "/c_folder" : TMP "/c.p5z", &d, &l)) continue;
+        MP_CHECK(!d.dlc);
+        MP_CHECK_EQ_U64(l.n, 2);
+        if (l.n == 2) {
+            MP_CHECK_STR(l.v[0].content_id, DATA_CID);
+            MP_CHECK(l.v[0].data);
+            MP_CHECK_STR(l.v[0].folder, "addcont0");
+            MP_CHECK_EQ_U64(l.v[0].files, files.n);
+            MP_CHECK_EQ_U64(l.v[0].bytes, mpt_dir_size(FX "/dlc_data"));
+            MP_CHECK_STR(l.v[1].content_id, LICENSE_CID);
+            MP_CHECK(!l.v[1].data);
+            MP_CHECK_STR(l.v[1].folder, "");
+            MP_CHECK_EQ_U64(l.v[1].bytes, 0);
+        }
+        mp_dlc_list_free(&l);
+    }
+    mpt_list_free(&files);
+}
+
+// What dlc_emu.ini says, read as dlc_emu would take it: hostile ones end in a bounded list, never a
+// crash.
+MP_TEST(parse_hostile) {
+    mp_dlc_list l;
+    // \r\n, spaces, no final newline, a section of another kind, keys it does not know, a line with no
+    // '=', a content ID of 35 characters (skipped), a mount point too long for dlc_emu (no folder)
+    const char *ini = "\xef\xbb\xbf[PSAC]\r\n content_id = " DATA_CID " \r\nmount_point=/app0/addcont0\r\n\r\n"
+                      "[PSCONS]\ncontent_id=UP0000-PPSA00000_00-MAXPACKCONSUME01\n"
+                      "[PSAL]\nnonsense\nlabel=X\ncontent_id=UP0000-PPSA00000_00-MAXPACKSHORT001\n"
+                      "[PSAC]\ncontent_id=UP0000-PPSA00000_00-MAXPACKLONGMOUNT\nmount_point=/app0/addcont0/deeper\n"
+                      "[PSAL]\ncontent_id=" LICENSE_CID;
+    MP_CHECK(mp_dlc_parse(ini, strlen(ini), &l) == 0);
+    MP_CHECK_EQ_U64(l.n, 3);
+    if (l.n == 3) {
+        MP_CHECK_STR(l.v[0].content_id, DATA_CID);
+        MP_CHECK(l.v[0].data);
+        MP_CHECK_STR(l.v[0].folder, "addcont0");
+        MP_CHECK_STR(l.v[1].content_id, "UP0000-PPSA00000_00-MAXPACKLONGMOUNT");
+        MP_CHECK_STR(l.v[1].folder, "");
+        MP_CHECK_STR(l.v[2].content_id, LICENSE_CID);
+        MP_CHECK(!l.v[2].data);
+    }
+    mp_dlc_list_free(&l);
+    // over 32 KiB: dlc_emu reads none of it
+    size_t big = MP_DLC_INI_MAX + 1;
+    char *b = malloc(big);
+    memset(b, 'x', big);
+    MP_CHECK(mp_dlc_parse(b, big, &l) == 0 && l.n == 0);
+    mp_dlc_list_free(&l);
+    // 2000 sections, NUL bytes and no newline at all: at most MP_DLC_MAX_ENTRIES
+    size_t n = 0, cap = 2000 * 60;
+    char *many = malloc(cap);
+    for (int i = 0; i < 2000 && n + 60 < cap; i++)
+        n += (size_t)snprintf(many + n, cap - n, "[PSAL]\ncontent_id=UP0000-PPSA00000_00-MAXPACKMANYL%04d\n", i);
+    MP_CHECK(mp_dlc_parse(many, n, &l) == 0 && l.n == 0);   // over 32 KiB too
+    mp_dlc_list_free(&l);
+    MP_CHECK(mp_dlc_parse(many, 32000, &l) == 0 && l.n > 0 && l.n <= MP_DLC_MAX_ENTRIES);
+    mp_dlc_list_free(&l);
+    memset(many, 0, 1000);
+    MP_CHECK(mp_dlc_parse(many, 1000, &l) == 0 && l.n == 0);
+    mp_dlc_list_free(&l);
+    free(many);
+    free(b);
+}
+
 int main(void) {
     MP_RUN(merge_basic);
     MP_RUN(merge_twice);
@@ -390,5 +531,8 @@ int main(void) {
     MP_RUN(pack_dlc_complete_and_folder);
     MP_RUN(dlc_refusals);
     MP_RUN(dlc_hundred);
+    MP_RUN(describe_dlc);
+    MP_RUN(describe_carried);
+    MP_RUN(parse_hostile);
     MP_TEST_MAIN_END();
 }

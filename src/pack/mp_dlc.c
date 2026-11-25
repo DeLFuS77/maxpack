@@ -119,8 +119,7 @@ static void game_title(mp_source *game, char out[16]) {
         title_of(cid, out);
 }
 
-// Whether a DLC has files of its own: one outside sce_sys/ that is not the OS's.
-static int has_data(mp_source *s) {
+int mp_dlc_has_data(mp_source *s) {
     for (size_t i = 0; i < mp_source_count(s); i++) {
         const char *p = mp_source_entry(s, i)->path;
         if (!in_folder(p, "sce_sys") && !mp_complete_is_junk(p)) return 1;
@@ -173,8 +172,120 @@ static int check_dlc(mp_source *s, const char *path, const char *title, char cid
         return -1;
     }
     memcpy(cid, found, 37);
-    *data = has_data(s);
+    *data = mp_dlc_has_data(s);
     return 0;
+}
+
+// ---- reading a dlc_emu.ini --------------------------------------------------------------------
+
+static int blank(char c) { return c == ' ' || c == '\t' || c == '\r'; }
+
+// [p, q) without the blanks at its ends.
+static void trim(const char **p, const char **q) {
+    while (*p < *q && blank(**p)) (*p)++;
+    while (*q > *p && blank((*q)[-1])) (*q)--;
+}
+
+static int is(const char *p, const char *q, const char *word) {
+    size_t n = strlen(word);
+    if ((size_t)(q - p) != n) return 0;
+    for (size_t i = 0; i < n; i++)
+        if (lower((unsigned char)p[i]) != lower((unsigned char)word[i])) return 0;
+    return 1;
+}
+
+typedef struct {
+    int kind;   // 0 none (or another kind), 1 PSAC, 2 PSAL
+    char cid[37], mount[64];
+    int have_cid;
+} section;
+
+// The DLC of a section that has ended, when it is one.
+static int close_section(section *sec, mp_dlc_list *out, size_t *cap) {
+    if (!sec->kind || !sec->have_cid || out->n >= MP_DLC_MAX_ENTRIES) return 0;
+    if (out->n == *cap) {
+        size_t c = *cap ? *cap * 2 : 8;
+        mp_dlc *g = realloc(out->v, c * sizeof *g);
+        if (!g) return -1;
+        out->v = g;
+        *cap = c;
+    }
+    mp_dlc *d = &out->v[out->n++];
+    memset(d, 0, sizeof *d);
+    memcpy(d->content_id, sec->cid, sizeof d->content_id);
+    d->data = sec->kind == 1;
+    // a mount point dlc_emu takes (at most 15 characters) in the game: "/app0/<folder>"
+    size_t ml = strlen(sec->mount);
+    if (d->data && ml > 6 && ml <= 15 && !strncmp(sec->mount, "/app0/", 6) && !strstr(sec->mount, "..") &&
+        sec->mount[ml - 1] != '/')
+        snprintf(d->folder, sizeof d->folder, "%s", sec->mount + 6);
+    return 0;
+}
+
+int mp_dlc_parse(const char *ini, size_t len, mp_dlc_list *out) {
+    memset(out, 0, sizeof *out);
+    if (len > MP_DLC_INI_MAX) return 0;
+    if (len >= 3 && !memcmp(ini, "\xef\xbb\xbf", 3)) {   // a UTF-8 BOM
+        ini += 3;
+        len -= 3;
+    }
+    size_t cap = 0;
+    section sec;
+    memset(&sec, 0, sizeof sec);
+    const char *end = ini + len;
+    for (const char *line = ini; line < end;) {
+        const char *nl = memchr(line, '\n', (size_t)(end - line));
+        const char *p = line, *q = nl ? nl : end;
+        line = nl ? nl + 1 : end;
+        trim(&p, &q);
+        if (p == q) continue;
+        if (*p == '[' && q[-1] == ']') {
+            if (close_section(&sec, out, &cap) != 0) goto oom;
+            memset(&sec, 0, sizeof sec);
+            sec.kind = is(p + 1, q - 1, "PSAC") ? 1 : is(p + 1, q - 1, "PSAL") ? 2 : 0;
+            continue;
+        }
+        const char *eq = memchr(p, '=', (size_t)(q - p));
+        if (!eq || !sec.kind) continue;
+        const char *k = p, *ke = eq, *v = eq + 1, *ve = q;
+        trim(&k, &ke);
+        trim(&v, &ve);
+        size_t vl = (size_t)(ve - v);
+        if (is(k, ke, "content_id")) {
+            int ok = vl == 36;
+            for (size_t i = 0; ok && i < vl; i++) ok = (unsigned char)v[i] > 0x20 && (unsigned char)v[i] < 0x7F;
+            sec.have_cid = ok;
+            if (ok) {
+                memcpy(sec.cid, v, 36);
+                sec.cid[36] = 0;
+            }
+        } else if (is(k, ke, "mount_point")) {
+            if (vl < sizeof sec.mount) {
+                memcpy(sec.mount, v, vl);
+                sec.mount[vl] = 0;
+            } else {
+                sec.mount[0] = 0;
+            }
+        }
+    }
+    if (close_section(&sec, out, &cap) != 0) goto oom;
+    return 0;
+oom:
+    mp_dlc_list_free(out);
+    return -1;
+}
+
+void mp_dlc_sizes(mp_dlc_list *l, const mp_cfile *files, size_t n) {
+    for (size_t k = 0; k < l->n; k++) {
+        mp_dlc *d = &l->v[k];
+        d->files = d->bytes = 0;
+        if (!d->folder[0]) continue;
+        for (size_t i = 0; i < n; i++)
+            if (in_folder(files[i].path, d->folder)) {
+                d->files++;
+                d->bytes += files[i].size;
+            }
+    }
 }
 
 int mp_dlc_attach(mp_source **game, const char *const *paths, size_t n, mp_dlc_list *out, const char **code,

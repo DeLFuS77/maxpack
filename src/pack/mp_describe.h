@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Description of a game (folder, image or .p5z) for a front end: ID, content ID, version,
-// name, sizes, its packs and whether it carries a runtime that reads zstd. It is what
-// `maxpack info --json` shows.
+// name, sizes, its packs, whether it carries a runtime that reads zstd, whether it is a DLC and the
+// DLC it carries. It is what `maxpack info --json` shows.
 #ifndef MP_DESCRIBE_H
 #define MP_DESCRIBE_H
 
@@ -9,6 +9,7 @@
 #include <stdint.h>
 
 #include "mp_complete.h"
+#include "mp_dlc.h"
 #include "mp_err.h"
 #include "mp_p5z.h"
 
@@ -26,6 +27,10 @@ typedef struct {
     uint64_t volumes;         // volumes of the packs, ampr_zstd-NNN.pak (0 if it is not packed)
     int has_runtime, has_zstd_runtime, packed;   // packed: already carries ampr_zstd.index
     char content_id[48];      // contentId of param.json ("EP0001-PPSA10001_00-..."), "" if it gives none
+    // additional content, not a game: a package of it, or a folder or image with sce_sys/param.json and
+    // no eboot.bin (its title_id is then its content ID's, the one pack --dlc checks); dlc_data, one
+    // with files of its own outside sce_sys/ (else a license only)
+    int dlc, dlc_data;
 } mp_describe;
 
 // 0 if it could describe it; -1 with the reason in e.
@@ -35,6 +40,11 @@ int mp_describe_path(const char *path, mp_describe *d, mp_err *e);
 // its manifest (the files of the dump it was made of), a compressed folder its loose files and the
 // ones in its packs.
 int mp_describe_path_ex(const char *path, mp_describe *d, mp_complete *c, mp_err *e);
+// The same and, when dlc is not NULL, the DLC the game carries: the ones its own dlc_emu.ini lists
+// (mp_dlc_parse; none when it has none or it cannot be read), each with what its folder holds (a
+// compressed folder: its loose files and the ones in its packs). The caller frees it with
+// mp_dlc_list_free, also when this fails.
+int mp_describe_full(const char *path, mp_describe *d, mp_complete *c, mp_dlc_list *dlc, mp_err *e);
 // Only whether it is complete (what verify says after it checks).
 int mp_describe_complete(const char *path, mp_complete *c, mp_err *e);
 // Whether the dump a .p5z was made of is complete, from the table the .p5z carries.

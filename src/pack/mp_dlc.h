@@ -54,5 +54,16 @@ char *mp_dlc_ini(const mp_dlc *v, size_t n, size_t *len);
 // 1 if cid is a content ID dlc_emu takes: 36 characters, '-' at 6 and 19, '_' at 16, the rest ASCII
 // letters and digits.
 int mp_dlc_content_id_ok(const char *cid);
+// 1 if a DLC has files of its own: one outside sce_sys/ that is not the OS's (mp_complete_is_junk).
+int mp_dlc_has_data(mp_source *s);
+
+// The DLC a dlc_emu.ini lists (a game's, written by MaxPack or by hand), as dlc_emu would take them:
+// each [PSAC] (data, its folder the mount point less "/app0/", "" when it is not one dlc_emu takes) and
+// [PSAL] section with a content_id of 36 printable characters, in their order, at most
+// MP_DLC_MAX_ENTRIES; other sections and keys are not read. More than MP_DLC_INI_MAX bytes lists none,
+// as dlc_emu reads none. Files and bytes are 0 (see mp_dlc_sizes). 0, or -1 out of memory.
+int mp_dlc_parse(const char *ini, size_t len, mp_dlc_list *out);
+// The files and bytes of each DLC with a folder: those of files[0..n) in it (ASCII case aside).
+void mp_dlc_sizes(mp_dlc_list *l, const mp_cfile *files, size_t n);
 
 #endif

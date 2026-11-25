@@ -1020,5 +1020,39 @@ if os.path.exists(payload):
 check("lpp120_payload", rc1 == 0 and rc2 == 0
       and digest == "084b53568666b6b3ba37c3721a94e899909660b5ea03b8d4ce0a4752f9401a65", err1[-300:] + err2[-300:])
 
+# ---- DLC: what info --json says of one and of a game, its icon (make_fpkg.py's DLC of the mini game) ----
+DATA_CID = "UP0000-PPSA00000_00-MAXPACKDLCDATA01"
+LICENSE_CID = "UP0000-PPSA00000_00-MAXPACKLICENSE01"
+
+
+def info_json(path):
+    rc, so, err = run("info", "--json", path)
+    try:
+        return rc, json.loads(so), err
+    except Exception:  # noqa: BLE001
+        return rc, {}, so + err
+
+
+rc, d, err = info_json(os.path.join(FX, "dlc_data.pkg"))
+check("info_json_dlc", rc == 0 and d.get("content") == "dlc" and d.get("dlc_data") is True
+      and d.get("title_id") == "PPSA00000" and d.get("content_id") == DATA_CID and d.get("dlc") == []
+      and d.get("kind") == "fpkg", str(d) + err[-300:])
+rc, d, err = info_json(os.path.join(FX, "dlc_license"))
+check("info_json_dlc_license", rc == 0 and d.get("content") == "dlc" and d.get("dlc_data") is False
+      and d.get("content_id") == LICENSE_CID, str(d) + err[-300:])
+rc, d, err = info_json(os.path.join(FX, "mini.pkg"))
+check("info_json_game_content", rc == 0 and d.get("content") == "game" and d.get("dlc_data") is False
+      and d.get("dlc") == [], str(d) + err[-300:])
+icon_out = os.path.join(TMP, "dlc_icon.png")
+if os.path.exists(icon_out):
+    os.remove(icon_out)
+rc, _, err = run("icon", os.path.join(FX, "dlc_data.pkg"), "-o", icon_out)
+check("icon_dlc", rc == 0 and open(icon_out, "rb").read(4) == b"\x89PNG", err[-300:])
+rc, so, _ = run("--capabilities")
+check("capabilities_dlc", json.loads(so).get("dlc") is True, so)
+# a DLC is still no game: analyze refuses its package
+rc, _, err = run("analyze", os.path.join(FX, "dlc_data.pkg"), "--list")
+check("analyze_dlc_refused", rc == 1 and "with --dlc" in err, err[-300:])
+
 print("test_cli: %d failures" % len(failures))
 sys.exit(1 if failures else 0)

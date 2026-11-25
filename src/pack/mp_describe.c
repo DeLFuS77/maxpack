@@ -92,10 +92,38 @@ static int cmp_cfile(const void *a, const void *b) {
     return strcmp(((const mp_cfile *)a)->path, ((const mp_cfile *)b)->path);
 }
 
+// What the DLC of dlc hold, from the files of a source.
+static int dlc_sizes_of_source(mp_source *s, mp_dlc_list *dlc, mp_err *e) {
+    size_t n = mp_source_count(s);
+    mp_cfile *files = malloc((n ? n : 1) * sizeof *files);
+    if (!files) {
+        mp_err_set(e, "out of memory");
+        return -1;
+    }
+    for (size_t i = 0; i < n; i++) {
+        files[i].path = mp_source_entry(s, i)->path;
+        files[i].size = mp_source_entry(s, i)->size;
+    }
+    mp_dlc_sizes(dlc, files, n);
+    free(files);
+    return 0;
+}
+
+// The DLC the dlc_emu.ini of bytes[0..len) lists (none when bytes is NULL). 0, or -1 out of memory.
+static int dlc_of_ini(const uint8_t *bytes, size_t len, mp_dlc_list *dlc, mp_err *e) {
+    if (!bytes) return 0;
+    if (mp_dlc_parse((const char *)bytes, len, dlc) != 0) {
+        mp_err_set(e, "out of memory");
+        return -1;
+    }
+    return 0;
+}
+
 // A compressed folder against its table: its loose files (not the packs and their index, which
 // MaxPack made) and the files in its packs. A table that is not loose may be in the packs. Packs
-// that cannot be opened leave it unchecked ("unreadable").
-static int complete_packed(const char *dir, mp_source *s, size_t ix, mp_complete *c, mp_err *e) {
+// that cannot be opened leave it unchecked ("unreadable"). dlc, when not NULL, gets what the folder
+// of each DLC holds, in the same files (only the loose ones when the packs cannot be opened).
+static int complete_packed(const char *dir, mp_source *s, size_t ix, mp_complete *c, mp_dlc_list *dlc, mp_err *e) {
     memset(c, 0, sizeof *c);
     uint8_t *idx = NULL, *table = NULL;
     size_t idx_len = 0, table_len = 0;
@@ -109,6 +137,7 @@ static int complete_packed(const char *dir, mp_source *s, size_t ix, mp_complete
         int rc = mp_complete_check(NULL, 0, NULL, 0, c, NULL);
         c->reason = "unreadable";
         if (rc != 0) mp_err_set(e, "out of memory");
+        if (rc == 0 && dlc) rc = dlc_sizes_of_source(s, dlc, e);
         return rc;
     }
     free(idx);
@@ -127,6 +156,7 @@ static int complete_packed(const char *dir, mp_source *s, size_t ix, mp_complete
         files[k++].size = mp_zpk_size(z, i);
     }
     qsort(files, k, sizeof *files, cmp_cfile);
+    if (dlc) mp_dlc_sizes(dlc, files, k);
     long t = find_ci(s, MP_PLAYGO_TABLE_PATH);
     int unreadable = 0;
     if (t >= 0) {
@@ -160,9 +190,9 @@ done:
     return rc;
 }
 
-static int describe_source(const char *path, mp_describe *d, mp_complete *c, mp_err *e) {
+static int describe_source(const char *path, mp_describe *d, mp_complete *c, mp_dlc_list *dlc, mp_err *e) {
     mp_source *s = NULL;
-    if (mp_source_open(path, &s, e) != 0) return -1;
+    if (mp_source_open_as(path, MP_OPEN_ANY, &s, e) != 0) return -1;
     int rc = -1;
     snprintf(d->kind, sizeof d->kind, "%s", mp_source_kind_name(s));
     snprintf(d->inner, sizeof d->inner, "%s", mp_source_inner_name(s));
@@ -194,9 +224,34 @@ static int describe_source(const char *path, mp_describe *d, mp_complete *c, mp_
         }
     }
     if (!d->content_id[0]) snprintf(d->content_id, sizeof d->content_id, "%s", mp_source_package_id(s));
-    if (c) {
-        int crc = ix >= 0 && mp_source_kind_of(s) == MP_SRC_DIR ? complete_packed(path, s, (size_t)ix, c, e)
-                                                                 : mp_complete_source(s, c, NULL, e);
+    // a DLC: its package's content ID, and the title ID of it (what pack --dlc matches with the game's)
+    d->dlc = mp_source_is_dlc_package(s) || (!d->packed && pj >= 0 && find_ci(s, "eboot.bin") < 0);
+    if (d->dlc) {
+        if (mp_source_is_dlc_package(s)) snprintf(d->content_id, sizeof d->content_id, "%s", mp_source_package_id(s));
+        if (strlen(d->content_id) >= 16 && d->content_id[6] == '-')
+            snprintf(d->title_id, sizeof d->title_id, "%.9s", d->content_id + 7);
+        d->dlc_data = mp_dlc_has_data(s);
+    }
+    if (dlc) {
+        long ini = find_ci(s, MP_DLC_INI);
+        uint8_t *b = NULL;
+        size_t len = 0;
+        if (ini >= 0 && read_entry(s, (size_t)ini, MP_DLC_INI_MAX, &b, &len, NULL) != 0) b = NULL;
+        int ir = dlc_of_ini(b, len, dlc, e);
+        free(b);
+        if (ir != 0) goto done;
+    }
+    if (c || dlc) {
+        mp_complete scratch, *cc = c ? c : &scratch;
+        int crc = 0;
+        if (ix >= 0 && mp_source_kind_of(s) == MP_SRC_DIR) {
+            crc = complete_packed(path, s, (size_t)ix, cc, dlc, e);
+        } else {
+            memset(&scratch, 0, sizeof scratch);
+            if (c) crc = mp_complete_source(s, c, NULL, e);
+            if (crc == 0 && dlc) crc = dlc_sizes_of_source(s, dlc, e);
+        }
+        if (!c) mp_complete_free(&scratch);
         if (crc != 0) goto done;
     }
     rc = 0;
@@ -336,7 +391,7 @@ int mp_complete_p5z(mp_p5z *p, mp_complete *c, mp_err *e) {
     return rc;
 }
 
-static int describe_p5z(const char *path, mp_describe *d, mp_complete *c, mp_err *e) {
+static int describe_p5z(const char *path, mp_describe *d, mp_complete *c, mp_dlc_list *dlc, mp_err *e) {
     mp_p5z *p = NULL;
     if (mp_p5z_open(path, &p, e) != 0) return -1;
     int rc = -1;
@@ -375,20 +430,45 @@ static int describe_p5z(const char *path, mp_describe *d, mp_complete *c, mp_err
         free(b);
     }
     if (c && mp_complete_p5z(p, c, e) != 0) goto done;
+    if (dlc) {
+        // its dlc_emu.ini (unreadable or too big: none), and what each folder holds of the dump
+        uint8_t *b = NULL;
+        size_t len = 0;
+        if (p5z_slurp(p, MP_DLC_INI, MP_DLC_INI_MAX, &b, &len, NULL) != 0) b = NULL;
+        int ir = dlc_of_ini(b, len, dlc, e);
+        free(b);
+        if (ir != 0) goto done;
+        mp_cfile *files = malloc((m->n ? m->n : 1) * sizeof *files);
+        if (!files) {
+            mp_err_set(e, "out of memory");
+            goto done;
+        }
+        for (size_t i = 0; i < m->n; i++) {
+            files[i].path = m->v[i].path;
+            files[i].size = m->v[i].size;
+        }
+        mp_dlc_sizes(dlc, files, m->n);
+        free(files);
+    }
     rc = 0;
 done:
     mp_p5z_close(p);
     return rc;
 }
 
-int mp_describe_path_ex(const char *path, mp_describe *d, mp_complete *c, mp_err *e) {
+int mp_describe_full(const char *path, mp_describe *d, mp_complete *c, mp_dlc_list *dlc, mp_err *e) {
     memset(d, 0, sizeof *d);
     if (c) memset(c, 0, sizeof *c);
+    if (dlc) memset(dlc, 0, sizeof *dlc);
     if (!path || !*path) {
         mp_err_set(e, "missing path");
         return -1;
     }
-    return is_p5z_name(path) ? describe_p5z(path, d, c, e) : describe_source(path, d, c, e);
+    return is_p5z_name(path) ? describe_p5z(path, d, c, dlc, e) : describe_source(path, d, c, dlc, e);
+}
+
+int mp_describe_path_ex(const char *path, mp_describe *d, mp_complete *c, mp_err *e) {
+    return mp_describe_full(path, d, c, NULL, e);
 }
 
 int mp_describe_path(const char *path, mp_describe *d, mp_err *e) { return mp_describe_path_ex(path, d, NULL, e); }
@@ -413,7 +493,7 @@ int mp_describe_icon(const char *path, uint8_t **png, size_t *len, mp_err *e) {
         return rc;
     }
     mp_source *s = NULL;
-    if (mp_source_open(path, &s, e) != 0) return -1;
+    if (mp_source_open_as(path, MP_OPEN_ANY, &s, e) != 0) return -1;   // a DLC's icon too
     long i = find_ci(s, ICON_PATH);
     int rc = -1;
     if (i < 0) mp_err_set(e, "it has no %s", ICON_PATH);

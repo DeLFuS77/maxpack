@@ -998,7 +998,9 @@ static int cmd_info_json(const char *path) {
     mp_err e = {{0}};
     mp_describe d;
     mp_complete c;
-    if (mp_describe_path_ex(path, &d, &c, &e) != 0) {
+    mp_dlc_list dlc;
+    if (mp_describe_full(path, &d, &c, &dlc, &e) != 0) {
+        mp_dlc_list_free(&dlc);
         fprintf(stderr, "error: %s\n", e.msg);
         return 1;
     }
@@ -1019,6 +1021,17 @@ static int cmd_info_json(const char *path) {
            (unsigned long long)d.volumes);
     printf(",\"has_runtime\":%s,\"has_zstd_runtime\":%s,\"packed\":%s", d.has_runtime ? "true" : "false",
            d.has_zstd_runtime ? "true" : "false", d.packed ? "true" : "false");
+    // a game or a DLC (and whether that one has files of its own), and the DLC the game carries
+    printf(",\"content\":\"%s\",\"dlc_data\":%s,\"dlc\":[", d.dlc ? "dlc" : "game", d.dlc_data ? "true" : "false");
+    for (size_t i = 0; i < dlc.n; i++) {
+        printf("%s{\"content_id\":", i ? "," : "");
+        print_json_string(dlc.v[i].content_id);
+        printf(",\"data\":%s,\"folder\":", dlc.v[i].data ? "true" : "false");
+        print_json_string(dlc.v[i].folder);
+        printf(",\"size\":%llu,\"files\":%llu}", (unsigned long long)dlc.v[i].bytes, (unsigned long long)dlc.v[i].files);
+    }
+    printf("]");
+    mp_dlc_list_free(&dlc);
     // whether the game is complete against the list of the original package's files (with the
     // first extra paths)
     mp_jbuf b = {0};
@@ -1409,7 +1422,7 @@ int main(int argc, char **argv) {
         // what the window needs from this version of the engine
         printf("{\"progress_json\":true,\"control_stdin\":true,\"max_file_size\":true,\"info_json\":true,"
                "\"icon\":true,\"packs\":true,\"content_id\":true,\"levels\":true,\"measure\":true,"
-               "\"images\":true,\"fpkg\":true,\"passcode\":true,\"completeness\":true}\n");
+               "\"images\":true,\"fpkg\":true,\"passcode\":true,\"completeness\":true,\"dlc\":true}\n");
         return 0;
     }
     if (argc >= 2 && (!strcmp(argv[1], "--help") || !strcmp(argv[1], "-h") || !strcmp(argv[1], "help"))) {

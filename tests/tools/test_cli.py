@@ -783,6 +783,11 @@ check("fpkg_pack_passcode_code", rc == 1 and res and res[-1].get("error") == "pa
       so[-300:] + err[-300:])
 rc, _, err = run("pack", pass_pkg, "-o", dst, "--passcode", PASSCODE, "--level", "3", "--threads", "2")
 check("fpkg_pack_with_passcode", rc == 0 and os.path.exists(os.path.join(dst, "eboot.bin")), err[-300:])
+# verify --against the package: with its passcode it compares, without it it says which is needed
+rc, _, err = run("verify", dst, "--against", pass_pkg, "--passcode", PASSCODE, "--threads", "2")
+check("fpkg_verify_against", rc == 0, err[-300:])
+rc, _, err = run("verify", dst, "--against", pass_pkg, "--threads", "2")
+check("fpkg_verify_against_needs_passcode", rc == 1 and "--passcode" in err, err[-300:])
 rc, so, err = run("pack", pass_pkg, "-o", dst + "_bad", "--passcode", "x" * 32, "--progress", "json")
 check("fpkg_pack_wrong_passcode", rc == 1 and "than the one given" in err, err[-300:])
 # A package packs to the same .p5z as the basic game's .exfat (its files have the same dates).

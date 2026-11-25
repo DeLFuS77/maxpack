@@ -167,15 +167,30 @@ def game():
     return files
 
 
+def fake_signed(path, data):
+    """Whether a builder fake-signs this file (FakeSignInnerModules): eboot.bin and the .elf, .prx and
+    .sprx files that are raw ELF; one that is a SELF already is kept as it is."""
+    name = path.rsplit("/", 1)[-1].lower()
+    return (name == "eboot.bin" or name.endswith((".elf", ".prx", ".sprx"))) and data[:4] == b"\x7fELF"
+
+
 def as_built(files):
-    """What a package builder makes of a dump (ProsperoDebugPackageBuilder.cs): it adds
-    sce_sys/pfs-version.dat and sce_sys/about/right.sprx when they are missing, makes its own
-    playgo-chunk.dat and the playgo-hash-table.dat and playgo-ficm.dat that go with it, and a DDS
-    beside each PNG icon or picture. The contents here stand in for those (the real right.sprx is a
-    fake-signed module of 12,752 bytes; the DDS are BC7 images). (files, the differences)."""
+    """What a package builder makes of a dump (ProsperoDebugPackageBuilder.cs): it fake-signs the
+    executables that are raw ELF, adds sce_sys/pfs-version.dat, sce_sys/keystone and
+    sce_sys/about/right.sprx when they are missing, makes its own playgo-chunk.dat and the
+    playgo-hash-table.dat and playgo-ficm.dat that go with it, and a DDS beside each PNG icon or
+    picture. The contents here stand in for those (a fake-signed SELF wraps the ELF in a header and
+    its segments; the real right.sprx is a fake-signed module of 12,752 bytes; the DDS are BC7
+    images). (files, the differences)."""
     have = {p for p, _ in files}
-    out = [(p, d) for p, d in files if p != "sce_sys/playgo-chunk.dat"]
-    differ = []
+    out, differ = [], []
+    for p, d in files:
+        if p == "sce_sys/playgo-chunk.dat":
+            continue
+        if fake_signed(p, d):
+            d = b"\x4f\x15\x3d\x1d" + bytes(0x1C) + d   # a SELF header stands in for the real one
+            differ.append(("changed", p))
+        out.append((p, d))
 
     def add(path, data, how="added"):
         out.append((path, data))
@@ -183,6 +198,8 @@ def as_built(files):
 
     if "sce_sys/pfs-version.dat" not in have:
         add("sce_sys/pfs-version.dat", b"01.000.000")
+    if "sce_sys/keystone" not in have:
+        add("sce_sys/keystone", b"keystone\x02\x00" + bytes(0x56))
     if "sce_sys/about/right.sprx" not in have:
         add("sce_sys/about/right.sprx", b"\x54\x14\xf5\xee" + text(12748, 11))
     add("sce_sys/playgo-chunk.dat", b"PLGO" + text(400, 12), "changed" if "sce_sys/playgo-chunk.dat" in have else "added")

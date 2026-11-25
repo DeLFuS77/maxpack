@@ -21,7 +21,7 @@ badtable/ (a truncated table), alien/ (a playgo-hash-table.dat of another format
 
 And in <out>/dumpindex/, dumps without that table but with the list the dump tool wrote,
 ampr_emu.index (AMPRIDX3, written with tools/ampr_ref.py): ok/ (every file it lists, with the
-differences a fine dump shows: a release .nfo it lists that is not there and one it does not list,
+differences a fine dump shows: an .nfo it lists that is not there and one it does not list,
 fakelib/ changed, Unreal's Saved/Config written at run time), broken/ (two files gone and one cut
 short), foreign/ (the list of another game), damaged/ (a cut list), packed/ (its files in AMPRPAK4
 packs), both/ (a complete table and a list that disagrees: the table wins) and fallback/ (a table of
@@ -143,9 +143,9 @@ SAVED = "Media/Game/Saved/Config/PS5/Engine.ini"
 FINE = IMAGE + ENTRIES + [("decrypted/eboot.bin", random.Random(43).randbytes(7000)),
                           ("fakelib/libScePlayGo.sprx", random.Random(44).randbytes(900)),
                           (SAVED, b"[Core]\n" * 9)]
-LISTED_ONLY = [("Release/info.nfo", 4398)]
+LISTED_ONLY = [("Notes/info.nfo", 4398)]
 CHANGED = {"fakelib/libScePlayGo.sprx": 1200, SAVED: 20}
-UNLISTED = [("Release/other.nfo", b"nfo" * 40), ("Media/Game/Saved/Config/PS5/GameUserSettings.ini", b"x")]
+UNLISTED = [("Notes/other.nfo", b"nfo" * 40), ("Media/Game/Saved/Config/PS5/GameUserSettings.ini", b"x")]
 
 
 def dump_index(files, listed_only=(), changed=None):

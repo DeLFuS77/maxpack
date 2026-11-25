@@ -623,7 +623,7 @@ MP_TEST(dump_index_rule) {
     static const irow rows[] = {{"eboot.bin", 10},          {"data/a.bin", 20},     {"Data/B.bin", 30},
                                 {"sce_sys/param.json", 5},  {"decrypted/eboot.bin", 10},
                                 // what a fine dump differs in: never counted
-                                {"Release/info.nfo", 4000}, {"fakelib/libScePlayGo.sprx", 900},
+                                {"Notes/info.nfo", 4000}, {"fakelib/libScePlayGo.sprx", 900},
                                 {"Media/Game/Saved/Config/PS5/Engine.ini", 20}, {"fakelib/gone.sprx", 1},
                                 {"Media/Saved/Logs/game.log", 3}};
     size_t dl = 0, n = sizeof rows / sizeof *rows;
@@ -637,7 +637,7 @@ MP_TEST(dump_index_rule) {
     add(&l, "fakelib/libScePlayGo.sprx", 1200);   // replaced since
     add(&l, "Media/Game/Saved/Config/PS5/Engine.ini", 33);   // written while it ran
     add(&l, "Media/Saved/Logs/game.log", 99);
-    add(&l, "Release/other.nfo", 50);   // the release's, not listed
+    add(&l, "Notes/other.nfo", 50);   // not listed
     add(&l, "fakelib/libSceAgc.sprx", 70);   // a backport added since
     add(&l, "ampr_emu.index", dl);
     add(&l, "Thumbs.db", 1);
@@ -650,7 +650,7 @@ MP_TEST(dump_index_rule) {
     MP_CHECK_EQ_U64(c.present, 5);
     MP_CHECK_EQ_U64(c.missing, 0);
     MP_CHECK_EQ_U64(c.size_mismatch, 0);
-    // what the list does not have: the release's .nfo and the backport (informative)
+    // what the list does not have: an .nfo and the backport (informative)
     MP_CHECK_EQ_U64(c.extra_count, 2);
     MP_CHECK_EQ_U64(c.extra_bytes, 120);
     // a leftover by its name, which this list does not prove is not the game's

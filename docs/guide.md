@@ -646,7 +646,7 @@ carries it, MaxPack checks the dump's files against it, in `analyze`, `info --js
   wrote, with the size it wrote (`missing`, `size_mismatch`), which finds a copy cut short or damaged.
   It does not prove the dump tool got every file of the game, so MaxPack never says "complete" from it:
   "all 95 files the dump tool wrote are here", or "damaged copy: ...".
-  - Not counted, as a fine dump differs from its list in them: release files (`*.nfo`, `*.sfv`,
+  - Not counted, as a fine dump differs from its list in them: info and checksum files that are not the game's (`*.nfo`, `*.sfv`,
     `*.diz`), the emulators you change (`fakelib/`, `fakelib2/`, `dlc_emu.ini`), what the game writes
     while it runs (anything under a `Saved/` folder, `*.log`), the runtime's files (`ampr_commands.bin`,
     `apr_emu.log`) and the list itself. The dates are never compared: copies and archives change them.

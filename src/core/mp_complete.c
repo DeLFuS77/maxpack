@@ -212,7 +212,7 @@ static long find_row(const drow *v, size_t n, const char *path) {
     return -1;
 }
 
-// What a fine dump differs from its list in, which is never counted: the release's files, the
+// What a fine dump differs from its list in, which is never counted: info and checksum files that are not the game's, the
 // emulators the user changes, what the game writes while it runs, the runtime's files and the list.
 static int not_counted(const char *path) {
     size_t n = strlen(path);

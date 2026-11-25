@@ -36,7 +36,7 @@ All notable changes to MaxPack are listed here. The format follows
     instead, and said so (`source`: `playgo` or `dump_index`): it tells whether the copy has every
     file the dump tool wrote with the size it wrote (`missing`, and the new `size_mismatch`), which
     finds copies cut short or damaged; never that the dump is complete. What a fine dump differs from
-    its list in is not counted: release files (`*.nfo`, `*.sfv`, `*.diz`), the emulators the user
+    its list in is not counted: info and checksum files that are not the game's (`*.nfo`, `*.sfv`, `*.diz`), the emulators the user
     changes (`fakelib/`, `fakelib2/`, `dlc_emu.ini`), what the game writes while it runs (`Saved/`,
     `*.log`) and the runtime's own files; on 15 real dumps it raised no false alarm
     (12 checked, 3 without a list). A list that cannot be trusted is not used, and the reason says why

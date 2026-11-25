@@ -21,7 +21,7 @@
 // file the dump tool wrote, with the sizes it wrote them (it finds copies cut short or damaged), not
 // that the dump tool got every file of the game; the source says which list it was. Against it:
 //   - listed: each row of the list (case does not matter, as for the runtime), but what a fine dump
-//     differs in, which is not counted: release files (*.nfo, *.sfv, *.diz), the emulators the user
+//     differs in, which is not counted: info and checksum files that are not the game's (*.nfo, *.sfv, *.diz), the emulators the user
 //     changes (fakelib/, fakelib2/, dlc_emu.ini), what the game writes while it runs (anything under a
 //     Saved/ folder, *.log), the runtime's own files (ampr_commands.bin, apr_emu.log) and the list
 //     itself; present: there with its size; missing: not there; size_mismatch: there, of another size;

@@ -65,6 +65,8 @@ Var FilesBox
 Page custom ExplorerPage ExplorerLeave
 !insertmacro MUI_PAGE_INSTFILES
 !define MUI_FINISHPAGE_RUN "$INSTDIR\MaxPack.exe"
+; nothing MaxPack installs needs a restart: the finish page never offers one
+!define MUI_FINISHPAGE_NOREBOOTSUPPORT
 !insertmacro MUI_PAGE_FINISH
 
 !insertmacro MUI_UNPAGE_CONFIRM
@@ -324,13 +326,13 @@ Section "MaxPack"
   File "/oname=maxpack-par2.exe" "${PAR2}"
   ; the thumbnail provider of .p5z files, which the Explorer (dllhost) may have loaded while it is updated: a
   ; loaded DLL can be renamed but not overwritten, so it is set aside, and goes now if it can, else at the next
-  ; update or uninstall (or at a restart, when Windows lets this user ask for that)
+  ; update or uninstall. Never left for a restart: that would make the finish page ask for one
   Delete "$INSTDIR\maxpack-thumbs-*.old"
   Delete "$INSTDIR\maxpack-thumbs.dll"
   ${If} ${FileExists} "$INSTDIR\maxpack-thumbs.dll"
     System::Call "kernel32::GetTickCount() i .r0"
     Rename "$INSTDIR\maxpack-thumbs.dll" "$INSTDIR\maxpack-thumbs-$0.old"
-    Delete /REBOOTOK "$INSTDIR\maxpack-thumbs-$0.old"
+    Delete "$INSTDIR\maxpack-thumbs-$0.old"
   ${EndIf}
   File "/oname=maxpack-thumbs.dll" "${THUMBS}"
   File "/oname=LICENSE.txt" "${LICENSE}"
@@ -390,7 +392,7 @@ Section "Uninstall"
   Delete "$INSTDIR\maxpack-par2.exe"
   ; the Explorer may still have the thumbnail provider loaded (its keys are gone: it loads it no more)
   Delete /REBOOTOK "$INSTDIR\maxpack-thumbs.dll"
-  Delete /REBOOTOK "$INSTDIR\maxpack-thumbs-*.old"
+  Delete "$INSTDIR\maxpack-thumbs-*.old"
   Delete "$INSTDIR\LICENSE.txt"
   Delete "$INSTDIR\THIRD_PARTY_NOTICES.txt"
   Delete "$INSTDIR\uninstall.exe"

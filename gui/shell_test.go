@@ -195,19 +195,39 @@ func TestInstallerScript(t *testing.T) {
 		`Page custom ExplorerPage ExplorerLeave`,
 		`Delete "$SENDTO\MaxPack.lnk"`,
 		`${If} $1 == "MaxPack.p5z"`,
-		// the thumbnail provider: installed next to MaxPack, set aside when the Explorer has it loaded,
-		// and its keys taken away with the other places
+		// the thumbnail provider: installed next to MaxPack, set aside when the Explorer has it loaded
+		// (deleted then if it can, else by the next update or uninstall), and its keys taken away with
+		// the other places
 		`File "/oname=maxpack-thumbs.dll" "${THUMBS}"`,
 		`Rename "$INSTDIR\maxpack-thumbs.dll" "$INSTDIR\maxpack-thumbs-$0.old"`,
-		`Delete /REBOOTOK "$INSTDIR\maxpack-thumbs-$0.old"`,
+		`Delete "$INSTDIR\maxpack-thumbs-$0.old"`,
+		`Delete "$INSTDIR\maxpack-thumbs-*.old"`,
 		`Delete /REBOOTOK "$INSTDIR\maxpack-thumbs.dll"`,
-		`Delete /REBOOTOK "$INSTDIR\maxpack-thumbs-*.old"`,
 		`DeleteRegKey HKCU "Software\Classes\CLSID\{266D6364-17C0-4B3E-BB33-7EEB90C91837}"`,
-		`DeleteRegKey HKCU "Software\Classes\SystemFileAssociations\.p5z\ShellEx\{e357fccd-a995-4576-b01f-234630154e96}"`,
+		// the finish page never offers to restart the PC
+		`!define MUI_FINISHPAGE_NOREBOOTSUPPORT`,
 	} {
 		if !strings.Contains(script, want) {
 			t.Errorf("the installer does not have: %s", want)
 		}
+	}
+	// An install or an update never asks to restart the PC: a delete left for the restart (/REBOOTOK) raises
+	// NSIS's reboot flag, and the finish page would then offer "Reboot now", ticked. Only the uninstaller,
+	// which has no finish page, may leave one.
+	install := script
+	if start := strings.Index(script, `Section "Uninstall"`); start >= 0 {
+		if end := strings.Index(script[start:], "SectionEnd"); end >= 0 {
+			install = script[:start] + script[start+end:]
+		}
+	}
+	if strings.Contains(install, "/REBOOTOK") || strings.Contains(install, "SetRebootFlag true") {
+		t.Error("the install may set the reboot flag")
+	}
+	if no, page := strings.Index(script, "!define MUI_FINISHPAGE_NOREBOOTSUPPORT"), strings.Index(script, "!insertmacro MUI_PAGE_FINISH"); no < 0 || no > page {
+		t.Error("the finish page has its restart")
+	}
+	if strings.Contains(script, "MUI_UNPAGE_FINISH") {
+		t.Error("the uninstaller has a finish page, which may offer to restart")
 	}
 	if strings.Contains(script, "NSD_Check") || strings.Count(script, "${BST_UNCHECKED}") != 3 {
 		t.Error("a place is ticked by default")

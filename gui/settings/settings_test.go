@@ -21,7 +21,8 @@ func useFolder(t *testing.T) string {
 
 func TestSettingsRoundtrip(t *testing.T) {
 	useFolder(t)
-	want := Settings{Lang: "en", Theme: "dark", Runtime: `C:\emu\runtime.elf`, LastDest: `D:\Juegos`, Mode: "folder", Level: 7, NameTemplate: "{title} [{id}]"}
+	want := Settings{Lang: "en", Theme: "dark", Runtime: `C:\emu\runtime.elf`, LastDest: `D:\Juegos`, Mode: "folder", Level: 7, NameTemplate: "{title} [{id}]",
+		RepairData: true, RepairPercent: 10}
 	if err := Save(want); err != nil {
 		t.Fatal(err)
 	}
@@ -187,5 +188,34 @@ func TestSettingsOfTheQueue(t *testing.T) {
 		if got := want.Normalize(); got.NameTemplate != "{title} [{id}]" {
 			t.Errorf("%q: %q", bad, got.NameTemplate)
 		}
+	}
+}
+
+// The repair data of 1.0.4 is off by default, and 5 % is what it proposes; the percentage chosen is
+// kept apart from whether it is on, and one the window does not offer goes back to 5 %.
+func TestSettingsRepairData(t *testing.T) {
+	folder := useFolder(t)
+	got, err := Load()
+	if err != nil || got.RepairData || got.RepairPercent != 5 {
+		t.Fatalf("defaults: %+v, %v", got, err)
+	}
+	want := Defaults()
+	want.RepairData, want.RepairPercent = true, 1
+	if err := Save(want); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := Load(); err != nil || got != want {
+		t.Fatalf("%+v, %v; expected %+v", got, err, want)
+	}
+	for _, bad := range []int{0, 2, -5, 100} {
+		want.RepairPercent = bad
+		if got := want.Normalize(); got.RepairPercent != 5 {
+			t.Errorf("%d: %d", bad, got.RepairPercent)
+		}
+	}
+	// the settings of 1.0.3 have none: off, 5 %
+	os.WriteFile(filepath.Join(folder, "settings.json"), []byte(`{"Theme":"dark","Level":12}`), 0o644)
+	if got, _ := Load(); got.RepairData || got.RepairPercent != 5 || got.Level != 12 {
+		t.Errorf("1.0.3: %+v", got)
 	}
 }

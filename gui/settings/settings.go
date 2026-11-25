@@ -2,7 +2,7 @@
 
 // Package settings keeps what the user chose between runs: language, theme, mode, level, the
 // runtime of ampr-emu-ng, the last destination, what becomes of the originals, the priority of the
-// engine, the names of the files and the threads it compresses with.
+// engine, the names of the files, the threads it compresses with and the repair data of a .p5z.
 package settings
 
 import (
@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/DeLFuS77/maxpack/gui/internal/par2"
 	"github.com/DeLFuS77/maxpack/gui/internal/portable"
 	"github.com/DeLFuS77/maxpack/gui/internal/system"
 	"github.com/DeLFuS77/maxpack/gui/jobs"
@@ -66,6 +67,10 @@ type Settings struct {
 	NameTemplate string
 	// Threads are the threads Compress gives the engine, from Measure this PC; 0 is all the CPU's
 	Threads int
+	// RepairData gives each .p5z Compress makes repair data (a PAR2 set next to it), of
+	// RepairPercent of it: 1, 5 or 10, kept also while it is off
+	RepairData    bool
+	RepairPercent int
 }
 
 const fileName = "settings.json"
@@ -75,9 +80,10 @@ const fileName = "settings.json"
 var Dir = portable.DataFolder
 
 // Defaults are the settings of a first run: no language chosen (the system's), the system theme,
-// an installer (.p5z), level 19, the originals kept, the normal priority and the names of before.
+// an installer (.p5z), level 19, the originals kept, the normal priority, the names of before, and
+// no repair data (5 % when it is turned on).
 func Defaults() Settings {
-	return Settings{Theme: "system", Mode: jobs.ModeP5z, Level: 19, NameTemplate: jobs.DefaultTemplate}
+	return Settings{Theme: "system", Mode: jobs.ModeP5z, Level: 19, NameTemplate: jobs.DefaultTemplate, RepairPercent: par2.DefaultPercent}
 }
 
 // EffectiveLang is the language the window speaks: the one chosen, else the one of the system,
@@ -117,6 +123,9 @@ func (s Settings) Normalize() Settings {
 	}
 	if s.Threads < 0 || s.Threads > 1024 {
 		s.Threads = d.Threads
+	}
+	if !par2.ValidPercent(s.RepairPercent) {
+		s.RepairPercent = d.RepairPercent
 	}
 	return s
 }
@@ -165,6 +174,8 @@ func Load() (Settings, error) {
 	read("LowPriority", &s.LowPriority)
 	read("NameTemplate", &s.NameTemplate)
 	read("Threads", &s.Threads)
+	read("RepairData", &s.RepairData)
+	read("RepairPercent", &s.RepairPercent)
 	return s.Normalize(), nil
 }
 

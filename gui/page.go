@@ -18,6 +18,7 @@ import (
 	"sync"
 
 	"github.com/DeLFuS77/maxpack/gui/core"
+	"github.com/DeLFuS77/maxpack/gui/internal/par2"
 	"github.com/DeLFuS77/maxpack/gui/internal/system"
 	"github.com/DeLFuS77/maxpack/gui/internal/trash"
 	"github.com/DeLFuS77/maxpack/gui/jobs"
@@ -33,14 +34,44 @@ type Game struct {
 }
 
 // GameDetails is all the engine says of a game, for Details: with its packs, the files stored
-// in them and their volumes (0 when it is not compressed).
+// in them and their volumes (0 when it is not compressed), and the repair data of a .p5z.
 type GameDetails struct {
 	Game
 	InstallSize, P5zSize uint64
 	Files                int
 	PackedFiles, Volumes uint64
 	HasRuntime           bool
+	Repair               RepairView
 }
+
+// RepairView is the repair data of a .p5z as the page tells it: State is "none" (it has none),
+// "match" (its own), "other" (a set of another file, named as its own: never used) or "unreadable";
+// "" for what is not a .p5z. For its own set: the percentage of the .p5z it is, how many blocks it
+// can repair and of what size, what that is in all (Capacity) and what its files take (Bytes).
+type RepairView struct {
+	State     string `json:"state"`
+	Percent   int    `json:"percent"`
+	Blocks    int    `json:"blocks"`
+	BlockSize uint64 `json:"blockSize"`
+	Capacity  uint64 `json:"capacity"`
+	Bytes     uint64 `json:"bytes"`
+}
+
+// repairView is the repair data next to the .p5z at path.
+func repairView(path string) RepairView {
+	if !strings.EqualFold(filepath.Ext(path), ".p5z") {
+		return RepairView{}
+	}
+	info := par2.Inspect(path)
+	view := RepairView{State: info.State}
+	if info.State == par2.StateMatch {
+		view.Percent, view.Blocks, view.BlockSize, view.Capacity, view.Bytes = info.Percent, info.Recovery, info.BlockSize, info.Capacity, info.Bytes
+	}
+	return view
+}
+
+// RepairInfo gives the repair data next to a .p5z, for Verify and Details.
+func (a *App) RepairInfo(path string) RepairView { return repairView(path) }
 
 // Choices are the options of a queue as the page sends them: the ones jobs plans with, the
 // destinations the user said may be replaced, and, when compressing, whether the originals go
@@ -217,9 +248,13 @@ func (a *App) Details(path string) (GameDetails, error) {
 	}
 	number := func(key string) uint64 { n, _ := info[key].(float64); return uint64(n) }
 	carries, _ := info["has_runtime"].(bool)
-	return GameDetails{Game: game, InstallSize: number("install_size"), P5zSize: number("p5z_size"),
+	details := GameDetails{Game: game, InstallSize: number("install_size"), P5zSize: number("p5z_size"),
 		Files: int(number("files")), PackedFiles: number("packed_files"), Volumes: number("volumes"),
-		HasRuntime: carries}, nil
+		HasRuntime: carries}
+	if game.Kind == "p5z" {
+		details.Repair = repairView(path)
+	}
+	return details, nil
 }
 
 // sectionOptions are the options of a queue of a section: its mode, whatever the page sent.
@@ -234,7 +269,10 @@ func sectionOptions(section string, o jobs.Options) (jobs.Options, error) {
 			o.Mode = jobs.ModeOriginal
 		}
 	case "verify":
-		o.Mode = jobs.ModeVerify
+		// Verify also repairs a .p5z with its repair data, and adds repair data to one
+		if o.Mode != jobs.ModeRepair && o.Mode != jobs.ModeProtect {
+			o.Mode = jobs.ModeVerify
+		}
 	default:
 		return o, fmt.Errorf("the section %q does not do jobs", section)
 	}
@@ -272,10 +310,17 @@ func (a *App) plans(section string, items []jobs.Item, choices Choices) ([]jobs.
 	}
 	saved, _ := settings.Load()
 	o.NameTemplate, o.LowPriority = saved.NameTemplate, saved.LowPriority
-	// the threads a measure of this PC found, only to compress (0: all the CPU's)
+	// the threads a measure of this PC found, to compress and for par2 (0: all the CPU's)
 	o.Threads = 0
-	if section == "compress" {
+	if section == "compress" || o.Mode == jobs.ModeRepair || o.Mode == jobs.ModeProtect {
 		o.Threads = saved.Threads
+	}
+	// repair data only for a .p5z, of a percentage the window offers
+	if (o.Mode != jobs.ModeP5z && o.Mode != jobs.ModeProtect) || !par2.ValidPercent(o.Repair) {
+		o.Repair = 0
+	}
+	if o.Mode == jobs.ModeProtect && o.Repair == 0 {
+		o.Repair = saved.RepairPercent
 	}
 	o.Originals, o.OriginalsNoBin = jobs.OriginalsKeep, false
 	if section == "compress" && choices.DeleteOriginals {
@@ -292,6 +337,10 @@ func planWith(items []jobs.Item, o jobs.Options, drives jobs.FS) []jobs.Plan {
 	switch o.Mode {
 	case jobs.ModeVerify:
 		return jobs.PlanVerify(items)
+	case jobs.ModeRepair:
+		return jobs.PlanRepair(items, o, drives)
+	case jobs.ModeProtect:
+		return jobs.PlanProtect(items, o, drives)
 	case jobs.ModeOriginal, jobs.ModeConsole:
 		return jobs.PlanDecompress(items, o, drives)
 	}
@@ -434,7 +483,7 @@ func (a *App) Append(section string, items []jobs.Item, replace []string, keepOr
 		return 0, errors.New("the queue has ended")
 	}
 	if q.share != nil {
-		q.share.add(plans, q.o.Mode)
+		q.share.add(plans, q.o.Mode, q.o.Repair)
 	}
 	for i := range plans {
 		a.send("job:item", itemEvent{I: first + i, State: jobs.StateQueued})

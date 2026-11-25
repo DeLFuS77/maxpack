@@ -223,7 +223,7 @@ func TestSizeText(t *testing.T) {
 // loose files, and it gets to the end only once the game ends.
 func TestTaskbarFollowsThePhases(t *testing.T) {
 	near := func(got, want float64) bool { return math.Abs(got-want) < 1e-9 }
-	q := newShare([]jobs.Plan{{Item: jobs.Item{OriginalSize: 1000}}}, jobs.ModeP5z)
+	q := newShare([]jobs.Plan{{Item: jobs.Item{OriginalSize: 1000}}}, jobs.ModeP5z, 0)
 	steps := []struct {
 		state, phase string
 		done, total  uint64
@@ -251,7 +251,7 @@ func TestTaskbarFollowsThePhases(t *testing.T) {
 		}
 	}
 	// two games: each weighs its size, and what was shown never goes back
-	q = newShare([]jobs.Plan{{Item: jobs.Item{OriginalSize: 1000}}, {Item: jobs.Item{OriginalSize: 3000}}}, jobs.ModeFolder)
+	q = newShare([]jobs.Plan{{Item: jobs.Item{OriginalSize: 1000}}, {Item: jobs.Item{OriginalSize: 3000}}}, jobs.ModeFolder, 0)
 	q.item(0, jobs.StatePacking)
 	q.item(0, jobs.StateOK)
 	if got := q.value(); !near(got, 0.25) {

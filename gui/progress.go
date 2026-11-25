@@ -8,12 +8,14 @@ import (
 	"time"
 
 	"github.com/DeLFuS77/maxpack/gui/core"
+	"github.com/DeLFuS77/maxpack/gui/internal/par2"
 	"github.com/DeLFuS77/maxpack/gui/jobs"
 )
 
 // itemEvent is "job:item": game i of the queue is in state now, and why when it failed or was
 // skipped. Once done, out is what it made and size what that takes; a folder for the console
-// says whether it is in homebrew/ at the root of its drive, where ShadowMountPlus sees it.
+// says whether it is in homebrew/ at the root of its drive, where ShadowMountPlus sees it; a .p5z
+// that got repair data (made with it, or added to it), what its set takes.
 type itemEvent struct {
 	I        int    `json:"i"`
 	State    string `json:"state"`
@@ -21,6 +23,7 @@ type itemEvent struct {
 	Out      string `json:"out,omitempty"`
 	Size     uint64 `json:"size,omitempty"`
 	Homebrew bool   `json:"homebrew,omitempty"`
+	Repair   uint64 `json:"repair,omitempty"`
 }
 
 // progressEvent is "job:progress": how far the step of game i is (its phase, from the engine),
@@ -75,19 +78,45 @@ type teller struct {
 	app    *App
 	plans  *jobs.Queue
 	mode   jobs.Mode
+	repair int
 	drives jobs.FS
 	mutex  sync.Mutex
 	speed  rater
 	sent   time.Time
 }
 
+// writesOut tells whether a queue of a mode makes something of its own (not only checks, repairs or
+// adds repair data to what is there).
+func writesOut(mode jobs.Mode) bool {
+	return mode != jobs.ModeVerify && mode != jobs.ModeRepair && mode != jobs.ModeProtect
+}
+
+// setSize is what the repair data of a .p5z takes, 0 when it has none of its own.
+func setSize(p5z string) uint64 {
+	var size uint64
+	if par2.Inspect(p5z).State == par2.StateMatch {
+		for _, file := range par2.Files(p5z) {
+			size += jobs.SizeOf(file)
+		}
+	}
+	return size
+}
+
 func (t *teller) item(i int, state, detail string) {
 	e := itemEvent{I: i, State: state, Detail: detail}
-	if p, ok := t.plans.Plan(i); ok && state == jobs.StateOK && t.mode != jobs.ModeVerify {
-		e.Out = p.Out
-		e.Size = jobs.SizeOf(e.Out)
-		if t.mode == jobs.ModeFolder || t.mode == jobs.ModeConsole {
-			e.Homebrew = inHomebrew(e.Out, t.drives)
+	if p, ok := t.plans.Plan(i); ok && state == jobs.StateOK {
+		if writesOut(t.mode) {
+			e.Out = p.Out
+			e.Size = jobs.SizeOf(e.Out)
+			if t.mode == jobs.ModeFolder || t.mode == jobs.ModeConsole {
+				e.Homebrew = inHomebrew(e.Out, t.drives)
+			}
+		}
+		switch {
+		case t.mode == jobs.ModeP5z && t.repair > 0:
+			e.Repair = setSize(p.Out)
+		case t.mode == jobs.ModeProtect:
+			e.Repair = setSize(p.Item.Path)
 		}
 	}
 	t.app.send("job:item", e)
@@ -117,9 +146,9 @@ type share struct {
 }
 
 // add counts games added to the queue (Append), at its end.
-func (s *share) add(plans []jobs.Plan, mode jobs.Mode) {
+func (s *share) add(plans []jobs.Plan, mode jobs.Mode, repair int) {
 	for _, p := range plans {
-		s.rows = append(s.rows, shareRow{size: p.Item.OriginalSize, steps: stepsOf(mode)})
+		s.rows = append(s.rows, shareRow{size: p.Item.OriginalSize, steps: stepsOf(mode, repair)})
 	}
 }
 
@@ -140,23 +169,33 @@ type shareRow struct {
 
 // stepsOf are the steps of a game in a queue of a mode, as the Runner does them: what is made is
 // verified before it takes its name, but the original dump, which the engine checks file by file
-// as it writes it.
-func stepsOf(mode jobs.Mode) []string {
+// as it writes it; a .p5z with repair data gets it once it is in its place; a .p5z is verified
+// before it gets repair data, and after it is repaired.
+func stepsOf(mode jobs.Mode, repair int) []string {
 	switch mode {
-	case jobs.ModeP5z, jobs.ModeFolder:
+	case jobs.ModeP5z:
+		if repair > 0 {
+			return []string{jobs.StatePacking, jobs.StateVerifying, jobs.StateProtecting}
+		}
+		return []string{jobs.StatePacking, jobs.StateVerifying}
+	case jobs.ModeFolder:
 		return []string{jobs.StatePacking, jobs.StateVerifying}
 	case jobs.ModeVerify:
 		return []string{jobs.StateVerifying}
+	case jobs.ModeProtect:
+		return []string{jobs.StateVerifying, jobs.StateProtecting}
+	case jobs.ModeRepair:
+		return []string{jobs.StateRepairing, jobs.StateVerifying}
 	case jobs.ModeConsole:
 		return []string{jobs.StateUnpacking, jobs.StateVerifying}
 	}
 	return []string{jobs.StateUnpacking}
 }
 
-func newShare(plans []jobs.Plan, mode jobs.Mode) *share {
+func newShare(plans []jobs.Plan, mode jobs.Mode, repair int) *share {
 	s := &share{rows: make([]shareRow, len(plans))}
 	for i, p := range plans {
-		s.rows[i] = shareRow{size: p.Item.OriginalSize, steps: stepsOf(mode)}
+		s.rows[i] = shareRow{size: p.Item.OriginalSize, steps: stepsOf(mode, repair)}
 	}
 	return s
 }
@@ -169,7 +208,7 @@ func (s *share) item(i int, state string) {
 	}
 	r := &s.rows[i]
 	switch state {
-	case jobs.StatePacking, jobs.StateVerifying, jobs.StateUnpacking:
+	case jobs.StatePacking, jobs.StateVerifying, jobs.StateUnpacking, jobs.StateProtecting, jobs.StateRepairing:
 		if state != r.step {
 			r.step, r.phase, r.offset, r.done, r.total = state, "", 0, 0, 0
 		}
@@ -195,8 +234,10 @@ func (r shareRow) stepShare() float64 {
 	if r.total == 0 {
 		return 0
 	}
+	// packing and unpacking go through the game's size; the other steps through the bytes of the
+	// file they read, which their own progress says
 	whole := r.offset + r.total
-	if r.step != jobs.StateVerifying && r.size > whole {
+	if (r.step == jobs.StatePacking || r.step == jobs.StateUnpacking) && r.size > whole {
 		whole = r.size
 	}
 	return math.Min(1, float64(r.offset+r.done)/float64(whole))

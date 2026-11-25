@@ -49,7 +49,7 @@ func (a *App) runQueue(ctx context.Context, q *queue) jobs.Summary {
 
 	const total = taskbarParts
 	q.mutex.Lock()
-	q.share = newShare(q.jobs.All(), o.Mode)
+	q.share = newShare(q.jobs.All(), o.Mode, o.Repair)
 	for i := range q.share.rows {
 		if q.jobs.Removed(i) {
 			q.share.remove(i)
@@ -76,14 +76,17 @@ func (a *App) runQueue(ctx context.Context, q *queue) jobs.Summary {
 	if path == "" {
 		path, _ = core.Locate()
 	}
+	// no maxpack-par2: a game that asked for repair data says it has none, and why
+	program, _ := a.par2Program()
 	// the page is told each state and the progress, with the speed
-	page := &teller{app: a, plans: q.jobs, mode: o.Mode, drives: a.drives()}
+	page := &teller{app: a, plans: q.jobs, mode: o.Mode, repair: o.Repair, drives: a.drives()}
 	var journal jobs.Journal
 	if j := a.journal(); j != nil {
 		journal = j
 	}
 	runner := &jobs.Runner{
 		Core:    path,
+		Par2:    program,
 		Journal: journal,
 		Log:     a.log,
 		OnEvent: func(i int, e core.Event) {

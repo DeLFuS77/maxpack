@@ -4,12 +4,14 @@ package main
 
 import (
 	"context"
+	"errors"
 	"runtime"
 	"sync"
 	"sync/atomic"
 
 	"github.com/DeLFuS77/maxpack/gui/bundled"
 	"github.com/DeLFuS77/maxpack/gui/core"
+	"github.com/DeLFuS77/maxpack/gui/internal/par2"
 	"github.com/DeLFuS77/maxpack/gui/internal/system"
 	"github.com/DeLFuS77/maxpack/gui/jobs"
 	"github.com/DeLFuS77/maxpack/gui/settings"
@@ -44,6 +46,7 @@ type App struct {
 	emit    func(event string, data any)
 	extras  extras
 	core    string        // the engine, when not the one Locate finds
+	par2    string        // maxpack-par2, when not the one par2.Locate finds ("-" for none)
 	fs      jobs.FS       // the drives, when not the ones of the system
 	lang    func() string // the language of the notices, when not the one of the settings
 	onEvent func(i int, e core.Event)
@@ -93,6 +96,12 @@ type Setup struct {
 	// keeps everything next to it, and writes nothing in Windows
 	Explorer bool `json:"explorer"`
 	Portable bool `json:"portable"`
+	// Par2 is maxpack-par2, which makes and uses the repair data of a .p5z, and Par2Version what it
+	// says of itself; Par2Error, why there is none (a build of the window without it): the page then
+	// offers no repair data, and says why
+	Par2        string `json:"par2"`
+	Par2Version string `json:"par2Version"`
+	Par2Error   string `json:"par2Error"`
 }
 
 func (a *App) startup(ctx context.Context) {
@@ -117,6 +126,13 @@ func (a *App) Setup() Setup {
 	if builtIn := a.builtInRuntime(); builtIn != "" {
 		setup.BuiltInRuntime, setup.BuiltInRuntimeVersion = builtIn, bundled.Version()
 	}
+	if program, err := a.par2Program(); err != nil {
+		setup.Par2Error = err.Error()
+	} else if v, err := par2.Version(program); err != nil {
+		setup.Par2Error = err.Error()
+	} else {
+		setup.Par2, setup.Par2Version = program, v
+	}
 	path, err := core.Locate()
 	if err != nil {
 		setup.CoreError = err.Error()
@@ -131,6 +147,17 @@ func (a *App) Setup() Setup {
 		setup.CoreError, setup.CoreOtherVersion = "maxpack-core is of another version", true
 	}
 	return setup
+}
+
+// par2Program is maxpack-par2: the one the tests give, else the one next to the program.
+func (a *App) par2Program() (string, error) {
+	switch a.par2 {
+	case "":
+		return par2.Locate()
+	case "-":
+		return "", errors.New("maxpack-par2 not found")
+	}
+	return a.par2, nil
 }
 
 // builtInRuntime is the path of the ampr-emu-ng that comes with MaxPack: it is written to the folder

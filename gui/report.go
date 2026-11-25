@@ -179,7 +179,11 @@ func (a *App) reportText(r ReportRequest) string {
 	if saved.Threads > 0 {
 		threads = fmt.Sprint(saved.Threads)
 	}
-	line("Settings: %s, level %d, threads %s, runtime %s, low priority %s, %s, names %s", modeText, saved.Level, threads, runtimeWords, priority, originals, saved.NameTemplate)
+	repair := "off"
+	if saved.RepairData {
+		repair = fmt.Sprintf("%d %%", saved.RepairPercent)
+	}
+	line("Settings: %s, level %d, threads %s, runtime %s, low priority %s, %s, names %s, repair data %s", modeText, saved.Level, threads, runtimeWords, priority, originals, saved.NameTemplate, repair)
 	if len(r.Games) > 0 && r.Section != "" {
 		line("Section: %s", r.Section)
 	}

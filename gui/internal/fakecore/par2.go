@@ -24,9 +24,12 @@ import (
 //   - "not-possible": a repair finds too much damage, as par2 says it, and ends with code 2.
 const Par2Env = "MP_FAKE_PAR2"
 
-// par2Call tells whether the arguments are the ones the window gives par2: the engine is never
-// given -m (the memory of par2).
+// par2Call tells whether the arguments are the ones the window gives par2 (its version, -V, or a
+// create, verify or repair): the engine is never given -m (the memory of par2), nor -V.
 func par2Call(args []string) bool {
+	if len(args) == 1 && args[0] == "-V" {
+		return true
+	}
 	if len(args) < 2 {
 		return false
 	}
@@ -78,6 +81,10 @@ func par2Number(args []string, flag string) int {
 }
 
 func par2(mode string, args []string) int {
+	if args[0] == "-V" {
+		fmt.Println("par2cmdline-turbo version 1.5.0")
+		return 0
+	}
 	index, file := par2Files(args)
 	switch mode {
 	case "makes":

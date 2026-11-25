@@ -43,3 +43,15 @@ made, so no `.ffpkg` made by a real tool is here yet.
 
 MkPFS writes the time it built the image as every PFS inode's date, and 2024-01-01 00:00:00 as
 every date of its exFAT images; those are the dates a game packed from these images gets.
+
+## A PS5 debug package made by another builder
+
+`lpp120-mixed.pkg.gz` is `ProsperoPkgTool.CompatibilityTests/Fixtures/lpp120-mixed.pkg` from
+pearlxcore/ProsperoPkgTool (https://github.com/pearlxcore/ProsperoPkgTool, MIT; SHA-256 of the
+package `c7c92758f23ceff97121282067f0f78d018fd55aae16ed64ac0b5c20660b58db`), gzipped with
+`gzip -9 -n`. It is a generated test package, not a game: its README says it was built by
+LibProsperoPkg 1.2.0 with its default compression and the all-zero passcode, from a minimal
+`param.json` (content ID `UP0000-PPSA12345_00-TESTPACKAGE00000`) and an 8 MiB `payload.bin` whose
+SHA-256 is `084B53568666B6B3BA37C3721A94E899909660B5EA03B8D4CE0A4752F9401A65`. `test_cli` checks
+that MaxPack reads it as an FPKG and that the `payload.bin` it unpacks has that SHA-256, so the
+package reader is tested against a builder that is not MaxPack's own generator.

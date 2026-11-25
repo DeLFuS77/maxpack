@@ -978,7 +978,10 @@ check("pack_pkg_leave_out_leftovers", rc == 0 and res.get("left_out_files") == 3
       and res.get("completeness", {}).get("source") == "playgo", str(res) + err[-300:])
 check("pack_pkg_leftovers_same_p5z", os.path.exists(kp5) and os.path.exists(lp5)
       and open(kp5, "rb").read() == open(lp5, "rb").read(), kp5)
-rc, so, err = run("pack", os.path.join(FX, "dumpindex_broken.pkg"), "-o", os.path.join(TMP, "di_broken_pkg.p5z"),
+di_broken = os.path.join(TMP, "di_broken_pkg.p5z")
+if os.path.exists(di_broken):
+    os.remove(di_broken)
+rc, so, err = run("pack", os.path.join(FX, "dumpindex_broken.pkg"), "-o", di_broken,
                   "--p5z", "--level", "3", "--threads", "2", "--leave-out-leftovers")
 check("pack_pkg_warns_damaged_copy", rc == 0 and "note: kept: 1 file" in err
       and "warning: damaged copy: 2 of the 13 files the dump tool wrote are missing" in err, err[-600:])
@@ -993,6 +996,29 @@ check("info_json_completeness_passcode_needed", rc == 1 and c is None and "anoth
 rc, so, err = run("info", "--json", "--passcode", PASSCODE, os.path.join(FX, "pass.pkg"))
 check("info_json_completeness_passcode",
       rc == 0 and json.loads(so or "{}").get("completeness", {}).get("reason") == "no_table", so + err[-300:])
+
+# ---- A package made by another builder: LibProsperoPkg 1.2.0 (ProsperoPkgTool's test package, tests/data) ----
+import hashlib  # noqa: E402
+LPP = os.path.join(FX, "lpp120-mixed.pkg")
+rc, so, err = run("info", "--json", LPP)
+d = json.loads(so or "{}") if rc == 0 else {}
+check("lpp120_info", rc == 0 and d.get("kind") == "fpkg" and d.get("title_id") == "PPSA12345"
+      and d.get("content_id") == "UP0000-PPSA12345_00-TESTPACKAGE00000", so[-300:] + err[-300:])
+lpp_p5z = os.path.join(TMP, "lpp120.p5z")
+lpp_back = os.path.join(TMP, "lpp120_back")
+if os.path.exists(lpp_p5z):
+    os.remove(lpp_p5z)
+rmtree(lpp_back)
+rc1, _, err1 = run("pack", LPP, "-o", lpp_p5z, "--p5z", "--level", "3", "--threads", "4")
+rc2, _, err2 = run("unpack", lpp_p5z, "-o", lpp_back, "--original")
+payload = os.path.join(lpp_back, "payload.bin")
+digest = ""
+if os.path.exists(payload):
+    with open(payload, "rb") as f:
+        digest = hashlib.sha256(f.read()).hexdigest()
+# the SHA-256 its README gives for the 8 MiB payload.bin
+check("lpp120_payload", rc1 == 0 and rc2 == 0
+      and digest == "084b53568666b6b3ba37c3721a94e899909660b5ea03b8d4ce0a4752f9401a65", err1[-300:] + err2[-300:])
 
 print("test_cli: %d failures" % len(failures))
 sys.exit(1 if failures else 0)

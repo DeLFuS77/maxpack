@@ -4,6 +4,7 @@ package explorer
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -11,8 +12,9 @@ const testExe = `C:\Users\user\AppData\Local\Programs\MaxPack\MaxPack.exe`
 
 var testTexts = MenuTexts{Compress: "Compress with MaxPack", Verify: "Verify with MaxPack", Details: "Details"}
 
-// The menu is one entry on folders and .exfat images, and two on a .p5z, each with the icon of
-// MaxPack, shown for any number of files chosen, and starting MaxPack with --section and the file.
+// The menu is one entry on folders and on the images ShadowMountPlus mounts (.exfat, .ffpkg, .ffpfs,
+// .ffpfsc), and two on a .p5z, each with the icon of MaxPack, shown for any number of files chosen,
+// and starting MaxPack with --section and the file.
 func TestAddMenuOps(t *testing.T) {
 	classes := `Software\Classes`
 	icon := `"` + testExe + `",0`
@@ -27,6 +29,9 @@ func TestAddMenuOps(t *testing.T) {
 	var want []Op
 	want = append(want, verb(classes+`\Directory\shell\MaxPack.Compress`, "Compress with MaxPack", "compress")...)
 	want = append(want, verb(classes+`\SystemFileAssociations\.exfat\shell\MaxPack.Compress`, "Compress with MaxPack", "compress")...)
+	want = append(want, verb(classes+`\SystemFileAssociations\.ffpkg\shell\MaxPack.Compress`, "Compress with MaxPack", "compress")...)
+	want = append(want, verb(classes+`\SystemFileAssociations\.ffpfs\shell\MaxPack.Compress`, "Compress with MaxPack", "compress")...)
+	want = append(want, verb(classes+`\SystemFileAssociations\.ffpfsc\shell\MaxPack.Compress`, "Compress with MaxPack", "compress")...)
 	want = append(want, verb(classes+`\SystemFileAssociations\.p5z\shell\MaxPack.1Verify`, "Verify with MaxPack", "verify")...)
 	want = append(want, verb(classes+`\SystemFileAssociations\.p5z\shell\MaxPack.2Details`, "Details", "details")...)
 	if got := AddMenuOps("Software", testExe, testTexts); !reflect.DeepEqual(got, want) {
@@ -39,6 +44,9 @@ func TestRemoveMenuOps(t *testing.T) {
 	want := []Op{
 		{Do: DeleteTree, Key: `Software\Classes\Directory\shell\MaxPack.Compress`},
 		{Do: DeleteTree, Key: `Software\Classes\SystemFileAssociations\.exfat\shell\MaxPack.Compress`},
+		{Do: DeleteTree, Key: `Software\Classes\SystemFileAssociations\.ffpkg\shell\MaxPack.Compress`},
+		{Do: DeleteTree, Key: `Software\Classes\SystemFileAssociations\.ffpfs\shell\MaxPack.Compress`},
+		{Do: DeleteTree, Key: `Software\Classes\SystemFileAssociations\.ffpfsc\shell\MaxPack.Compress`},
 		{Do: DeleteTree, Key: `Software\Classes\SystemFileAssociations\.p5z\shell\MaxPack.1Verify`},
 		{Do: DeleteTree, Key: `Software\Classes\SystemFileAssociations\.p5z\shell\MaxPack.2Details`},
 	}
@@ -201,5 +209,83 @@ func TestPlaceNames(t *testing.T) {
 	}
 	if !testTexts.valid() || (MenuTexts{Compress: "a", Verify: "b"}).valid() || (MenuTexts{Compress: " ", Verify: "b", Details: "c"}).valid() {
 		t.Error("menu texts: a text is missing or blank")
+	}
+}
+
+// On the images MaxPack only adds its entry to the menu: it never writes the program that opens
+// them nor their icon (other tools open them), and every key it writes there is its own verb.
+func TestMenuLeavesTheImagesAlone(t *testing.T) {
+	images := []string{".exfat", ".ffpkg", ".ffpfs", ".ffpfsc"}
+	for _, ops := range [][]Op{AddMenuOps("Software", testExe, testTexts), RemoveMenuOps("Software")} {
+		for _, op := range ops {
+			for _, ext := range images {
+				if strings.Contains(op.Key+"\\", "\\"+ext+"\\") && !strings.HasPrefix(op.Key, `Software\Classes\SystemFileAssociations\`+ext+`\shell\MaxPack.Compress`) {
+					t.Errorf("%v is not MaxPack's entry", op)
+				}
+			}
+		}
+	}
+	for _, op := range AddFilesOps("Software", testExe, true) {
+		for _, ext := range images {
+			if strings.Contains(op.Key, ext) || op.Name == ext {
+				t.Errorf("opening .p5z files writes %v", op)
+			}
+		}
+	}
+}
+
+// The menu is this copy's when all its entries are; a menu an earlier MaxPack wrote, without the
+// entries on .ffpkg, .ffpfs and .ffpfsc, is still this copy's (it is completed when the window
+// opens, see Relabel), and complete only with them. Anything else is moved: for another copy, or
+// only in part.
+func TestMenuPlace(t *testing.T) {
+	all := func(place string) []string {
+		places := make([]string, len(verbs))
+		for i := range places {
+			places[i] = place
+		}
+		return places
+	}
+	// the first entries as given, the later ones as later
+	mixed := func(first, later string) []string {
+		places := all(first)
+		for i, v := range verbs {
+			if v.later {
+				places[i] = later
+			}
+		}
+		return places
+	}
+	var later []string
+	for _, v := range verbs {
+		if v.later {
+			later = append(later, v.class)
+		}
+	}
+	if strings.Join(later, " ") != `SystemFileAssociations\.ffpkg SystemFileAssociations\.ffpfs SystemFileAssociations\.ffpfsc` {
+		t.Fatalf("the entries a later MaxPack added: %v", later)
+	}
+	partFirst := all(Here)
+	partFirst[0] = Missing
+	for _, c := range []struct {
+		name     string
+		places   []string
+		want     string
+		complete bool
+	}{
+		{"none", all(Missing), Missing, false},
+		{"all here", all(Here), Here, true},
+		{"all for another copy", all(Moved), Moved, false},
+		{"an earlier MaxPack's", mixed(Here, Missing), Here, false},
+		{"an earlier MaxPack's, the new ones for another copy", mixed(Here, Moved), Moved, false},
+		{"only the new ones", mixed(Missing, Here), Moved, false},
+		{"one of the first ones gone", partFirst, Moved, false},
+	} {
+		if got := menuPlace(c.places); got != c.want {
+			t.Errorf("%s: %q, want %q", c.name, got, c.want)
+		}
+		if got := menuComplete(c.places); got != c.complete {
+			t.Errorf("%s: complete %v", c.name, got)
+		}
 	}
 }

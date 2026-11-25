@@ -72,14 +72,19 @@ func Executable() (string, error) {
 	return executable, nil
 }
 
+// menuPlaces are the places of the commands of the menu, in the order of verbs.
+func menuPlaces(executable string) []string {
+	var places []string
+	for _, key := range menuCommands(user.software) {
+		places = append(places, placeOf(readString(registry.CURRENT_USER, key, ""), executable))
+	}
+	return places
+}
+
 // Read tells what is there, for the copy of MaxPack at executable.
 func Read(executable string) State {
 	state := State{Available: true}
-	var menu []string
-	for _, key := range menuCommands(user.software) {
-		menu = append(menu, placeOf(readString(registry.CURRENT_USER, key, ""), executable))
-	}
-	state.Menu = combine(menu)
+	state.Menu = menuPlace(menuPlaces(executable))
 	state.Files = placeOf(readString(registry.CURRENT_USER, filesCommand(user.software), ""), executable)
 	if state.Files != Missing {
 		state.FilesOther = opensWithOther(chosenForP5z(), executable)
@@ -161,12 +166,14 @@ func Remove(place string) error {
 }
 
 // Relabel writes the menu again in the texts given (the language of the window), when it is there
-// for this copy of MaxPack in other words.
+// for this copy of MaxPack in other words, or without the entries a later MaxPack added (the ones
+// on .ffpkg, .ffpfs and .ffpfsc, for a menu written by MaxPack 1.0.4 or before).
 func Relabel(executable string, texts MenuTexts) error {
-	if !texts.valid() || Read(executable).Menu != Here {
+	places := menuPlaces(executable)
+	if !texts.valid() || menuPlace(places) != Here {
 		return nil
 	}
-	same := true
+	same := menuComplete(places)
 	for _, op := range AddMenuOps(user.software, executable, texts) {
 		if op.Name == "MUIVerb" && readString(registry.CURRENT_USER, op.Key, op.Name) != op.Data {
 			same = false

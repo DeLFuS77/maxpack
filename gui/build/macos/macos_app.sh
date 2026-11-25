@@ -63,7 +63,7 @@ cat > "${app}/Contents/Info.plist" <<PLIST
 			<key>CFBundleTypeName</key><string>PS5 game</string>
 			<key>CFBundleTypeRole</key><string>Viewer</string>
 			<key>LSHandlerRank</key><string>Alternate</string>
-			<key>CFBundleTypeExtensions</key><array><string>p5z</string><string>exfat</string></array>
+			<key>CFBundleTypeExtensions</key><array><string>p5z</string><string>exfat</string><string>ffpkg</string><string>ffpfs</string><string>ffpfsc</string></array>
 		</dict>
 	</array>
 </dict>

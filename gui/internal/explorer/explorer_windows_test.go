@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"unicode/utf16"
 	"unsafe"
@@ -85,10 +86,13 @@ func TestMenuAddedAndRemoved(t *testing.T) {
 		t.Fatalf("for another copy: %q", got)
 	}
 	for path, want := range map[string]string{
-		`\Directory\shell\MaxPack.Compress`:                     "Compress with MaxPack",
-		`\SystemFileAssociations\.exfat\shell\MaxPack.Compress`: "Compress with MaxPack",
-		`\SystemFileAssociations\.p5z\shell\MaxPack.1Verify`:    "Verify with MaxPack",
-		`\SystemFileAssociations\.p5z\shell\MaxPack.2Details`:   "Details",
+		`\Directory\shell\MaxPack.Compress`:                      "Compress with MaxPack",
+		`\SystemFileAssociations\.exfat\shell\MaxPack.Compress`:  "Compress with MaxPack",
+		`\SystemFileAssociations\.ffpkg\shell\MaxPack.Compress`:  "Compress with MaxPack",
+		`\SystemFileAssociations\.ffpfs\shell\MaxPack.Compress`:  "Compress with MaxPack",
+		`\SystemFileAssociations\.ffpfsc\shell\MaxPack.Compress`: "Compress with MaxPack",
+		`\SystemFileAssociations\.p5z\shell\MaxPack.1Verify`:     "Verify with MaxPack",
+		`\SystemFileAssociations\.p5z\shell\MaxPack.2Details`:    "Details",
 	} {
 		if got := value(classes+path, "MUIVerb"); got != want {
 			t.Errorf("%s: %q", path, got)
@@ -99,6 +103,15 @@ func TestMenuAddedAndRemoved(t *testing.T) {
 	}
 	if got := value(classes+`\SystemFileAssociations\.p5z\shell\MaxPack.1Verify\command`, ""); got != `"C:\Tools\MaxPack\MaxPack.exe" --section verify "%1"` {
 		t.Errorf("command: %s", got)
+	}
+	if got := value(classes+`\SystemFileAssociations\.ffpfsc\shell\MaxPack.Compress\command`, ""); got != `"C:\Tools\MaxPack\MaxPack.exe" --section compress "%1"` {
+		t.Errorf("command on .ffpfsc: %s", got)
+	}
+	// the program that opens an image and its icon are not MaxPack's to write
+	for _, ext := range []string{".exfat", ".ffpkg", ".ffpfs", ".ffpfsc"} {
+		if exists(t, classes+`\`+ext) {
+			t.Errorf("%s has a key of its own", ext)
+		}
 	}
 	// one of its keys gone: it is not all there, so it is to be added again
 	if err := deleteTree(classes + `\SystemFileAssociations\.exfat\shell\MaxPack.Compress`); err != nil {
@@ -146,6 +159,59 @@ func TestMenuAddedAndRemoved(t *testing.T) {
 	}
 	if err := Relabel(exe, other); err != nil || exists(t, classes+`\SystemFileAssociations`) {
 		t.Fatalf("written again while it was not there: %v", err)
+	}
+}
+
+// A menu an earlier MaxPack wrote (without the entries on .ffpkg, .ffpfs and .ffpfsc) is still
+// this copy's: Relabel, which the window runs as it opens, adds them, even in the same words; an
+// entry of those for another copy makes it moved.
+func TestMenuOfAnEarlierMaxPack(t *testing.T) {
+	software, _ := testKeys(t)
+	classes := software + `\Classes`
+	exe := `C:\Tools\MaxPack\MaxPack.exe`
+	texts := MenuTexts{Compress: "Compress with MaxPack", Verify: "Verify with MaxPack", Details: "Details"}
+	var earlier []Op
+	for _, op := range AddMenuOps(software, exe, texts) {
+		if !strings.Contains(op.Key, `.ffpf`) && !strings.Contains(op.Key, `.ffpkg`) {
+			earlier = append(earlier, op)
+		}
+	}
+	if len(earlier) != 16 {
+		t.Fatalf("the menu of before has %d operations", len(earlier))
+	}
+	if err := apply(software, earlier); err != nil {
+		t.Fatal(err)
+	}
+	if got := Read(exe).Menu; got != Here {
+		t.Fatalf("the menu of before: %q", got)
+	}
+	if err := Relabel(exe, texts); err != nil {
+		t.Fatal(err)
+	}
+	for _, ext := range []string{".ffpkg", ".ffpfs", ".ffpfsc"} {
+		key := classes + `\SystemFileAssociations\` + ext + `\shell\MaxPack.Compress`
+		if got := value(key, "MUIVerb"); got != "Compress with MaxPack" {
+			t.Errorf("%s: %q", ext, got)
+		}
+		if got := value(key+`\command`, ""); got != Command(exe, "--section", "compress") {
+			t.Errorf("%s: %q", ext, got)
+		}
+	}
+	if got := Read(exe).Menu; got != Here {
+		t.Fatalf("completed: %q", got)
+	}
+	// one of the new entries for another copy
+	if err := writeString(classes+`\SystemFileAssociations\.ffpkg\shell\MaxPack.Compress\command`, "", Command(`D:\Old\MaxPack.exe`, "--section", "compress")); err != nil {
+		t.Fatal(err)
+	}
+	if got := Read(exe).Menu; got != Moved {
+		t.Fatalf("an entry for another copy: %q", got)
+	}
+	if err := Remove(Menu); err != nil {
+		t.Fatal(err)
+	}
+	if exists(t, classes+`\SystemFileAssociations`) {
+		t.Error("SystemFileAssociations stays")
 	}
 }
 

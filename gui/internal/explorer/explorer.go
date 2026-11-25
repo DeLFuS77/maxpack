@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // Package explorer puts MaxPack in the Explorer of Windows, each place apart and only when the user
-// asks (Settings › Windows Explorer, or the installer): a right-click menu on folders, .exfat images
-// and .p5z files, MaxPack in "Send to", and .p5z files opened with MaxPack with a double click. All
+// asks (Settings › Windows Explorer, or the installer): a right-click menu on folders, the images
+// ShadowMountPlus mounts (.exfat, .ffpkg, .ffpfs, .ffpfsc) and .p5z files, MaxPack in "Send to",
+// and .p5z files opened with MaxPack with a double click. On the images it is only an entry of the
+// menu: the program that opens them and their icon stay the ones other tools gave them. All
 // of it is written for this user only, under HKEY_CURRENT_USER and in the user's own Send to folder,
 // so it needs no administrator, and it names the copy of MaxPack that wrote it.
 //
@@ -50,7 +52,7 @@ const (
 
 // MenuTexts are the entries of the menu, in the language of the window.
 type MenuTexts struct {
-	Compress string `json:"compress"` // folders and .exfat images
+	Compress string `json:"compress"` // folders and images
 	Verify   string `json:"verify"`   // .p5z
 	Details  string `json:"details"`  // .p5z
 }
@@ -77,20 +79,28 @@ type Op struct {
 }
 
 // a verb of the menu: the class of the files it shows on (under Classes), the name of its key,
-// the section of the window it opens in, and its text
+// the section of the window it opens in, its text, and whether a later MaxPack added it (1.0.5: the
+// images besides .exfat), so a menu an earlier one wrote may lack it
 type verb struct {
 	class, name, section string
 	text                 func(MenuTexts) string
+	later                bool
 }
+
+func compressText(m MenuTexts) string { return m.Compress }
 
 // verbs are the entries of the menu. Classic verbs: Windows 11 shows them under Show more options
 // (its compact menu takes only the commands of a packaged app). Their keys are named so that
-// Verify comes before Details.
+// Verify comes before Details. The images are the ones the window takes (jobs.ImageExts), each
+// under SystemFileAssociations, which adds a verb without being the program of the type.
 var verbs = []verb{
-	{`Directory`, "MaxPack.Compress", "compress", func(m MenuTexts) string { return m.Compress }},
-	{`SystemFileAssociations\.exfat`, "MaxPack.Compress", "compress", func(m MenuTexts) string { return m.Compress }},
-	{`SystemFileAssociations\.p5z`, "MaxPack.1Verify", "verify", func(m MenuTexts) string { return m.Verify }},
-	{`SystemFileAssociations\.p5z`, "MaxPack.2Details", "details", func(m MenuTexts) string { return m.Details }},
+	{`Directory`, "MaxPack.Compress", "compress", compressText, false},
+	{`SystemFileAssociations\.exfat`, "MaxPack.Compress", "compress", compressText, false},
+	{`SystemFileAssociations\.ffpkg`, "MaxPack.Compress", "compress", compressText, true},
+	{`SystemFileAssociations\.ffpfs`, "MaxPack.Compress", "compress", compressText, true},
+	{`SystemFileAssociations\.ffpfsc`, "MaxPack.Compress", "compress", compressText, true},
+	{`SystemFileAssociations\.p5z`, "MaxPack.1Verify", "verify", func(m MenuTexts) string { return m.Verify }, false},
+	{`SystemFileAssociations\.p5z`, "MaxPack.2Details", "details", func(m MenuTexts) string { return m.Details }, false},
 }
 
 func classes(software string) string { return software + `\Classes` }
@@ -233,6 +243,39 @@ func placeOf(command, executable string) string {
 	default:
 		return Moved
 	}
+}
+
+// menuPlace is the state of the menu from the places of its commands, in the order of verbs: as
+// combine, but a menu an earlier MaxPack wrote, here without the entries a later one added, is
+// still here (Relabel completes it as the window opens); one of those for another copy, or only
+// them, is moved.
+func menuPlace(places []string) string {
+	var first, later []string
+	for i, v := range verbs {
+		if v.later {
+			later = append(later, places[i])
+		} else {
+			first = append(first, places[i])
+		}
+	}
+	state := combine(first)
+	for _, place := range later {
+		switch {
+		case state == Here && place == Moved, state == Missing && place != Missing:
+			return Moved
+		}
+	}
+	return state
+}
+
+// menuComplete tells whether every entry of the menu is there for this copy.
+func menuComplete(places []string) bool {
+	for _, place := range places {
+		if place != Here {
+			return false
+		}
+	}
+	return len(places) == len(verbs)
 }
 
 // combine is the state of a place made of several keys: here or missing when all are, else moved.

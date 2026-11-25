@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# The cover of a .p5z (its sce_sys/icon0.png) as its thumbnail in freedesktop file managers.
+# install.sh puts the path of the installed maxpack-core in place of maxpack-core.
+[Thumbnailer Entry]
+TryExec=maxpack-core
+Exec=maxpack-core icon %i -o %o
+MimeType=application/x-maxpack-p5z;

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!-- The type of .p5z files for freedesktop file managers, by their name and by their first bytes. -->
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/x-maxpack-p5z">
+    <comment>MaxPack game</comment>
+    <glob pattern="*.p5z"/>
+    <magic priority="50">
+      <match type="string" offset="0" value="MAXPKP5Z"/>
+    </magic>
+  </mime-type>
+</mime-info>

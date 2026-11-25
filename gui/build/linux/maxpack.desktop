@@ -9,5 +9,6 @@ Exec=maxpack %F
 Icon=maxpack
 Terminal=false
 Categories=Utility;Archiving;Compression;
+MimeType=application/x-maxpack-p5z;
 Keywords=ps5;p5z;exfat;ffpkg;ffpfs;ffpfsc;pkg;fpkg;comprimir;compress;
 StartupWMClass=maxpack

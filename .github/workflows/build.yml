@@ -86,7 +86,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev desktop-file-utils autoconf automake
+          sudo apt-get install -y --no-install-recommends build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev desktop-file-utils shared-mime-info autoconf automake
 
       # the tag without the "v" (v1.2.3 -> 1.2.3), or "dev-" and the commit; NUMBERS is the X.Y.Z part
       - name: Version
@@ -348,16 +348,19 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           mkdir -p dist gui/out/MaxPack
-          cp gui/out/maxpack gui/out/maxpack-core gui/out/maxpack-par2 gui/build/linux/maxpack.desktop gui/build/linux/maxpack.png gui/build/linux/install.sh LICENSE THIRD_PARTY_NOTICES gui/out/MaxPack/
+          cp gui/out/maxpack gui/out/maxpack-core gui/out/maxpack-par2 gui/build/linux/maxpack.desktop gui/build/linux/maxpack.png gui/build/linux/install.sh \
+            gui/build/linux/maxpack.xml gui/build/linux/maxpack.thumbnailer LICENSE THIRD_PARTY_NOTICES gui/out/MaxPack/
           chmod 755 gui/out/MaxPack/maxpack gui/out/MaxPack/maxpack-core gui/out/MaxPack/maxpack-par2 gui/out/MaxPack/install.sh
           tar -czf "dist/maxpack-${{ matrix.name }}.tar.gz" -C gui/out MaxPack
           ls -l dist
 
-      # install.sh puts the window, the engine, maxpack-par2, the icon and the menu entry in place, and removes them
+      # install.sh puts the window, the engine, maxpack-par2, the icon, the menu entry, and the type and the thumbnailer
+      # of .p5z files in place, and removes them
       - name: Test the install on Linux
         if: runner.os == 'Linux'
         run: |
           desktop-file-validate gui/build/linux/maxpack.desktop
+          python -I -c 'import sys, xml.etree.ElementTree as E; E.parse(sys.argv[1])' gui/build/linux/maxpack.xml
           home=$(mktemp -d)
           HOME="$home" sh gui/out/MaxPack/install.sh
           test -x "$home/.local/lib/maxpack/maxpack"
@@ -370,10 +373,38 @@ jobs:
           "$home/.local/bin/maxpack" --version
           "$home/.local/bin/maxpack" pack "${MP_FIXTURES}/basic.exfat" -o "$home/probe.p5z" --p5z
           test -s "$home/probe.p5z"
+          # .p5z files: their type, in the user's MIME database, and the thumbnailer, whose command, run by hand
+          # on a .p5z, gives the game's icon as a PNG
+          mime="$home/.local/share/mime"
+          thumbs="$home/.local/share/thumbnailers/maxpack.thumbnailer"
+          test -f "$mime/packages/maxpack.xml"
+          test -f "$mime/application/x-maxpack-p5z.xml"
+          grep -q "^MimeType=application/x-maxpack-p5z;$" "$home/.local/share/applications/maxpack.desktop"
+          grep -q "^TryExec=$home/.local/lib/maxpack/maxpack-core$" "$thumbs"
+          grep -q "^MimeType=application/x-maxpack-p5z;$" "$thumbs"
+          game="$home/game"
+          mkdir -p "$game/sce_sys"
+          printf '{"titleId":"ICON00004","contentVersion":"01.000.000"}' > "$game/sce_sys/param.json"
+          printf 'eboot' > "$game/eboot.bin"
+          python -I - "$game/sce_sys/icon0.png" <<'PY'
+          import struct, sys, zlib
+          w = h = 8
+          raw = b"".join(b"\0" + b"\xff\x00\x00\xff" * w for _ in range(h))
+          chunk = lambda t, d: struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d))
+          open(sys.argv[1], "wb").write(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 6, 0, 0, 0))
+                                        + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
+          PY
+          "$home/.local/bin/maxpack" pack "$game" -o "$home/cover.p5z" --p5z
+          cover=$(sed -n 's/^Exec=//p' "$thumbs" | sed "s|%i|$home/cover.p5z|; s|%o|$home/cover.png|")
+          eval "$cover"
+          cmp "$home/cover.png" "$game/sce_sys/icon0.png"
           HOME="$home" sh gui/out/MaxPack/install.sh --uninstall
           test ! -e "$home/.local/bin/maxpack"
           test ! -e "$home/.local/lib/maxpack"
           test ! -e "$home/.local/share/applications/maxpack.desktop"
+          test ! -e "$mime/packages/maxpack.xml"
+          test ! -e "$mime/application/x-maxpack-p5z.xml"
+          test ! -e "$thumbs"
 
       # the packages keep the files' permissions, which artifacts lose
       - uses: actions/upload-artifact@v4

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // exFAT image reader (read-only). Loads the whole FAT and all the directories on open;
-// files are read afterwards by contiguous runs (extents).
+// files are read afterwards by contiguous runs (extents). The image is a file or an image inside
+// another (mp_image).
 #include <inttypes.h>
 #include <stdlib.h>
 #include <string.h>
@@ -19,13 +20,13 @@ typedef struct {
 } exfat_file;
 
 typedef struct {
-    mp_file *img;
+    mp_image *img;
     uint64_t img_size, cs, heap_off;
     uint32_t count, root;
     uint32_t *fat;      // count + 2 entries
     uint8_t *used;      // one bit per cluster: detects loops and cross-links
     exfat_file *files;  // parallel to mp_source.entries
-    const char *img_path;
+    const char *img_path;   // for messages while opening
 } exfat;
 
 typedef struct {
@@ -193,7 +194,7 @@ static int read_alloc(exfat *x, const mp_extent *ex, size_t n, uint64_t len, uin
     uint64_t pos = 0;
     for (size_t i = 0; i < n && pos < len; i++) {
         size_t take = (size_t)(ex[i].len < len - pos ? ex[i].len : len - pos), got = 0;
-        if (mp_file_pread(x->img, buf + pos, take, ex[i].img_off, &got, e) != 0) goto fail;
+        if (mp_image_pread(x->img, buf + pos, take, ex[i].img_off, &got, e) != 0) goto fail;
         if (got != take) {
             mp_err_set(e, "truncated exFAT image: %s", x->img_path);
             goto fail;
@@ -331,7 +332,7 @@ static int exfat_read(mp_source *s, size_t i, uint64_t off, void *buf, size_t le
         }
         uint64_t lim = f->vdl - off < run ? f->vdl - off : run;
         size_t take = len < lim ? len : (size_t)lim, got = 0;
-        if (mp_file_pread(x->img, p, take, img, &got, e) != 0) return -1;
+        if (mp_image_pread(x->img, p, take, img, &got, e) != 0) return -1;
         if (got != take) {
             mp_err_set(e, "truncated exFAT image: the content of %s is missing", s->entries[i].path);
             return -1;
@@ -350,7 +351,7 @@ static void exfat_free(exfat *x, size_t nfiles) {
     free(x->files);
     free(x->fat);
     free(x->used);
-    mp_file_close(x->img);
+    mp_image_close(x->img);
     free(x);
 }
 
@@ -363,12 +364,12 @@ static int cmp_rec(const void *a, const void *b) {
 static int load_boot(exfat *x, const char *path, mp_err *e) {
     uint8_t b[512];
     size_t got = 0;
-    if (mp_file_size(x->img, &x->img_size, e) != 0) return -1;
+    x->img_size = x->img->size;
     if (x->img_size < 512) {
         mp_err_set(e, "%s: truncated exFAT image (%" PRIu64 " bytes)", path, x->img_size);
         return -1;
     }
-    if (mp_file_pread(x->img, b, 512, 0, &got, e) != 0) return -1;
+    if (mp_image_pread(x->img, b, 512, 0, &got, e) != 0) return -1;
     unsigned bps = b[108], spc = b[109], nfats = b[110];
     uint64_t vol_len = rd64(b + 72);
     uint32_t fat_off = rd32(b + 80), fat_len = rd32(b + 84), heap = rd32(b + 88);
@@ -409,7 +410,7 @@ static int load_boot(exfat *x, const char *path, mp_err *e) {
         mp_err_set(e, "out of memory");
         return -1;
     }
-    if (mp_file_pread(x->img, raw, (size_t)fat_bytes, fat_pos, &got, e) != 0 || got != fat_bytes) {
+    if (mp_image_pread(x->img, raw, (size_t)fat_bytes, fat_pos, &got, e) != 0 || got != fat_bytes) {
         free(raw);
         if (!e || !e->msg[0]) mp_err_set(e, "%s: truncated exFAT image (FAT)", path);
         return -1;
@@ -419,18 +420,20 @@ static int load_boot(exfat *x, const char *path, mp_err *e) {
     return 0;
 }
 
-int mp_exfat_open(const char *path, mp_source **out, mp_err *e) {
+int mp_exfat_open_image(mp_image *img, mp_source **out, mp_err *e) {
     *out = NULL;
     exfat *x = calloc(1, sizeof *x);
     recs r = {0};
     mp_source *s = NULL;
     if (!x) {
+        mp_image_close(img);
         mp_err_set(e, "out of memory");
         return -1;
     }
-    x->img_path = path;
-    int rc = mp_file_open_read(path, &x->img, e);
-    if (rc == 0) rc = load_boot(x, path, e);
+    x->img = img;
+    x->img_path = img->name;
+    const char *path = img->name;
+    int rc = load_boot(x, path, e);
     if (rc == 0) {
         mp_extent *ex = NULL;
         size_t nex = 0;
@@ -457,14 +460,15 @@ int mp_exfat_open(const char *path, mp_source **out, mp_err *e) {
                 entries[i] = r.v[i].en;
                 x->files[i] = r.v[i].f;
             }
-            s->kind = MP_SRC_EXFAT;
+            s->kind = s->inner = MP_SRC_EXFAT;
+            s->compressed = img->compressed;
             s->entries = entries;
             s->n = r.n;
             s->ndirs = r.ndirs;
             s->read = exfat_read;
             s->close = exfat_close;
             s->impl = x;
-            x->img_path = NULL;   // the caller's path does not live beyond this function
+            x->img_path = NULL;
             free(r.v);
             *out = s;
             return 0;
@@ -478,4 +482,11 @@ int mp_exfat_open(const char *path, mp_source **out, mp_err *e) {
     free(s);
     exfat_free(x, 0);
     return -1;
+}
+
+int mp_exfat_open(const char *path, mp_source **out, mp_err *e) {
+    *out = NULL;
+    mp_image *img = NULL;
+    if (mp_image_open_file(path, &img, e) != 0) return -1;
+    return mp_exfat_open_image(img, out, e);
 }

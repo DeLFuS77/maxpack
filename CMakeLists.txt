@@ -118,9 +118,10 @@ if(MAXPACK_BUILD_TESTS)
   set(MP_FIXTURES_DIR ${CMAKE_BINARY_DIR}/fixtures)
   set(MP_TEST_TMP ${CMAKE_BINARY_DIR}/tmp)
 
-  # mp_add_test(<name> [FIXTURES]): builds tests/<name>.c and registers it with CTest.
+  # mp_add_test(<name> [FIXTURES|IMAGES]): builds tests/<name>.c and registers it with CTest (IMAGES:
+  # it also needs the UFS2, PFS and PFSC fixtures).
   function(mp_add_test name)
-    cmake_parse_arguments(T "FIXTURES" "" "" ${ARGN})
+    cmake_parse_arguments(T "FIXTURES;IMAGES" "" "" ${ARGN})
     add_executable(${name} tests/${name}.c)
     target_link_libraries(${name} PRIVATE maxpack_web)
     target_include_directories(${name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests)
@@ -129,7 +130,9 @@ if(MAXPACK_BUILD_TESTS)
     mp_warnings(${name})
     add_test(NAME ${name} COMMAND ${name})
     set_tests_properties(${name} PROPERTIES TIMEOUT 300)
-    if(T_FIXTURES)
+    if(T_IMAGES)
+      set_tests_properties(${name} PROPERTIES FIXTURES_REQUIRED "exfat;images")
+    elseif(T_FIXTURES)
       set_tests_properties(${name} PROPERTIES FIXTURES_REQUIRED exfat)
     endif()
   endfunction()
@@ -141,6 +144,11 @@ if(MAXPACK_BUILD_TESTS)
   add_test(NAME check_ref COMMAND ${Python3_EXECUTABLE} -I
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/tools/check_ref.py ${MP_FIXTURES_DIR})
   set_tests_properties(check_ref PROPERTIES FIXTURES_REQUIRED exfat)
+  # UFS2 (.ffpkg), PFS (.ffpfs) and PFSC (.ffpfsc) fixtures, and the real tools' images of tests/data.
+  add_test(NAME gen_images COMMAND ${Python3_EXECUTABLE} -I
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/tools/make_images.py --out ${MP_FIXTURES_DIR}
+    --data ${CMAKE_CURRENT_SOURCE_DIR}/tests/data)
+  set_tests_properties(gen_images PROPERTIES FIXTURES_SETUP images)
 
   mp_add_test(test_smoke)
   mp_add_test(test_platform)
@@ -148,6 +156,8 @@ if(MAXPACK_BUILD_TESTS)
   mp_add_test(test_extent)
   mp_add_test(test_source_exfat FIXTURES)
   set_tests_properties(test_source_exfat PROPERTIES TIMEOUT 10)
+  mp_add_test(test_source_images IMAGES)
+  set_tests_properties(test_source_images PROPERTIES TIMEOUT 300)
   mp_add_test(test_rules)
   mp_add_test(test_sample)
   mp_add_test(test_measure)
@@ -195,6 +205,8 @@ if(MAXPACK_BUILD_TESTS)
   mp_add_test(test_describe FIXTURES)
   mp_add_test(test_play FIXTURES)
   mp_add_test(test_volumes FIXTURES)
+  mp_add_test(test_image_pack IMAGES)
+  set_tests_properties(test_image_pack PROPERTIES TIMEOUT 600)
   mp_add_test(test_identity FIXTURES)
   set_tests_properties(test_identity PROPERTIES TIMEOUT 600)
   mp_add_test(test_cancel FIXTURES)
@@ -203,7 +215,7 @@ if(MAXPACK_BUILD_TESTS)
   add_test(NAME test_cli COMMAND ${Python3_EXECUTABLE} -I
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/tools/test_cli.py $<TARGET_FILE:maxpack> ${MP_FIXTURES_DIR}
     ${MP_TEST_TMP}/cli)
-  set_tests_properties(test_cli PROPERTIES FIXTURES_REQUIRED exfat TIMEOUT 300)
+  set_tests_properties(test_cli PROPERTIES FIXTURES_REQUIRED "exfat;images" TIMEOUT 300)
 
   # A package's version comes from the tag (v1.2.3 -> 1.2.3); needs bash.
   find_program(MP_BASH bash)

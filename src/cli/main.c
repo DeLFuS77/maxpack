@@ -31,18 +31,21 @@
 static void usage(FILE *out) {
     fprintf(out,
             "Usage:\n"
-            "  maxpack analyze <folder|image.exfat> [options]\n"
-            "  maxpack analyze <folder|image.exfat> --levels [L,L,...] [options]   compare the levels\n"
-            "  maxpack pack <folder|image.exfat> -o <output> [options]\n"
+            "  maxpack analyze <folder|image> [options]\n"
+            "  maxpack analyze <folder|image> --levels [L,L,...] [options]   compare the levels\n"
+            "  maxpack pack <folder|image> -o <output> [options]\n"
             "  maxpack unpack <game.p5z> --folder|--original -o <folder> [--threads N]\n"
             "  maxpack info <game.p5z>\n"
-            "  maxpack info --json <folder|image.exfat|game.p5z>\n"
+            "  maxpack info --json <folder|image|game.p5z>\n"
             "  maxpack info --play <game.p5z>   what the console needs to play it without installing (JSON)\n"
-            "  maxpack icon <folder|image.exfat|game.p5z> -o <icon.png>\n"
+            "  maxpack icon <folder|image|game.p5z> -o <icon.png>\n"
             "  maxpack verify <game.p5z | folder> [--against <source>] [--threads N]\n"
             "  maxpack measure [<folder>] [options]   measure this PC (and the folder's disk), with no game\n"
             "  maxpack --version\n"
             "  maxpack --capabilities   what this version can do, as JSON (for a front end)\n"
+            "\n"
+            "An image is an .exfat, an .ffpkg (UFS2), an .ffpfs (PFS) or an .ffpfsc (a PFS image that holds\n"
+            "one of them, usually compressed); MaxPack tells which by its contents, not by its name.\n"
             "\n"
             "Pack options:\n"
             "  -o OUTPUT          new or empty folder (--folder) to copy to the console\n"
@@ -398,7 +401,7 @@ static int cmd_analyze(int argc, char **argv) {
             return bad_usage("extra argument", a);
         }
     }
-    if (!src) return bad_usage("missing the folder or .exfat image", NULL);
+    if (!src) return bad_usage("missing the folder or image", NULL);
     o.keep_loose = keep;
     if (list) return list_files(src, keep, o.nkeep);
     if (json) {
@@ -614,7 +617,7 @@ static int run_levels(int argc, char **argv) {
         }
     }
     if (!src) {
-        bad_usage("missing the folder or .exfat image", NULL);
+        bad_usage("missing the folder or image", NULL);
         goto out;
     }
     o.keep_loose = keep;
@@ -743,7 +746,7 @@ static int run_pack(int argc, char **argv) {
             return bad_usage("extra argument", a);
         }
     }
-    if (!src) return bad_usage("missing the game's folder or .exfat image", NULL);
+    if (!src) return bad_usage("missing the game's folder or image", NULL);
     if (!dst) return bad_usage("missing the output (-o)", NULL);
     if (max_size && !p5z) return bad_usage("--max-file-size only works with --p5z", NULL);
     o.keep_loose = keep;
@@ -894,6 +897,7 @@ static int cmd_info_json(const char *path) {
     print_json_string(d.name);
     printf(",\"content_id\":");
     print_json_string(d.content_id);
+    printf(",\"inner\":\"%s\",\"compressed\":%s", d.inner, d.compressed ? "true" : "false");
     printf(",\"original_size\":%llu,\"install_size\":%llu,\"p5z_size\":%llu,\"files\":%llu",
            (unsigned long long)d.original_size, (unsigned long long)d.install_size,
            (unsigned long long)d.p5z_size, (unsigned long long)d.files);
@@ -1273,7 +1277,8 @@ int main(int argc, char **argv) {
     if (argc >= 2 && strcmp(argv[1], "--capabilities") == 0) {
         // what the window needs from this version of the engine
         printf("{\"progress_json\":true,\"control_stdin\":true,\"max_file_size\":true,\"info_json\":true,"
-               "\"icon\":true,\"packs\":true,\"content_id\":true,\"levels\":true,\"measure\":true}\n");
+               "\"icon\":true,\"packs\":true,\"content_id\":true,\"levels\":true,\"measure\":true,"
+               "\"images\":true}\n");
         return 0;
     }
     if (argc >= 2 && (!strcmp(argv[1], "--help") || !strcmp(argv[1], "-h") || !strcmp(argv[1], "help"))) {

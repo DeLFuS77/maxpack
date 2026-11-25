@@ -4,6 +4,34 @@ All notable changes to MaxPack are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **ShadowMountPlus images as the source** (engine: `pack`, `analyze` and `--levels`, `info`, `icon`):
+  besides dump folders and `.exfat`, MaxPack now packs `.ffpkg` (UFS2), `.ffpfs` (PFS, also with
+  MkPFS's per-file compression) and `.ffpfsc` (a PFS container, usually PFSC-compressed, with an
+  exFAT, UFS2 or PFS image inside, up to three deep). It reads them itself, read-only: nothing to
+  mount, no other tool and no temporary space. What a file is comes from its contents, so a renamed
+  image opens; the extension only words the message when it is none of them. The `.p5z` (or the
+  folder for the console) is byte for byte that of the same game packed from its folder; the only
+  thing that can differ is the files' dates, which are the ones the image gives (MkPFS writes the time
+  it built the image, and 2024-01-01 in its exFAT images). A damaged or hostile image stops with the
+  reason (truncated, loops, blocks out of range or used twice, sizes that overflow, PFSC blocks that
+  do not inflate, odd names, links, devices, signed or encrypted PFS...). PKGs are still refused.
+  Formats and checks: [docs/source-images.md](docs/source-images.md).
+- `info --json` adds `inner` (for a container, the image inside: `exfat`, `ufs2` or `pfs`) and
+  `compressed`, and `kind` can be `ufs2`, `pfs` or `pfsc`; `analyze --json` says the same in
+  `source.kind` and `source.inner`; `--capabilities` has `images`.
+- Speed, on a 32-thread PC with an NVMe, for a generated 6 GB game (5,305 files) as an `.exfat` and a
+  `.ffpfsc` made from it by MkPFS 1.1.0 (4.3 GB) and as an `.ffpkg`: reading it with every file's
+  SHA-256, from the cache, 3192 MB/s from the `.exfat`, 3278 from the `.ffpkg` and 3058 from the
+  `.ffpfsc`; from the disk (the cache emptied first), 2984, 2835 and 3033 MB/s. PFSC is inflated by
+  the reading threads: an image that needs it is read by 16 instead of 4 (zlib inflates about
+  510 MB/s per thread; with 4 the `.ffpfsc` read at 1972 MB/s). Packing to a `.p5z` with all
+  32 threads takes the same from the three: 8.6 s at level 3 (median of three) and 28 to 30.5 s at
+  level 19, where the compression is the limit; peak memory 1.03 GB (private), as from the `.exfat`.
+
 ## [1.0.4] - 2026-11-25
 
 ### Added

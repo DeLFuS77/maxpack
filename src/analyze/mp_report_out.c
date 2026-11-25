@@ -97,7 +97,7 @@ static const char *bin_label(const mp_size_bin *b, char buf[48]) {
 
 int mp_report_write_text(const mp_report *r, FILE *out) {
     char a[32], b[32], c[32], d[16];
-    const char *kind = r->kind == MP_SRC_EXFAT ? "exFAT image" : "folder";
+    const char *kind = r->kind_text[0] ? r->kind_text : r->kind == MP_SRC_EXFAT ? "exFAT image" : "folder";
     fprintf(out, "MaxPack %s — analysis of %s (%s)\n", MP_VERSION,
             r->source_name ? r->source_name : "?", kind);
     fprintf(out, "%" PRIu64 " files in %" PRIu64 " folders · %s\n\n", r->files, r->dirs,
@@ -229,7 +229,11 @@ char *mp_report_json(const mp_report *r) {
     s.p[0] = 0;
     sb_add(&s, "{\n  \"maxpack\": \"%s\",\n  \"source\": {\"name\": ", MP_VERSION);
     sb_str(&s, r->source_name);
-    sb_add(&s, ", \"kind\": \"%s\"},\n", r->kind == MP_SRC_EXFAT ? "exfat" : "dir");
+    // A folder is "dir" (as before 1.0.5); an image, mp_source_kind_name's word, and for a container
+    // the image inside.
+    const char *kind = r->kind == MP_SRC_DIR || !r->kind_name[0] ? (r->kind == MP_SRC_EXFAT ? "exfat" : "dir")
+                                                                   : r->kind_name;
+    sb_add(&s, ", \"kind\": \"%s\", \"inner\": \"%s\"},\n", kind, r->inner_name);
     sb_add(&s,
            "  \"files\": {\"total\": %" PRIu64 ", \"dirs\": %" PRIu64 ", \"bytes\": %" PRIu64
            ", \"loose_files\": %" PRIu64 ", \"loose_bytes\": %" PRIu64

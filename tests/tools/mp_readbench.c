@@ -96,12 +96,13 @@ int main(int argc, char **argv) {
     int blocks = 0;
     mp_readahead_opts ro;
     mp_readahead_opts_default(&ro);
+    unsigned threads = 0;   // 0: as the packer, mp_source_readers (4, or 16 for a compressed image)
     for (int i = 1; i < argc; i++) {
         const char *a = argv[i];
         int more = i + 1 < argc;
         if (!strcmp(a, "--list") && more) list = argv[++i];
         else if (!strcmp(a, "--blocks")) blocks = 1;
-        else if (!strcmp(a, "--threads") && more) ro.threads = (unsigned)strtoul(argv[++i], NULL, 10);
+        else if (!strcmp(a, "--threads") && more) threads = (unsigned)strtoul(argv[++i], NULL, 10);
         else if (!strcmp(a, "--piece") && more) ro.piece = (size_t)strtoul(argv[++i], NULL, 10) << 10;
         else if (!strcmp(a, "--budget") && more) ro.budget = (size_t)strtoul(argv[++i], NULL, 10) << 20;
         else if (!srcp && a[0] != '-') srcp = a;
@@ -122,6 +123,7 @@ int main(int argc, char **argv) {
         return 1;
     }
     t_open = mp_now_ns() - t_open;
+    ro.threads = threads ? threads : mp_source_readers(s);
     size_t n = mp_source_count(s), m = 0;
     ord *o = malloc((n ? n : 1) * sizeof *o);
     uint8_t (*sha)[32] = malloc((n ? n : 1) * 32);

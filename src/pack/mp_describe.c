@@ -6,6 +6,8 @@
 #include "mp_describe.h"
 #include "mp_p5z_internal.h"
 #include "mp_param.h"
+#include "mp_playgo.h"
+#include "mp_rules.h"
 #include "mp_source.h"
 
 #define RUNTIME_PATH "fakelib/libSceAmpr.sprx"
@@ -15,6 +17,7 @@
 #define RUNTIME_MAX (64u << 20)
 #define PARAM_MAX (1u << 20)
 #define ICON_MAX (16u << 20)
+#define ZPK_INDEX_MAX (1u << 30)
 
 static int ieq(const char *a, const char *b) {
     for (;; a++, b++) {
@@ -84,7 +87,79 @@ static void index_counts(mp_source *s, size_t i, mp_describe *d) {
     d->packed_files = rd64(h + 40);
 }
 
-static int describe_source(const char *path, mp_describe *d, mp_err *e) {
+static int cmp_cfile(const void *a, const void *b) {
+    return strcmp(((const mp_cfile *)a)->path, ((const mp_cfile *)b)->path);
+}
+
+// A compressed folder against its table: its loose files (not the packs and their index, which
+// MaxPack made) and the files in its packs. A table that is not loose may be in the packs. Packs
+// that cannot be opened leave it unchecked ("unreadable").
+static int complete_packed(const char *dir, mp_source *s, size_t ix, mp_complete *c, mp_err *e) {
+    memset(c, 0, sizeof *c);
+    uint8_t *idx = NULL, *table = NULL;
+    size_t idx_len = 0, table_len = 0;
+    mp_zpk_volsrc vs = {0};
+    mp_zpk *z = NULL;
+    mp_err ze = {{0}};
+    if (read_entry(s, ix, ZPK_INDEX_MAX, &idx, &idx_len, &ze) != 0 || mp_zpk_volsrc_dir(dir, &vs, &ze) != 0 ||
+        mp_zpk_open(idx, idx_len, &vs, &z, &ze) != 0) {
+        free(idx);
+        mp_zpk_volsrc_free(&vs);
+        int rc = mp_complete_check(NULL, 0, NULL, 0, c, NULL);
+        c->reason = "unreadable";
+        if (rc != 0) mp_err_set(e, "out of memory");
+        return rc;
+    }
+    free(idx);
+    size_t n = mp_source_count(s), nz = mp_zpk_count(z), k = 0;
+    mp_cfile *files = malloc((n + nz + 1) * sizeof *files);
+    int rc = -1;
+    if (!files) goto oom;
+    for (size_t i = 0; i < n; i++) {
+        const mp_entry *en = mp_source_entry(s, i);
+        if (ieq(en->path, INDEX_PATH) || mp_glob_match("ampr_zstd-*.pak", en->path)) continue;
+        files[k].path = en->path;
+        files[k++].size = en->size;
+    }
+    for (size_t i = 0; i < nz; i++) {
+        files[k].path = mp_zpk_path(z, i);
+        files[k++].size = mp_zpk_size(z, i);
+    }
+    qsort(files, k, sizeof *files, cmp_cfile);
+    long t = find_ci(s, MP_PLAYGO_TABLE_PATH);
+    int unreadable = 0;
+    if (t >= 0) {
+        unreadable = read_entry(s, (size_t)t, MP_PLAYGO_TABLE_MAX, &table, &table_len, NULL) != 0;
+    } else {
+        for (size_t i = 0; i < nz; i++) {
+            if (!ieq(mp_zpk_path(z, i), MP_PLAYGO_TABLE_PATH)) continue;
+            uint64_t size = mp_zpk_size(z, i);
+            table = size <= MP_PLAYGO_TABLE_MAX ? malloc((size_t)size + 1) : NULL;
+            if (!table || mp_zpk_read_file(z, i, 0, table, (size_t)size, NULL) != 0) {
+                free(table);
+                table = NULL;
+                unreadable = 1;
+            } else {
+                table_len = (size_t)size;
+            }
+            break;
+        }
+    }
+    if (mp_complete_check(files, k, table, table_len, c, NULL) != 0) goto oom;
+    if (unreadable) c->reason = "unreadable";
+    rc = 0;
+    goto done;
+oom:
+    mp_err_set(e, "out of memory");
+done:
+    free(table);
+    free(files);
+    mp_zpk_close(z);
+    mp_zpk_volsrc_free(&vs);
+    return rc;
+}
+
+static int describe_source(const char *path, mp_describe *d, mp_complete *c, mp_err *e) {
     mp_source *s = NULL;
     if (mp_source_open(path, &s, e) != 0) return -1;
     int rc = -1;
@@ -116,6 +191,11 @@ static int describe_source(const char *path, mp_describe *d, mp_err *e) {
             mp_param_content_id((const char *)b, len, d->content_id);
             free(b);
         }
+    }
+    if (c) {
+        int crc = ix >= 0 && mp_source_kind_of(s) == MP_SRC_DIR ? complete_packed(path, s, (size_t)ix, c, e)
+                                                                 : mp_complete_source(s, c, NULL, e);
+        if (crc != 0) goto done;
     }
     rc = 0;
 done:
@@ -212,7 +292,33 @@ static int p5z_slurp(mp_p5z *p, const char *path, size_t max, uint8_t **out, siz
     return -1;
 }
 
-static int describe_p5z(const char *path, mp_describe *d, mp_err *e) {
+int mp_complete_p5z(mp_p5z *p, mp_complete *c, mp_err *e) {
+    const mp_pack_manifest *m = &p->man;
+    mp_cfile *files = malloc((m->n ? m->n : 1) * sizeof *files);
+    if (!files) {
+        mp_err_set(e, "out of memory");
+        return -1;
+    }
+    int has_table = 0;
+    for (size_t i = 0; i < m->n; i++) {
+        files[i].path = m->v[i].path;
+        files[i].size = m->v[i].size;
+        has_table |= ieq(m->v[i].path, MP_PLAYGO_TABLE_PATH);
+    }
+    uint8_t *table = NULL;
+    size_t len = 0;
+    int unreadable = has_table && p5z_slurp(p, MP_PLAYGO_TABLE_PATH, MP_PLAYGO_TABLE_MAX, &table, &len, NULL) != 0;
+    int rc = mp_complete_check(files, m->n, table, len, c, NULL);
+    if (rc != 0)
+        mp_err_set(e, "out of memory");
+    else if (unreadable)
+        c->reason = "unreadable";
+    free(table);
+    free(files);
+    return rc;
+}
+
+static int describe_p5z(const char *path, mp_describe *d, mp_complete *c, mp_err *e) {
     mp_p5z *p = NULL;
     if (mp_p5z_open(path, &p, e) != 0) return -1;
     int rc = -1;
@@ -250,19 +356,28 @@ static int describe_p5z(const char *path, mp_describe *d, mp_err *e) {
         d->has_zstd_runtime = has_marker(b, len);
         free(b);
     }
+    if (c && mp_complete_p5z(p, c, e) != 0) goto done;
     rc = 0;
 done:
     mp_p5z_close(p);
     return rc;
 }
 
-int mp_describe_path(const char *path, mp_describe *d, mp_err *e) {
+int mp_describe_path_ex(const char *path, mp_describe *d, mp_complete *c, mp_err *e) {
     memset(d, 0, sizeof *d);
+    if (c) memset(c, 0, sizeof *c);
     if (!path || !*path) {
         mp_err_set(e, "missing path");
         return -1;
     }
-    return is_p5z_name(path) ? describe_p5z(path, d, e) : describe_source(path, d, e);
+    return is_p5z_name(path) ? describe_p5z(path, d, c, e) : describe_source(path, d, c, e);
+}
+
+int mp_describe_path(const char *path, mp_describe *d, mp_err *e) { return mp_describe_path_ex(path, d, NULL, e); }
+
+int mp_describe_complete(const char *path, mp_complete *c, mp_err *e) {
+    mp_describe d;
+    return mp_describe_path_ex(path, &d, c, e);
 }
 
 int mp_describe_icon(const char *path, uint8_t **png, size_t *len, mp_err *e) {

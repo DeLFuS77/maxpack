@@ -100,8 +100,13 @@ int mp_report_write_text(const mp_report *r, FILE *out) {
     const char *kind = r->kind_text[0] ? r->kind_text : r->kind == MP_SRC_EXFAT ? "exFAT image" : "folder";
     fprintf(out, "MaxPack %s — analysis of %s (%s)\n", MP_VERSION,
             r->source_name ? r->source_name : "?", kind);
-    fprintf(out, "%" PRIu64 " files in %" PRIu64 " folders · %s\n\n", r->files, r->dirs,
-            human(r->total_bytes, a));
+    char line[256];
+    fprintf(out, "%" PRIu64 " files in %" PRIu64 " folders · %s\n", r->files, r->dirs, human(r->total_bytes, a));
+    mp_complete_summary(&r->complete, line, sizeof line);
+    fprintf(out, "Completeness: %s\n", line);
+    mp_complete_extra_line(&r->complete, line, sizeof line);
+    if (line[0]) fprintf(out, "  %s\n", line);
+    fprintf(out, "\n");
     fprintf(out, "Loose (goes to the console as is):  %8" PRIu64 " files  %s\n", r->loose_files,
             human(r->loose_bytes, a));
     fprintf(out, "Packable:                           %8" PRIu64 " files  %s\n", r->packable_files,
@@ -297,6 +302,13 @@ char *mp_report_json(const mp_report *r) {
            ", \"grouped\": %" PRIu64 ", \"individual_dict\": %" PRIu64 ", \"dicts\": %d},\n",
            r->small.files, r->small.raw, r->small.individual, r->small.grouped,
            r->small.individual_dict, r->small.dicts);
+    mp_jbuf cj = {0};
+    mp_complete_json(&r->complete, 1, &cj);
+    if (cj.oom || !cj.p)
+        s.oom = 1;
+    else
+        sb_add(&s, "  \"completeness\": %s,\n", cj.p);
+    mp_jbuf_free(&cj);
     sb_add(&s,
            "  \"block_dicts\": %d,\n  \"loose_compressed\": %" PRIu64 ",\n  \"v1_index_bytes\": %" PRIu64
            ",\n  \"p5z_estimate\": %" PRIu64 ",\n  \"elapsed_seconds\": ",

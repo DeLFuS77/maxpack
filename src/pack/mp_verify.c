@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "mp_complete.h"
 #include "mp_hash.h"
 #include "mp_idx3.h"
 #include "mp_p5z_internal.h"
@@ -261,7 +262,9 @@ int mp_verify_folder(const char *dir, const char *against, unsigned threads, int
     mp_zpk_volsrc vs = {0};
     mp_idx3_entry *rows = NULL;
     size_t nrows = 0, n = 0;
-    uint8_t *zidx = NULL, *xidx = NULL;
+    uint8_t *zidx = NULL, *xidx = NULL, *cls = NULL;
+    mp_complete sc;
+    memset(&sc, 0, sizeof sc);
     int rc = -1;
     // Indices: both must exist and be valid.
     mp_file *f = NULL;
@@ -284,6 +287,12 @@ int mp_verify_folder(const char *dir, const char *against, unsigned threads, int
     mp_file_close(f);
     if (against && mp_source_open(against, &v.src, e) != 0) goto done;
     size_t nsrc = v.src ? mp_source_count(v.src) : 0;
+    // what dump tools leave behind that the source's own list proves is not the game's may have
+    // been left out (pack --leave-out-leftovers): not being in the folder is no failure
+    if (v.src && (!(cls = malloc(nsrc ? nsrc : 1)) || mp_complete_source(v.src, &sc, cls, e) != 0)) {
+        if (!cls) mp_err_set(e, "out of memory");
+        goto done;
+    }
     v.c = calloc(mp_zpk_count(v.z) + nsrc + 1, sizeof *v.c);
     if (!v.c) {
         mp_err_set(e, "out of memory");
@@ -327,6 +336,7 @@ int mp_verify_folder(const char *dir, const char *against, unsigned threads, int
         }
         int exists = full && mp_path_kind(full) == 1;
         free(full);
+        if (!exists && sc.checkable && cls[s] == MP_CF_LEFTOVER) continue;
         check *c = &v.c[n++];
         c->kind = CHK_LOOSE_DIR;
         c->src = s;
@@ -362,6 +372,8 @@ int mp_verify_folder(const char *dir, const char *against, unsigned threads, int
     free(todo);
     rc = 0;
 done:
+    mp_complete_free(&sc);
+    free(cls);
     free(v.c);
     mp_zpk_close(v.z);
     mp_zpk_volsrc_free(&vs);

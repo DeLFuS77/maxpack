@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Generates THIRD_PARTY_NOTICES: zstd and zlib (from the submodules), the ampr-emu-ng inside the
+"""Generates THIRD_PARTY_NOTICES: zstd and zlib (from the submodules), the code of ProsperoPkgTool the
+engine adapts (its license, from the header of src/core/mp_playgo.c), the ampr-emu-ng inside the
 window (gui/bundled/ampr-emu-ng), the Go modules in gui/go.mod and par2cmdline-turbo (the submodule
 built as maxpack-par2).
 
@@ -158,6 +159,8 @@ def build():
     b = zh.index("*/", a)
     w("\n".join(ln.strip() for ln in zh[a:b].splitlines()).strip("\n"))
     w("")
+    prospero(w)
+    w("")
     w("")
     w("2. PC window (MaxPack.exe / maxpack)")
     w("-" * 41)
@@ -201,6 +204,20 @@ def build():
     par2(w)
     w("")
     return "\n".join(o)
+
+
+def prospero(w):
+    """The PS5 flat path table hash and the layout of playgo-hash-table.dat, adapted in
+    src/core/mp_playgo.c from ProsperoPkgTool, whose license that file's header keeps."""
+    src = read(os.path.join(ROOT, "src", "core", "mp_playgo.c"))
+    start, end = src.index("// MIT License"), src.index("// (end of the license of ProsperoPkgTool)")
+    text = "\n".join(ln[3:] if ln.startswith("// ") else ln[2:] for ln in src[start:end].splitlines()).strip("\n")
+    w("ProsperoPkgTool - https://github.com/pearlxcore/ProsperoPkgTool")
+    w("  License: MIT. The PS5 flat path table hash (FltPathHash) and the layout of")
+    w("  sce_sys/playgo-hash-table.dat (ProsperoPlayGoHashTableBuilder) are adapted in src/core/mp_playgo.c,")
+    w("  which MaxPack uses to tell whether a dump has every file of the original package.")
+    w("")
+    w(text)
 
 
 def par2(w):

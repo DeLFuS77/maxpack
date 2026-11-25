@@ -24,6 +24,7 @@ void mp_analyze_opts_default(mp_analyze_opts *o) {
 
 void mp_report_free(mp_report *r) {
     if (!r) return;
+    mp_complete_free(&r->complete);
     free(r->source_name);
     r->source_name = NULL;
 }
@@ -439,6 +440,11 @@ int mp_analyze(const char *src_path, const mp_analyze_opts *o, mp_report *r, mp_
     }
     r->files = mp_source_count(src);
     r->dirs = mp_source_dir_count(src);
+    if (mp_complete_source(src, &r->complete, NULL, e) != 0) {
+        mp_source_close(src);
+        mp_report_free(r);
+        return -1;
+    }
     r->threads = threads;
     r->full = o->full;
     rules = mp_rules_new();

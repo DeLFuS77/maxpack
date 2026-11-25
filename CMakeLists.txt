@@ -70,6 +70,13 @@ target_include_directories(maxpack_web PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/we
 target_link_libraries(maxpack_web PUBLIC maxpack_install)
 mp_warnings(maxpack_web)
 
+# The .p5z icon reader of the file manager thumbnails: only zstd decompression and zlib's crc32 (the
+# Windows thumbnail provider builds the same sources with its own copy of those, see below).
+add_library(maxpack_thumb STATIC ${CMAKE_CURRENT_SOURCE_DIR}/src/thumb/mp_p5z_icon.c)
+target_include_directories(maxpack_thumb PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/thumb)
+target_link_libraries(maxpack_thumb PUBLIC mp_zstd mp_zlib)
+mp_warnings(maxpack_thumb)
+
 if(MAXPACK_PS5)
   # maxpack.elf: the phase 2 installer. It is no longer published nor built by this
   # repository's CI: the console payload (DeLFuS77/maxpack-ps5) replaces it and uses only the
@@ -217,6 +224,8 @@ if(MAXPACK_BUILD_TESTS)
   mp_add_test(test_p5z FIXTURES)
   mp_add_test(test_unpack FIXTURES)
   mp_add_test(test_describe FIXTURES)
+  mp_add_test(test_p5z_icon)
+  target_link_libraries(test_p5z_icon PRIVATE maxpack_thumb)
   mp_add_test(test_play FIXTURES)
   mp_add_test(test_volumes FIXTURES)
   mp_add_test(test_image_pack IMAGES)

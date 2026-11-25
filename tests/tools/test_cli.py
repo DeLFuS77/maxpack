@@ -851,7 +851,7 @@ check("info_json_missing", rc == 0 and c and c["checkable"] and c["missing"] == 
 rc, c, err = info_complete(os.path.join(PG, "missing.ffpkg"))
 check("info_json_missing_ufs2", rc == 0 and c and c["checkable"] and c["missing"] == 2, str(c) + err)
 rc, c, err = info_complete(os.path.join(PG, "leftovers"))
-check("info_json_leftovers", rc == 0 and c and c["missing"] == 0 and c["extra_count"] == 4 and c["leftover_count"] == 3
+check("info_json_leftovers", rc == 0 and c and c["missing"] == 0 and c["extra_count"] == 3 and c["leftover_count"] == 3
       and c["leftover_bytes"] == 7000 + 4000 + 64 and c["extra_paths"][0] == "decrypted/eboot.bin"
       and "Thumbs.db" not in c["extra_paths"], str(c) + err)
 for name, reason in (("notable", "no_table"), ("badtable", "damaged"), ("alien", "unknown_format")):
@@ -907,7 +907,7 @@ check("pack_leave_out_leftovers", rc == 0 and res.get("left_out_files") == 3 and
       and "left out: 3 files dump tools left behind" in err, str(res) + err[-300:])
 rc, so, err = run("verify", lp5)
 check("verify_p5z_complete", rc == 0 and "complete: all 8 files of the original package" in so
-      and "1 file is not in the original package (120 B)" in so, so + err)
+      and "not in the original package" not in so, so + err)   # its dlc_emu.ini is never a file of more
 np5 = os.path.join(TMP, "pg_notable.p5z")
 if os.path.exists(np5):
     os.remove(np5)

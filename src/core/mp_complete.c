@@ -61,6 +61,18 @@ int mp_complete_is_leftover(const char *path) {
     return ieq_n(path, n, "entitlements.txt") || ieq_n(path, n, "entitlement_key.dat");
 }
 
+int mp_complete_is_dlc(const char *path) {
+    size_t n = strlen(path);
+    if (ieq_n(path, n, "dlc_emu.ini")) return 1;
+    // addcont0/ to addcont99/ at the root, as MaxPack names them (no leading zeros), with something in it
+    if (n < 9 || !ieq_n(path, 7, "addcont")) return 0;
+    const char *d = path + 7;
+    size_t digits = 0;
+    while (digits < 3 && d[digits] >= '0' && d[digits] <= '9') digits++;
+    if (digits == 0 || digits > 2 || (digits == 2 && d[0] == '0')) return 0;
+    return d[digits] == '/' && d[digits + 1] != 0;
+}
+
 static long find_hash(const uint64_t *h, size_t n, uint64_t want) {
     size_t lo = 0, hi = n;
     while (lo < hi) {
@@ -116,7 +128,7 @@ static int check_table(const mp_cfile *files, size_t n, uint64_t *h, size_t k, m
         if (at >= 0) {
             cl = MP_CF_LISTED;
             seen[at] = 1;
-        } else if (mp_complete_is_junk(p) || in_root_folder(p, "sce_sys")) {
+        } else if (mp_complete_is_junk(p) || in_root_folder(p, "sce_sys") || mp_complete_is_dlc(p)) {
             cl = MP_CF_IGNORED;
         } else if (mp_complete_is_leftover(p)) {
             cl = MP_CF_LEFTOVER;
@@ -255,7 +267,7 @@ static int check_dump_index(const mp_cfile *files, size_t n, drow *v, size_t k, 
                     c->size_mismatch++;
             }
             cl = MP_CF_LISTED;
-        } else if (mp_complete_is_junk(p) || ieq_n(p, strlen(p), DUMP_INDEX)) {
+        } else if (mp_complete_is_junk(p) || ieq_n(p, strlen(p), DUMP_INDEX) || mp_complete_is_dlc(p)) {
             cl = MP_CF_IGNORED;
         } else {
             cl = MP_CF_EXTRA;

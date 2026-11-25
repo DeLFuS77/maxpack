@@ -262,21 +262,59 @@ MP_TEST(rule_missing_extra_junk) {
     MP_CHECK_EQ_U64(c.listed, 6);
     MP_CHECK_EQ_U64(c.present, 5);
     MP_CHECK_EQ_U64(c.missing, 1);   // data/b.bin
-    MP_CHECK_EQ_U64(c.extra_count, 7);
-    MP_CHECK_EQ_U64(c.extra_bytes, 1000 + 20 + 5000 + 3000 + 64 + 64 + 7);
+    // dlc_emu.ini is what MaxPack writes for the DLC it packs with a game: never a file of more
+    MP_CHECK_EQ_U64(c.extra_count, 6);
+    MP_CHECK_EQ_U64(c.extra_bytes, 1000 + 5000 + 3000 + 64 + 64 + 7);
     MP_CHECK_EQ_U64(c.leftover_count, 5);
     MP_CHECK_EQ_U64(c.leftover_bytes, 5000 + 3000 + 64 + 64 + 7);
     MP_CHECK(class_of(&l, cls, "decrypted/eboot.bin") == MP_CF_LEFTOVER);
     MP_CHECK(class_of(&l, cls, "eboot.bin.auth_info") == MP_CF_LEFTOVER);
-    MP_CHECK(class_of(&l, cls, "dlc_emu.ini") == MP_CF_EXTRA);
+    MP_CHECK(class_of(&l, cls, "dlc_emu.ini") == MP_CF_IGNORED);
     MP_CHECK(class_of(&l, cls, "Thumbs.db") == MP_CF_IGNORED);
     MP_CHECK(class_of(&l, cls, "SCE_MODULE/LIBC.PRX") == MP_CF_LISTED);
     // the first extra paths, in path order
-    MP_CHECK_EQ_U64(c.npaths, 7);
-    if (c.npaths == 7) {
+    MP_CHECK_EQ_U64(c.npaths, 6);
+    if (c.npaths == 6) {
         MP_CHECK_STR(c.paths[0], "Decrypted/sce_module/libc.prx");
-        MP_CHECK_STR(c.paths[6], "sce_module/libc.prx.AUTH_INFO");
+        MP_CHECK_STR(c.paths[5], "sce_module/libc.prx.AUTH_INFO");
     }
+    mp_complete_free(&c);
+    free(t);
+}
+
+// What MaxPack adds to a game it packs with its DLC is never a file of more, against the table or the
+// dump tool's list: dlc_emu.ini at the root and the addcont0/ to addcont99/ folders, whatever their
+// case; other names, and those folders below the root, are. Nor is it missing from the list.
+MP_TEST(rule_dlc_not_extra) {
+    MP_CHECK(mp_complete_is_dlc("dlc_emu.ini") && mp_complete_is_dlc("DLC_EMU.INI"));
+    MP_CHECK(mp_complete_is_dlc("addcont0/a.bin") && mp_complete_is_dlc("ADDCONT99/x/y.bin") &&
+             mp_complete_is_dlc("addcont10/x"));
+    MP_CHECK(!mp_complete_is_dlc("addcont100/x") && !mp_complete_is_dlc("addcont01/x") &&
+             !mp_complete_is_dlc("addcont/x") && !mp_complete_is_dlc("addcont0") && !mp_complete_is_dlc("addcont0x/a") &&
+             !mp_complete_is_dlc("data/addcont0/x") && !mp_complete_is_dlc("data/dlc_emu.ini") &&
+             !mp_complete_is_dlc("dlc_emu.ini.bak"));
+    size_t tl = 0;
+    uint8_t *t = table_of_paths(IMAGE, NIMAGE, &tl), cls[32];
+    listing l = {0};
+    for (size_t i = 0; i < NIMAGE; i++) add(&l, IMAGE[i], 1);
+    add(&l, "dlc_emu.ini", 80);
+    add(&l, "addcont0/data/a.bin", 1000);
+    add(&l, "addcont0/sce_sys/param.json", 100);
+    add(&l, "AddCont99/x.bin", 10);
+    add(&l, "addcont100/x.bin", 3);
+    add(&l, "addcont01/x.bin", 4);
+    add(&l, "data/addcont0/x.bin", 5);
+    mp_complete c;
+    check(&l, t, tl, &c, cls);
+    MP_CHECK(c.checkable);
+    MP_CHECK_EQ_U64(c.missing, 0);
+    MP_CHECK_EQ_U64(c.extra_count, 3);
+    MP_CHECK_EQ_U64(c.extra_bytes, 3 + 4 + 5);
+    MP_CHECK(class_of(&l, cls, "dlc_emu.ini") == MP_CF_IGNORED);
+    MP_CHECK(class_of(&l, cls, "addcont0/data/a.bin") == MP_CF_IGNORED);
+    MP_CHECK(class_of(&l, cls, "AddCont99/x.bin") == MP_CF_IGNORED);
+    MP_CHECK(class_of(&l, cls, "addcont100/x.bin") == MP_CF_EXTRA);
+    MP_CHECK(class_of(&l, cls, "data/addcont0/x.bin") == MP_CF_EXTRA);
     mp_complete_free(&c);
     free(t);
 }
@@ -420,7 +458,7 @@ MP_TEST(fixtures) {
     mp_complete_free(&c);
     source_check(PG "/leftovers", &c);
     MP_CHECK_EQ_U64(c.missing, 0);
-    MP_CHECK_EQ_U64(c.extra_count, 4);
+    MP_CHECK_EQ_U64(c.extra_count, 3);   // the leftovers: its dlc_emu.ini is never a file of more
     MP_CHECK_EQ_U64(c.leftover_count, 3);
     MP_CHECK_EQ_U64(c.leftover_bytes, 7000 + 4000 + 64);
     mp_complete_free(&c);
@@ -686,6 +724,30 @@ MP_TEST(dump_index_rule) {
     free(di);
 }
 
+// Against the dump tool's list too, what MaxPack adds for the DLC is never a file of more.
+MP_TEST(dump_index_dlc_not_extra) {
+    static const irow rows[] = {{"eboot.bin", 10}, {"data/a.bin", 20}};
+    size_t dl = 0;
+    uint8_t *di = index_of(rows, 2, &dl), cls[32];
+    listing l = {0};
+    add(&l, "eboot.bin", 10);
+    add(&l, "data/a.bin", 20);
+    add(&l, "dlc_emu.ini", 80);
+    add(&l, "addcont0/data/a.bin", 1000);
+    add(&l, "addcont100/x.bin", 3);
+    mp_complete c;
+    check_di(&l, NULL, 0, di, dl, &c, cls);
+    MP_CHECK(c.checkable);
+    MP_CHECK_EQ_U64(c.present, 2);
+    MP_CHECK_EQ_U64(c.missing, 0);
+    MP_CHECK_EQ_U64(c.extra_count, 1);
+    MP_CHECK_EQ_U64(c.extra_bytes, 3);
+    MP_CHECK(class_of(&l, cls, "dlc_emu.ini") == MP_CF_IGNORED);
+    MP_CHECK(class_of(&l, cls, "addcont0/data/a.bin") == MP_CF_IGNORED);
+    mp_complete_free(&c);
+    free(di);
+}
+
 // A list that cannot be trusted is not used: one of another game (nothing of it is here), one of
 // another version (many sizes differ), a damaged one, one whose files are in AMPRPAK4 packs.
 MP_TEST(dump_index_not_trusted) {
@@ -868,6 +930,7 @@ int main(void) {
     MP_RUN(table_reader);
     MP_RUN(rule_complete_and_entries);
     MP_RUN(rule_missing_extra_junk);
+    MP_RUN(rule_dlc_not_extra);
     MP_RUN(rule_listed_is_never_leftover);
     MP_RUN(rule_without_table);
     MP_RUN(rule_many_extra_paths);
@@ -876,6 +939,7 @@ int main(void) {
     MP_RUN(pack_leaves_out_proven_leftovers);
     MP_RUN(describe_says_it);
     MP_RUN(dump_index_rule);
+    MP_RUN(dump_index_dlc_not_extra);
     MP_RUN(dump_index_not_trusted);
     MP_RUN(dump_index_and_table);
     MP_RUN(dump_index_fixtures);

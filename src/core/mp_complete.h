@@ -6,9 +6,10 @@
 //
 // The rule, for each file of the dump:
 //   - listed: the table has its hash (case does not matter);
-//   - else ignored: OS junk (Thumbs.db, .DS_Store, ._*, __MACOSX/...), and anything in sce_sys/,
+//   - else ignored: OS junk (Thumbs.db, .DS_Store, ._*, __MACOSX/...), anything in sce_sys/,
 //     where a dump puts the package's own entries (param.json, the PlayGo tables...), which are not
-//     files of the image;
+//     files of the image, and what MaxPack adds for the DLC it packs with a game (dlc_emu.ini and the
+//     addcont0/ to addcont99/ folders, mp_complete_is_dlc);
 //   - else extra; a leftover when dump tools leave it: a decrypted/ folder at the root (the raw ELF
 //     copies of the executables), *.auth_info (written next to the executables) and
 //     entitlements.txt or entitlement_key.dat at the root.
@@ -25,7 +26,7 @@
 //     changes (fakelib/, fakelib2/, dlc_emu.ini), what the game writes while it runs (anything under a
 //     Saved/ folder, *.log), the runtime's own files (ampr_commands.bin, apr_emu.log) and the list
 //     itself; present: there with its size; missing: not there; size_mismatch: there, of another size;
-//   - extra: what the dump has that the list does not (OS junk aside);
+//   - extra: what the dump has that the list does not (OS junk and what MaxPack adds for the DLC aside);
 //   - leftovers: by their names only, as without a table: this list does not prove they are not the
 //     game's (the dump tool writes them too), so pack never leaves them out because of it.
 // A list that cannot be trusted is not used ("not checked"): a damaged one ("dump_index_damaged"),
@@ -92,6 +93,10 @@ void mp_complete_counts_only(mp_complete *c);
 int mp_complete_is_leftover(const char *path);
 // 1 for the files of the OS (Thumbs.db, .DS_Store, ._*) and what is in its folders.
 int mp_complete_is_junk(const char *path);
+// 1 for what MaxPack adds to a game it packs with its DLC: dlc_emu.ini at the root and what is in the
+// addcont0/ to addcont99/ folders at the root (ASCII case aside). Neither list ever counts it as a file
+// of more.
+int mp_complete_is_dlc(const char *path);
 
 // The object {"checkable":...,"reason":...,"listed":...,...}; with_paths adds "extra_paths".
 void mp_complete_json(const mp_complete *c, int with_paths, mp_jbuf *b);

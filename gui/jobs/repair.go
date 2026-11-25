@@ -237,6 +237,7 @@ func (r *Runner) protect(ctx context.Context, i int, file string, o Options) (ui
 		if note := removeSet(file); note != "" {
 			return fail("repair_data_failed: " + note)
 		}
+		r.log("Repair data of %d %% replaced by one of %d %%: %s", old.Percent, o.Repair, file)
 	}
 	order := append(append([]string{}, made[1:]...), made[0])
 	var placed []string
@@ -400,7 +401,9 @@ func (r *Runner) repairOne(ctx context.Context, i int, p Plan, o Options) outcom
 	}
 	step.Step = stepPlaced
 	writeStep(work, step)
+	r.log("Repaired with its repair data and verified: %s (%s); its damaged copy goes", file, sizeWords(size))
 	if err := removeAll(work); err != nil {
+		r.log("Could not delete the damaged copy of %s: %s: %v", file, work, err)
 		return outcome{state: StateOK, detail: "repaired; repair_backup_not_deleted: " + work}
 	}
 	r.forget(work)

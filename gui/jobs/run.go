@@ -345,6 +345,8 @@ func (r *Runner) one(ctx context.Context, i int, p Plan, o Options) outcome {
 		if oldSet {
 			if note := removeSet(p.Out); note != "" {
 				notes = append(notes, note)
+			} else {
+				r.log("Repair data of the old one deleted with it: %s", p.Out)
 			}
 		}
 	} else if err := place(p.Out, p.Tmp); err != nil {

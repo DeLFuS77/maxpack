@@ -310,8 +310,13 @@ Function un.RemoveExplorer
   DeleteRegValue HKCU "Software\RegisteredApplications" "MaxPack"
   DeleteRegKey HKCU "Software\MaxPack\Capabilities"
   DeleteRegKey /ifempty HKCU "Software\MaxPack"
-  DeleteRegKey HKCU "${CLASSES}\SystemFileAssociations\.p5z\ShellEx\{e357fccd-a995-4576-b01f-234630154e96}"
-  DeleteRegKey /ifempty HKCU "${CLASSES}\SystemFileAssociations\.p5z\ShellEx"
+  ; the thumbnail handler of .p5z only while it is MaxPack's (another program may have put its own)
+  ReadRegStr $1 HKCU "${CLASSES}\SystemFileAssociations\.p5z\ShellEx\{e357fccd-a995-4576-b01f-234630154e96}" ""
+  ${If} $1 == "{266D6364-17C0-4B3E-BB33-7EEB90C91837}"
+    DeleteRegValue HKCU "${CLASSES}\SystemFileAssociations\.p5z\ShellEx\{e357fccd-a995-4576-b01f-234630154e96}" ""
+    DeleteRegKey /ifempty HKCU "${CLASSES}\SystemFileAssociations\.p5z\ShellEx\{e357fccd-a995-4576-b01f-234630154e96}"
+    DeleteRegKey /ifempty HKCU "${CLASSES}\SystemFileAssociations\.p5z\ShellEx"
+  ${EndIf}
   DeleteRegKey HKCU "${CLASSES}\CLSID\{266D6364-17C0-4B3E-BB33-7EEB90C91837}"
   Delete "$SENDTO\MaxPack.lnk"
   ; the Explorer shows the programs of the files as they are now

@@ -176,12 +176,21 @@ func Relabel(executable string, texts MenuTexts) error {
 
 // completeFiles registers the thumbnail provider when the place of .p5z files is there for this
 // copy of MaxPack without it (as MaxPack 1.0.6 and before wrote it) or with another copy's DLL, and
-// tells the Explorer; for another copy, or with the place off, it writes nothing.
+// tells the Explorer; for another copy, or with the place off, it writes nothing. A thumbnail handler
+// of .p5z that another program put there is left to it.
 func completeFiles(executable string) error {
 	if placeOf(readString(registry.CURRENT_USER, filesCommand(user.software), ""), executable) != Here {
 		return nil
 	}
-	ops := thumbsOps(user.software, executable)
+	var ops []Op
+	for _, op := range thumbsOps(user.software, executable) {
+		if op.Key == thumbsShellEx(user.software) {
+			if had := readString(registry.CURRENT_USER, op.Key, op.Name); had != "" && !strings.EqualFold(had, thumbsCLSID) {
+				continue
+			}
+		}
+		ops = append(ops, op)
+	}
 	for _, op := range ops {
 		if readString(registry.CURRENT_USER, op.Key, op.Name) != op.Data {
 			if err := apply(user.software, ops); err != nil {

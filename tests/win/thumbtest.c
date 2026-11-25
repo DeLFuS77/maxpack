@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // maxpack-thumbs.dll, the thumbnail provider of .p5z files, loaded as the Explorer loads it: its class
 // from DllGetClassObject, a stream on the file, Initialize and GetThumbnail. The icon comes out at the
-// size asked, premultiplied, with its alpha; anything that is not a readable .p5z with an icon gives a
+// size asked (never larger than its own), with its alpha; anything that is not a readable .p5z with an icon gives a
 // failure (the Explorer shows the normal icon). The DLL carries its C runtime and exports only the two
 // functions COM needs.
 //
@@ -27,7 +27,8 @@ static HMODULE dll;
 static HRESULT(STDAPICALLTYPE *get_class)(REFCLSID, REFIID, void **);
 static HRESULT(STDAPICALLTYPE *can_unload)(void);
 
-// ---- a PNG of w x h pixels: the left half opaque red, the right half green with no alpha --------
+// ---- a PNG of w x h pixels in three bands from left to right: opaque red, blue at half alpha, and
+// ---- green with no alpha -----------------------------------------------------------------------
 
 static void be32(uint8_t *p, uint32_t v) {
     p[0] = (uint8_t)(v >> 24);
@@ -52,11 +53,11 @@ static uint8_t *make_png(uint32_t w, uint32_t h, size_t *len) {
         r[0] = 0;   // no filter
         for (uint32_t x = 0; x < w; x++) {
             uint8_t *p = r + 1 + 4 * (size_t)x;
-            int left = x < w / 2;
-            p[0] = left ? 255 : 0;
-            p[1] = left ? 0 : 255;
-            p[2] = 0;
-            p[3] = left ? 255 : 0;
+            int band = x < w / 3 ? 0 : x < 2 * w / 3 ? 1 : 2;
+            p[0] = band == 0 ? 255 : 0;
+            p[1] = band == 2 ? 255 : 0;
+            p[2] = band == 1 ? 255 : 0;
+            p[3] = band == 0 ? 255 : band == 1 ? 128 : 0;
         }
     }
     uLongf zn = compressBound((uLong)raw_n);
@@ -147,8 +148,9 @@ done:
     return t;
 }
 
-// The thumbnail is a 32-bit DIB of w x h whose left half is red and opaque and whose right half
-// is fully transparent: premultiplied, so its colour is zero too.
+// The thumbnail is a 32-bit DIB of w x h with the icon's three bands, in straight (not premultiplied)
+// BGRA, as the Explorer takes WTSAT_ARGB: opaque red, blue at half alpha (premultiplied, it would be half
+// as bright), and fully transparent.
 static void check_bitmap(HBITMAP bmp, LONG w, LONG h) {
     DIBSECTION ds;
     if (!bmp || GetObject(bmp, sizeof ds, &ds) != sizeof ds) {
@@ -166,12 +168,13 @@ static void check_bitmap(HBITMAP bmp, LONG w, LONG h) {
         for (LONG x = 0; x < w; x++)
             if (bits[stride * y + 4 * (size_t)x + 3]) opaque = 1;
     MP_CHECK(opaque);
-    const uint8_t *red = bits + stride * (size_t)(h / 2) + 4 * (size_t)(w / 4);
-    const uint8_t *clear = bits + stride * (size_t)(h / 2) + 4 * (size_t)(3 * w / 4);
+    const uint8_t *row = bits + stride * (size_t)(h / 2);
+    const uint8_t *red = row + 4 * (size_t)(w / 6), *blue = row + 4 * (size_t)(w / 2), *clear = row + 4 * (size_t)(5 * w / 6);
     if (!(red[0] < 8 && red[1] < 8 && red[2] > 247 && red[3] == 255))
-        MP_FAIL_("the red half is %u %u %u %u (BGRA)", red[0], red[1], red[2], red[3]);
-    if (clear[0] || clear[1] || clear[2] || clear[3])
-        MP_FAIL_("the transparent half is %u %u %u %u (BGRA)", clear[0], clear[1], clear[2], clear[3]);
+        MP_FAIL_("the red band is %u %u %u %u (BGRA)", red[0], red[1], red[2], red[3]);
+    if (!(blue[0] > 247 && blue[1] < 8 && blue[2] < 8 && blue[3] >= 126 && blue[3] <= 130))
+        MP_FAIL_("the blue band at half alpha is %u %u %u %u (BGRA)", blue[0], blue[1], blue[2], blue[3]);
+    if (clear[3]) MP_FAIL_("the transparent band is %u %u %u %u (BGRA)", clear[0], clear[1], clear[2], clear[3]);
 }
 
 static void expect_none(const char *what, const char *path) {
@@ -193,16 +196,27 @@ MP_TEST(thumb_dll_square_icon) {
     MP_CHECK(t.hr == S_OK);
     check_bitmap(t.bmp, 48, 48);
     if (t.bmp) DeleteObject(t.bmp);
+    // never larger than the icon: the Explorer takes a smaller bitmap
+    t = thumbnail_of(p, 1024);
+    MP_CHECK(t.hr == S_OK);
+    check_bitmap(t.bmp, 512, 512);
+    if (t.bmp) DeleteObject(t.bmp);
     free(png);
 }
 
-// The longer side is the size asked; the other keeps the proportion.
+// The longer side is the size asked, or the icon's when it is smaller; the other keeps the proportion.
 MP_TEST(thumb_dll_wide_icon) {
     size_t n = 0;
-    uint8_t *png = make_png(100, 50, &n);
+    uint8_t *png = make_png(400, 200, &n);
     thumb t = thumbnail_of(game("wide", png, n), 256);
     MP_CHECK(t.hr == S_OK);
     check_bitmap(t.bmp, 256, 128);
+    if (t.bmp) DeleteObject(t.bmp);
+    free(png);
+    png = make_png(100, 50, &n);
+    t = thumbnail_of(game("small", png, n), 256);
+    MP_CHECK(t.hr == S_OK);
+    check_bitmap(t.bmp, 100, 50);
     if (t.bmp) DeleteObject(t.bmp);
     free(png);
 }

@@ -243,9 +243,11 @@ func TestInstallerScript(t *testing.T) {
 		case explorer.DeleteValue:
 			want = `DeleteRegValue HKCU "` + op.Key + `" "` + op.Name + `"`
 		case explorer.DeleteOwnValue:
+			// read, and removed only while it is MaxPack's: the uninstaller's own check, right before it
 			want = `DeleteRegValue HKCU "` + op.Key + `" "` + op.Name + `"`
-			if !strings.Contains(script, `ReadRegStr $1 HKCU "`+op.Key+`" "`+op.Name+`"`) || op.Data != "MaxPack.p5z" {
-				t.Errorf("the uninstaller does not check %s before removing it", op.Key)
+			check := `ReadRegStr $1 HKCU "` + op.Key + `" "` + op.Name + `"` + "\n  ${If} $1 == \"" + op.Data + "\"\n    " + want
+			if !strings.Contains(script, check) {
+				t.Errorf("the uninstaller does not check %s holds %s before removing it", op.Key, op.Data)
 			}
 		}
 		if !strings.Contains(script, want) {

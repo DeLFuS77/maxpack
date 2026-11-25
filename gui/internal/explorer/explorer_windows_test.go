@@ -422,6 +422,59 @@ func TestFilesOfAnEarlierMaxPack(t *testing.T) {
 	checkThumbs(t, classes, "")
 }
 
+// The thumbnail handler of .p5z is another program's: the window, completing the files of an earlier
+// MaxPack, leaves it (and does not keep writing at every opening), and turning the place off leaves it
+// too. Turned on by the user, the place takes it; then removed, it goes, as it is MaxPack's.
+func TestThumbnailHandlerOfAnotherProgram(t *testing.T) {
+	software, _ := testKeys(t)
+	classes := software + `\Classes`
+	exe := `C:\Tools\MaxPack\MaxPack.exe`
+	other := `{11111111-2222-3333-4444-555555555555}`
+	notified := 0
+	notifyShell = func() { notified++ }
+	var earlier []Op
+	for _, op := range AddFilesOps(software, exe, true) {
+		if !strings.Contains(op.Key, `\CLSID\`) && !strings.Contains(op.Key, `\ShellEx\`) {
+			earlier = append(earlier, op)
+		}
+	}
+	if err := apply(software, earlier); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeString(classes+testHandler, "", other); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		if err := Relabel(exe, MenuTexts{}); err != nil {
+			t.Fatal(err)
+		}
+		if got := value(classes+testHandler, ""); got != other {
+			t.Fatalf("the window took the handler of another program: %q", got)
+		}
+	}
+	if notified > 1 {
+		t.Errorf("the window wrote again at every opening: told %d times", notified)
+	}
+	if err := Remove(Files); err != nil {
+		t.Fatal(err)
+	}
+	if got := value(classes+testHandler, ""); got != other {
+		t.Fatalf("turning the place off took the handler of another program: %q", got)
+	}
+	if exists(t, classes+`\CLSID\`+testCLSID) {
+		t.Error("MaxPack's class stays")
+	}
+	// the user turns the place on: MaxPack's handler; off, it goes
+	if err := Add(Files, exe, MenuTexts{}); err != nil {
+		t.Fatal(err)
+	}
+	checkThumbs(t, classes, `C:\Tools\MaxPack\maxpack-thumbs.dll`)
+	if err := Remove(Files); err != nil {
+		t.Fatal(err)
+	}
+	checkThumbs(t, classes, "")
+}
+
 // "Send to" holds a shortcut to MaxPack, for this copy; removed, it goes.
 func TestSendToAddedAndRemoved(t *testing.T) {
 	_, folder := testKeys(t)

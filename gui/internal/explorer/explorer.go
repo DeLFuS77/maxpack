@@ -215,7 +215,7 @@ func AddFilesOps(software, executable string, free bool) []Op {
 }
 
 // RemoveFilesOps takes MaxPack away from the programs of .p5z files, and its thumbnails; what other
-// programs wrote for .p5z stays, and so does a default that is not MaxPack's.
+// programs wrote for .p5z stays, and so do a default and a thumbnail handler that are not MaxPack's.
 func RemoveFilesOps(software string) []Op {
 	c := classes(software)
 	return []Op{
@@ -224,7 +224,7 @@ func RemoveFilesOps(software string) []Op {
 		{Do: DeleteTree, Key: c + `\` + ProgID},
 		{Do: DeleteValue, Key: software + `\RegisteredApplications`, Name: appName},
 		{Do: DeleteTree, Key: capabilities(software)},
-		{Do: DeleteTree, Key: thumbsShellEx(software)},
+		{Do: DeleteOwnValue, Key: thumbsShellEx(software), Data: thumbsCLSID},
 		{Do: DeleteTree, Key: thumbsClass(software)},
 	}
 }

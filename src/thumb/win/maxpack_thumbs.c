@@ -3,7 +3,8 @@
 // process of its own (dllhost), gives it a stream on the file (IInitializeWithStream) and asks for a bitmap
 // of a size (IThumbnailProvider). The icon comes from mp_p5z_icon_read, which reads only the header, the
 // footer, the index and the icon, within its caps; it is decoded as a PNG with WIC and scaled so its longer
-// side is the size asked. Every failure is "no thumbnail" (E_FAIL), and the Explorer shows the normal icon.
+// side is the size asked, never larger than its own. Every failure is "no thumbnail" (E_FAIL), and the
+// Explorer shows the normal icon.
 // It writes nothing: the window registers it (gui/internal/explorer).
 #define COBJMACROS
 #include <windows.h>
@@ -108,13 +109,14 @@ static int stream_read_at(void *ctx, void *buf, size_t n, uint64_t off) {
     return 0;
 }
 
-// The PNG as a top-down 32-bit DIB of premultiplied BGRA whose longer side is cx.
+// The PNG as a top-down 32-bit DIB of straight (not premultiplied) BGRA, the alpha the Explorer takes with
+// WTSAT_ARGB, whose longer side is cx, or the PNG's own when that is smaller: it is never enlarged.
 static HRESULT to_bitmap(const uint8_t *png, size_t len, UINT cx, HBITMAP *out) {
     IWICImagingFactory *f = NULL;
     IWICStream *ws = NULL;
     IWICBitmapDecoder *dec = NULL;
     IWICBitmapFrameDecode *frame = NULL;
-    IWICFormatConverter *pbgra = NULL, *scaled_pbgra = NULL;
+    IWICFormatConverter *pbgra = NULL, *bgra = NULL;
     IWICBitmapScaler *scaler = NULL;
     HBITMAP bmp = NULL;
     void *bits = NULL;
@@ -132,6 +134,8 @@ static HRESULT to_bitmap(const uint8_t *png, size_t len, UINT cx, HBITMAP *out) 
     if (SUCCEEDED(hr)) hr = IWICBitmapFrameDecode_GetSize(frame, &w, &h);
     if (SUCCEEDED(hr) && (!w || !h || w > PIXELS_MAX || h > PIXELS_MAX)) hr = E_FAIL;
     if (SUCCEEDED(hr)) {
+        UINT longer = w >= h ? w : h;
+        if (cx > longer) ow = oh = cx = longer;   // the Explorer takes a smaller bitmap
         if (w >= h) {
             oh = (UINT)(((UINT64)h * cx + w / 2) / w);
             if (!oh) oh = 1;
@@ -148,10 +152,10 @@ static HRESULT to_bitmap(const uint8_t *png, size_t len, UINT cx, HBITMAP *out) 
     if (SUCCEEDED(hr)) hr = IWICImagingFactory_CreateBitmapScaler(f, &scaler);
     if (SUCCEEDED(hr))
         hr = IWICBitmapScaler_Initialize(scaler, (IWICBitmapSource *)pbgra, ow, oh, WICBitmapInterpolationModeFant);
-    // the scaler may give another format: premultiplied BGRA again
-    if (SUCCEEDED(hr)) hr = IWICImagingFactory_CreateFormatConverter(f, &scaled_pbgra);
+    // then straight BGRA, as the Explorer wants it with WTSAT_ARGB
+    if (SUCCEEDED(hr)) hr = IWICImagingFactory_CreateFormatConverter(f, &bgra);
     if (SUCCEEDED(hr))
-        hr = IWICFormatConverter_Initialize(scaled_pbgra, (IWICBitmapSource *)scaler, &GUID_WICPixelFormat32bppPBGRA,
+        hr = IWICFormatConverter_Initialize(bgra, (IWICBitmapSource *)scaler, &GUID_WICPixelFormat32bppBGRA,
                                             WICBitmapDitherTypeNone, NULL, 0.0, WICBitmapPaletteTypeCustom);
     if (SUCCEEDED(hr)) {
         BITMAPINFO bi;
@@ -165,8 +169,8 @@ static HRESULT to_bitmap(const uint8_t *png, size_t len, UINT cx, HBITMAP *out) 
         bmp = CreateDIBSection(NULL, &bi, DIB_RGB_COLORS, &bits, NULL, 0);
         if (!bmp || !bits) hr = E_OUTOFMEMORY;
     }
-    if (SUCCEEDED(hr)) hr = IWICFormatConverter_CopyPixels(scaled_pbgra, NULL, ow * 4, ow * 4 * oh, bits);
-    if (scaled_pbgra) IWICFormatConverter_Release(scaled_pbgra);
+    if (SUCCEEDED(hr)) hr = IWICFormatConverter_CopyPixels(bgra, NULL, ow * 4, ow * 4 * oh, bits);
+    if (bgra) IWICFormatConverter_Release(bgra);
     if (scaler) IWICBitmapScaler_Release(scaler);
     if (pbgra) IWICFormatConverter_Release(pbgra);
     if (frame) IWICBitmapFrameDecode_Release(frame);

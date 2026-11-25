@@ -85,8 +85,8 @@ func TestAddFilesOps(t *testing.T) {
 	}
 }
 
-// Removing them takes away what MaxPack wrote, the thumbnails too, and the default of .p5z only
-// when it is MaxPack's.
+// Removing them takes away what MaxPack wrote, the thumbnails too, and the default of .p5z and its
+// thumbnail handler only while they are MaxPack's.
 func TestRemoveFilesOps(t *testing.T) {
 	want := []Op{
 		{Do: DeleteValue, Key: `Software\Classes\.p5z\OpenWithProgids`, Name: "MaxPack.p5z"},
@@ -94,7 +94,7 @@ func TestRemoveFilesOps(t *testing.T) {
 		{Do: DeleteTree, Key: `Software\Classes\MaxPack.p5z`},
 		{Do: DeleteValue, Key: `Software\RegisteredApplications`, Name: "MaxPack"},
 		{Do: DeleteTree, Key: `Software\MaxPack\Capabilities`},
-		{Do: DeleteTree, Key: `Software\Classes\SystemFileAssociations\.p5z\ShellEx\{e357fccd-a995-4576-b01f-234630154e96}`},
+		{Do: DeleteOwnValue, Key: `Software\Classes\SystemFileAssociations\.p5z\ShellEx\{e357fccd-a995-4576-b01f-234630154e96}`, Data: "{266D6364-17C0-4B3E-BB33-7EEB90C91837}"},
 		{Do: DeleteTree, Key: `Software\Classes\CLSID\{266D6364-17C0-4B3E-BB33-7EEB90C91837}`},
 	}
 	if got := RemoveFilesOps("Software"); !reflect.DeepEqual(got, want) {

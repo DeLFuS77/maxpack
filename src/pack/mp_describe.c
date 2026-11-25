@@ -18,6 +18,7 @@
 #define PARAM_MAX (1u << 20)
 #define ICON_MAX (16u << 20)
 #define ZPK_INDEX_MAX (1u << 30)
+#define DUMP_INDEX_MAX (512u << 20)
 
 static int ieq(const char *a, const char *b) {
     for (;; a++, b++) {
@@ -308,11 +309,27 @@ int mp_complete_p5z(mp_p5z *p, mp_complete *c, mp_err *e) {
     uint8_t *table = NULL;
     size_t len = 0;
     int unreadable = has_table && p5z_slurp(p, MP_PLAYGO_TABLE_PATH, MP_PLAYGO_TABLE_MAX, &table, &len, NULL) != 0;
-    int rc = mp_complete_check(files, m->n, table, len, c, NULL);
+    // the dump tool's list: the original ampr_emu.index, which the .p5z keeps apart (the folder for
+    // the console gets MaxPack's own); one that cannot be read is a damaged one
+    membuf di = {0};
+    int has_index = 0;
+    for (size_t i = 0; i < p->nfiles && !has_index; i++) {
+        if (p->files[i].role != MP_ROLE_ORIGINAL || !ieq(p->files[i].path, "ampr_emu.index")) continue;
+        has_index = 1;
+        di.max = DUMP_INDEX_MAX;
+        if (p5z_read_file(p, i, to_mem, &di, NULL) != 0) {
+            free(di.b);
+            di.b = NULL;
+            di.n = 0;
+        }
+        if (!di.b) di.b = malloc(1);
+    }
+    int rc = mp_complete_check_lists(files, m->n, table, len, has_index ? di.b : NULL, di.n, c, NULL);
     if (rc != 0)
         mp_err_set(e, "out of memory");
-    else if (unreadable)
+    else if (unreadable && !c->checkable && !strcmp(c->reason, "no_table"))
         c->reason = "unreadable";
+    free(di.b);
     free(table);
     free(files);
     return rc;

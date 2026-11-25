@@ -350,7 +350,8 @@ MP_TEST(rule_many_extra_paths) {
     mp_jbuf b = {0};
     mp_complete_json(&c, 1, &b);
     MP_CHECK_CONTAINS(b.p, "\"checkable\":true");
-    MP_CHECK_CONTAINS(b.p, "\"listed\":1,\"present\":1,\"missing\":0,\"extra_count\":39,\"extra_bytes\":390");
+    MP_CHECK_CONTAINS(b.p, "\"source\":\"playgo\"");
+    MP_CHECK_CONTAINS(b.p, "\"listed\":1,\"present\":1,\"missing\":0,\"size_mismatch\":0,\"extra_count\":39,\"extra_bytes\":390");
     MP_CHECK_CONTAINS(b.p, "\"extra_paths\":[\"x/01.bin\"");
     mp_jbuf_free(&b);
     mp_jbuf q = {0};
@@ -569,6 +570,298 @@ MP_TEST(describe_says_it) {
     mp_complete_free(&c);
 }
 
+
+// ---- the dump tool's list (ampr_emu.index) -------------------------------------------------------
+
+#define DI MP_FIXTURES_DIR "/dumpindex"
+
+typedef struct {
+    const char *path;
+    uint64_t size;
+} irow;
+
+// An ampr_emu.index (AMPRIDX3) with these rows, as the dump tool writes it; the hash slots are left
+// empty, which the check does not read (malloc).
+static uint8_t *index_of(const irow *r, size_t n, size_t *len) {
+    size_t blob = 0;
+    for (size_t i = 0; i < n; i++) blob += 6 + strlen(r[i].path) + 1;
+    size_t hash_off = (48 + 24 * n + blob + 15) & ~(size_t)15, slots = 2;
+    while (slots < 2 * n) slots <<= 1;
+    *len = hash_off + 16 * slots;
+    uint8_t *d = calloc(1, *len);
+    memcpy(d, "AMPRIDX3", 8);
+    put32(d + 8, 3);
+    put32(d + 12, 24);
+    put64(d + 16, n);
+    put64(d + 24, blob);
+    put64(d + 32, hash_off);
+    put32(d + 40, 16);
+    put32(d + 44, (uint32_t)slots);
+    size_t at = 0;
+    for (size_t i = 0; i < n; i++) {
+        uint8_t *rec = d + 48 + 24 * i;
+        size_t len_i = 6 + strlen(r[i].path);
+        put32(rec, (uint32_t)at);
+        put32(rec + 4, (uint32_t)len_i);
+        put64(rec + 8, r[i].size);
+        put64(rec + 16, 1714979290);
+        memcpy(d + 48 + 24 * n + at, "/app0/", 6);
+        memcpy(d + 48 + 24 * n + at + 6, r[i].path, len_i - 6);
+        at += len_i + 1;
+    }
+    return d;
+}
+
+static void check_di(listing *l, const uint8_t *table, size_t tl, const uint8_t *di, size_t dl, mp_complete *c, uint8_t *cls) {
+    qsort(l->f, l->n, sizeof *l->f, cmp_cfile);
+    MP_CHECK(mp_complete_check_lists(l->f, l->n, table, tl, di, dl, c, cls) == 0);
+}
+
+// What the dump tool wrote is all there: listed, present, the same sizes. Its list says nothing of
+// what the dump tool did not get, so it is never "complete": the source says which list it was.
+MP_TEST(dump_index_rule) {
+    static const irow rows[] = {{"eboot.bin", 10},          {"data/a.bin", 20},     {"Data/B.bin", 30},
+                                {"sce_sys/param.json", 5},  {"decrypted/eboot.bin", 10},
+                                // what a fine dump differs in: never counted
+                                {"Release/info.nfo", 4000}, {"fakelib/libScePlayGo.sprx", 900},
+                                {"Media/Game/Saved/Config/PS5/Engine.ini", 20}, {"fakelib/gone.sprx", 1},
+                                {"Media/Saved/Logs/game.log", 3}};
+    size_t dl = 0, n = sizeof rows / sizeof *rows;
+    uint8_t *di = index_of(rows, n, &dl), cls[32];
+    listing l = {0};
+    add(&l, "eboot.bin", 10);
+    add(&l, "data/a.bin", 20);
+    add(&l, "data/b.bin", 30);   // another case: the same file for the runtime
+    add(&l, "sce_sys/param.json", 5);
+    add(&l, "decrypted/eboot.bin", 10);
+    add(&l, "fakelib/libScePlayGo.sprx", 1200);   // replaced since
+    add(&l, "Media/Game/Saved/Config/PS5/Engine.ini", 33);   // written while it ran
+    add(&l, "Media/Saved/Logs/game.log", 99);
+    add(&l, "Release/other.nfo", 50);   // the release's, not listed
+    add(&l, "fakelib/libSceAgc.sprx", 70);   // a backport added since
+    add(&l, "ampr_emu.index", dl);
+    add(&l, "Thumbs.db", 1);
+    mp_complete c;
+    check_di(&l, NULL, 0, di, dl, &c, cls);
+    MP_CHECK(c.checkable);
+    MP_CHECK_STR(c.source, "dump_index");
+    MP_CHECK_STR(c.reason, "");
+    MP_CHECK_EQ_U64(c.listed, 5);
+    MP_CHECK_EQ_U64(c.present, 5);
+    MP_CHECK_EQ_U64(c.missing, 0);
+    MP_CHECK_EQ_U64(c.size_mismatch, 0);
+    // what the list does not have: the release's .nfo and the backport (informative)
+    MP_CHECK_EQ_U64(c.extra_count, 2);
+    MP_CHECK_EQ_U64(c.extra_bytes, 120);
+    // a leftover by its name, which this list does not prove is not the game's
+    MP_CHECK_EQ_U64(c.leftover_count, 1);
+    MP_CHECK(class_of(&l, cls, "decrypted/eboot.bin") == MP_CF_LEFTOVER);
+    MP_CHECK(class_of(&l, cls, "data/b.bin") == MP_CF_LISTED);
+    MP_CHECK(class_of(&l, cls, "Thumbs.db") == MP_CF_IGNORED);
+    char line[256];
+    mp_complete_summary(&c, line, sizeof line);
+    MP_CHECK_STR(line, "all 5 files the dump tool wrote are here (its list does not prove it got every file of the game)");
+    MP_CHECK(!strstr(line, "complete"));
+    mp_jbuf b = {0};
+    mp_complete_json(&c, 0, &b);
+    MP_CHECK_CONTAINS(b.p, "\"source\":\"dump_index\"");
+    MP_CHECK_CONTAINS(b.p, "\"missing\":0,\"size_mismatch\":0");
+    mp_jbuf_free(&b);
+    mp_complete_free(&c);
+
+    // a copy cut short: files gone, one shorter than the dump tool wrote it
+    listing m = {0};
+    add(&m, "eboot.bin", 10);
+    add(&m, "data/a.bin", 7);
+    add(&m, "decrypted/eboot.bin", 10);
+    check_di(&m, NULL, 0, di, dl, &c, cls);
+    MP_CHECK(c.checkable);
+    MP_CHECK_EQ_U64(c.listed, 5);
+    MP_CHECK_EQ_U64(c.present, 2);
+    MP_CHECK_EQ_U64(c.missing, 2);
+    MP_CHECK_EQ_U64(c.size_mismatch, 1);
+    mp_complete_summary(&c, line, sizeof line);
+    MP_CHECK_STR(line, "damaged copy: 2 of the 5 files the dump tool wrote are missing, 1 has another size");
+    mp_complete_free(&c);
+    free(di);
+}
+
+// A list that cannot be trusted is not used: one of another game (nothing of it is here), one of
+// another version (many sizes differ), a damaged one, one whose files are in AMPRPAK4 packs.
+MP_TEST(dump_index_not_trusted) {
+    irow rows[20];
+    char names[20][16];
+    for (int i = 0; i < 20; i++) {
+        snprintf(names[i], sizeof names[i], "d/%02d.bin", i);
+        rows[i].path = names[i];
+        rows[i].size = 100;
+    }
+    size_t dl = 0;
+    uint8_t *di = index_of(rows, 20, &dl), cls[32];
+    listing l = {0};
+    add(&l, "eboot.bin", 1);
+    add(&l, "other.bin", 1);
+    mp_complete c;
+    check_di(&l, NULL, 0, di, dl, &c, cls);
+    MP_CHECK(!c.checkable);
+    MP_CHECK_STR(c.reason, "dump_index_mismatch");
+    MP_CHECK_STR(c.source, "");
+    mp_complete_free(&c);
+    // another version: most files there, of other sizes
+    listing v = {0};
+    for (int i = 0; i < 20; i++) add(&v, names[i], i < 9 ? 100 : 101);
+    check_di(&v, NULL, 0, di, dl, &c, cls);
+    MP_CHECK(!c.checkable);
+    MP_CHECK_STR(c.reason, "dump_index_mismatch");
+    mp_complete_free(&c);
+    // a few cut files of a copy are still told
+    listing w = {0};
+    for (int i = 0; i < 20; i++) add(&w, names[i], i < 3 ? 50 : 100);
+    check_di(&w, NULL, 0, di, dl, &c, cls);
+    MP_CHECK(c.checkable);
+    MP_CHECK_EQ_U64(c.size_mismatch, 3);
+    mp_complete_free(&c);
+    // its files in AMPRPAK4 packs: not there loose, so not checked
+    listing pk = {0};
+    for (int i = 0; i < 2; i++) add(&pk, names[i], 100);
+    add(&pk, "ampr_assets.index", 64);
+    check_di(&pk, NULL, 0, di, dl, &c, cls);
+    MP_CHECK(!c.checkable);
+    MP_CHECK_STR(c.reason, "dump_index_packed");
+    mp_complete_free(&c);
+    // damaged lists: cut, of another magic or version, absurd counts, paths out of the blob or not
+    // under /app0/
+    uint8_t *bad = malloc(dl);
+    struct { size_t at; uint32_t v; int n; } muts[] = {
+        {8, 4, 1},   {12, 16, 1}, {16, 0, 1}, {16, 0xFFFFFFFFu, 1}, {24, 0x7FFFFFFFu, 1},
+        {48, 0x7FFFFFFFu, 1},   // a path that starts beyond the blob
+        {52, 0x7FFFFFFFu, 1},   // and one that ends beyond it
+    };
+    for (size_t k = 0; k < sizeof muts / sizeof *muts; k++) {
+        memcpy(bad, di, dl);
+        put32(bad + muts[k].at, muts[k].v);
+        check_di(&w, NULL, 0, bad, dl, &c, cls);
+        if (c.checkable || strcmp(c.reason, "dump_index_damaged")) MP_FAIL_("mutation %zu: %s", k, c.reason);
+        mp_complete_free(&c);
+    }
+    memcpy(bad, di, dl);
+    bad[0] = 'X';
+    check_di(&w, NULL, 0, bad, dl, &c, cls);
+    MP_CHECK_STR(c.reason, "dump_index_damaged");
+    mp_complete_free(&c);
+    memcpy(bad, di, dl);
+    memcpy(bad + 48 + 24 * 20, "/xxx0/", 6);
+    check_di(&w, NULL, 0, bad, dl, &c, cls);
+    MP_CHECK_STR(c.reason, "dump_index_damaged");
+    mp_complete_free(&c);
+    for (size_t cut = 0; cut < 48 + 24 * 20 + 10; cut += 7) {
+        check_di(&w, NULL, 0, di, cut, &c, cls);
+        if (c.checkable || strcmp(c.reason, "dump_index_damaged")) MP_FAIL_("cut at %zu: %s", cut, c.reason);
+        mp_complete_free(&c);
+    }
+    free(bad);
+    free(di);
+}
+
+// The PlayGo table wins: it is the original package's. A table of another format falls back to the
+// dump tool's list.
+MP_TEST(dump_index_and_table) {
+    static const irow rows[] = {{"eboot.bin", 10}, {"data/a.bin", 20}, {"data/never.bin", 5}};
+    static const char *const game[] = {"eboot.bin", "data/a.bin"};
+    size_t dl = 0, tl = 0;
+    uint8_t *di = index_of(rows, 3, &dl), *t = table_of_paths(game, 2, &tl), cls[32];
+    listing l = {0};
+    add(&l, "eboot.bin", 10);
+    add(&l, "data/a.bin", 20);
+    mp_complete c;
+    check_di(&l, t, tl, di, dl, &c, cls);
+    MP_CHECK_STR(c.source, "playgo");
+    MP_CHECK_EQ_U64(c.missing, 0);
+    mp_complete_free(&c);
+    const uint8_t alien[64] = {1};
+    check_di(&l, alien, sizeof alien, di, dl, &c, cls);
+    MP_CHECK_STR(c.source, "dump_index");
+    MP_CHECK_EQ_U64(c.missing, 1);
+    mp_complete_free(&c);
+    // neither: why, of the list that is there
+    check_di(&l, NULL, 0, NULL, 0, &c, cls);
+    MP_CHECK_STR(c.reason, "no_table");
+    MP_CHECK_STR(c.source, "");
+    mp_complete_free(&c);
+    free(di);
+    free(t);
+}
+
+MP_TEST(dump_index_fixtures) {
+    mp_complete c;
+    source_check(DI "/ok", &c);
+    MP_CHECK(c.checkable);
+    MP_CHECK_STR(c.source, "dump_index");
+    MP_CHECK_EQ_U64(c.listed, 13);
+    MP_CHECK_EQ_U64(c.present, 13);
+    MP_CHECK_EQ_U64(c.missing + c.size_mismatch, 0);
+    MP_CHECK_EQ_U64(c.extra_count, 2);
+    MP_CHECK_EQ_U64(c.leftover_count, 1);
+    mp_complete_free(&c);
+    source_check(DI "/broken", &c);
+    MP_CHECK(c.checkable);
+    MP_CHECK_EQ_U64(c.missing, 2);
+    MP_CHECK_EQ_U64(c.size_mismatch, 1);
+    MP_CHECK_EQ_U64(c.present, 10);
+    mp_complete_free(&c);
+    source_check(DI "/foreign", &c);
+    MP_CHECK_STR(c.reason, "dump_index_mismatch");
+    mp_complete_free(&c);
+    source_check(DI "/damaged", &c);
+    MP_CHECK_STR(c.reason, "dump_index_damaged");
+    mp_complete_free(&c);
+    source_check(DI "/packed", &c);
+    MP_CHECK_STR(c.reason, "dump_index_packed");
+    mp_complete_free(&c);
+    source_check(DI "/both", &c);
+    MP_CHECK_STR(c.source, "playgo");
+    MP_CHECK_EQ_U64(c.missing, 0);
+    mp_complete_free(&c);
+    source_check(DI "/fallback", &c);
+    MP_CHECK_STR(c.source, "dump_index");
+    MP_CHECK_EQ_U64(c.missing, 2);
+    mp_complete_free(&c);
+}
+
+// A .p5z keeps the dump tool's list (the original ampr_emu.index): it says the same as the dump.
+// The leftovers this list does not prove stay in. A compressed folder has MaxPack's own list, which
+// says nothing of the dump tool's copy: it is not used.
+MP_TEST(dump_index_packed_and_p5z) {
+    mp_err e = {{0}};
+    mp_pack_result r;
+    mp_complete c;
+    pack_with(DI "/broken", TMP "/di.p5z", 1, &r);
+    MP_CHECK_STR(r.complete.source, "dump_index");
+    MP_CHECK_EQ_U64(r.complete.missing, 2);
+    MP_CHECK_EQ_U64(r.left_out_files, 0);
+    MP_CHECK(mp_describe_complete(TMP "/di.p5z", &c, &e) == 0);
+    MP_CHECK_STR(c.source, "dump_index");
+    MP_CHECK_EQ_U64(c.missing, 2);
+    MP_CHECK_EQ_U64(c.size_mismatch, 1);
+    MP_CHECK_EQ_U64(c.present, 10);
+    mp_complete_free(&c);
+    mpt_clear(TMP "/didir");
+    mp_pack_out po;
+    if (mp_pack_out_dir(TMP "/didir", &po, &e) == 0) {
+        mp_pack_opts o;
+        mp_pack_opts_default(&o);
+        o.threads = 2;
+        o.progress = 0;
+        o.level = 3;
+        MP_CHECK(mp_pack_run(DI "/ok", &po, &o, &r, &e) == 0);
+        po.destroy(po.ctx);
+        MP_CHECK(mp_describe_complete(TMP "/didir", &c, &e) == 0);
+        MP_CHECK(!c.checkable);
+        MP_CHECK_STR(c.reason, "no_table");
+        mp_complete_free(&c);
+    }
+}
+
 int main(void) {
     MP_RUN(hash_known_answers);
     MP_RUN(hash_case_and_slash);
@@ -582,5 +875,10 @@ int main(void) {
     MP_RUN(fixtures);
     MP_RUN(pack_leaves_out_proven_leftovers);
     MP_RUN(describe_says_it);
+    MP_RUN(dump_index_rule);
+    MP_RUN(dump_index_not_trusted);
+    MP_RUN(dump_index_and_table);
+    MP_RUN(dump_index_fixtures);
+    MP_RUN(dump_index_packed_and_p5z);
     MP_TEST_MAIN_END();
 }

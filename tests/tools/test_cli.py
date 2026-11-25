@@ -842,5 +842,39 @@ check("help_leave_out_leftovers", "--leave-out-leftovers" in so, so[-1500:])
 rc, so, _ = run("--capabilities")
 check("capabilities_completeness", json.loads(so).get("completeness") is True, so)
 
+# Without a usable table, the dump tool's own list (ampr_emu.index): whether the copy has every file it
+# wrote, with its size; never "complete". The fixtures of make_playgo.py in dumpindex/.
+DI = os.path.join(FX, "dumpindex")
+rc, c, err = info_complete(os.path.join(DI, "ok"))
+check("info_json_dump_index_ok", rc == 0 and c and c["checkable"] is True and c["source"] == "dump_index"
+      and c["listed"] == 13 and c["present"] == 13 and c["missing"] == 0 and c["size_mismatch"] == 0
+      and c["extra_count"] == 2, str(c) + err)
+rc, c, err = info_complete(os.path.join(DI, "broken"))
+check("info_json_dump_index_broken", rc == 0 and c and c["source"] == "dump_index" and c["missing"] == 2
+      and c["size_mismatch"] == 1 and c["present"] == 10, str(c) + err)
+for name, reason in (("foreign", "dump_index_mismatch"), ("damaged", "dump_index_damaged"), ("packed", "dump_index_packed")):
+    rc, c, err = info_complete(os.path.join(DI, name))
+    check("info_json_dump_index_" + name, rc == 0 and c and c["checkable"] is False and c["reason"] == reason
+          and c["source"] == "", str(c) + err)
+rc, c, err = info_complete(os.path.join(DI, "both"))
+check("info_json_table_wins", rc == 0 and c and c["source"] == "playgo" and c["missing"] == 0, str(c) + err)
+rc, c, err = info_complete(os.path.join(PG, "complete"))
+check("info_json_source_playgo", c and c["source"] == "playgo" and c["size_mismatch"] == 0, str(c))
+rc, out, err = run("analyze", os.path.join(DI, "ok"), "--no-dedup", "--no-transport")
+check("analyze_text_dump_index", rc == 0 and "Completeness: all 13 files the dump tool wrote are here (its list does not "
+      "prove it got every file of the game)" in out and "Completeness: complete" not in out, out[:700])
+bp5 = os.path.join(TMP, "di_broken.p5z")
+if os.path.exists(bp5):
+    os.remove(bp5)
+rc, so, err = run("pack", os.path.join(DI, "broken"), "-o", bp5, "--p5z", "--level", "3", "--threads", "2",
+                  "--leave-out-leftovers", "--progress", "json")
+res = last_result(json_lines(so))
+check("pack_warns_damaged_copy", rc == 0 and "warning: damaged copy: 2 of the 13 files the dump tool wrote are missing, "
+      "1 has another size: what was made of it lacks them too" in err, err[-600:])
+check("pack_dump_index_keeps_leftovers", res.get("left_out_files") == 0 and res.get("completeness", {}).get("source") == "dump_index"
+      and "note: kept: 1 file" in err, str(res) + err[-300:])
+rc, so, err = run("verify", bp5)
+check("verify_p5z_dump_index", rc == 0 and "damaged copy: 2 of the 13 files the dump tool wrote are missing" in so, so + err)
+
 print("test_cli: %d failures" % len(failures))
 sys.exit(1 if failures else 0)

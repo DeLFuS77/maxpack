@@ -17,7 +17,15 @@ Writes in <out>/playgo/: complete/ (every file its table lists), missing/ (three
 them sce_sys/about/right.sprx, which is never counted), leftovers/ (complete, plus what dump tools
 leave behind, OS junk and a file of the dump's own), notable/ (no table, with a decrypted/ folder),
 badtable/ (a truncated table), alien/ (a playgo-hash-table.dat of another format), and missing.ffpkg
-(missing/ as a UFS2 image). Everything is deterministic.
+(missing/ as a UFS2 image).
+
+And in <out>/dumpindex/, dumps without that table but with the list the dump tool wrote,
+ampr_emu.index (AMPRIDX3, written with tools/ampr_ref.py): ok/ (every file it lists, with the
+differences a fine dump shows: a release .nfo it lists that is not there and one it does not list,
+fakelib/ changed, Unreal's Saved/Config written at run time), broken/ (two files gone and one cut
+short), foreign/ (the list of another game), damaged/ (a cut list), packed/ (its files in AMPRPAK4
+packs), both/ (a complete table and a list that disagrees: the table wins) and fallback/ (a table of
+another format, and the list). Everything is deterministic.
 """
 import argparse
 import importlib.util
@@ -129,6 +137,33 @@ JUNK = [("Thumbs.db", b"x" * 50), ("data/.DS_Store", b"y" * 60), ("._eboot.bin",
 OWN = [("dlc_emu.ini", b"[dlc]\n" * 20)]
 
 
+# The dump tool's list: every file it wrote, with its size (and a date, never compared: copies change
+# it). ok/ is a fine dump as real ones are.
+SAVED = "Media/Game/Saved/Config/PS5/Engine.ini"
+FINE = IMAGE + ENTRIES + [("decrypted/eboot.bin", random.Random(43).randbytes(7000)),
+                          ("fakelib/libScePlayGo.sprx", random.Random(44).randbytes(900)),
+                          (SAVED, b"[Core]\n" * 9)]
+LISTED_ONLY = [("Release/info.nfo", 4398)]
+CHANGED = {"fakelib/libScePlayGo.sprx": 1200, SAVED: 20}
+UNLISTED = [("Release/other.nfo", b"nfo" * 40), ("Media/Game/Saved/Config/PS5/GameUserSettings.ini", b"x")]
+
+
+def dump_index(files, listed_only=(), changed=None):
+    """ampr_emu.index of these files as the dump tool wrote them (sizes in changed instead)."""
+    ref = load_tool("ampr_ref")
+    changed = changed or {}
+    rows = [(changed.get(path, len(data)), 1714979290, "/app0/" + path) for path, data in files]
+    rows += [(size, 1714979290, "/app0/" + path) for path, size in listed_only]
+    return ref.idx3_build(rows)
+
+
+def load_tool(name):
+    spec = importlib.util.spec_from_file_location(name, os.path.join(HERE, "..", "..", "tools", name + ".py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def write_folder(folder, files):
     for path, data in files:
         full = os.path.join(folder, *path.split("/"))
@@ -163,6 +198,21 @@ def main():
     ufs2 = load("make_ufs2")
     with open(os.path.join(out, "missing.ffpkg"), "wb") as f:
         f.write(ufs2.build(missing)[0])
+
+    di = os.path.join(args.out, "dumpindex")
+    os.makedirs(di, exist_ok=True)
+    index = dump_index(FINE, LISTED_ONLY, CHANGED)
+    write_folder(os.path.join(di, "ok"), FINE + UNLISTED + [("ampr_emu.index", index)])
+    gone = ("data/sub/b.bin", "sce_module/libc.prx")
+    broken = [(p, d[:len(d) // 2] if p == "data/a.bin" else d) for p, d in FINE if p not in gone]
+    write_folder(os.path.join(di, "broken"), broken + [("ampr_emu.index", index)])
+    other = [("other/%02d.bin" % i, bytes(10 + i)) for i in range(12)]
+    write_folder(os.path.join(di, "foreign"), FINE + [("ampr_emu.index", dump_index(other))])
+    write_folder(os.path.join(di, "damaged"), FINE + [("ampr_emu.index", index[:100])])
+    write_folder(os.path.join(di, "packed"), FINE + [("ampr_emu.index", index), ("ampr_assets.index", b"AMPRPAK4" + bytes(56))])
+    lacking = dump_index(FINE + [("data/never.bin", b"z" * 10)])
+    write_folder(os.path.join(di, "both"), FINE + [(TABLE, listed), ("ampr_emu.index", lacking)])
+    write_folder(os.path.join(di, "fallback"), broken + [(TABLE, b"{}" * 40), ("ampr_emu.index", index)])
     print("playgo: %d files listed, 6 dumps and a UFS2 image in %s" % (len(IMAGE), out), file=sys.stderr)
 
 

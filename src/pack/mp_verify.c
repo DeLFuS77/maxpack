@@ -336,7 +336,7 @@ int mp_verify_folder(const char *dir, const char *against, unsigned threads, int
         }
         int exists = full && mp_path_kind(full) == 1;
         free(full);
-        if (!exists && sc.checkable && cls[s] == MP_CF_LEFTOVER) continue;
+        if (!exists && mp_complete_proves_leftovers(&sc) && cls[s] == MP_CF_LEFTOVER) continue;
         check *c = &v.c[n++];
         c->kind = CHK_LOOSE_DIR;
         c->src = s;

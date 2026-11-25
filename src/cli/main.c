@@ -64,7 +64,8 @@ static void usage(FILE *out) {
             "                     game's; without one, everything stays\n"
             "\n"
             "analyze, info --json, pack and verify tell whether the dump is complete against the list\n"
-            "of the original package's files it carries (sce_sys/playgo-hash-table.dat), when it has one.\n"
+            "of the original package's files it carries (sce_sys/playgo-hash-table.dat) or, without it,\n"
+            "whether the copy has every file the dump tool wrote (its ampr_emu.index).\n"
             "\n"
             "Options for pack, unpack, verify, analyze --levels and measure (for a front end):\n"
             "  --progress json    one JSON line per event on stdout (the text stays on stderr)\n"
@@ -706,16 +707,21 @@ static int cmd_pack(int argc, char **argv) {
     return finish_cmd(run_pack(argc, argv));
 }
 
-// What pack says of a dump that is not complete, on stderr: never a reason not to pack.
+// What pack says of a dump that is not complete, or of a copy of it that is not whole, on stderr:
+// never a reason not to pack.
 static void complete_warnings(const mp_complete *c, int leave_out) {
-    char line[256];
-    if (c->checkable && c->missing) {
+    char line[256], size[32];
+    if (c->checkable && (c->missing || c->size_mismatch)) {
         mp_complete_summary(c, line, sizeof line);
-        fprintf(stderr, "warning: the dump is %s: what was made of it lacks them too\n", line);
+        int dump_tool = c->source && !strcmp(c->source, "dump_index");
+        fprintf(stderr, "warning: %s%s: what was made of it lacks them too\n", dump_tool ? "" : "the dump is ", line);
     }
-    if (!c->checkable && c->leftover_count && leave_out) {
-        mp_complete_extra_line(c, line, sizeof line);
-        fprintf(stderr, "note: kept: %s (--leave-out-leftovers needs the game's %s)\n", line, "sce_sys/playgo-hash-table.dat");
+    if (!mp_complete_proves_leftovers(c) && c->leftover_count && leave_out) {
+        size_text(size, sizeof size, c->leftover_bytes);
+        int one = c->leftover_count == 1;
+        fprintf(stderr, "note: kept: %llu %s (%s) that look%s like what dump tools leave behind: only the game's "
+                        "sce_sys/playgo-hash-table.dat proves %s not the game's (--leave-out-leftovers)\n",
+                (unsigned long long)c->leftover_count, one ? "file" : "files", size, one ? "s" : "", one ? "it is" : "they are");
     }
 }
 

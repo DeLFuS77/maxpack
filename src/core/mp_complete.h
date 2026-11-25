@@ -15,6 +15,23 @@
 // sce_sys/about/right.sprx is not counted, listed or not: package builders add their own.
 // Without a usable table nothing is checked, and the leftovers are only the files that match those
 // names: nothing proves they are not the game's.
+//
+// When the dump has no usable table, the list the dump tool wrote serves instead: ampr_emu.index at
+// its root (AMPRIDX3: every file it wrote, with its size). It proves less: that the copy has every
+// file the dump tool wrote, with the sizes it wrote them (it finds copies cut short or damaged), not
+// that the dump tool got every file of the game; the source says which list it was. Against it:
+//   - listed: each row of the list (case does not matter, as for the runtime), but what a fine dump
+//     differs in, which is not counted: release files (*.nfo, *.sfv, *.diz), the emulators the user
+//     changes (fakelib/, fakelib2/, dlc_emu.ini), what the game writes while it runs (anything under a
+//     Saved/ folder, *.log), the runtime's own files (ampr_commands.bin, apr_emu.log) and the list
+//     itself; present: there with its size; missing: not there; size_mismatch: there, of another size;
+//   - extra: what the dump has that the list does not (OS junk aside);
+//   - leftovers: by their names only, as without a table: this list does not prove they are not the
+//     game's (the dump tool writes them too), so pack never leaves them out because of it.
+// A list that cannot be trusted is not used ("not checked"): a damaged one ("dump_index_damaged"),
+// one of which nothing is here or that most files disagree with in size (another game or version:
+// "dump_index_mismatch"), or one whose files are in packs, not loose ("dump_index_packed").
+// The dates of the list are never compared: copies and archives change them.
 #ifndef MP_COMPLETE_H
 #define MP_COMPLETE_H
 
@@ -37,9 +54,15 @@ enum { MP_CF_IGNORED = 0, MP_CF_LISTED = 1, MP_CF_EXTRA = 2, MP_CF_LEFTOVER = 3 
 
 typedef struct {
     int checkable;
-    // "" when checkable; else "no_table", "unknown_format", "damaged" or "unreadable" (static)
+    // "" when checkable; else "no_table", "unknown_format", "damaged" or "unreadable" (static), or
+    // why the dump tool's list was not used: "dump_index_damaged", "dump_index_mismatch",
+    // "dump_index_packed"
     const char *reason;
+    // the list it was checked against: "playgo" (the original package's), "dump_index" (the dump
+    // tool's), "" when not checkable (static)
+    const char *source;
     uint64_t listed, present, missing;
+    uint64_t size_mismatch;   // dump_index: there, of another size than the dump tool wrote
     uint64_t extra_count, extra_bytes;
     uint64_t leftover_count, leftover_bytes;
     // the first extra files, in the order given (a source's: by path), malloc
@@ -51,6 +74,12 @@ typedef struct {
 // cls, when not NULL, gets the class of each file. 0, or -1 when memory runs out (c says nothing).
 int mp_complete_check(const mp_cfile *files, size_t n, const uint8_t *table, size_t table_len, mp_complete *c,
                       uint8_t *cls);
+// The same with the dump tool's list too (the bytes of ampr_emu.index; NULL when there is none): the
+// table wins when it can be used.
+int mp_complete_check_lists(const mp_cfile *files, size_t n, const uint8_t *table, size_t table_len,
+                            const uint8_t *dump_index, size_t dump_index_len, mp_complete *c, uint8_t *cls);
+// 1 when the leftovers are proven not to be the game's: only the original package's table proves it.
+int mp_complete_proves_leftovers(const mp_complete *c);
 // The same over the files of a source, with the table it carries. A table that cannot be read
 // leaves it unchecked ("unreadable"). cls: one per entry of the source. -1 only out of memory.
 int mp_complete_source(mp_source *s, mp_complete *c, uint8_t *cls, mp_err *e);
@@ -67,7 +96,8 @@ int mp_complete_is_junk(const char *path);
 // The object {"checkable":...,"reason":...,"listed":...,...}; with_paths adds "extra_paths".
 void mp_complete_json(const mp_complete *c, int with_paths, mp_jbuf *b);
 // One line: "complete: all N files of the original package", "incomplete: N of the M files of the
-// original package are missing", or "not checked: <why>".
+// original package are missing", for the dump tool's list "all N files the dump tool wrote are here
+// (...)" or "damaged copy: ...", or "not checked: <why>".
 void mp_complete_summary(const mp_complete *c, char *buf, size_t cap);
 // What is not in the original package, and what of it dump tools left (empty when there is none).
 void mp_complete_extra_line(const mp_complete *c, char *buf, size_t cap);

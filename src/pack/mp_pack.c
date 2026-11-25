@@ -173,7 +173,7 @@ int mp_pack_run(const char *src_path, mp_pack_out *out, const mp_pack_opts *o, m
     // the leftovers that list proves are not the game's.
     if (mp_complete_source(src, &r->complete, cls, e) != 0) goto done;
     mp_complete_counts_only(&r->complete);
-    int drop = o->leave_out_leftovers && r->complete.checkable;
+    int drop = o->leave_out_leftovers && mp_complete_proves_leftovers(&r->complete);
 #define LEFT_OUT(i) (drop && cls[i] == MP_CF_LEFTOVER)
 
     // 1. Special files in the source.

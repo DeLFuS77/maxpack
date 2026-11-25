@@ -18,7 +18,8 @@ typedef struct {
     size_t nkeep;
     uint64_t volume_limit;           // MP_ZPK_VOLUME_LIMIT
     // leave out what dump tools leave behind (mp_complete.h), only when the game's own list of the
-    // original package's files proves it is not the game's: without one, everything stays
+    // original package's files proves it is not the game's (the dump tool's list does not): without
+    // one, everything stays
     int leave_out_leftovers;
 } mp_pack_opts;
 

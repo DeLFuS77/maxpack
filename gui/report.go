@@ -91,7 +91,7 @@ func codesOf(detail string) string {
 // imageWords are the images by kind, in the words of the report; inImage, the one inside a
 // container.
 var (
-	imageWords = map[string]string{"exfat": "exFAT image (.exfat)", "ufs2": "UFS2 image (.ffpkg)", "pfs": "PFS image (.ffpfs)", "pfsc": "PFS container (.ffpfsc)"}
+	imageWords = map[string]string{"exfat": "exFAT image (.exfat)", "ufs2": "UFS2 image (.ffpkg)", "pfs": "PFS image (.ffpfs)", "pfsc": "PFS container (.ffpfsc)", "fpkg": "PS5 package (.pkg)"}
 	inImage    = map[string]string{"exfat": "an exFAT image", "ufs2": "a UFS2 image", "pfs": "a PFS image"}
 	// a kind of a later engine is said by its code, which is never a name
 	kindCode = regexp.MustCompile(`^[a-z0-9]{1,16}$`)
@@ -215,7 +215,12 @@ func (a *App) reportText(r ReportRequest) string {
 	if saved.RepairData {
 		repair = fmt.Sprintf("%d %%", saved.RepairPercent)
 	}
-	line("Settings: %s, level %d, threads %s, runtime %s, low priority %s, %s, names %s, repair data %s", modeText, saved.Level, threads, runtimeWords, priority, originals, saved.NameTemplate, repair)
+	// whether a passcode for packages was given, never which one
+	passcode := "default"
+	if saved.Passcode != "" {
+		passcode = "given"
+	}
+	line("Settings: %s, level %d, threads %s, runtime %s, low priority %s, %s, names %s, repair data %s, FPKG passcode %s", modeText, saved.Level, threads, runtimeWords, priority, originals, saved.NameTemplate, repair, passcode)
 	if len(r.Games) > 0 && r.Section != "" {
 		line("Section: %s", r.Section)
 	}

@@ -128,8 +128,11 @@ int mp_report_write_text(const mp_report *r, FILE *out) {
     }
     fprintf(out, "Saved = 1 - console total / original size. Console total = loose files + "
                  "packed (+ indices in v1).\n");
-    // a compressed image takes less than the game in it: say what Saved is against
-    if (r->image_size)
+    // a compressed image takes less than the game in it (a package, more or less): say what Saved is against
+    if (r->image_size && r->kind == MP_SRC_FPKG)
+        fprintf(out, "Saved is against the game in it (%s), not the package file (%s).\n", human(r->total_bytes, a),
+                human(r->image_size, b));
+    else if (r->image_size)
         fprintf(out, "Saved is against the game in it (%s), not the image file, which is compressed (%s).\n",
                 human(r->total_bytes, a), human(r->image_size, b));
     fprintf(out, "\n");
@@ -153,7 +156,8 @@ int mp_report_write_text(const mp_report *r, FILE *out) {
     fprintf(out, ".p5z estimate (v1 level 19): %s", human(r->p5z_estimate, a));
     if (r->image_size) {
         double change = 100.0 * ((double)r->p5z_estimate / (double)r->image_size - 1.0);
-        fprintf(out, " (%s %s than the image file)", pct(fabs(change), d), change > 0 ? "larger" : "smaller");
+        fprintf(out, " (%s %s than the %s file)", pct(fabs(change), d), change > 0 ? "larger" : "smaller",
+                r->kind == MP_SRC_FPKG ? "package" : "image");
     }
     fprintf(out, "\n");
     if (r->xport_done) {

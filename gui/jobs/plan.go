@@ -303,6 +303,7 @@ func PlanCompress(items []Item, o Options, fs FS) []Plan {
 		if o.Threads > 0 {
 			a = append(a, "--threads", strconv.Itoa(o.Threads))
 		}
+		a = append(a, core.PasscodeArgs()...)
 		if !it.HasZstdRuntime && o.Runtime != "" {
 			a = append(a, "--runtime", o.Runtime)
 		}

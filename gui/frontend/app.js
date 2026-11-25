@@ -40,9 +40,9 @@ const working = ["packing", "verifying", "unpacking", "protecting", "repairing"]
 const notStarted = ["waiting", "queued"];
 // the shortcuts of the level, as in NXPress: the level each one sets, and the ones it covers
 const presets = [[3, 1, 6], [12, 7, 14], [19, 15, 22]];
-// the images of a game ShadowMountPlus mounts, which the window takes as it takes a dump folder
-// (jobs.ImageExts): by their extension until the engine says what each one is
-const images = [".exfat", ".ffpkg", ".ffpfs", ".ffpfsc"].map(type => [type, ""]);
+// the images of a game ShadowMountPlus mounts and the PS5 packages, which the window takes as it
+// takes a dump folder (jobs.ImageExts): by their extension until the engine says what each one is
+const images = [".exfat", ".ffpkg", ".ffpfs", ".ffpfsc", ".pkg"].map(type => [type, ""]);
 // what each section takes, as the empty list says it: [type, its text or none]
 const takes = {
   compress: [["", "typeDump"], ...images],
@@ -53,7 +53,7 @@ const takes = {
 };
 const defaultTemplate = "{title} [{id}]";
 const defaults = { Lang: "", Theme: "system", Runtime: "", LastDest: "", Mode: "p5z", Level: 19, DeleteOriginals: false, DeletePermanently: false, LowPriority: false, NameTemplate: defaultTemplate, Threads: 0,
-  RepairData: false, RepairPercent: 5 };
+  RepairData: false, RepairPercent: 5, Passcode: "" };
 // the shares of repair data the window offers (a PAR2 set next to each .p5z)
 const percents = [1, 5, 10];
 
@@ -361,17 +361,18 @@ function kindName(game) {
   }
   return imageName(game.Kind);
 }
-// an image by its kind: exFAT, UFS2, PFS, or a PFS container that holds one of them
+// an image by its kind: exFAT, UFS2, PFS, a PFS container that holds one of them, or a PS5 package
 function imageName(kind) {
   switch (kind) {
     case "exfat": return t("kindImage");
     case "ufs2": return t("kindUfs2");
     case "pfs": return t("kindPfs");
     case "pfsc": return t("kindPfsc");
+    case "fpkg": return t("kindFpkg");
   }
   return t("kindOther");
 }
-const imageKinds = { exfat: ".exfat", ufs2: ".ffpkg", pfs: ".ffpfs", pfsc: ".ffpfsc" };
+const imageKinds = { exfat: ".exfat", ufs2: ".ffpkg", pfs: ".ffpfs", pfsc: ".ffpfsc", fpkg: ".pkg" };
 // what a game took before it was compressed, as the end card and what it saved count it (Item.SizeBefore
 // in jobs/plan.go): an image's file on disk, what the disk gets back, never more; a folder, the game.
 // 0 for an image whose file is not known: nothing is claimed for it
@@ -379,8 +380,13 @@ function sizeBefore(game) {
   return Number(imageKinds[game.Kind] ? game.ImageSize : game.OriginalSize) || 0;
 }
 // a compressed image (a PFS container, or a PFS image whose files are PFSC-compressed) takes less
-// than the game in it, so what a level saves against the game is more than against its file
-const compressedImage = game => (game.Kind === "pfsc" || game.Kind === "pfs" && !!game.Compressed) && Number(game.ImageSize) > 0;
+// than the game in it, so what a level saves against the game is more than against its file; a PS5
+// package's file is not the game's size either (compressed, or with its own padding)
+const compressedImage = game => (game.Kind === "pfsc" || game.Kind === "pfs" && !!game.Compressed || game.Kind === "fpkg") && Number(game.ImageSize) > 0;
+// a 32-character passcode a PS5 package can have, as the engine takes it (or "", the default)
+const validPasscode = p => p === "" || /^[\x21-\x7e]{32}$/.test(p);
+// what the page says of an error: a package that needs another passcode says where to give it
+const errorText = raw => (/--passcode/.test(raw) ? t("detail_passcode") : raw);
 // the extension of an image as the user has it, else the one of its kind
 const imageExt = game => ((/\.[^.\\/]+$/.exec(game.Path || "") || [""])[0] || imageKinds[game.Kind] || "").toLowerCase();
 // what something made of a compressed image of made bytes takes against its file ("vs your .ffpfsc:
@@ -450,8 +456,12 @@ function paintFacts(row) {
   fact(facts, t("factVersion"), game.Version || "—");
   fact(facts, t("factFiles"), String(game.Files || 0));
   fact(facts, t("factOriginal"), size(game.OriginalSize));
-  // an image: what its file takes, less than the game when it is PFSC-compressed
-  if (game.ImageSize) fact(facts, t("factImageFile"), size(game.ImageSize) + (game.Compressed ? " · " + t("imageCompressed") : ""));
+  // an image: what its file takes, less than the game when it is PFSC-compressed; a package, its
+  // file, Kraken-compressed or not
+  if (game.ImageSize) {
+    const fpkg = game.Kind === "fpkg";
+    fact(facts, t(fpkg ? "factPackageFile" : "factImageFile"), size(game.ImageSize) + (game.Compressed ? " · " + t(fpkg ? "krakenCompressed" : "imageCompressed") : ""));
+  }
   fact(facts, t("factInstalled"), size(game.InstallSize));
   if (game.P5zSize) fact(facts, ".p5z", size(game.P5zSize));
   // what it saves: the .p5z, or the compressed folder installed, against the original
@@ -544,7 +554,7 @@ function paintRow(row) {
   warn.textContent = warnings.join(" · ");
 
   const note = tr.querySelector(".note");
-  const said = row.error || (row.detail && row.detail !== "cancelled" ? detailText(row.detail) : row.section === "rename" && row.renameBlock && row.state !== "ok" ? detailText(row.renameBlock) : "");
+  const said = (row.error && errorText(row.error)) || (row.detail && row.detail !== "cancelled" ? detailText(row.detail) : row.section === "rename" && row.renameBlock && row.state !== "ok" ? detailText(row.renameBlock) : "");
   note.hidden = !said;
   note.textContent = said;
   // a repair that ended well says so as good news, not as a warning
@@ -602,6 +612,7 @@ function paintTexts() {
   document.querySelectorAll("[data-t]").forEach(element => { element.textContent = t(element.dataset.t); });
   document.querySelectorAll("[data-t-title]").forEach(element => { element.title = t(element.dataset.tTitle); });
   document.querySelectorAll("[data-t-label]").forEach(element => { element.setAttribute("aria-label", t(element.dataset.tLabel)); });
+  document.querySelectorAll("[data-t-placeholder]").forEach(element => { element.placeholder = t(element.dataset.tPlaceholder); });
 }
 
 // the highlight of the open section slides to it: moved, never animated in size
@@ -757,6 +768,11 @@ function paintSettings() {
   $("pref-runtime-clear").textContent = builtIn ? t("runtimeUseBuiltIn") : t("forget");
   $("pref-runtime-clear").hidden = !s.Runtime;
   $("pref-low").checked = !!s.LowPriority;
+  // the passcode of PS5 packages: empty is the default; one being typed stays as it is
+  if (document.activeElement !== $("pref-passcode")) {
+    $("pref-passcode").value = s.Passcode || "";
+    $("passcode-bad").hidden = true;
+  }
   // the threads Compress gives the engine: all of them, or the ones a measure found
   const cpu = cpuThreads();
   $("pref-threads").textContent = s.Threads > 0 ? t("threadsSome")(s.Threads, cpu) : t("threadsAll")(cpu);
@@ -1722,6 +1738,23 @@ function wire() {
   $("repair-damaged").addEventListener("click", () => startQueue("repair"));
   $("delete-originals").addEventListener("change", () => { state.deleteOriginals = $("delete-originals").checked; render(); });
   $("pref-low").addEventListener("change", () => keep({ LowPriority: $("pref-low").checked }));
+  // the passcode of PS5 packages: kept once it is one (or empty, the default); the packages that
+  // needed another one are read again with it
+  $("pref-passcode").addEventListener("input", () => { $("passcode-bad").hidden = validPasscode($("pref-passcode").value.trim()); });
+  $("pref-passcode").addEventListener("change", () => {
+    const passcode = $("pref-passcode").value.trim();
+    $("passcode-bad").hidden = validPasscode(passcode);
+    if (!validPasscode(passcode) || passcode === (state.settings.Passcode || "")) return;
+    keep({ Passcode: passcode });
+    for (const list of Object.values(state.lists))
+      for (const row of list)
+        if (row.error && /--passcode/.test(row.error)) {
+          row.error = "";
+          row.game = null;
+          paintRow(row);
+          describe(row);
+        }
+  });
   $("pref-delete").addEventListener("change", () => { keep({ DeleteOriginals: $("pref-delete").checked }); state.deleteOriginals = $("pref-delete").checked; render(); });
   $("pref-forgood").addEventListener("change", () => { keep({ DeletePermanently: $("pref-forgood").checked }); render(); });
   // a template of one's own is kept once it is one; meanwhile the preview says what it gives

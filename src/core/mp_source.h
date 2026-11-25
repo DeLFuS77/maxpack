@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Source of a game: a folder or an image (exFAT, UFS2 .ffpkg, PFS .ffpfs, or an .ffpfsc: a PFS image
-// that holds one of the others, usually PFSC-compressed), seen as a list of files.
+// Source of a game: a folder, an image (exFAT, UFS2 .ffpkg, PFS .ffpfs, or an .ffpfsc: a PFS image
+// that holds one of the others, usually PFSC-compressed) or a PS5 debug package (FPKG, .pkg), seen
+// as a list of files.
 #ifndef MP_SOURCE_H
 #define MP_SOURCE_H
 
@@ -15,25 +16,36 @@ typedef struct {
     int64_t mtime;   // Unix seconds
 } mp_entry;
 
-typedef enum { MP_SRC_DIR = 1, MP_SRC_EXFAT = 2, MP_SRC_UFS2 = 3, MP_SRC_PFS = 4 } mp_source_kind;
+typedef enum { MP_SRC_DIR = 1, MP_SRC_EXFAT = 2, MP_SRC_UFS2 = 3, MP_SRC_PFS = 4, MP_SRC_FPKG = 5 } mp_source_kind;
 
 typedef struct mp_source mp_source;
 
-// Detects the type: folder, or an image by its signature (exFAT, UFS2, PFS; the extension is only a
-// hint for the message when it is none), or (to reject it with a clear message) a PKG. A PFS image
-// whose only file is another image is a container: the files are those of the image inside.
+// Detects the type: folder, or an image or package by its signature (exFAT, UFS2, PFS, FPKG; the
+// extension is only a hint for the message when it is none). A PFS image whose only file is another
+// image is a container: the files are those of the image inside. A package is decrypted with the
+// passcode mp_source_set_passcode gave (the default, 32 '0', if none); retail packages, patches,
+// additional content and PS4 packages are refused, each with its message.
 int mp_source_open(const char *utf8_path, mp_source **out, mp_err *e);
+// The same with a passcode for a package (NULL or "" = the default).
+int mp_source_open_passcode(const char *utf8_path, const char *passcode, mp_source **out, mp_err *e);
+// The passcode mp_source_open uses for packages from now on (NULL or "" = the default). For a
+// command-line process: set it once, before opening sources. 0, or -1 if it is not 32 printable
+// ASCII characters without spaces.
+int mp_source_set_passcode(const char *passcode);
 // The kind of the file opened (MP_SRC_PFS for a container).
 mp_source_kind mp_source_kind_of(const mp_source *s);
-// "folder", "exfat", "ufs2", "pfs", or "pfsc" for a PFS image that holds another image (.ffpfsc).
+// "folder", "exfat", "ufs2", "pfs", "pfsc" for a PFS image that holds another image (.ffpfsc), or
+// "fpkg" for a PS5 debug package.
 const char *mp_source_kind_name(const mp_source *s);
 // For "pfsc": the kind of the image inside that holds the files ("exfat", "ufs2" or "pfs"; the
 // innermost when they nest); "" otherwise.
 const char *mp_source_inner_name(const mp_source *s);
+// For a package: the content ID its header gives ("UP0000-PPSA00000_00-..."); "" otherwise.
+const char *mp_source_package_id(const mp_source *s);
 // In words, for reports: "folder", "exFAT image", "UFS2 image", "PFS image", "PFS container with an
-// exFAT image inside, compressed".
+// exFAT image inside, compressed", "PS5 package (FPKG), compressed".
 const char *mp_source_kind_text(const mp_source *s, char *buf, size_t n);
-// 1 if reading the files decompresses PFSC blocks.
+// 1 if reading the files decompresses PFSC blocks (or a package's Kraken blocks).
 int mp_source_compressed(const mp_source *s);
 // Reading threads the source can keep busy (a read-ahead uses up to this many): more when reading
 // decompresses, since then each thread is busy inflating rather than waiting for the disk.

@@ -26,26 +26,32 @@
 #include "mp_play.h"
 #include "mp_report_out.h"
 #include "mp_rules.h"
+#include "mp_source.h"
 #include "mp_version.h"
 
 static void usage(FILE *out) {
     fprintf(out,
             "Usage:\n"
-            "  maxpack analyze <folder|image> [options]\n"
-            "  maxpack analyze <folder|image> --levels [L,L,...] [options]   compare the levels\n"
-            "  maxpack pack <folder|image> -o <output> [options]\n"
+            "  maxpack analyze <folder|image|package> [options]\n"
+            "  maxpack analyze <folder|image|package> --levels [L,L,...] [options]   compare the levels\n"
+            "  maxpack pack <folder|image|package> -o <output> [options]\n"
             "  maxpack unpack <game.p5z> --folder|--original -o <folder> [--threads N]\n"
             "  maxpack info <game.p5z>\n"
-            "  maxpack info --json <folder|image|game.p5z>\n"
+            "  maxpack info --json <folder|image|package|game.p5z>\n"
             "  maxpack info --play <game.p5z>   what the console needs to play it without installing (JSON)\n"
-            "  maxpack icon <folder|image|game.p5z> -o <icon.png>\n"
+            "  maxpack icon <folder|image|package|game.p5z> -o <icon.png>\n"
             "  maxpack verify <game.p5z | folder> [--against <source>] [--threads N]\n"
             "  maxpack measure [<folder>] [options]   measure this PC (and the folder's disk), with no game\n"
             "  maxpack --version\n"
             "  maxpack --capabilities   what this version can do, as JSON (for a front end)\n"
             "\n"
             "An image is an .exfat, an .ffpkg (UFS2), an .ffpfs (PFS) or an .ffpfsc (a PFS image that holds\n"
-            "one of them, usually compressed); MaxPack tells which by its contents, not by its name.\n"
+            "one of them, usually compressed); a package is a PS5 debug package (FPKG, .pkg), which MaxPack\n"
+            "decrypts with its passcode as it reads it. MaxPack tells which by its contents, not by its name.\n"
+            "\n"
+            "Options for pack, analyze, info, icon and verify --against:\n"
+            "  --passcode P       the 32-character passcode of a package, if it is not the default\n"
+            "                     (32 zeros, what fake packages use)\n"
             "\n"
             "Pack options:\n"
             "  -o OUTPUT          new or empty folder (--folder) to copy to the console\n"
@@ -273,6 +279,32 @@ static int common_opt(int argc, char **argv, int *i) {
 static void prescan_json(int argc, char **argv) {
     for (int i = 0; i + 1 < argc; i++)
         if (!strcmp(argv[i], "--progress") && !strcmp(argv[i + 1], "json")) g_json = 1;
+}
+
+// --passcode P: takes it out of argv (from argv[2]) and gives it to the sources. 0, or the exit code
+// of a usage error.
+static int take_passcode(int *argc, char **argv) {
+    for (int i = 2; i < *argc; i++) {
+        if (strcmp(argv[i], "--passcode")) continue;
+        if (i + 1 >= *argc) {
+            prescan_json(*argc, argv);
+            return finish_cmd(bad_usage("missing value for", "--passcode"));
+        }
+        if (mp_source_set_passcode(argv[i + 1]) != 0) {
+            prescan_json(*argc, argv);
+            return finish_cmd(
+                bad_usage("--passcode must be 32 characters (letters, digits or signs, no spaces)", argv[i + 1]));
+        }
+        for (int k = i; k + 2 <= *argc; k++) argv[k] = argv[k + 2];
+        *argc -= 2;
+        i--;
+    }
+    return 0;
+}
+
+// A package that needs another passcode: its own error code for a front end.
+static void passcode_code(const char *msg) {
+    if (strstr(msg, "--passcode")) g_err_code = "passcode";
 }
 
 static int is_sep(char c) { return c == '/' || c == '\\'; }
@@ -551,8 +583,11 @@ static void levels_text(FILE *out, const char *name, const mp_levels_report *r) 
     if (r->image_size) {
         size_text(a, sizeof a, r->original_size);
         size_text(b, sizeof b, r->image_size);
-        fprintf(out, "  Saved is against the game in it (%s); the image file is compressed and takes %s.\n", a, b);
-        fprintf(out, "  Against the image file:");
+        if (r->kind == MP_SRC_FPKG)
+            fprintf(out, "  Saved is against the game in it (%s); the package file takes %s.\n", a, b);
+        else
+            fprintf(out, "  Saved is against the game in it (%s); the image file is compressed and takes %s.\n", a, b);
+        fprintf(out, "  Against the %s file:", r->kind == MP_SRC_FPKG ? "package" : "image");
         for (size_t i = 0; i < r->nlevels; i++) {
             double change = 100.0 * ((double)r->rows[i].p5z_size / (double)r->image_size - 1.0);
             fprintf(out, "%s level %d %s%.1f %%", i ? "," : "", r->rows[i].level, change > 0 ? "+" : "-",
@@ -648,6 +683,7 @@ static int run_levels(int argc, char **argv) {
     mp_err e = {{0}};
     if (mp_levels_run(src, &o, &r, &e) != 0) {
         fprintf(stderr, "\nerror: %s\n", e.msg);
+        passcode_code(e.msg);
         rc = 1;
         goto out;
     }
@@ -808,6 +844,7 @@ static int run_pack(int argc, char **argv) {
     free(keep);
     if (rc != 0) {
         if (too_big) g_err_code = "too_big";
+        passcode_code(e.msg);
         mp_err why = {{0}};
         int left;
         if (p5z)
@@ -1292,12 +1329,18 @@ int main(int argc, char **argv) {
         // what the window needs from this version of the engine
         printf("{\"progress_json\":true,\"control_stdin\":true,\"max_file_size\":true,\"info_json\":true,"
                "\"icon\":true,\"packs\":true,\"content_id\":true,\"levels\":true,\"measure\":true,"
-               "\"images\":true}\n");
+               "\"images\":true,\"fpkg\":true,\"passcode\":true}\n");
         return 0;
     }
     if (argc >= 2 && (!strcmp(argv[1], "--help") || !strcmp(argv[1], "-h") || !strcmp(argv[1], "help"))) {
         usage(stdout);
         return 0;
+    }
+    // --passcode, for the commands that open a game: taken out here, before each one reads its options
+    if (argc >= 2 && (!strcmp(argv[1], "analyze") || !strcmp(argv[1], "pack") || !strcmp(argv[1], "info") ||
+                      !strcmp(argv[1], "icon") || !strcmp(argv[1], "verify"))) {
+        int rc = take_passcode(&argc, argv);
+        if (rc) return rc;
     }
     if (argc >= 2 && strcmp(argv[1], "analyze") == 0) return cmd_analyze(argc - 2, argv + 2);
     if (argc >= 2 && strcmp(argv[1], "pack") == 0) return cmd_pack(argc - 2, argv + 2);

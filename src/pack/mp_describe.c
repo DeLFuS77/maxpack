@@ -117,6 +117,7 @@ static int describe_source(const char *path, mp_describe *d, mp_err *e) {
             free(b);
         }
     }
+    if (!d->content_id[0]) snprintf(d->content_id, sizeof d->content_id, "%s", mp_source_package_id(s));
     rc = 0;
 done:
     mp_source_close(s);

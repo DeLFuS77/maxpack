@@ -32,8 +32,39 @@ var ErrClosing = errors.New("the window is closing")
 
 // Required is what the window needs of the engine, as `maxpack --capabilities` says it: an engine
 // that does not say one of them is of another version. "images": it reads the images ShadowMountPlus
-// mounts (.ffpkg, .ffpfs, .ffpfsc), which the window offers besides folders and .exfat.
-var Required = []string{"progress_json", "control_stdin", "max_file_size", "info_json", "icon", "packs", "content_id", "levels", "measure", "images"}
+// mounts (.ffpkg, .ffpfs, .ffpfsc), which the window offers besides folders and .exfat; "fpkg" and
+// "passcode": it reads PS5 debug packages (.pkg), with the passcode of Settings.
+var Required = []string{"progress_json", "control_stdin", "max_file_size", "info_json", "icon", "packs", "content_id", "levels", "measure", "images", "fpkg", "passcode"}
+
+// passcode is the one of Settings › FPKG passcode ("" is the default, which the engine knows).
+var passcode atomic.Value
+
+// SetPasscode gives the engine, from now on, the passcode of a PS5 package that is not the default
+// ("" for the default). Every run of the engine that reads a game (info, icon, pack, analyze) takes it.
+func SetPasscode(p string) { passcode.Store(p) }
+
+// PasscodeArgs are the arguments of the passcode for a run of the engine that reads a game: none for
+// the default.
+func PasscodeArgs() []string {
+	if p, _ := passcode.Load().(string); p != "" {
+		return []string{"--passcode", p}
+	}
+	return nil
+}
+
+// ValidPasscode tells whether p is a passcode a package can have: 32 printable ASCII characters,
+// no spaces (as the engine wants it).
+func ValidPasscode(p string) bool {
+	if len(p) != 32 {
+		return false
+	}
+	for i := 0; i < len(p); i++ {
+		if p[i] < 0x21 || p[i] > 0x7E {
+			return false
+		}
+	}
+	return true
+}
 
 // Event is a line of the engine: "progress" or the final "result".
 type Event struct {
@@ -214,7 +245,7 @@ func RunWith(ctx context.Context, core string, args []string, options RunOptions
 // Info is `info --json` of a folder, an image or a .p5z.
 func Info(core, path string) (map[string]any, error) {
 	var stderr bytes.Buffer
-	command := hide(exec.Command(core, "info", "--json", path))
+	command := hide(exec.Command(core, append([]string{"info", "--json", path}, PasscodeArgs()...)...))
 	command.Stderr = &stderr
 	out, err := command.Output()
 	if err != nil {
@@ -230,7 +261,7 @@ func Info(core, path string) (map[string]any, error) {
 // Icon writes the icon of the game to out, as a PNG; an error when it has none.
 func Icon(core, path, out string) error {
 	var stderr bytes.Buffer
-	command := hide(exec.Command(core, "icon", path, "-o", out))
+	command := hide(exec.Command(core, append([]string{"icon", path, "-o", out}, PasscodeArgs()...)...))
 	command.Stderr = &stderr
 	if err := command.Run(); err != nil {
 		return fmt.Errorf("icon of %s: %w: %s", path, err, strings.TrimSpace(stderr.String()))

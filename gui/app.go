@@ -121,6 +121,7 @@ func (a *App) startup(ctx context.Context) {
 // reported in CoreError and the window opens all the same.
 func (a *App) Setup() Setup {
 	saved, _ := settings.Load()
+	core.SetPasscode(saved.Passcode)
 	setup := Setup{Version: version, Lang: saved.EffectiveLang(), Theme: saved.Theme, LogFile: logFile(), Templates: jobs.Templates, CPUThreads: runtime.NumCPU(),
 		Explorer: shell.available(), Portable: isPortable()}
 	if builtIn := a.builtInRuntime(); builtIn != "" {
@@ -178,8 +179,10 @@ func (a *App) GetSettings() settings.Settings {
 	return saved
 }
 
-// SetSettings keeps what the user chose; what is not valid goes back to its default.
+// SetSettings keeps what the user chose; what is not valid goes back to its default. The passcode
+// of PS5 packages goes to the engine's runs from now on.
 func (a *App) SetSettings(s settings.Settings) error {
+	core.SetPasscode(s.Normalize().Passcode)
 	return settings.Save(s)
 }
 

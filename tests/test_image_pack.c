@@ -1,13 +1,18 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Packing an image gives what packing the same game as a folder gives: the same .p5z byte for byte,
-// the same folder for the console, the same analysis but for the source's kind, and unpack
-// --original of the .p5z gives back the game's files. The folder is the basic game as unpack
-// --original leaves it (its files with their dates); the images are make_images.py's.
+// Packing an image or a package gives what packing the same game as a folder gives: the same .p5z
+// byte for byte, the same folder for the console, the same analysis but for the source's kind, and
+// unpack --original of the .p5z gives back the game's files. The folder is the basic game as unpack
+// --original leaves it (its files with their dates); the images are make_images.py's, the packages
+// make_fpkg.py's (stored, Kraken, and Kraken with what the reference encoder leaves out). A package a
+// builder made of a game folder packs to that folder's files with their SHA-256s, plus or changed
+// exactly what the builder added (game.differ.tsv), every date the builder's.
 #include <stdio.h>
 #include <stdlib.h>
 
 #include "mp_analyze.h"
 #include "mp_fixture.h"
+#include "mp_hash.h"
+#include "mp_source.h"
 #include "mp_p5z.h"
 #include "mp_test.h"
 
@@ -17,7 +22,8 @@
 
 static const char *images[] = {"basic.ffpkg",        "profile.ffpkg",          "basic.ffpfs",
                                "basic_c.ffpfs",      "basic.exfat.ffpfsc",     "basic.ffpkg.ffpfsc",
-                               "basic.ffpfs.ffpfsc", "basic_raw.exfat.ffpfsc", "nest3.ffpfsc"};
+                               "basic.ffpfs.ffpfsc", "basic_raw.exfat.ffpfsc", "nest3.ffpfsc",
+                               "basic.pkg",          "basic_k.pkg",            "basic_x.pkg"};
 #define NIMAGES (sizeof images / sizeof images[0])
 
 static int unpack_original(const char *p5z, const char *dir) {
@@ -74,8 +80,8 @@ MP_TEST(images_pack_like_folder_dir) {
 
 // unpack --original of the .p5z of an image: the game's files, with their dates.
 MP_TEST(images_unpack_original) {
-    const char *which[] = {"basic.exfat.ffpfsc", "basic.ffpkg", "basic_c.ffpfs"};
-    for (size_t i = 0; i < 3; i++) {
+    const char *which[] = {"basic.exfat.ffpfsc", "basic.ffpkg", "basic_c.ffpfs", "basic_k.pkg"};
+    for (size_t i = 0; i < 4; i++) {
         char p5z[512];
         snprintf(p5z, sizeof p5z, TMP "/%s.p5z", which[i]);
         if (unpack_original(p5z, TMP "/orig") == 0 && !mpt_dirs_equal(GAME, TMP "/orig", NULL))
@@ -175,6 +181,71 @@ MP_TEST(tool_images) {
     mp_source_close(folder);
 }
 
+// SHA-256 of a file of a source, as hex; "" if it cannot be read.
+static void sha_hex(mp_source *s, size_t i, char hex[65]) {
+    const mp_entry *en = mp_source_entry(s, i);
+    uint8_t *b = malloc(en->size + 1), d[32];
+    mp_err e = {{0}};
+    hex[0] = 0;
+    if (b && mp_source_read(s, i, 0, b, (size_t)en->size, &e) == 0) {
+        mp_sha256 h;
+        mp_sha256_init(&h);
+        mp_sha256_update(&h, b, (size_t)en->size);
+        mp_sha256_final(&h, d);
+        mp_sha256_hex(d, hex);
+    }
+    free(b);
+}
+
+// game.pkg (what a builder made of game/) and game/ itself, each packed and unpacked --original: the
+// folder's files with the same SHA-256, and only the builder's additions and changes besides.
+MP_TEST(fpkg_game_like_folder) {
+    if (mpt_pack(FX "/game", TMP "/gdir.p5z", 1, NULL) != 0 || mpt_pack(FX "/game.pkg", TMP "/gpkg.p5z", 1, NULL) != 0)
+        return;
+    if (unpack_original(TMP "/gdir.p5z", TMP "/gdir") != 0 || unpack_original(TMP "/gpkg.p5z", TMP "/gpkg") != 0)
+        return;
+    mp_err e = {{0}};
+    mp_source *a = NULL, *b = NULL;
+    size_t len = 0;
+    uint8_t *tsv = mpt_slurp(FX "/game.differ.tsv", &len);
+    if (mp_source_open(TMP "/gdir", &a, &e) != 0 || mp_source_open(TMP "/gpkg", &b, &e) != 0 || !tsv) {
+        MP_FAIL_("%s", e.msg);
+        mp_source_close(a);
+        free(tsv);
+        return;
+    }
+    tsv[len] = 0;
+    char seen[4096] = "";
+    for (size_t i = 0; i < mp_source_count(b); i++) {
+        const mp_entry *en = mp_source_entry(b, i);
+        MP_CHECK_EQ_U64(en->mtime, 1730000000);   // the builder's time
+        long j = mp_source_find(a, en->path);
+        char x[65], y[65];
+        sha_hex(b, i, x);
+        if (j >= 0) sha_hex(a, (size_t)j, y);
+        if (j < 0 || strcmp(x, y))
+            snprintf(seen + strlen(seen), sizeof seen - strlen(seen), "%s\t%s\n", j < 0 ? "added" : "changed",
+                     en->path);
+    }
+    for (size_t j = 0; j < mp_source_count(a); j++)
+        if (mp_source_find(b, mp_source_entry(a, j)->path) < 0)
+            MP_FAIL_("%s is missing from the package's", mp_source_entry(a, j)->path);
+    // the differences are exactly the listed ones (the list is sorted by path, as the sources are)
+    char want[4096] = "";
+    for (char *line = (char *)tsv; line && *line;) {
+        char *nl = strchr(line, '\n');
+        if (nl) *nl = 0;
+        if (line[0] != '#') snprintf(want + strlen(want), sizeof want - strlen(want), "%s\n", line);
+        line = nl ? nl + 1 : NULL;
+    }
+    MP_CHECK_STR(seen, want);
+    mp_source_close(a);
+    mp_source_close(b);
+    free(tsv);
+    mpt_clear(TMP "/gdir");
+    mpt_clear(TMP "/gpkg");
+}
+
 int main(void) {
     mpt_clear(TMP);
     MP_RUN(make_game_folder);
@@ -183,5 +254,6 @@ int main(void) {
     MP_RUN(images_unpack_original);
     MP_RUN(images_analyze_like_folder);
     MP_RUN(tool_images);
+    MP_RUN(fpkg_game_like_folder);
     MP_TEST_MAIN_END();
 }

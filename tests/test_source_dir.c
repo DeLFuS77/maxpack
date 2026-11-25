@@ -49,6 +49,7 @@ MP_TEST(dir_read_exact) {
     mp_source_close(s);
 }
 
+// An FIH signature on 64 bytes: too short to be a PS5 package.
 MP_TEST(open_rejects_pkg) {
     mp_err e = {{0}};
     unsigned char pkg[64] = {0x7F, 0x46, 0x49, 0x48};
@@ -56,7 +57,7 @@ MP_TEST(open_rejects_pkg) {
     MP_CHECK(mp_write_file(TMP "/fake.pkg", pkg, sizeof pkg, &e) == 0);
     mp_source *s = NULL;
     MP_CHECK(mp_source_open(TMP "/fake.pkg", &s, &e) == -1);
-    MP_CHECK_CONTAINS(e.msg, "PKG");
+    MP_CHECK_CONTAINS(e.msg, "not a PS5 package");
 }
 
 MP_TEST(open_rejects_unknown) {

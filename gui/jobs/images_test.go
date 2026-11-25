@@ -11,28 +11,29 @@ import (
 	"testing"
 )
 
-// The images ShadowMountPlus mounts are taken by their extension, in any case: .exfat, .ffpkg,
-// .ffpfs and .ffpfsc; nothing else is one.
+// The images ShadowMountPlus mounts and PS5 packages are taken by their extension, in any case:
+// .exfat, .ffpkg, .ffpfs, .ffpfsc and .pkg; nothing else is one.
 func TestImageNames(t *testing.T) {
 	for name, want := range map[string]bool{
 		"game.exfat": true, "GAME.EXFAT": true, "game.ffpkg": true, "game.FFPkg": true, "game.ffpfs": true,
 		"game.ffpfsc": true, "game.FFPFSC": true, "D:/dumps/Iron Harbor.ffpfsc": true,
-		"game.p5z": false, "game.ffpfscx": false, "game.ffp": false, "ffpkg": false, "game": false, "game.pkg": false,
+		"game.pkg": true, "Game.PKG": true,
+		"game.p5z": false, "game.ffpfscx": false, "game.ffp": false, "ffpkg": false, "game": false, "game.pkgx": false, "pkg": false,
 	} {
 		if got := IsImageName(name); got != want {
 			t.Errorf("%s: %v", name, got)
 		}
 	}
-	for kind, want := range map[string]bool{"exfat": true, "ufs2": true, "pfs": true, "pfsc": true, "folder": false, "p5z": false, "": false} {
+	for kind, want := range map[string]bool{"exfat": true, "ufs2": true, "pfs": true, "pfsc": true, "fpkg": true, "folder": false, "p5z": false, "": false} {
 		if got := IsImage(kind); got != want {
 			t.Errorf("kind %q: %v", kind, got)
 		}
 	}
-	if strings.Join(ImageExts, " ") != ".exfat .ffpkg .ffpfs .ffpfsc" {
+	if strings.Join(ImageExts, " ") != ".exfat .ffpkg .ffpfs .ffpfsc .pkg" {
 		t.Errorf("extensions: %v", ImageExts)
 	}
 	// the name of the image without its extension is the title of a game that has none
-	for _, name := range []string{"Lost Signal.exfat", "Lost Signal.ffpkg", "Lost Signal.FFPFS", "Lost Signal.ffpfsc", "Lost Signal.p5z", "Lost Signal"} {
+	for _, name := range []string{"Lost Signal.exfat", "Lost Signal.ffpkg", "Lost Signal.FFPFS", "Lost Signal.ffpfsc", "Lost Signal.pkg", "Lost Signal.p5z", "Lost Signal"} {
 		it := game("", "PPSA10005", "", "")
 		it.Path = filepath.Join("x", name)
 		if got := NameOf(it, DefaultTemplate); got != "Lost Signal [PPSA10005]" {

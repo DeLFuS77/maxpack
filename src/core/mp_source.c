@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "mp_fpkg.h"
 #include "mp_platform.h"
 #include "mp_source_impl.h"
 
@@ -39,7 +40,8 @@ int mp_image_probe(mp_image *img, mp_image_type *type, mp_err *e) {
         *type = MP_IMG_PFS;
         return 0;
     }
-    if (got >= 4 && (memcmp(h, "\x7F" "FIH", 4) == 0 || memcmp(h, "\x7F" "CNT", 4) == 0)) {
+    if (got >= 4 && (memcmp(h, "\x7F" "FIH", 4) == 0 || memcmp(h, "\x7F" "CNT", 4) == 0 ||
+                     memcmp(h, "\x7F" "LIH", 4) == 0)) {
         *type = MP_IMG_PKG;
         return 0;
     }
@@ -68,7 +70,22 @@ static int ieq(const char *a, const char *b) {
     }
 }
 
+// The passcode for packages (mp_source_set_passcode); "" = the default.
+static char g_passcode[MP_FPKG_PASSCODE_LEN + 1];
+
+int mp_source_set_passcode(const char *passcode) {
+    if (passcode && passcode[0] && !mp_fpkg_passcode_ok(passcode)) return -1;
+    snprintf(g_passcode, sizeof g_passcode, "%s", passcode ? passcode : "");
+    return 0;
+}
+
+static int open_image(mp_image *img, int depth, const char *ext, const char *passcode, mp_source **out, mp_err *e);
+
 int mp_source_open_image(mp_image *img, int depth, const char *ext, mp_source **out, mp_err *e) {
+    return open_image(img, depth, ext, g_passcode, out, e);
+}
+
+static int open_image(mp_image *img, int depth, const char *ext, const char *passcode, mp_source **out, mp_err *e) {
     *out = NULL;
     if (depth > MP_IMAGE_MAX_DEPTH) {
         mp_err_set(e, "%s: images inside images more than %d deep", img->name, MP_IMAGE_MAX_DEPTH);
@@ -92,19 +109,21 @@ int mp_source_open_image(mp_image *img, int depth, const char *ext, mp_source **
         mp_err_set(e, "%s: a big-endian UFS2 image; the PS5's are little-endian", img->name);
         break;
     case MP_IMG_PKG:
-        mp_err_set(e, "%s: PKGs are not supported yet (they will come in phase 4); "
-                      "use a folder or an .exfat, .ffpkg, .ffpfs or .ffpfsc image", img->name);
+        if (depth == 1) return mp_fpkg_open_source(img, passcode, out, e);
+        mp_err_set(e, "%s: a package inside an image: MaxPack reads a package (.pkg) as a file of its own", img->name);
         break;
     default:
-        if (ext && ieq(ext, ".ffpkg"))
+        if (ext && ieq(ext, ".pkg"))
+            mp_err_set(e, "%s: not a PS5 package (it does not start with an FIH header)", img->name);
+        else if (ext && ieq(ext, ".ffpkg"))
             mp_err_set(e, "%s: not a UFS2 image (there is no UFS2 superblock in it)", img->name);
         else if (ext && (ieq(ext, ".ffpfs") || ieq(ext, ".ffpfsc")))
             mp_err_set(e, "%s: not a PFS image (it does not start with a PFS header)", img->name);
         else if (ext && ieq(ext, ".exfat"))
             mp_err_set(e, "%s: not an exFAT image (it does not start with an exFAT boot sector)", img->name);
         else
-            mp_err_set(e, "%s: unrecognised format: MaxPack packs a folder or an .exfat, .ffpkg, .ffpfs "
-                          "or .ffpfsc image", img->name);
+            mp_err_set(e, "%s: unrecognised format: MaxPack packs a folder, an .exfat, .ffpkg, .ffpfs or "
+                          ".ffpfsc image or a PS5 package (.pkg)", img->name);
         break;
     }
     mp_image_close(img);
@@ -112,6 +131,10 @@ int mp_source_open_image(mp_image *img, int depth, const char *ext, mp_source **
 }
 
 int mp_source_open(const char *path, mp_source **out, mp_err *e) {
+    return mp_source_open_passcode(path, g_passcode, out, e);
+}
+
+int mp_source_open_passcode(const char *path, const char *passcode, mp_source **out, mp_err *e) {
     *out = NULL;
     int kind = mp_path_kind(path);
     if (kind == 0) {
@@ -123,7 +146,7 @@ int mp_source_open(const char *path, mp_source **out, mp_err *e) {
     if (mp_image_open_file(path, &img, e) != 0) return -1;
     const char *slash = strrchr(path, '/'), *bslash = strrchr(path, '\\'), *dot = strrchr(path, '.');
     if (dot && ((slash && dot < slash) || (bslash && dot < bslash))) dot = NULL;
-    return mp_source_open_image(img, 1, dot, out, e);
+    return open_image(img, 1, dot, passcode, out, e);
 }
 
 mp_source_kind mp_source_kind_of(const mp_source *s) { return s->kind; }
@@ -136,6 +159,7 @@ static const char *kind_word(mp_source_kind k) {
     case MP_SRC_EXFAT: return "exfat";
     case MP_SRC_UFS2: return "ufs2";
     case MP_SRC_PFS: return "pfs";
+    case MP_SRC_FPKG: return "fpkg";
     default: return "folder";
     }
 }
@@ -144,7 +168,13 @@ const char *mp_source_kind_name(const mp_source *s) { return s->container ? "pfs
 
 const char *mp_source_inner_name(const mp_source *s) { return s->container ? kind_word(s->inner) : ""; }
 
+const char *mp_source_package_id(const mp_source *s) { return s->kind == MP_SRC_FPKG ? mp_fpkg_source_id(s) : ""; }
+
 const char *mp_source_kind_text(const mp_source *s, char *buf, size_t n) {
+    if (s->kind == MP_SRC_FPKG) {
+        snprintf(buf, n, "PS5 package (FPKG)%s", s->compressed ? ", compressed" : "");
+        return buf;
+    }
     static const char *words[] = {"folder", "exFAT image", "UFS2 image", "PFS image"};
     static const char *articles[] = {"a", "an", "a", "a"};
     mp_source_kind k = s->container ? s->inner : s->kind;
@@ -161,7 +191,8 @@ const char *mp_source_kind_text(const mp_source *s, char *buf, size_t n) {
 
 int mp_source_compressed(const mp_source *s) { return s->compressed; }
 
-unsigned mp_source_readers(const mp_source *s) { return s->compressed ? 16 : 4; }
+// A package is decrypted (and, compressed, decoded) as it is read: like inflating, work for threads.
+unsigned mp_source_readers(const mp_source *s) { return s->compressed || s->kind == MP_SRC_FPKG ? 16 : 4; }
 
 long mp_source_find(const mp_source *s, const char *path) {
     size_t lo = 0, hi = s->n;

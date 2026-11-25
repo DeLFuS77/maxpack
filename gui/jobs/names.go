@@ -67,14 +67,15 @@ func cut(s string, n int) string {
 	return strings.TrimRight(s[:n], ". ")
 }
 
-// The images of a game the engine reads, the ones ShadowMountPlus mounts: by the kind `info --json`
-// gives them, the extension they go by. The extension is only the quick hint the lists, the
-// dialogs, the command line and the Explorer go by; what a file is, the engine tells by its
-// contents, and that is what counts once it has read it.
-var imageExt = map[string]string{"exfat": ".exfat", "ufs2": ".ffpkg", "pfs": ".ffpfs", "pfsc": ".ffpfsc"}
+// The images of a game the engine reads, the ones ShadowMountPlus mounts and the PS5 debug packages
+// (FPKG, which the window takes as it takes an image): by the kind `info --json` gives them, the
+// extension they go by. The extension is only the quick hint the lists, the dialogs, the command
+// line and the Explorer go by; what a file is, the engine tells by its contents, and that is what
+// counts once it has read it.
+var imageExt = map[string]string{"exfat": ".exfat", "ufs2": ".ffpkg", "pfs": ".ffpfs", "pfsc": ".ffpfsc", "fpkg": ".pkg"}
 
-// ImageExts are the extensions of the images, in the order the window names them.
-var ImageExts = []string{".exfat", ".ffpkg", ".ffpfs", ".ffpfsc"}
+// ImageExts are the extensions of the images (and of a package), in the order the window names them.
+var ImageExts = []string{".exfat", ".ffpkg", ".ffpfs", ".ffpfsc", ".pkg"}
 
 // IsImageName tells whether a name has the extension of an image, in any case.
 func IsImageName(name string) bool {

@@ -433,7 +433,7 @@ int mp_analyze(const char *src_path, const mp_analyze_opts *o, mp_report *r, mp_
     snprintf(r->kind_name, sizeof r->kind_name, "%s", mp_source_kind_name(src));
     snprintf(r->inner_name, sizeof r->inner_name, "%s", mp_source_inner_name(src));
     mp_source_kind_text(src, r->kind_text, sizeof r->kind_text);
-    if (r->kind != MP_SRC_DIR && mp_source_compressed(src)) {
+    if (r->kind != MP_SRC_DIR && (mp_source_compressed(src) || r->kind == MP_SRC_FPKG)) {
         int64_t mtime = 0;
         if (mp_stat(src_path, &r->image_size, &mtime) != 0) r->image_size = 0;
     }

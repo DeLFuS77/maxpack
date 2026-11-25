@@ -30,7 +30,9 @@
 //   ?nopar2=1           a build without maxpack-par2: the page offers no repair data, and says why
 //   ?verify=1           three .p5z in Verify: one with repair data that verifies, one damaged with repair
 //                       data of its own (Verify finds it damaged, then Repair), one with the set of another file
-//   ?images=1           the images of ShadowMountPlus in Details (.exfat, .ffpkg, .ffpfsc), to see their cards
+//   ?images=1           the images of ShadowMountPlus and the PS5 packages in Details (.exfat, .ffpkg,
+//                       .ffpfsc, .pkg), to see their cards; one more .pkg needs another passcode until
+//                       Settings › FPKG passcode has one
 // Start runs a queue made up here: each game packs and verifies in a few seconds (and gets its repair
 // data), the games added meanwhile join it, and the card of the end shows; in Verify the damaged
 // .p5z fails, and Repair and Add repair data run their own steps. Compare levels and Measure this PC tell made-up
@@ -70,9 +72,17 @@ const mock = `
     // a UFS2 image (ShadowMountPlus's mkufs2.sh)
     "D:\\\\more\\\\Glass Orbit.ffpkg": { TitleID: "PPSA10006", Name: "Glass Orbit", Version: "01.000.000", ContentID: "EP0006-PPSA10006_00-GLASSORBIT000000", Kind: "ufs2", OriginalSize: 14800000000, HasZstdRuntime: false, Icon: "", Packed: false,
       ImageSize: 15400000000 },
+    // a PS5 debug package (FPKG), Kraken-compressed: its file is smaller than the game
+    "D:\\\\pkgs\\\\Copper Vale-PPSA10007.pkg": { TitleID: "PPSA10007", Name: "Copper Vale", Version: "01.000.003", ContentID: "UP0007-PPSA10007_00-COPPERVALE000000", Kind: "fpkg", Compressed: true,
+      OriginalSize: 41200000000, HasZstdRuntime: false, Icon: "", Packed: false, ImageSize: 33800000000 },
   };
+  // a package made with another passcode: the engine does not open it until Settings has one
+  const locked = "D:\\\\pkgs\\\\Ember Reach-PPSA10008.pkg";
+  games[locked] = { TitleID: "PPSA10008", Name: "Ember Reach", Version: "01.000.000", ContentID: "UP0008-PPSA10008_00-EMBERREACH000000", Kind: "fpkg", Compressed: false,
+    OriginalSize: 9300000000, HasZstdRuntime: false, Icon: "", Packed: false, ImageSize: 9500000000 };
+  const lockedError = () => new Error("info of " + locked + ": exit status 1: " + locked + ": this package was made with another passcode; give it with --passcode");
   const first = Object.keys(games).slice(0, 4);
-  const imagesShown = Object.keys(games).filter(file => /\\.(exfat|ffpkg|ffpfs|ffpfsc)$/i.test(file));
+  const imagesShown = Object.keys(games).filter(file => /\\.(exfat|ffpkg|ffpfs|ffpfsc|pkg)$/i.test(file));
   // the .p5z of Verify (?verify=1): good, damaged, and one with the set of another file next to it
   const good = "E:\\\\Starfall Odyssey [PPSA10001].p5z", damaged = "E:\\\\Iron Harbor [PPSA10002].p5z", foreign = "E:\\\\Neon Meridian [PPSA10003].p5z";
   const repairs = {};
@@ -224,9 +234,10 @@ const mock = `
       : { compress: first, verify: query.get("verify") ? [good, damaged, foreign] : [], details: query.get("verify") ? [damaged] : [], show: query.get("verify") ? "verify" : "" }),
     RepairInfo: async file => repairs[file] || { state: /\\.p5z$/i.test(file) ? "none" : "", percent: 0, blocks: 0, blockSize: 0, capacity: 0, bytes: 0 },
     Expand: async paths => paths,
-    Describe: async file => Object.assign({ Path: file }, games[file] || { TitleID: "PPSA00000", Name: file.split(/[\\\\/]/).pop(), Version: "01.000.000", Kind: "folder", OriginalSize: 1e9, Packed: false }),
+    Describe: async file => (file === locked && !settings.Passcode ? Promise.reject(lockedError()) : Object.assign({ Path: file }, games[file] || { TitleID: "PPSA00000", Name: file.split(/[\\\\/]/).pop(), Version: "01.000.000", Kind: "folder", OriginalSize: 1e9, Packed: false })),
     // what is not compressed has no packs; a .p5z or a compressed folder has its own numbers
     Details: async file => {
+      if (file === locked && !settings.Passcode) throw lockedError();
       const game = games[file] || {}, packed = game.Kind === "p5z" || !!game.Packed;
       return Object.assign({ Path: file, InstallSize: packed ? 7900000000 : game.OriginalSize || 1e9, P5zSize: game.Kind === "p5z" ? 2400000000 : 0, Files: 2165,
         PackedFiles: packed ? 2119 : 0, Volumes: packed ? 1 : 0, HasRuntime: packed || !!game.HasZstdRuntime }, game, { Repair: repairs[file] || { state: /\\.p5z$/i.test(file) ? "none" : "" } });

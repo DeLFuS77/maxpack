@@ -304,9 +304,10 @@ line does is there, without typing a command.
 - **Compression level** 1 to 22 (19 by default), with the shortcuts Light, Medium and Maximum.
   **Compare the levels on this PC** compresses a sample of a game at levels 3, 9, 15 and 19 and shows
   the size, the saving and the time of each here, to choose one from the table.
-- **Folders and images** as input: dump folders and the images ShadowMountPlus mounts (`.exfat`,
-  `.ffpkg`, `.ffpfs`, `.ffpfsc`), each told by its contents, with the space counted as the game's size,
-  not the image's; **Add folder** takes several folders at once, and each one can be a game or a folder
+- **Folders, images and packages** as input: dump folders, the images ShadowMountPlus mounts
+  (`.exfat`, `.ffpkg`, `.ffpfs`, `.ffpfsc`) and PS5 debug packages (`.pkg`, decrypted with their
+  passcode as they are read), each told by its contents, with the space counted as the game's size, not
+  the file's; **Add folder** takes several folders at once, and each one can be a game or a folder
   full of games. Games added to a section while its queue runs join the queue.
 - **File names by a template** (Settings > File names): `{title} [{id}]` by default, or with the
   version and the region (`{title} [{id}] [{region}] [v{version}]`), with a preview.
@@ -381,6 +382,8 @@ The same engine, for scripts and for measuring a game before you pack it.
 | `maxpack measure [<folder>]` | Measures this PC with no game: packing speed at 25, 50, 75 and 100 % of its threads, the threads to use, and the disk of a folder (a temporary file, deleted). |
 | `--version`, `--capabilities` | The engine and library versions; what this build can do, as JSON. |
 
+- **Any source:** a dump folder, an image or a PS5 debug package (`--passcode` for one made with a
+  passcode other than the default), read by the engine itself with nothing to mount or install.
 - **Deterministic:** the same input and options give the same bytes with any number of threads.
 - **Made to be driven:** `--progress json` prints one JSON line per event and `--control stdin`
   cancels cleanly. Exit codes: 0 success, 1 error, 2 wrong usage, 130 cancelled.
@@ -434,8 +437,9 @@ game tried is in the
 
 - 64-bit Windows; macOS 13 or later (Apple silicon or Intel); or 64-bit Linux with GTK 3 and
   WebKitGTK 4.1.
-- Your own game dump, as a folder or as an image ShadowMountPlus mounts: `.exfat`, `.ffpkg`, `.ffpfs`
-  or `.ffpfsc` ([source-images.md](docs/source-images.md)). PKGs cannot be compressed yet.
+- Your own game dump, as a folder, as an image ShadowMountPlus mounts (`.exfat`, `.ffpkg`, `.ffpfs`
+  or `.ffpfsc`) or as a PS5 debug package (FPKG, `.pkg`) ([source-images.md](docs/source-images.md)).
+  Retail packages cannot be compressed.
 - Free space at the destination. MaxPack warns you before it starts when the queue may not fit.
 - Nothing else for the runtime: the window comes with
   [MaxPack's ampr-emu-ng](https://github.com/DeLFuS77/ampr-emu-ng) (`libSceAmpr.sprx`) and puts it in the
@@ -600,14 +604,22 @@ Tried a game? Please [report it](#help-test-maxpack), whether it worked or not.
 </details>
 
 <details>
-<summary><b>Can it compress PKG or ShadowMountPlus images?</b></summary>
+<summary><b>Can it compress PKGs or ShadowMountPlus images?</b></summary>
 
 ShadowMountPlus images, yes: `.exfat`, `.ffpkg` (UFS2), `.ffpfs` (PFS) and `.ffpfsc` (a PFS container,
 usually compressed), in the window and on the command line. MaxPack reads them itself, read-only, with
 nothing to mount, no other tool and no temporary space, and the `.p5z` is the one of the same game as a
 folder; only the files' dates can differ, as the image gives them
-([source-images.md](docs/source-images.md)). PKGs, not yet: they are encrypted. MaxPack for the console
-can also *install* the images as they are.
+([source-images.md](docs/source-images.md)). MaxPack for the console can also *install* the images as
+they are.
+
+PS5 debug packages (FPKG, the "fake PKGs" homebrew tools make from a dump), yes too: MaxPack decrypts
+them with their passcode as it reads them (32 zeros unless whoever made one chose another: give it
+with `--passcode` or in Settings › FPKG passcode). The `.p5z` has the files the package holds, which
+its builder changed a little (it fake-signs the executables, adds a few `sce_sys` files and dates
+everything when it built the package). Retail packages need keys MaxPack does not have, and PS4
+packages, patches and DLC are refused: only a full PS5 game
+([source-images.md](docs/source-images.md#ps5-packages-fpkg-pkg)).
 </details>
 
 ## Status
@@ -692,7 +704,10 @@ names, fragmented files, a ValidDataLength smaller than the size, truncated imag
 real images (`tests/tools/compare_ranges.py`). The UFS2 and PFS images come from MaxPack's own
 generators (`tests/tools/make_ufs2.py`, `make_pfs.py`, with 45 damaged ones) and from
 [MkPFS](https://github.com/PSBrew/MkPFS), which made the `.ffpfs` and `.ffpfsc` images in `tests/data`;
-the window's tests pack them through its queue with the real engine.
+the window's tests pack them through its queue with the real engine. The PS5 packages come from
+`tests/tools/make_fpkg.py`, a builder that follows ProsperoPkgTool's (stored and Kraken-compressed,
+another passcode, the kinds MaxPack refuses and 21 damaged ones), and the ciphers are checked against
+the test vectors of FIPS-197, SP 800-38A, IEEE 1619, FIPS-202 and RFC 4231.
 
 ## Help test MaxPack
 
@@ -724,8 +739,11 @@ Security problems go privately: see [SECURITY.md](SECURITY.md).
   ampr-emu-ng) is meant for backups of games you own, dumped from your own console, and for homebrew.
 - **No content included.** It includes and distributes no games, firmware, keys or other copyrighted
   content, and it does not help you obtain any.
-- **No circumvention.** It does not bypass, remove or weaken encryption, keys or DRM. It compresses,
-  stores and serves the files of a dump, and never touches keys, encryption or DRM.
+- **No circumvention.** It does not bypass, remove or weaken encryption, keys or DRM, and it has no
+  keys of any kind. It compresses, stores and serves the files of a dump. The only encryption it reads
+  is that of a debug package (FPKG), the kind homebrew tools make from a dump, with the passcode its
+  maker chose: the keys come from the package's own content ID and that passcode, as the tool that
+  made it derives them. Retail packages are refused.
 - **Piracy is not supported.** Issues, reports and questions about pirated content will not be
   answered.
 - **No warranty.** It is free software provided "as is", without warranty of any kind, under the GNU
@@ -740,8 +758,9 @@ Security problems go privately: see [SECURITY.md](SECURITY.md).
 ## Credits and licence
 
 MaxPack is free software by DeLFuS77 under the **GPL-3.0-or-later** licence ([LICENSE](LICENSE)). The
-third-party software that the packages include (zstd, zlib, ampr-emu-ng, Wails and the window's Go
-libraries, and par2cmdline-turbo as `maxpack-par2`) and its licences are in
+third-party software that the packages include (zstd, zlib, the code ported from ProsperoPkgTool,
+ampr-emu-ng, Wails and the window's Go libraries, and par2cmdline-turbo as `maxpack-par2`) and its
+licences are in
 [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES), regenerated with
 `python tools/gen_third_party.py`.
 
@@ -754,6 +773,11 @@ MaxPack stands on the work of others:
 - **drakmor**: [ShadowMountPlus](https://github.com/drakmor/ShadowMountPlus) and
   [ampr_emu](https://github.com/drakmor/ampr_emu), where the ampr-emu-ng runtime and the
   `ampr_emu.index` format come from.
+- **pearlxcore**: [ProsperoPkgTool](https://github.com/pearlxcore/ProsperoPkgTool) (MIT), where
+  MaxPack's reading of PS5 debug packages comes from: the package layout, the keys from the content ID
+  and the passcode, the block map of the inner image and the Kraken decoder are ported from it, with
+  [Alembic](https://github.com/fthdgn-gh/Alembic) (fthdgn-gh, GPL-3.0-or-later), which ports the same,
+  as a second reading; the test packages follow its builder.
 - [zstd](https://github.com/facebook/zstd) (Meta) and [zlib](https://github.com/madler/zlib)
   (Jean-loup Gailly and Mark Adler), the compression.
 - [Wails](https://wails.io) and the window's Go libraries (full list in `THIRD_PARTY_NOTICES`).

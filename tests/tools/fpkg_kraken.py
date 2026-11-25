@@ -238,9 +238,10 @@ def append_array(out, data, split=False):
 
 
 class Finder:
-    def __init__(self, data):
+    def __init__(self, data, low=0):
         self.data = data
         self.n = len(data)
+        self.low = low   # no match from before this position
         self.head = {}
         self.prev = [-1] * self.n
         self.next_insert = 0
@@ -277,7 +278,7 @@ class Finder:
         chain = 0
         while cand >= 0 and chain < MAX_CHAIN:
             distance = pos - cand
-            if distance >= SEED and d[cand:cand + 4] == key:
+            if distance >= SEED and cand >= self.low and d[cand:cand + 4] == key:
                 n = MIN_MATCH
                 # compare in slices first (fast), then byte by byte
                 while n + 64 <= max_len and d[cand + n:cand + n + 64] == d[pos + n:pos + n + 64]:
@@ -354,7 +355,7 @@ def encode_chunk(finder, chunk_start, chunk_end, with_seed, out, mode):
             # a repeated offset that matches at least as long wins (no offset to write)
             for k in range(3):
                 d = -recent[k]
-                if pos - d >= 0:
+                if pos - d >= finder.low:
                     n = finder.length_at(pos - d, pos, end_limit - pos)
                     if n >= MIN_MATCH and n >= mlen:
                         mlen, mdist, rep = n, d, k
@@ -450,13 +451,15 @@ NO_SCALING = 2     # offsets without scaling (the decoder's distance codes)
 SUB_LITERALS = 4   # literals as deltas against the last offset (flag CHUNK0_SUB / CHUNK1_SUB)
 
 
-def encode_block(data, mode=0):
-    """(payload, flags, first_chunk_size) for 8 bytes to 256 KiB, or None if it is not smaller."""
+def encode_block(data, mode=0, seed_free=False):
+    """(payload, flags, first_chunk_size) for 8 bytes to 256 KiB, or None if it is not smaller.
+    seed_free: no match takes the first 8 bytes (the raw seed the payload starts with), so they can
+    be changed in the data and the payload alike (the benchmark's many-but-cheap blocks)."""
     data = bytes(data)
     n = len(data)
     if n < SEED or n > MAX_BLOCK:
         return None
-    finder = Finder(data)
+    finder = Finder(data, SEED if seed_free else 0)
     out = bytearray()
     first_end = min(n, CHUNK)
     if not encode_chunk(finder, 0, first_end, True, out, mode):

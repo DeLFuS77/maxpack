@@ -295,6 +295,61 @@ def flt(entries):
 EXEC_MAGIC = (0x1D3D154F, 0xEEF51454, 0x464C457F)
 
 
+class DiskFile:
+    """A file's data read from the disk when it is needed (for big packages): data[a:b] and len()."""
+
+    def __init__(self, path):
+        self.path = path
+        self.size = os.path.getsize(path)
+        self.f = None
+
+    def __len__(self):
+        return self.size
+
+    def __getitem__(self, sl):
+        a, b = sl.start or 0, min(sl.stop if sl.stop is not None else self.size, self.size)
+        if self.f is None:
+            self.f = open(self.path, "rb")
+        self.f.seek(a)
+        data = self.f.read(max(0, b - a))
+        if b >= self.size:
+            self.f.close()
+            self.f = None
+        return data
+
+
+class Sink:
+    """Bytes written one after the other into a file (or memory), with what has been written so far."""
+
+    def __init__(self, f):
+        self.f = f
+        self.size = 0
+
+    def write(self, b):
+        self.f.seek(self.size)
+        self.f.write(b)
+        self.size += len(b)
+
+    def pad_to(self, pos):
+        if pos > self.size:
+            self.write(bytes(pos - self.size))
+
+    def read(self, off, n):
+        self.f.seek(off)
+        return self.f.read(n)
+
+
+class Bytes:
+    """Bytes in memory as a source (size and read)."""
+
+    def __init__(self, b):
+        self.b = b
+        self.size = len(b)
+
+    def read(self, off, n):
+        return self.b[off:off + n]
+
+
 class Dir:
     def __init__(self, name, full, parent):
         self.name, self.full, self.parent = name, full, parent
@@ -308,7 +363,7 @@ class File:
     def __init__(self, name, full, data, parent):
         self.name, self.full, self.data, self.parent = name, full, data, parent
         self.length = len(data)
-        self.exec = len(data) >= 4 and struct.unpack_from("<I", data)[0] in EXEC_MAGIC
+        self.exec = len(data) >= 4 and struct.unpack_from("<I", bytes(data[0:4]))[0] in EXEC_MAGIC
         self.inode = self.afid = 0
         self.logical = self.on_disk = self.encoded = 0
         self.raw = self.whole_raw = False
@@ -389,11 +444,16 @@ def pfsv3_container(payload, blocks_out, kraken_on, mode_of):
     return bytes(b), off7
 
 
-def inner_image(files, kraken_on, t_sec, t_nsec, mode_of=lambda i: 0, meta_hook=None):
+def inner_image(files, kraken_on, t_sec, t_nsec, mode_of=lambda i: 0, meta_hook=None, sink=None, encode=None):
     """files: [(path, data)], the inner PFS's (no leading slash). The image and its geometry.
     meta_hook(meta, where), for damaged packages, may change the metadata (a bytearray) before it is
     stored; where has inode(i) (the offset of inode i), dirs and files ({path: inode}) and content
-    ({folder path: the offset of its entries})."""
+    ({folder path: the offset of its entries}). sink: where the image goes (in memory if None).
+    encode(piece, index): the Kraken encoder of the payload (encode_block with mode_of if None)."""
+    img = sink or Sink(io.BytesIO())
+    if encode is None:
+        def encode(piece, index):
+            return kraken.encode_block(piece, mode_of(index))
     uroot = Dir("uroot", "", None)
     for path, data in sorted(files, key=lambda f: bkey(f[0])):
         parts = path.split("/")
@@ -482,7 +542,6 @@ def inner_image(files, kraken_on, t_sec, t_nsec, mode_of=lambda i: 0, meta_hook=
         prev = f.chunk
         f.whole_raw = f.full == "/sce_sys/keystone" or f.exec or transition
 
-    img = bytearray()
     blocks = []   # the payload pieces, in physical order
     pos = 0
     index = 0
@@ -491,7 +550,7 @@ def inner_image(files, kraken_on, t_sec, t_nsec, mode_of=lambda i: 0, meta_hook=
         if f.whole_raw or (f.raw and pos % BS and f.length > BS - pos % BS):
             pos = up(pos, BS)
         f.on_disk = pos
-        img += bytes(pos - len(img))
+        img.pad_to(pos)
         phys = pos
         off = 0
         while off < f.length:
@@ -499,14 +558,14 @@ def inner_image(files, kraken_on, t_sec, t_nsec, mode_of=lambda i: 0, meta_hook=
             piece = f.data[off:off + n]
             e = None
             if kraken_on and not f.raw and off + n < f.length:   # not a file's last piece
-                e = kraken.encode_block(piece, mode_of(index))
+                e = encode(piece, index)
                 index += 1
             if e:
-                img += e[0]
+                img.write(e[0])
                 blocks.append(dict(logical=f.logical + off, size=n, stored=len(e[0]), flags=e[1], first=e[2], phys=phys))
                 phys += len(e[0])
             else:
-                img += piece
+                img.write(piece)
                 blocks.append(dict(logical=f.logical + off, size=n, stored=n, flags=0, first=0, phys=phys))
                 phys += n
             off += n
@@ -624,17 +683,17 @@ def inner_image(files, kraken_on, t_sec, t_nsec, mode_of=lambda i: 0, meta_hook=
     value = ((be & 0xFF) << 16) | (be & 0xFF00) | ((be >> 16) & 0xFF)
     info = b"".join(struct.pack("<II", 0x00FCFF27 if i < 3 else value, 0x00400003) for i in range(4))
     pos = up(pos, BS)
-    img += bytes(pos - len(img))
+    img.pad_to(pos)
     block_info = pos
-    img += info
+    img.write(info)
     pos += len(info)
     meta_blocks = []
     container, data_section = pfsv3_container(bytes(meta), meta_blocks, kraken_on, lambda i: mode_of(100000 + i))
     pos = up(pos, BS)
-    img += bytes(pos - len(img))
+    img.pad_to(pos)
     meta_on_disk = pos
-    img += container
-    return dict(image=bytes(img), blocks=blocks, meta_blocks=meta_blocks, data_end=data_end, meta_base=meta_base,
+    img.write(container)
+    return dict(image=img, blocks=blocks, meta_blocks=meta_blocks, data_end=data_end, meta_base=meta_base,
                 ndblock=ndblock, block_info=block_info, meta_on_disk=meta_on_disk, data_section=data_section,
                 placements=[(f.logical, f.length) for f in order], meta=bytes(meta), inode_blocks=inode_blocks,
                 content_inodes=len(dirs) + len(file_nodes),
@@ -739,7 +798,7 @@ def naps(inner, kraken_on):
         cursor += b["stream"]
     num_files = len(fidx)
     num_ublocks = -(-mount // UBLOCK)
-    num_outer = -(-len(inner["image"]) // BS)
+    num_outer = -(-inner["image"].size // BS)
     num_cblock = len(entries)
     std_logical.sort(key=lambda x: x[1])
     first = []
@@ -788,17 +847,24 @@ def dirent_block(entries):
     return b
 
 
-def outer_pfs(files, content_id, passcode, seed, t_sec, t_nsec, plain=False):
-    """files: [(name, data, signed, size_compressed)]. (image, superblock index, info)."""
-    blocks, kinds, first, counts = [], [], [], []
-    for name, data, signed, _ in files:
-        first.append(len(blocks))
-        n = max(1, -(-len(data) // BS))
+def outer_pfs(files, content_id, passcode, seed, t_sec, t_nsec, plain=False, sink=None, base=0):
+    """files: [(name, source (size, read), signed, size_compressed)]. Written into sink at base (the
+    data blocks streamed: only their digests are kept); (superblock index, info)."""
+    first, counts, kinds = [], [], []
+    digest = {}
+    nb = 0
+    for name, src, signed, _ in files:
+        first.append(nb)
+        n = max(1, -(-src.size // BS))
         counts.append(n)
         for i in range(n):
-            blocks.append(bytes(data[i * BS:(i + 1) * BS]).ljust(BS, b"\0"))
+            blk = bytes(src.read(i * BS, BS)).ljust(BS, b"\0")
+            digest[nb] = sha3(blk)
+            sink.f.seek(base + nb * BS)
+            sink.f.write(blk)
             kinds.append(signed)
-    data_blocks = len(blocks)
+            nb += 1
+    data_blocks = nb
     sb, itab, sroot, fltb = data_blocks, data_blocks + 1, data_blocks + 2, data_blocks + 3
     nxt = [fltb + 1]
 
@@ -831,11 +897,8 @@ def outer_pfs(files, content_id, passcode, seed, t_sec, t_nsec, plain=False):
     uroot = nxt[0]
     total = uroot + 1
     meta = {i: bytearray(BS) for i in range(sb, total)}
-    digest = {}
 
     def dig(i):
-        if i not in digest:
-            digest[i] = sha3(blocks[i])
         return digest[i]
 
     def seal(i):
@@ -876,7 +939,7 @@ def outer_pfs(files, content_id, passcode, seed, t_sec, t_nsec, plain=False):
         struct.pack_into("<HHIQQ", t, o, mode, nlink, flags, size, size)
         struct.pack_into("<4Q4I", t, o + 24, *times)
         struct.pack_into("<I", t, o + 96, 1)
-        t[o + 0x64:o + 0x64 + 32] = dig(owned) if owned < data_blocks else digest[owned]
+        t[o + 0x64:o + 0x64 + 32] = digest[owned]
         struct.pack_into("<I", t, o + 0x64 + 32, owned)
 
     meta_inode(0, 0x416D, 1, 0x2000C, BS, sroot)
@@ -884,7 +947,7 @@ def outer_pfs(files, content_id, passcode, seed, t_sec, t_nsec, plain=False):
     meta_inode(2, 0x416D, 3, 0x000C, BS, uroot)
     for i, (name, data, signed, size_c) in enumerate(files):
         o = (3 + i) * S32
-        struct.pack_into("<HHIQQ", t, o, 0x816D, 1, 0x000D, len(data), size_c)
+        struct.pack_into("<HHIQQ", t, o, 0x816D, 1, 0x000D, data.size, size_c)
         struct.pack_into("<4Q4I", t, o + 24, *times)
         struct.pack_into("<I", t, o + 96, counts[i])
         for j in range(min(counts[i], 12)):
@@ -913,31 +976,46 @@ def outer_pfs(files, content_id, passcode, seed, t_sec, t_nsec, plain=False):
     region = bytearray(s[:0x5A0])
     region[0x380:0x3A0] = bytes(32)
     s[0x380:0x3A0] = sha3(bytes(region))
-    allblocks = blocks + [bytes(meta[i]) for i in range(sb, total)]
+    for i in range(sb, total):
+        sink.f.seek(base + i * BS)
+        sink.f.write(bytes(meta[i]))
+    sink.size = max(sink.size, base + total * BS)
     signed_from = counts[0] if files and not files[0][2] else 0
-    if not plain and _helper["exe"] and all(kinds[i] == (i >= signed_from) for i in range(data_blocks)):
+    if not plain:
         dk, tk = outer_key_bytes(content_id, passcode, seed)
-        fd, path = tempfile.mkstemp(suffix=".outer", dir=_helper["dir"])
-        try:
-            with os.fdopen(fd, "wb") as f:
-                for blk in allblocks:
-                    f.write(blk)
-            subprocess.run([_helper["exe"], "xts", path, "0", str(total), dk.hex(), tk.hex(), str(signed_from),
-                            str(sb)], check=True)
-            with open(path, "rb") as f:
-                image = f.read()
-        finally:
-            os.remove(path)
-        plain = None   # done
-    elif not plain:
-        dk, tk = outer_keys(content_id, passcode, seed)
-        for i in range(total):
-            if i == sb:
-                continue
-            sector = i if (i < data_blocks and not kinds[i]) else (i | SIGNED)
-            allblocks[i] = xts_encrypt(dk, tk, sector, allblocks[i])
-    if plain is not None:
-        image = b"".join(allblocks)
+        uniform = all(kinds[i] == (i >= signed_from) for i in range(data_blocks))
+        if _helper["exe"] and uniform:
+            # the engine's AES, on a file: the package's own if it is one, else a copy of the region
+            real = getattr(sink.f, "name", None)
+            if isinstance(real, str):
+                sink.f.close()   # (Windows: the tool cannot write a file open here)
+                path, off = real, base
+            else:
+                fd, path = tempfile.mkstemp(suffix=".outer", dir=_helper["dir"])
+                with os.fdopen(fd, "wb") as f:
+                    f.write(sink.read(base, total * BS))
+                off = 0
+            try:
+                subprocess.run([_helper["exe"], "xts", path, str(off), str(total), dk.hex(), tk.hex(), str(signed_from),
+                                str(sb)], check=True)
+                if path != real:
+                    with open(path, "rb") as f:
+                        sink.f.seek(base)
+                        sink.f.write(f.read())
+            finally:
+                if path != real:
+                    os.remove(path)
+                else:
+                    sink.f = open(real, "r+b")
+        else:
+            d, t2 = Aes(dk), Aes(tk)
+            for i in range(total):
+                if i == sb:
+                    continue
+                sector = i if (i < data_blocks and not kinds[i]) else (i | SIGNED)
+                blk = sink.read(base + i * BS, BS)
+                sink.f.seek(base + i * BS)
+                sink.f.write(xts_encrypt(d, t2, sector, blk))
     indirect = []
 
     def walk(node):
@@ -948,8 +1026,8 @@ def outer_pfs(files, content_id, passcode, seed, t_sec, t_nsec, plain=False):
     for plan in trees:
         for _, root in plan:
             walk(root)
-    return image, sb, dict(itab=itab, uroot=uroot, total=total, first=first, counts=counts, sb_plain=bytes(meta[sb]),
-                           indirect=indirect, data_blocks=data_blocks)
+    return sb, dict(itab=itab, uroot=uroot, total=total, first=first, counts=counts, sb_plain=bytes(meta[sb]),
+                    indirect=indirect, data_blocks=data_blocks)
 
 
 # ---- the CNT and the FIH ------------------------------------------------------------------------
@@ -1082,29 +1160,41 @@ def entry_flags(eid, name):
 
 
 def package(files, content_id, passcode=DEFAULT_PASSCODE, kraken_on=False, t_sec=1714979290, t_nsec=0, mode_of=None,
-            seed=b"MaxPackOuterSeed", content_type=0x20, plain=False, hooks=None):
+            seed=b"MaxPackOuterSeed", content_type=0x20, plain=False, hooks=None, out=None, encode=None):
     """A whole package of a game (files: [(path, data)], as a folder has it). The sce_sys files the CNT
     keeps (SCE_IDS) go there, the rest into the inner PFS. (bytes, info). hooks, for damaged packages:
     "meta" (see inner_image), "image" (pfs_image.dat's bytes), "naps" (the map), "entries" (the CNT
-    entries) and "names" (the CNT's names table), each taking and giving the thing."""
+    entries) and "names" (the CNT's names table), each taking and giving the thing. out: a path to write
+    it to as it is made (for big packages; then bytes is None), with pfs_image.dat in out + ".inner"
+    meanwhile. A file's data may be a DiskFile. encode: the payload's Kraken encoder (see inner_image)."""
     hooks = hooks or {}
     inner_files, cnt_files = [], []
     for path, data in files:
         rel = path[8:] if path.startswith("sce_sys/") else None
         if rel is not None and rel in SCE_IDS:
-            cnt_files.append((rel, data))
+            cnt_files.append((rel, bytes(data[0:len(data)])))
         else:
             inner_files.append((path, data))
-    inner = inner_image(inner_files, kraken_on, t_sec, t_nsec, mode_of or (lambda i: 0), hooks.get("meta"))
+    inner_f = open(out + ".inner", "w+b") if out else io.BytesIO()
+    inner = inner_image(inner_files, kraken_on, t_sec, t_nsec, mode_of or (lambda i: 0), hooks.get("meta"),
+                        Sink(inner_f), encode)
     naps_blob, nfiles = naps(inner, kraken_on)
     inner["files"] = nfiles - 1
     if "naps" in hooks:
         naps_blob = hooks["naps"](naps_blob)
+    image = inner["image"]
     if "image" in hooks:
-        inner["image"] = hooks["image"](inner["image"], inner)
-    outer, sb, oinfo = outer_pfs([("pfs_image.dat", inner["image"], False, inner["ndblock"] * BS),
-                                  ("naps_pkg_layout.dat", naps_blob, True, len(naps_blob))],
-                                 content_id, passcode, seed, t_sec, t_nsec, plain=plain)
+        image = Bytes(hooks["image"](image.read(0, image.size), inner))
+    pkg_f = open(out, "w+b") if out else io.BytesIO()
+    pkg = Sink(pkg_f)
+    pkg.write(bytes(BS))   # the FIH, written once the rest is known
+    sb, oinfo = outer_pfs([("pfs_image.dat", image, False, inner["ndblock"] * BS),
+                           ("naps_pkg_layout.dat", Bytes(naps_blob), True, len(naps_blob))],
+                          content_id, passcode, seed, t_sec, t_nsec, plain=plain, sink=pkg, base=BS)
+    inner_f.close()
+    if out:
+        os.remove(out + ".inner")
+    outer_size = oinfo["total"] * BS
     entries = [(0x1, None, b"", 0x40000000, 0), (0x10, None, bytes(0x2A0), 0x60000000, 0),
                (0x20, None, bytes(0x100), 0x60000000, 0), (0x80, None, bytes(0x1E0), 0x60000000, 0),
                (0x100, None, b"", 0x60000000, 0), (0x200, None, b"", 0x40000000, 0)]
@@ -1115,8 +1205,17 @@ def package(files, content_id, passcode=DEFAULT_PASSCODE, kraken_on=False, t_sec
     entries.append((0x40A, None, bytes(32), 0x60000000, 0))
     if "entries" in hooks:
         entries = hooks["entries"](entries)
-    body, where = cnt(entries, content_id, passcode, content_type, len(outer), hooks.get("names"))
-    fih = fih_header(len(outer), sb, sha3(oinfo["sb_plain"]), naps_blob, inner)
-    pkg = bytes(fih) + outer + body + si_zip(content_id)
-    return pkg, dict(inner=inner, naps=naps_blob, sb=sb, outer=oinfo, cnt_offset=BS + len(outer), cnt=where,
-                     outer_size=len(outer))
+    body, where = cnt(entries, content_id, passcode, content_type, outer_size, hooks.get("names"))
+    fih = fih_header(outer_size, sb, sha3(oinfo["sb_plain"]), naps_blob, inner)
+    pkg.size = BS + outer_size
+    pkg.write(body)
+    pkg.write(si_zip(content_id))
+    pkg.f.seek(0)
+    pkg.f.write(bytes(fih))
+    data = None
+    if out:
+        pkg.f.close()
+    else:
+        data = pkg.f.getvalue()
+    return data, dict(inner=inner, naps=naps_blob, sb=sb, outer=oinfo, cnt_offset=BS + outer_size, cnt=where,
+                      outer_size=outer_size)

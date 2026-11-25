@@ -96,7 +96,8 @@ func TestDumpIndexWithTheEngine(t *testing.T) {
 }
 
 // With the real engine: what it says of the dumps of make_playgo.py, and a queue that leaves out the
-// leftovers the table proves are not the game's, whose .p5z is still complete.
+// leftovers the table proves are not the game's, whose .p5z is still complete; from the dump, and from
+// a PS5 package of it (make_fpkg.py's playgo_leftovers.pkg), whose files are a source like any other.
 func TestCompletenessWithTheEngine(t *testing.T) {
 	engine, fixtures := needCore(t)
 	pg := filepath.Join(fixtures, "playgo")
@@ -107,22 +108,24 @@ func TestCompletenessWithTheEngine(t *testing.T) {
 	if c := describe(t, engine, filepath.Join(pg, "notable")).Completeness; c == nil || c.Checkable || c.Reason != "no_table" || c.LeftoverCount != 1 {
 		t.Errorf("notable: %+v", c)
 	}
-	it := describe(t, engine, filepath.Join(pg, "leftovers"))
-	if c := it.Completeness; c == nil || !c.Checkable || c.Missing != 0 || c.LeftoverCount != 3 {
-		t.Fatalf("leftovers: %+v", c)
-	}
-	o := Options{Mode: ModeP5z, Dest: t.TempDir(), Level: 3}
-	plans := PlanCompress([]Item{it}, o, newFS())
-	s := &states{list: map[int][]string{}}
-	r := &Runner{Core: engine, OnItem: s.on}
-	if sum := r.Run(context.Background(), plans, o); sum.Done != 1 || sum.Failed != 0 {
-		t.Fatalf("%+v, states %v", sum, s.list)
-	}
-	made := describe(t, engine, plans[0].Out)
-	if c := made.Completeness; c == nil || !c.Checkable || c.Missing != 0 || c.Present != 8 || c.LeftoverCount != 0 {
-		t.Errorf("the .p5z: %+v", c)
-	}
-	if made.OriginalSize != it.OriginalSize-11064 {
-		t.Errorf("the .p5z has %d bytes of the dump, not %d", made.OriginalSize, it.OriginalSize-11064)
+	for _, source := range []string{filepath.Join(pg, "leftovers"), filepath.Join(fixtures, "playgo_leftovers.pkg")} {
+		it := describe(t, engine, source)
+		if c := it.Completeness; c == nil || !c.Checkable || c.Missing != 0 || c.LeftoverCount != 3 {
+			t.Fatalf("%s: %+v", filepath.Base(source), c)
+		}
+		o := Options{Mode: ModeP5z, Dest: t.TempDir(), Level: 3}
+		plans := PlanCompress([]Item{it}, o, newFS())
+		s := &states{list: map[int][]string{}}
+		r := &Runner{Core: engine, OnItem: s.on}
+		if sum := r.Run(context.Background(), plans, o); sum.Done != 1 || sum.Failed != 0 {
+			t.Fatalf("%s: %+v, states %v", filepath.Base(source), sum, s.list)
+		}
+		made := describe(t, engine, plans[0].Out)
+		if c := made.Completeness; c == nil || !c.Checkable || c.Missing != 0 || c.Present != 8 || c.LeftoverCount != 0 {
+			t.Errorf("the .p5z of %s: %+v", filepath.Base(source), c)
+		}
+		if made.OriginalSize != it.OriginalSize-11064 {
+			t.Errorf("the .p5z of %s has %d bytes of the dump, not %d", filepath.Base(source), made.OriginalSize, it.OriginalSize-11064)
+		}
 	}
 }

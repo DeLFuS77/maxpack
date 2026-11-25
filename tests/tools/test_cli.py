@@ -956,5 +956,43 @@ check("pack_dump_index_keeps_leftovers", res.get("left_out_files") == 0 and res.
 rc, so, err = run("verify", bp5)
 check("verify_p5z_dump_index", rc == 0 and "damaged copy: 2 of the 13 files the dump tool wrote are missing" in so, so + err)
 
+# Completeness of a PS5 package (.pkg): its files are a source like any other, so it is checked against
+# the table it carries, or its dump tool's list, as the folder it was made of is (make_fpkg.py packs
+# playgo/leftovers and dumpindex/broken with their files as they are).
+for pkg, folder in (("playgo_leftovers.pkg", os.path.join(PG, "leftovers")),
+                    ("dumpindex_broken.pkg", os.path.join(DI, "broken"))):
+    rc, c, err = info_complete(os.path.join(FX, pkg))
+    _, want, _ = info_complete(folder)
+    check("info_json_completeness_" + pkg, rc == 0 and c is not None and c["checkable"] is True and c == want,
+          str(c) + " / " + str(want) + err)
+rc, out, err = run("analyze", os.path.join(FX, "playgo_leftovers.pkg"), "--no-dedup", "--no-transport")
+check("analyze_text_completeness_pkg", rc == 0 and "Completeness: complete: all 8 files of the original package" in out
+      and "11.06 KB of them is what dump tools leave behind" in out, out[:700])
+kp5 = os.path.join(TMP, "pg_left_pkg.p5z")
+if os.path.exists(kp5):
+    os.remove(kp5)
+rc, so, err = run("pack", os.path.join(FX, "playgo_leftovers.pkg"), "-o", kp5, "--p5z", "--level", "3",
+                  "--threads", "2", "--leave-out-leftovers", "--progress", "json")
+res = last_result(json_lines(so))
+check("pack_pkg_leave_out_leftovers", rc == 0 and res.get("left_out_files") == 3 and res.get("left_out_bytes") == 11064
+      and res.get("completeness", {}).get("source") == "playgo", str(res) + err[-300:])
+check("pack_pkg_leftovers_same_p5z", os.path.exists(kp5) and os.path.exists(lp5)
+      and open(kp5, "rb").read() == open(lp5, "rb").read(), kp5)
+rc, so, err = run("pack", os.path.join(FX, "dumpindex_broken.pkg"), "-o", os.path.join(TMP, "di_broken_pkg.p5z"),
+                  "--p5z", "--level", "3", "--threads", "2", "--leave-out-leftovers")
+check("pack_pkg_warns_damaged_copy", rc == 0 and "note: kept: 1 file" in err
+      and "warning: damaged copy: 2 of the 13 files the dump tool wrote are missing" in err, err[-600:])
+# A builder's package whose playgo-hash-table.dat is not a table (game.pkg's stands in for one) and a
+# package without one: not checked, with the reason, and everything else as before.
+for name, reason in (("game.pkg", "unknown_format"), ("basic_k.pkg", "no_table")):
+    rc, c, err = info_complete(os.path.join(FX, name))
+    check("info_json_completeness_" + name, rc == 0 and c and c["checkable"] is False and c["reason"] == reason
+          and c["missing"] == 0, str(c) + err)
+rc, c, err = info_complete(os.path.join(FX, "pass.pkg"))
+check("info_json_completeness_passcode_needed", rc == 1 and c is None and "another passcode" in err, err[-300:])
+rc, so, err = run("info", "--json", "--passcode", PASSCODE, os.path.join(FX, "pass.pkg"))
+check("info_json_completeness_passcode",
+      rc == 0 and json.loads(so or "{}").get("completeness", {}).get("reason") == "no_table", so + err[-300:])
+
 print("test_cli: %d failures" % len(failures))
 sys.exit(1 if failures else 0)

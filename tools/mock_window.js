@@ -259,7 +259,7 @@ const mock = `
     SetSettings: async next => { Object.assign(settings, next); if (!validTemplate(settings.NameTemplate)) settings.NameTemplate = templates[0]; },
     PendingFiles: async () => (query.get("opened") ? { compress: [], verify: [], details: [p5z], show: "details" } : query.get("empty") ? null
       : query.get("images") ? { compress: first, verify: [], details: imagesShown, show: "details" }
-      : query.get("complete") ? { compress: first.concat(["D:\\\\more\\\\Glass Orbit.ffpkg"]), verify: [good, damaged, foreign], details: completeShown, show: "details" }
+      : query.get("complete") ? { compress: first.concat(["D:\\\\more\\\\Glass Orbit.ffpkg", "D:\\\\pkgs\\\\Copper Vale-PPSA10007.pkg"]), verify: [good, damaged, foreign], details: completeShown, show: "details" }
       : { compress: first, verify: query.get("verify") ? [good, damaged, foreign] : [], details: query.get("verify") ? [damaged] : [], show: query.get("verify") ? "verify" : "" }),
     RepairInfo: async file => repairs[file] || { state: /\\.p5z$/i.test(file) ? "none" : "", percent: 0, blocks: 0, blockSize: 0, capacity: 0, bytes: 0 },
     Expand: async paths => paths,

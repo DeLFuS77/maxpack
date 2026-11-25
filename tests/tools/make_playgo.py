@@ -164,6 +164,27 @@ def load_tool(name):
     return mod
 
 
+def game_files():
+    """complete/: the image's files, the package's entries and the table that lists the image's files."""
+    return IMAGE + ENTRIES + [(TABLE, table(p for p, _ in IMAGE))]
+
+
+def leftovers_files():
+    """leftovers/: complete, plus what dump tools leave behind, OS junk and a file of the dump's own."""
+    return game_files() + LEFTOVERS + JUNK + OWN
+
+
+def fine_index():
+    """The dump tool's list of the fine dump (dumpindex/ok/)."""
+    return dump_index(FINE, LISTED_ONLY, CHANGED)
+
+
+def broken_files():
+    """dumpindex/broken/ without its list: the fine dump less two files, and another cut short."""
+    gone = ("data/sub/b.bin", "sce_module/libc.prx")
+    return [(p, d[:len(d) // 2] if p == "data/a.bin" else d) for p, d in FINE if p not in gone]
+
+
 def write_folder(folder, files):
     for path, data in files:
         full = os.path.join(folder, *path.split("/"))
@@ -187,11 +208,11 @@ def main():
     out = os.path.join(args.out, "playgo")
     os.makedirs(out, exist_ok=True)
     listed = table(p for p, _ in IMAGE)
-    game = IMAGE + ENTRIES + [(TABLE, listed)]
+    game = game_files()
     missing = [(p, d) for p, d in game if p not in GONE]
     write_folder(os.path.join(out, "complete"), game)
     write_folder(os.path.join(out, "missing"), missing)
-    write_folder(os.path.join(out, "leftovers"), game + LEFTOVERS + JUNK + OWN)
+    write_folder(os.path.join(out, "leftovers"), leftovers_files())
     write_folder(os.path.join(out, "notable"), IMAGE + ENTRIES + LEFTOVERS[:1])
     write_folder(os.path.join(out, "badtable"), IMAGE + ENTRIES + [(TABLE, listed[:-4])])
     write_folder(os.path.join(out, "alien"), IMAGE + ENTRIES + [(TABLE, struct.pack("<IIII", 1, 0, 16, 4) + b"\x00\x01\x00\x02")])
@@ -201,10 +222,9 @@ def main():
 
     di = os.path.join(args.out, "dumpindex")
     os.makedirs(di, exist_ok=True)
-    index = dump_index(FINE, LISTED_ONLY, CHANGED)
+    index = fine_index()
     write_folder(os.path.join(di, "ok"), FINE + UNLISTED + [("ampr_emu.index", index)])
-    gone = ("data/sub/b.bin", "sce_module/libc.prx")
-    broken = [(p, d[:len(d) // 2] if p == "data/a.bin" else d) for p, d in FINE if p not in gone]
+    broken = broken_files()
     write_folder(os.path.join(di, "broken"), broken + [("ampr_emu.index", index)])
     other = [("other/%02d.bin" % i, bytes(10 + i)) for i in range(12)]
     write_folder(os.path.join(di, "foreign"), FINE + [("ampr_emu.index", dump_index(other))])

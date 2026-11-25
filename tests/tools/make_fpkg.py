@@ -21,6 +21,10 @@ Written to <out>:
   pass.pkg                a small game made with another passcode (PASSCODE below)
   game/, game.pkg         a game folder and the package a builder makes of it, which adds and leaves
                           out files; game.differ.tsv lists them (what packing each gives differently)
+  playgo_leftovers.pkg    make_playgo.py's playgo/leftovers/ (with the table of the original package's
+                          files, and what dump tools leave behind), stored
+  dumpindex_broken.pkg    its dumpindex/broken/ (no table; a copy that lacks files of its dump tool's
+                          list), Kraken
   retail.pkg, patch.pkg, dlc.pkg, ps4.pkg, cnt.pkg, other.pkg   what MaxPack refuses
   *.bad.pkg and bad_fpkg.tsv   damaged and hostile packages, each with the words of its message
   basic.pkg.meta          the regions of basic.pkg the mutation tests flip bytes in
@@ -122,6 +126,7 @@ MTIME = exfat.MTIME_UNIX
 BUILD_TIME = 1730000000   # when the builder made game.pkg (its files' dates)
 BASIC_CID = "UP0000-TEST00001_00-MAXPACKTEST00000"
 GAME_CID = "UP0000-PPSA00000_00-MAXPACKTEST00000"
+PLAYGO_CID = "UP0000-PPSA00000_00-MAXPACKPLAYGO000"   # the content ID of make_playgo.py's game
 MODES = [0, kraken.REPEATS, kraken.NO_SCALING, kraken.SUB_LITERALS,
          kraken.REPEATS | kraken.NO_SCALING | kraken.SUB_LITERALS]
 
@@ -455,6 +460,13 @@ def main():
                 BUILD_TIME)
         for how, path in differ:
             f.write("%s\t%s\n" % (how, path))
+
+    # Two dumps of make_playgo.py as packages with their files as they are: a package is a source like
+    # any other, checked against the table it carries or, without one, against its dump tool's list.
+    playgo = load("make_playgo")
+    w("playgo_leftovers.pkg", build.package(playgo.leftovers_files(), PLAYGO_CID)[0])
+    w("dumpindex_broken.pkg", build.package(playgo.broken_files() + [("ampr_emu.index", playgo.fine_index())],
+                                            PLAYGO_CID, kraken_on=True)[0])
 
     bad = damaged(out, w)
     with open(os.path.join(out, "bad_fpkg.tsv"), "w", encoding="utf-8", newline="\n") as f:

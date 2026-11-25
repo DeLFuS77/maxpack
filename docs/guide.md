@@ -691,7 +691,11 @@ and `pack` with `--progress json`, without the paths):
 
 `extra_paths` are the first 20 extra files, by path. A `.p5z` is checked against the table it carries
 (the table is one of the game's files), with the files of the dump it was made of; a compressed folder,
-with its loose files and the ones in its packs.
+with its loose files and the ones in its packs; a PS5 package (`.pkg`), as a dump, with the files it
+holds. A builder that makes its own table (ProsperoPkgTool does, see
+[source-images.md](source-images.md#ps5-packages-fpkg-pkg)) lists the files it put in the package, not
+the ones the original package had: such a package is checked against what its builder listed, and what
+it lists is never a leftover.
 
 ### `analyze`: measure before compressing
 

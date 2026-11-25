@@ -58,8 +58,10 @@ All notable changes to MaxPack are listed here. The format follows
     `completeness`: `checkable`, `reason`, `listed`, `present`, `missing`, `extra_count`,
     `extra_bytes`, `leftover_count`, `leftover_bytes`, and the first extra paths (`extra_paths`, in
     `analyze --json` and `info --json`). A `.p5z` is checked against the table it carries, a compressed
-    folder with the files in its packs. `pack` warns when files are missing and packs all the same;
-    its JSON result has the counts too. No change to the `.p5z` format.
+    folder with the files in its packs, and a PS5 package (`.pkg`) as a dump, with its files (a builder
+    that makes its own table, as ProsperoPkgTool does, lists what it put in the package). `pack` warns
+    when files are missing and packs all the same; its JSON result has the counts too. No change to the
+    `.p5z` format. `--capabilities` has `completeness`, which the window needs.
   - `pack --leave-out-leftovers` leaves out what dump tools leave behind, only when the table proves it
     is not the game's: without one, everything stays and `pack` says so. `verify --against` does not
     count what was left out as missing.

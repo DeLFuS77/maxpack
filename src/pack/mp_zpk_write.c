@@ -178,6 +178,8 @@ int mp_zpk_write(mp_source *src, const uint32_t *files, size_t n, const mp_zpk_o
     for (size_t i = 0; i < n; i++) order[i] = fo[i].src;
     mp_readahead_opts ro;
     mp_readahead_opts_default(&ro);
+    // A compressed image (.ffpfsc) is read by more threads: each one inflates what it reads.
+    if (mp_source_readers(src) > ro.threads) ro.threads = mp_source_readers(src);
     if (ro.threads > threads) ro.threads = threads;   // --threads 1 reads with one thread too
     if (mp_readahead_open(src, order, n, osha, &ro, &rd.ra, e) != 0) goto done;
     rd.items = items;

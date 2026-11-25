@@ -42,6 +42,8 @@ typedef struct {
 typedef struct {
     char *source_name;   // only the name, not the path
     mp_source_kind kind;
+    char kind_name[8], inner_name[8];   // mp_source_kind_name and mp_source_inner_name
+    char kind_text[64];                 // mp_source_kind_text ("" = from kind)
     uint64_t files, dirs, total_bytes;
     uint64_t loose_files, loose_bytes, packable_files, packable_bytes;
     mp_size_bin bins[MP_SIZE_BINS];

@@ -664,5 +664,79 @@ check("icon_cli_sin_icono_sale_1", rc == 1 and not os.path.exists(outpng2), "rc=
 rc, _, _ = run("icon", nm)
 check("icon_sin_salida_sale_2", rc == 2, str(rc))
 
+# ---- ShadowMountPlus images: .ffpkg (UFS2), .ffpfs (PFS), .ffpfsc (a PFS container) ----------------
+check("capabilities_images", caps.get("images") is True if isinstance(caps, dict) else False, so)
+rc, so, _ = run("info", "--json", BASIC)
+old_keys = set(json.loads(so)) if rc == 0 else set()
+check("info_json_keeps_fields", {"kind", "title_id", "version", "name", "content_id", "original_size", "install_size",
+                                 "p5z_size", "files", "packed_files", "volumes", "has_runtime", "has_zstd_runtime",
+                                 "packed", "inner", "compressed"} <= old_keys, str(old_keys))
+IMAGES = {"basic.ffpkg": ("ufs2", "", False), "profile.ffpkg": ("ufs2", "", False), "basic.ffpfs": ("pfs", "", False),
+          "basic_c.ffpfs": ("pfs", "", True), "basic.exfat.ffpfsc": ("pfsc", "exfat", True),
+          "basic.ffpkg.ffpfsc": ("pfsc", "ufs2", True), "basic.ffpfs.ffpfsc": ("pfsc", "pfs", True),
+          "basic_raw.exfat.ffpfsc": ("pfsc", "exfat", False), "mkpfs_exfat.ffpfsc": ("pfsc", "exfat", True),
+          "mkpfs_raw.ffpfs": ("pfs", "", True)}
+for name, (kind, inner, comp) in IMAGES.items():
+    rc, so, err = run("info", "--json", os.path.join(FX, name))
+    try:
+        d = json.loads(so)
+        want_files = 38 if name.startswith("mkpfs") else manifest_count()
+        check("info_json_" + name, rc == 0 and d["kind"] == kind and d["inner"] == inner and d["compressed"] is comp
+              and d["files"] == want_files and set(d) == old_keys and d["title_id"] in ("TEST00001", "BREW00000"),
+              so[-300:] + err[-200:])
+    except Exception as ex:  # noqa: BLE001
+        check("info_json_" + name, False, repr(ex) + so[-200:] + err[-200:])
+# The kind is the contents', whatever the name says.
+misnamed = os.path.join(TMP, "really_ufs2.exfat")
+shutil.copyfile(os.path.join(FX, "basic.ffpkg"), misnamed)
+rc, so, err = run("info", "--json", misnamed)
+check("info_json_misnamed", rc == 0 and json.loads(so or "{}").get("kind") == "ufs2", so + err)
+# Packing an image: the same .p5z as the .exfat of the same game, and its folder for the console.
+ref_p5z = os.path.join(TMP, "img_ref.p5z")
+for f in (ref_p5z,):
+    if os.path.exists(f):
+        os.remove(f)
+rc, _, err = run("pack", BASIC, "-o", ref_p5z, "--p5z", "--level", "3", "--threads", "4")
+for name in ("basic.ffpkg", "basic_c.ffpfs", "basic.exfat.ffpfsc"):
+    dst = os.path.join(TMP, "img_" + name + ".p5z")
+    if os.path.exists(dst):
+        os.remove(dst)
+    rc, _, err = run("pack", os.path.join(FX, name), "-o", dst, "--p5z", "--level", "3", "--threads", "4")
+    same = rc == 0 and os.path.exists(dst) and open(dst, "rb").read() == open(ref_p5z, "rb").read()
+    check("pack_p5z_" + name, same, "rc=%d %s" % (rc, err[-300:]))
+img_dir = os.path.join(TMP, "img_folder")
+rmtree(img_dir)
+rc, _, err = run("pack", os.path.join(FX, "basic.ffpkg.ffpfsc"), "-o", img_dir, "--level", "3", "--threads", "4")
+check("pack_folder_ffpfsc", rc == 0 and os.path.exists(os.path.join(img_dir, "ampr_zstd.index")), err[-300:])
+orig = os.path.join(TMP, "img_original")
+rmtree(orig)
+rc, _, err = run("unpack", os.path.join(TMP, "img_basic.exfat.ffpfsc.p5z"), "--original", "-o", orig)
+got = sum(len(fs) for _, _, fs in os.walk(orig)) if rc == 0 else -1
+check("unpack_original_of_ffpfsc", rc == 0 and got == manifest_count(), "rc=%d files=%d %s" % (rc, got, err[-300:]))
+# analyze: the kind, what a container holds, and the same files as the .exfat.
+js3 = os.path.join(TMP, "img.json")
+rc, out, err = run("analyze", os.path.join(FX, "basic.exfat.ffpfsc"), "--no-dedup", "--no-transport", "--json", js3)
+try:
+    with open(js3, encoding="utf-8") as f:
+        rep = json.load(f)
+    check("analyze_json_ffpfsc", rc == 0 and rep["source"]["kind"] == "pfsc" and rep["source"]["inner"] == "exfat"
+          and rep["files"]["total"] == manifest_count(), str(rep.get("source")) + err[-200:])
+    check("analyze_text_ffpfsc", "PFS container (exFAT image inside, compressed)" in out, out[:300])
+except Exception as ex:  # noqa: BLE001
+    check("analyze_json_ffpfsc", False, repr(ex) + err[-300:])
+rc, out, err = run("analyze", os.path.join(FX, "basic.ffpkg"), "--levels", "3", "--threads", "2")
+check("levels_ffpkg", rc == 0 and LEVEL_ROW.findall(out) == ["3"], out[-400:] + err[-300:])
+# Damaged images: exit 1 with the reason, nothing written.
+for name, words in (("truncated.bad.ffpkg", "truncated"), ("loop.bad.ffpfs", "reached twice"),
+                    ("pfsc_inflate.bad.ffpfsc", "does not inflate"), ("signed.bad.ffpfs", "signed or encrypted"),
+                    ("link.bad.ffpkg", "symbolic link"), ("nest4.ffpfsc", "deep")):
+    dst = os.path.join(TMP, "bad_" + name + ".p5z")
+    if os.path.exists(dst):
+        os.remove(dst)
+    rc, _, err = run("pack", os.path.join(FX, name), "-o", dst, "--p5z", "--threads", "2")
+    check("pack_bad_" + name, rc == 1 and words in err and not os.path.exists(dst), "rc=%d %s" % (rc, err[-300:]))
+rc, _, err = run("info", "--json", os.path.join(FX, "notufs.bad.ffpkg"))
+check("info_json_not_ufs2", rc == 1 and "not a UFS2 image" in err, err)
+
 print("test_cli: %d failures" % len(failures))
 sys.exit(1 if failures else 0)

@@ -205,6 +205,8 @@ if(MAXPACK_BUILD_TESTS)
   mp_add_test(test_describe FIXTURES)
   mp_add_test(test_play FIXTURES)
   mp_add_test(test_volumes FIXTURES)
+  mp_add_test(test_image_pack IMAGES)
+  set_tests_properties(test_image_pack PROPERTIES TIMEOUT 600)
   mp_add_test(test_identity FIXTURES)
   set_tests_properties(test_identity PROPERTIES TIMEOUT 600)
   mp_add_test(test_cancel FIXTURES)
@@ -213,7 +215,7 @@ if(MAXPACK_BUILD_TESTS)
   add_test(NAME test_cli COMMAND ${Python3_EXECUTABLE} -I
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/tools/test_cli.py $<TARGET_FILE:maxpack> ${MP_FIXTURES_DIR}
     ${MP_TEST_TMP}/cli)
-  set_tests_properties(test_cli PROPERTIES FIXTURES_REQUIRED exfat TIMEOUT 300)
+  set_tests_properties(test_cli PROPERTIES FIXTURES_REQUIRED "exfat;images" TIMEOUT 300)
 
   # A package's version comes from the tag (v1.2.3 -> 1.2.3); needs bash.
   find_program(MP_BASH bash)

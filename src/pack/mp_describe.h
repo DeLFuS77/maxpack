@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Description of a game (folder, .exfat image or .p5z) for a front end: ID, content ID, version,
+// Description of a game (folder, image or .p5z) for a front end: ID, content ID, version,
 // name, sizes, its packs and whether it carries a runtime that reads zstd. It is what
 // `maxpack info --json` shows.
 #ifndef MP_DESCRIBE_H
@@ -11,7 +11,9 @@
 #include "mp_err.h"
 
 typedef struct {
-    char kind[8];   // "p5z", "folder", "exfat"
+    char kind[8];   // "p5z", "folder", "exfat", "ufs2" (.ffpkg), "pfs" (.ffpfs), "pfsc" (.ffpfsc)
+    char inner[8];  // for "pfsc", the image inside that holds the game ("exfat", "ufs2", "pfs"), else ""
+    int compressed; // an image whose reading decompresses PFSC blocks
     char title_id[16], version[16], name[128];
     uint64_t original_size;   // sum of the original dump's files
     uint64_t install_size;    // what it takes up when installed (.p5z: what unpack --folder leaves)

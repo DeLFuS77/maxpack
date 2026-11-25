@@ -2,6 +2,7 @@
 #include "mp_analyze.h"
 
 #include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -429,6 +430,9 @@ int mp_analyze(const char *src_path, const mp_analyze_opts *o, mp_report *r, mp_
     if (mp_source_open(src_path, &src, e) != 0) return -1;
     r->source_name = base_name(src_path);
     r->kind = mp_source_kind_of(src);
+    snprintf(r->kind_name, sizeof r->kind_name, "%s", mp_source_kind_name(src));
+    snprintf(r->inner_name, sizeof r->inner_name, "%s", mp_source_inner_name(src));
+    mp_source_kind_text(src, r->kind_text, sizeof r->kind_text);
     r->files = mp_source_count(src);
     r->dirs = mp_source_dir_count(src);
     r->threads = threads;

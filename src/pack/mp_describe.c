@@ -88,7 +88,9 @@ static int describe_source(const char *path, mp_describe *d, mp_err *e) {
     mp_source *s = NULL;
     if (mp_source_open(path, &s, e) != 0) return -1;
     int rc = -1;
-    snprintf(d->kind, sizeof d->kind, "%s", mp_source_kind_of(s) == MP_SRC_EXFAT ? "exfat" : "folder");
+    snprintf(d->kind, sizeof d->kind, "%s", mp_source_kind_name(s));
+    snprintf(d->inner, sizeof d->inner, "%s", mp_source_inner_name(s));
+    d->compressed = mp_source_compressed(s);
     size_t n = mp_source_count(s);
     for (size_t i = 0; i < n; i++) d->original_size += mp_source_entry(s, i)->size;
     d->install_size = d->original_size;

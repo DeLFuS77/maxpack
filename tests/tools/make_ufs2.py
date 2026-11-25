@@ -171,11 +171,13 @@ class Layout:
         return a
 
 
-def build(files, bsize=4096, fsize=1024, ipg=None, ncg=2, interleave=(), extra_frags=0, hook=None, trim=False):
+def build(files, bsize=4096, fsize=1024, ipg=None, ncg=2, interleave=(), extra_frags=0, hook=None, trim=False,
+          out=None):
     """Returns (image, info). interleave: pairs of paths whose blocks alternate (fragmented files).
     hook(root, nodes): called after inode numbers are assigned and before writing (hostile cases).
     trim: cut the image after the last byte used (the volume then declares more room than it has,
-    so a sparse file can be larger than the image).
+    so a sparse file can be larger than the image). out: a file opened "w+b" to write the image to
+    instead of returning it (the image is then None).
     info: {"inode_off": {path: byte offset of its inode}, "dir_off": {path: offset of its
     first block}, "sb": superblock offset, "nodes": {path: Node}}."""
     root = build_tree(files)
@@ -254,8 +256,14 @@ def build(files, bsize=4096, fsize=1024, ipg=None, ncg=2, interleave=(), extra_f
             n.blocks = {}
 
     img = bytearray()
+    end = [0]
 
     def write(off, data):
+        end[0] = max(end[0], off + len(data))
+        if out is not None:   # straight to the file (large images)
+            out.seek(off)
+            out.write(data)
+            return
         if len(img) < off + len(data):
             img.extend(bytes(off + len(data) - len(img)))
         img[off:off + len(data)] = data
@@ -353,7 +361,31 @@ def build(files, bsize=4096, fsize=1024, ipg=None, ncg=2, interleave=(), extra_f
     info["inode_of"] = inode_off
     if not trim:
         write(ncg * fpg * fsize - 1, b"\0")
+    if out is not None:
+        out.truncate(end[0])
+        return None, info
     return bytes(img), info
+
+
+class FileData:
+    """A file on disk as the content of a node, read when it is written into the image."""
+
+    def __init__(self, path):
+        self.path, self.size, self.f = path, os.path.getsize(path), None
+
+    def __len__(self):
+        return self.size
+
+    def __getitem__(self, sl):
+        start, stop, _ = sl.indices(self.size)
+        if self.f is None:
+            self.f = open(self.path, "rb")
+        self.f.seek(start)
+        data = self.f.read(max(0, stop - start))
+        if stop >= self.size:
+            self.f.close()
+            self.f = None
+        return data
 
 
 def from_folder(folder):
@@ -363,8 +395,7 @@ def from_folder(folder):
         for f in sorted(fns):
             full = os.path.join(dp, f)
             rel = os.path.relpath(full, folder).replace(os.sep, "/")
-            with open(full, "rb") as h:
-                files.append((rel, h.read(), {"mtime": int(os.stat(full).st_mtime)}))
+            files.append((rel, FileData(full), {"mtime": int(os.stat(full).st_mtime)}))
     return files
 
 
@@ -375,9 +406,8 @@ def main():
     ap.add_argument("--bsize", type=int, default=65536)
     ap.add_argument("--fsize", type=int, default=65536)
     a = ap.parse_args()
-    img, _ = build(from_folder(a.folder), bsize=a.bsize, fsize=a.fsize)
-    with open(a.image, "wb") as f:
-        f.write(img)
+    with open(a.image, "w+b") as f:
+        build(from_folder(a.folder), bsize=a.bsize, fsize=a.fsize, out=f)
 
 
 if __name__ == "__main__":

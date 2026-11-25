@@ -89,6 +89,7 @@ static mp_source *sample_source(mp_source *src, const uint32_t *packable, const 
     x->packable = packable;
     x->w = smp->w;
     s->kind = mp_source_kind_of(src);
+    s->compressed = mp_source_compressed(src);
     s->entries = en;
     s->read = sample_read;
     s->close = sample_close;
@@ -268,7 +269,8 @@ static int read_sample(mp_source *src, const uint32_t *packable, const mp_sample
     }
     mp_readahead_opts ro;
     mp_readahead_opts_default(&ro);
-    if (ro.threads > threads) ro.threads = threads;   // as mp_zpk_write
+    if (mp_source_readers(src) > ro.threads) ro.threads = mp_source_readers(src);   // as mp_zpk_write
+    if (ro.threads > threads) ro.threads = threads;
     mp_readahead *ra = NULL;
     mp_readahead_piece pc;
     uint64_t t0 = mp_now_ns();

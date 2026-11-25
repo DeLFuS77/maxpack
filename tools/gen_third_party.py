@@ -108,6 +108,31 @@ def license_text(folder):
     raise SystemExit(f"no license in {folder}")
 
 
+# ProsperoPkgTool's licence (its LICENSE at the commit read, 2026): MaxPack has no copy of its code to
+# read it from, only C ported from it.
+PROSPERO_MIT = """MIT License
+
+Copyright (c) 2026 pearlxcore
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE."""
+
+
 def build():
     mods = modules()
     used = linked()
@@ -157,6 +182,16 @@ def build():
     a = zh.index("Copyright (C)")
     b = zh.index("*/", a)
     w("\n".join(ln.strip() for ln in zh[a:b].splitlines()).strip("\n"))
+    w("")
+    w("ProsperoPkgTool - https://github.com/pearlxcore/ProsperoPkgTool")
+    w("  License: MIT. The engine's reading of PS5 debug packages (src/core/mp_fpkg.c, mp_naps.c and")
+    w("  mp_source_fpkg.c: the package header, the CNT, the key derivation, the outer PFS, the block map")
+    w("  of the inner image and its PFS) and its Kraken decoder (src/core/mp_kraken.c) are C ported from")
+    w("  its C# code; so is the builder of the test packages (tests/tools/fpkg_build.py and fpkg_kraken.py),")
+    w("  which is not in the packages. Alembic (https://github.com/fthdgn-gh/Alembic, GPL-3.0-or-later),")
+    w("  which ports the same code, was read as a second reference.")
+    w("")
+    w(PROSPERO_MIT)
     w("")
     w("")
     w("2. PC window (MaxPack.exe / maxpack)")

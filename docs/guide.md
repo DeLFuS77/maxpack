@@ -1,8 +1,8 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # MaxPack guide
 
-MaxPack compresses PS5 games (your own dump, as a folder or as an image: `.exfat`, `.ffpkg`, `.ffpfs`
-or `.ffpfsc`) so they take less space and can be played without being decompressed. This guide goes from start to finish: download,
+MaxPack compresses PS5 games (your own dump, as a folder, as an image (`.exfat`, `.ffpkg`, `.ffpfs`
+or `.ffpfsc`) or as a PS5 debug package, `.pkg`) so they take less space and can be played without being decompressed. This guide goes from start to finish: download,
 compress on the PC, take the game to the PS5 and play it. Every step is a single action.
 
 > **Before you start:** playing a `.p5z` and the library have been tested on one PS5 (firmware 13.60) with
@@ -63,10 +63,14 @@ In the window, you choose in **Made for**:
 - Your game: a PS5 dump as a folder or as an image in one of the formats ShadowMountPlus mounts:
   `.exfat`, `.ffpkg` (UFS2), `.ffpfs` (PFS) or `.ffpfsc` (a PFS container, usually compressed, with one
   of the others inside). MaxPack reads them itself, with nothing to mount and no temporary space, and
-  the result is the same as from the dump folder ([source-images.md](source-images.md)). PKGs cannot be
-  compressed yet.
+  the result is the same as from the dump folder ([source-images.md](source-images.md)). Or a PS5
+  debug package (FPKG, `.pkg`): MaxPack decrypts it with its passcode as it reads it (32 zeros unless
+  whoever made it chose another; give it in Settings › **FPKG passcode**). Retail packages, PS4
+  packages, patches and DLC cannot be compressed
+  ([source-images.md](source-images.md#ps5-packages-fpkg-pkg)).
 - Space at the destination. MaxPack warns you if there is less free space than the original game takes
-  (the game, not its image: an `.ffpfsc` is compressed and usually takes less than the game in it).
+  (the game, not its image: an `.ffpfsc` is compressed and usually takes less than the game in it, as
+  a Kraken-compressed `.pkg` does).
 - Nothing else for the runtime: the window comes with
   [MaxPack's copy of ampr-emu-ng](https://github.com/DeLFuS77/ampr-emu-ng) (`libSceAmpr.sprx`) and puts
   it in the `fakelib/` of the games that do not carry one that reads zstd.
@@ -78,8 +82,9 @@ In the window, you choose in **Made for**:
   USB drive erases what is on it.
 - To open the MaxPack page: the PS5 browser, or a phone or a PC on your network.
 
-> MaxPack never writes to the source game and does not touch keys, encryption or DRM. On the console
-> it never compresses anything: compressing is done on the PC.
+> MaxPack never writes to the source game, has no keys and does not touch DRM; the only encryption it
+> reads is that of a debug package (`.pkg`), with its passcode. On the console it never compresses
+> anything: compressing is done on the PC.
 
 ## 2. The quick way
 
@@ -163,7 +168,7 @@ The first time, Windows and macOS warn you because the program is not signed:
 
 There is only one window: opening MaxPack with games (dragging them to its icon, Send to, the
 right-click menu or a double click on a `.p5z`, for example) adds them to the window that is already
-open, which comes to the front. Folders and images go to Compress, and a `.p5z` to Details. More details
+open, which comes to the front. Folders, images and packages go to Compress, and a `.p5z` to Details. More details
 for each system: [pc-window.md](pc-window.md#1-download-and-open).
 
 ### The console
@@ -188,8 +193,9 @@ The sidebar has four work sections and Settings. Everything is explained, with s
 ### Compress ([details](pc-window.md#2-compress))
 
 1. Drop the games on the window, or use **Add files** or **Add folder**. Dump folders and images are
-   fine: `.exfat`, `.ffpkg`, `.ffpfs` and `.ffpfsc`, the ones ShadowMountPlus mounts. A game kept as
-   an image goes to a `.p5z` in one step: no dumping it again, no other tool and no temporary space.
+   fine: `.exfat`, `.ffpkg`, `.ffpfs` and `.ffpfsc`, the ones ShadowMountPlus mounts, and PS5 debug
+   packages (`.pkg`). A game kept as an image or a package goes to a `.p5z` in one step: no dumping it
+   again, no other tool and no temporary space.
    **Add folder** takes several folders at once, and each one can be a game or a folder with games
    right below it.
 2. In **Made for**, choose "MaxPack installer" (one `.p5z`) or "Play from the USB" (a folder in
@@ -211,7 +217,8 @@ What it does by itself:
 - Each game is written apart (`<name>.maxpack-tmp`) and verified, and only then takes its name.
 - Before it starts, it checks that the whole queue fits on the destination drive, and says so with the
   numbers if it may not. It counts each game's own size, as `maxpack-core` reads it, not what its image
-  takes: what is made of an `.ffpfsc` may take more than the `.ffpfsc` did.
+  takes: what is made of an `.ffpfsc` (or of a Kraken-compressed `.pkg`) may take more than the file
+  did.
 - Games you add to Compress while it works join the queue.
 - The PC does not go to sleep while there is work, and progress also shows on the taskbar (Windows) or
   in the Dock (macOS).
@@ -220,7 +227,7 @@ What it does by itself:
   `.p5z` is good) and its row says why; nothing of the set is left behind.
 - At the end it says how much was saved, how long it took, what saved the most, how much repair data it
   made, and what to do next; **Copy report** there copies a text for an issue, with no game names. For a
-  game that was an image, what was saved is against the image's file, what the disk got back: an
+  game that was an image or a package, what was saved is against its file, what the disk got back: an
   `.ffpfsc` is compressed already, so it is less than against the game in it.
 - **Cancel** stops the game in progress, deletes what it had written and leaves the destination as it
   was.
@@ -229,12 +236,13 @@ What it does by itself:
 
 Turns a `.p5z` back into the **Original dump (bit for bit)**, with every file checked against its
 SHA-256, or into the **Folder for the PS5**. If the game was an image (`.exfat`, `.ffpkg`, `.ffpfs` or
-`.ffpfsc`), the original dump comes out as a folder with its files, not as an image.
+`.ffpfsc`) or a package (`.pkg`), the original dump comes out as a folder with its files, not as an
+image or a package.
 
 ### Verify
 
-Reads a `.p5z` or a compressed folder and checks that it is still whole. It changes nothing. An image is
-not checked here, as before: compress it, and what is made of it is verified. Under a `.p5z`
+Reads a `.p5z` or a compressed folder and checks that it is still whole. It changes nothing. An image
+or a package is not checked here, as before: compress it, and what is made of it is verified. Under a `.p5z`
 with repair data it says how much it can repair ("Repair data: 5 % — can repair up to 200 blocks of
 1.3 MB, 268.8 MB in all"); a `.p5z` that Verify finds damaged and that has repair data of its own gets
 **Repair**. **Add repair data** and **Repair the damaged ones**, on the right, do it for the whole list.
@@ -244,7 +252,9 @@ See [Repair data](#repair-data).
 
 Shows the title, ID, version, sizes, files, packs and whether it carries a runtime that reads zstd. An
 image says what it is (exFAT, UFS2 or PFS image, or PFS container and the image inside it) and what its
-file takes, with "PFSC compression" when it is compressed: its original size is the game's.
+file takes, with "PFSC compression" when it is compressed: its original size is the game's. A
+`.pkg` says "PS5 package (FPKG)" and, under **Package file**, what it takes ("Kraken compression"
+when its blocks are compressed).
 **Copy report** under a game copies a text for an issue on GitHub, without its name or ID. A `.p5z` is a
 card that also says what it saved and its repair data (how much, or none), with **Verify** and
 **Decompress**, which take it to those sections.
@@ -252,9 +262,9 @@ A double click on a `.p5z` opens it here, when MaxPack opens `.p5z` files (see b
 
 ### Rename
 
-Names `.p5z` files, dump folders and images by what each holds, with the template of
+Names `.p5z` files, dump folders, images and packages by what each holds, with the template of
 Settings > File names (for example `{title} [{id}] [{region}] [v{version}]`). The new names show before
-anything changes; **Rename** applies them. An image keeps its extension, unless it is another kind than
+anything changes; **Rename** applies them. An image or a package keeps its extension, unless it is another kind than
 its extension says (a renamed image): then it gets the extension of what it is, so its name says it
 (MaxPack for the console, for one, finds images by their extension). A name already taken, a file in
 use or a game that cannot be read is skipped and said; nothing is replaced. The repair data of a `.p5z`
@@ -278,10 +288,15 @@ only accepts a `libSceAmpr.sprx` that reads zstd.
 - **File names:** the template of the names of the `.p5z` files and the originals unpacked, with
   `{title}`, `{id}`, `{version}` and `{region}`, three ready-made ones and a preview. `{title} [{id}]`
   is the default, the names of before. A folder for the console keeps its `TITLE_ID`.
+- **FPKG passcode:** only for a PS5 package (`.pkg`) made with a passcode other than the default (32
+  zeros, what fake packages use): its 32 characters; empty is the default. A package that needs
+  another one says so in its row ("give it in Settings › FPKG passcode") and is read again once you
+  give it. **Copy report** says whether one was given, never which.
 - **Windows Explorer** (Windows only, each off until you turn it on, for you only, no administrator):
-  - **Right-click menu:** **Compress with MaxPack** on folders and images (`.exfat`, `.ffpkg`,
-    `.ffpfs`, `.ffpfsc`), **Verify with MaxPack** and **Details** on `.p5z` files. On Windows 11 they
-    are under **Show more options**. On the images it is only that entry: the program that opens them
+  - **Right-click menu:** **Compress with MaxPack** on folders, images (`.exfat`, `.ffpkg`,
+    `.ffpfs`, `.ffpfsc`) and PS5 packages (`.pkg`), **Verify with MaxPack** and **Details** on `.p5z`
+    files. On Windows 11 they are under **Show more options**. On the images and packages it is only
+    that entry: the program that opens them
     and their icon stay as they were.
   - **Send to › MaxPack:** to give it several games at once.
   - **Open .p5z files with MaxPack:** a double click shows the card of the game in Details. If another
@@ -486,23 +501,25 @@ The examples use `maxpack`. On Windows, type `MaxPack.exe` (or its full path) in
 arguments, `MaxPack` opens the window; `maxpack --help` shows the usage.
 
 ```
-maxpack analyze <folder|image> [options]
-maxpack analyze <folder|image> --levels [L,L,...] [options]
-maxpack pack <folder|image> -o <output> [options]
+maxpack analyze <folder|image|package> [options]
+maxpack analyze <folder|image|package> --levels [L,L,...] [options]
+maxpack pack <folder|image|package> -o <output> [options]
 maxpack unpack <game.p5z> --folder|--original -o <folder> [--threads N]
 maxpack info <game.p5z>
-maxpack info --json <folder|image|game.p5z>
+maxpack info --json <folder|image|package|game.p5z>
 maxpack info --play <game.p5z>
-maxpack icon <folder|image|game.p5z> -o <icon.png>
+maxpack icon <folder|image|package|game.p5z> -o <icon.png>
 maxpack verify <game.p5z | folder> [--against <source>] [--threads N]
 maxpack measure [<folder>] [options]
 maxpack --version
 maxpack --capabilities
 ```
 
-An image is an `.exfat`, `.ffpkg`, `.ffpfs` or `.ffpfsc`; MaxPack tells which by its contents, so a
-renamed one works too. A damaged image stops with the reason (see
-[source-images.md](source-images.md#what-stops-it)).
+An image is an `.exfat`, `.ffpkg`, `.ffpfs` or `.ffpfsc`, and a package a PS5 debug package (FPKG,
+`.pkg`); MaxPack tells which by its contents, so a renamed one works too. A package made with a
+passcode other than the default (32 zeros) needs `--passcode <its 32 characters>`, which `pack`,
+`analyze`, `info`, `icon` and `verify --against` take. A damaged image or package stops with the reason
+(see [source-images.md](source-images.md#what-stops-it)).
 
 Exit codes: 0 success, 1 error, 2 wrong usage and 130 cancelled.
 
@@ -520,6 +537,7 @@ maxpack pack "D:\dumps\MyGame.exfat" -o "D:\games\MyGame [PPSA00000].p5z" --p5z 
 | `--p5z` | Output in a single `.p5z` file. | `--p5z` |
 | `--level N` | zstd level, 1 to 22 (19 by default). | `--level 22` |
 | `--threads N` | Threads (by default, all the CPU's). The result is the same with any number. | `--threads 8` |
+| `--passcode P` | The 32-character passcode of a package, when it is not the default (32 zeros). | `--passcode MyPasscode-0123456789abcdefghijk` |
 | `--runtime FILE` | The `libSceAmpr.sprx` of ampr-emu-ng, which is put in `fakelib/`. | `--runtime "D:\ampr-emu-ng\libSceAmpr.sprx"` |
 | `--keep-loose GLOB` | Also leave loose whatever matches. Can be repeated. `*` and `?` work inside one folder; `**`, across any number of folders. | `--keep-loose "**/*.bnk"` |
 | `--max-file-size N` | Only with `--p5z`: if the `.p5z` is going to pass N bytes, it stops and deletes it. | `--max-file-size 4294967295` (FAT32) |
@@ -591,9 +609,9 @@ Packs:      zstd level 19, 3.14 MB -> 2.07 MB in 1 volumes
 ```
 
 The `info --json` line carries `kind` (`folder`, `p5z`, `exfat`, `ufs2` for an `.ffpkg`, `pfs` for an
-`.ffpfs`, or `pfsc` for an `.ffpfsc`), `inner` (for `pfsc`, the kind of the image inside, else `""`),
-`compressed` (whether reading it decompresses PFSC blocks), `title_id`, `version`, `name`,
-`content_id` (from `param.json`, also of a `.p5z` or an image; its first two letters are the region,
+`.ffpfs`, `pfsc` for an `.ffpfsc`, or `fpkg` for a `.pkg`), `inner` (for `pfsc`, the kind of the image
+inside, else `""`), `compressed` (whether reading it decompresses PFSC or Kraken blocks), `title_id`,
+`version`, `name`, `content_id` (from `param.json`, also of a `.p5z`, an image or a package; its first two letters are the region,
 and it is `""` when `param.json` gives none), `original_size`, `install_size`, `p5z_size`, `files`,
 `packed_files`, `volumes`, `has_runtime`, `has_zstd_runtime` and `packed`.
 
@@ -985,6 +1003,12 @@ console repository, which identifies games only by these numbers.
   The window's tests take them as a user does (a folder with an image given to Compress, the plan, the
   queue to a `.p5z` and to a folder, the image deleted once its `.p5z` is verified, Details, Rename) with
   the real engine.
+- **PS5 packages** ([source-images.md](source-images.md#ps5-packages-fpkg-pkg)): packages from
+  MaxPack's own generator, which follows ProsperoPkgTool's builder (stored and Kraken-compressed, one
+  with another passcode, 21 damaged ones), read exactly the files put in them and pack to the same
+  `.p5z` as the folder they were made from, less what the builder changes. No package made by
+  ProsperoPkgTool or another builder has been tried yet. The window's tests take one through the
+  queue to a `.p5z`, and one with another passcode with and without it in Settings.
 - **On every change, in GitHub Actions:** the engine is built and passes its tests on Windows and Linux;
   the window is built and passes its tests on Windows, Linux and macOS; the packages are installed,
   compress a test image and are uninstalled.
@@ -1030,6 +1054,10 @@ based on [NXPress](https://github.com/DeLFuS77/NXPress), by the same author.
 **What is inside MaxPack for the PC:**
 - [zstd](https://github.com/facebook/zstd) 1.5.6 (Meta): BSD or GPLv2, your choice.
 - [zlib](https://github.com/madler/zlib) 1.3.1 (Jean-loup Gailly and Mark Adler): zlib licence.
+- [ProsperoPkgTool](https://github.com/pearlxcore/ProsperoPkgTool), by pearlxcore (MIT): the engine's
+  reading of PS5 debug packages and its Kraken decoder are ported from it, with
+  [Alembic](https://github.com/fthdgn-gh/Alembic) (GPL-3.0-or-later), which ports the same, as a second
+  reading.
 - [ampr-emu-ng](https://github.com/DeLFuS77/ampr-emu-ng) `v0.5.1-maxpack.1` (GPL-3.0-or-later): the
   `libSceAmpr.sprx` that the window puts in `fakelib/`, MaxPack's own copy of quer3q's ampr-emu-ng with
   the `.p5z` mode.
@@ -1075,8 +1103,11 @@ notice is in [section 10](#10-legal-and-disclaimer).
   ampr-emu-ng) is meant for backups of games you own, dumped from your own console, and for homebrew.
 - **No content included.** It includes and distributes no games, firmware, keys or other copyrighted
   content, and it does not help you obtain any.
-- **No circumvention.** It does not bypass, remove or weaken encryption, keys or DRM. It compresses,
-  stores and serves the files of a dump, and never touches keys, encryption or DRM.
+- **No circumvention.** It does not bypass, remove or weaken encryption, keys or DRM, and it has no
+  keys of any kind. It compresses, stores and serves the files of a dump. The only encryption it reads
+  is that of a debug package (FPKG), the kind homebrew tools make from a dump, with the passcode its
+  maker chose: the keys come from the package's own content ID and that passcode, as the tool that
+  made it derives them. Retail packages are refused.
 - **Piracy is not supported.** Issues, reports and questions about pirated content will not be
   answered.
 - **No warranty.** It is free software provided "as is", without warranty of any kind, under the GNU

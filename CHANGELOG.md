@@ -4,6 +4,49 @@ All notable changes to MaxPack are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **PS5 debug packages (FPKG, `.pkg`) as the source** (engine: `pack`, `analyze` and `--levels`,
+  `info`, `icon`, `verify --against`): MaxPack reads the debug packages ("fake PKGs") that
+  ProsperoPkgTool and the tools that port it make of a dump, itself and read-only. It decrypts
+  (AES-128-XTS; AES-128-CBC for the `sce_sys` files the package keeps outside its PFS) and decodes
+  (Kraken) each block as it reads it, with nothing installed, mounted or written and no other tool.
+  The keys come from the package's content ID and its passcode: the default of 32 zeros, or the one
+  given with `--passcode <32 characters>`; MaxPack carries no keys. A package made with another
+  passcode says so (`this package was made with another passcode; give it with --passcode`, and the
+  error code `passcode` with `--json`). Retail packages (`retail packages need keys this tool does not
+  have`), PS4 packages, patches and additional content are refused with the reason: only a full PS5
+  game is packed. What comes out is the package's files: its PFS's `uroot`, with the `sce_sys` files
+  of its CNT put back where a dump has them. So the `.p5z` is that of the folder the package was made
+  from, less what its builder changed: ProsperoPkgTool fake-signs the executables, adds
+  `pfs-version.dat`, `keystone` and `right.sprx` when they are missing, makes its own PlayGo files and
+  `.dds` pictures, and dates every file when it built the package. A damaged or hostile package stops
+  with the reason. Formats and checks: [docs/source-images.md](docs/source-images.md#ps5-packages-fpkg-pkg).
+- `info --json` says `kind` `fpkg` for a package, `compressed` when its blocks are Kraken-compressed,
+  and `content_id` from its `param.json` (or the package's own); `analyze --json` says it in
+  `source.kind`; `--capabilities` has `fpkg` and `passcode`.
+- Speed, on a 32-thread PC, for a generated 3.00 GB game (6,584 files) as a Kraken `.pkg` (2.25 GB),
+  a stored `.pkg` (3.11 GB) and an `.ffpkg` (3.96 GB): reading it with every file's SHA-256, from the
+  cache, 5401 MB/s from the Kraken package, 7348 from the stored one and 4786 from the `.ffpkg`. The
+  blocks are decrypted and decoded by the reading threads, 16 for a package (Kraken decodes about
+  600 MB/s per thread), with the CPU's AES instructions on 64-bit x86 PCs that have them (a portable
+  AES elsewhere). Packing to a `.p5z` with all 32 threads: 8.4 s at level 3 from either package and
+  8.2 s from the `.ffpkg`; 18.8 to 18.9 s at level 19 from all three. Peak memory 552 MiB, against
+  504 MiB from the `.ffpkg`. The three `.p5z` are identical.
+- **The PC window takes them too**, everywhere it takes an image: dropping them, **Add files** (the
+  dialogs show `*.pkg`), **Add folder**, the command line, Send to, Compress, **Compare levels**, Details
+  and Rename; and **Compress with MaxPack** on `.pkg` files in the right-click menu (Windows, for you
+  only; only that entry: the program that opens them and their icon stay as they were; a menu of 1.0.5
+  gets it the first time the window opens). Details says "PS5 package (FPKG)" and, under **Package
+  file**, what it takes ("Kraken compression"); the room is the game's and the saving is against the
+  package's file, as for an image; **Copy report** says the kind, and whether a passcode was given,
+  never which.
+  - **Settings › FPKG passcode**: for packages made with a passcode other than the default. A package
+    that needs one says so in its row, in the 11 languages, and is read again once it is given.
+  - The window needs an engine that says `fpkg` and `passcode` in `--capabilities`.
+
 ## [1.0.5] - 2026-11-25
 
 ### Added
@@ -390,6 +433,7 @@ risk. The authors are not responsible for data loss, lost saves, damage to the c
 bans or any other problem. MaxPack is not affiliated with or endorsed by Sony Interactive
 Entertainment. Full text: [Legal and disclaimer](README.md#legal-and-disclaimer).
 
+[Unreleased]: https://github.com/DeLFuS77/maxpack/compare/v1.0.5...HEAD
 [1.0.5]: https://github.com/DeLFuS77/maxpack/releases/tag/v1.0.5
 [1.0.4]: https://github.com/DeLFuS77/maxpack/releases/tag/v1.0.4
 [1.0.3]: https://github.com/DeLFuS77/maxpack/releases/tag/v1.0.3

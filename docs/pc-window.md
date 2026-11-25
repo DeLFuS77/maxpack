@@ -57,14 +57,15 @@ Then follow the steps for your system.
 On all three systems, opening MaxPack with games or folders (dragging them to the icon, Send to, the
 right-click menu or a double click on a `.p5z` on Windows, the Finder, or the command line) adds them to
 the window that is already open, which comes to the front: there is only one. With none open, the window
-opens with them. Folders and images (`.exfat`, `.ffpkg`, `.ffpfs`, `.ffpfsc`) go to **Compress** and a
+opens with them. Folders, images (`.exfat`, `.ffpkg`, `.ffpfs`, `.ffpfsc`) and PS5 packages (`.pkg`)
+go to **Compress** and a
 `.p5z` to **Details**, unless the right-click menu asked for another section. With command-line options
 (`MaxPack pack ...`, `MaxPack --version`) it behaves like `maxpack`, as always.
 
 ## 2. Compress
 
-1. Drop games or folders here, or use **Add files** and **Add folder**. PS5 dump folders and images are
-   fine (see [Images](#images)). **Add folder** takes several folders at once (on Linux, when `zenity`
+1. Drop games or folders here, or use **Add files** and **Add folder**. PS5 dump folders, images and
+   packages are fine (see [Images](#images)). **Add folder** takes several folders at once (on Linux, when `zenity`
    is there; else one at a time), and each one can be a game or a folder with games right below it;
    several dropped at once are each taken the same way. Each game shows its title, ID, version and size.
    A folder that is already compressed (with packs) is not compressed again: it shows "it is compressed
@@ -158,7 +159,8 @@ and what to do next. If the system asks for less motion, the final numbers show 
 
 A game kept as an image moves to a `.p5z` (or a folder for the console) in one step: no dumping it
 again, no other tool and no temporary space. MaxPack takes the images
-[ShadowMountPlus](https://github.com/drakmor/ShadowMountPlus) mounts, everywhere it takes a dump folder
+[ShadowMountPlus](https://github.com/drakmor/ShadowMountPlus) mounts, and PS5 debug packages,
+everywhere it takes a dump folder
 (dropping them, **Add files**, **Add folder**, the right-click menu, Send to, Details, Rename and
 **Compare levels**):
 
@@ -168,6 +170,7 @@ again, no other tool and no temporary space. MaxPack takes the images
 | `.ffpkg` | UFS2 image |
 | `.ffpfs` | PFS image (its files may be PFSC-compressed) |
 | `.ffpfsc` | PFS container: a PFS image whose only file is another image, usually PFSC-compressed |
+| `.pkg` | PS5 debug package (FPKG): decrypted with its passcode as it is read (see below) |
 
 - `maxpack-core` reads them itself, read-only, without mounting anything, and tells what each one is by
   its contents: the extension only puts it in the list. A renamed image opens too; Details says what it
@@ -180,14 +183,29 @@ again, no other tool and no temporary space. MaxPack takes the images
   saved, under it, on the card at the end ("before" and "saved"), in the notice and in **Copy
   report**, is against the image's file on disk, what your disk gets back, never against the game.
   **Compare levels** says what each level saves against the game, and for a compressed image
-  (`.ffpfsc`, or an `.ffpfs` with compressed files) also against your file ("vs your .ffpfsc: −8 %"),
+  (`.ffpfsc`, or an `.ffpfs` with compressed files) or a package also against your file ("vs your .ffpfsc: −8 %"),
   with a line saying which is which. Details shows both sizes: the original size and, under **Image
   file**, what the file takes ("PFSC compression" when it is compressed).
-- **The image is the original.** With **Delete the originals once checked**, it is the image that goes,
+- **The image is the original.** With **Delete the originals once checked**, it is the image (or the
+  package) that goes,
   once its `.p5z` or folder is made, verified and in its place, as a dump folder would.
-- A `.p5z` made from an image decompresses to the game's folder, not to an image.
-- **Verify** does not take images, as it never took an `.exfat`: there is nothing of MaxPack's in them to
-  check. What is made of them is verified.
+- A `.p5z` made from an image or a package decompresses to the game's folder, not to an image or a
+  package.
+- **Verify** does not take images or packages, as it never took an `.exfat`: there is nothing of
+  MaxPack's in them to check. What is made of them is verified.
+- **PS5 packages (`.pkg`).** A debug package (FPKG, a "fake PKG") is read like an image: `maxpack-core`
+  decrypts and decompresses it as it reads it, with nothing installed or written. It needs the passcode
+  it was made with: the default (32 zeros, what fake packages use) unless Settings › **FPKG passcode**
+  has another. A package made with another one says so in its row ("this package was made with another
+  passcode: give it in Settings › FPKG passcode"); give it there, and the rows that needed it are read
+  again. Retail packages, PS4 packages, patches and additional content (DLC) are not taken, and the row
+  says why. What comes out is the files the package holds, and its builder did not keep the dump as it
+  was: it fake-signs the executables, adds a few `sce_sys` files (`pfs-version.dat`, `right.sprx`, the
+  PlayGo tables, `.dds` pictures), makes its own `playgo-chunk.dat`, and gives every file the date it
+  built the package. So the `.p5z` is the one of what the builder packed, not always byte for byte of
+  your first dump ([source-images.md](source-images.md#ps5-packages-fpkg-pkg)). Details shows "PS5
+  package (FPKG)" and, under **Package file**, what it takes ("Kraken compression" when its blocks are
+  compressed).
 
 ### Made for: MaxPack installer
 
@@ -223,17 +241,17 @@ Afterwards:
   - the **Original dump (bit for bit)**, with every file checked against its SHA-256; or
   - the **Folder for the PS5**, the same one that "Play from the USB" produces.
 - **Verify** reads a `.p5z` or a compressed folder and checks that it is still whole. It changes
-  nothing. It does not take images (see [Images](#images)). Under a `.p5z` with repair data it says what
+  nothing. It does not take images or packages (see [Images](#images)). Under a `.p5z` with repair data it says what
   it can repair; a damaged one with repair data of its own gets **Repair**, and **Add repair data** and
   **Repair the damaged ones** do it for the list (see [Repair data](#5-repair-data)).
 - **Details** shows what a game says: title, ID, version, sizes, files, packs and whether it carries a
-  runtime that reads zstd. An image says what it is (a container, also the image inside it) and what its
-  file takes. **Copy report** under each game copies a text for an issue on GitHub (see
+  runtime that reads zstd. An image or a package says what it is (a container, also the image inside
+  it) and what its file takes. **Copy report** under each game copies a text for an issue on GitHub (see
   [Copy report](#copy-report)). A `.p5z` shows as a card with what it saved against the original, its
   volumes and its repair data (how much, or none), and two buttons: **Verify** and **Decompress** take it to those sections, where you start
   them. A `.p5z` opened with a double click (see [Windows Explorer](#windows-explorer)) opens here.
-- **Rename**, in Check, names `.p5z` files, dump folders and images by what each one holds, with the
-  template of Settings > File names. An image keeps its extension, or gets the one of what it is when it
+- **Rename**, in Check, names `.p5z` files, dump folders, images and packages by what each one holds,
+  with the template of Settings > File names. An image or a package keeps its extension, or gets the one of what it is when it
   was renamed, so its name says it (MaxPack for the console, for one, finds images by their extension).
   Add them and each shows its new name before anything changes; **Rename** applies it. A name that
   something else in the folder already has, two games of the list that would get the same name, a file
@@ -288,8 +306,14 @@ Afterwards:
   version, and the region and the version. You can write your own; the preview shows what it gives with
   a game of your lists, or with an invented one. A folder for the console keeps its `TITLE_ID`, which
   the console looks for. The region is known for every kind of game: `maxpack-core` reads the content
-  ID of its `param.json`, also inside a `.p5z` or an image; a game whose `param.json` gives
+  ID of its `param.json`, also inside a `.p5z`, an image or a package; a game whose `param.json` gives
   none has no region, and its bracket goes.
+- **FPKG passcode.** Only for PS5 packages (`.pkg`) made with a passcode other than the default (32
+  zeros, what fake packages use): type its 32 characters (letters, digits or signs, no spaces); empty is
+  the default. One that is not 32 such characters is not kept, and the box says why. Once it changes,
+  the packages of the lists that needed another passcode are read again with it. It goes to
+  `maxpack-core` as `--passcode` for every game it reads; **Copy report** says whether one was given,
+  never which.
 - **Windows Explorer** (Windows only): the right-click menu, Send to › MaxPack and opening `.p5z`
   files with MaxPack, each a switch, off until you turn it on. See [Windows Explorer](#windows-explorer).
 - **Internet.** MaxPack's window goes on the internet for nothing; see
@@ -302,16 +326,17 @@ Three places of MaxPack in the Explorer, each one off until you turn it on in Se
 installer. Each is for you only (it is written in your part of the registry, or in your own Send to
 folder), needs no administrator, and goes away when you turn it off or uninstall MaxPack.
 
-- **Right-click menu.** **Compress with MaxPack** on a folder or an image (`.exfat`, `.ffpkg`, `.ffpfs`,
-  `.ffpfsc`), and **Verify with MaxPack** and **Details** on a `.p5z`, each with MaxPack's icon. Several
-  files chosen at once go to the window together. On the images it is only that entry: the program that
-  opens them and their icon stay the ones you had (other tools open them). A menu that MaxPack 1.0.4 or
-  before put there gets the entries on `.ffpkg`, `.ffpfs` and `.ffpfsc` the first time the window opens.
+- **Right-click menu.** **Compress with MaxPack** on a folder, an image (`.exfat`, `.ffpkg`, `.ffpfs`,
+  `.ffpfsc`) or a PS5 package (`.pkg`), and **Verify with MaxPack** and **Details** on a `.p5z`, each
+  with MaxPack's icon. Several files chosen at once go to the window together. On the images and the
+  packages it is only that entry: the program that opens them and their icon stay the ones you had
+  (other tools open them). A menu that MaxPack 1.0.4 or before put there gets the entries on `.ffpkg`,
+  `.ffpfs` and `.ffpfsc`, and one of 1.0.5 the entry on `.pkg`, the first time the window opens.
   On Windows 11 they are under **Show more options** (or Shift+F10): its compact menu only takes the
   entries of apps installed as packages, which MaxPack is not. The menu speaks the language of the
   window, and changes with it.
 - **Send to › MaxPack.** MaxPack in the Send to menu of a right click: the files and folders chosen go to
-  the window, folders and images to Compress and `.p5z` files to Details.
+  the window, folders, images and packages to Compress and `.p5z` files to Details.
 - **Open .p5z files with MaxPack.** A double click on a `.p5z` opens its card in **Details**. MaxPack is
   also in **Open with** and in Settings › Apps › Default apps. If another program already opens `.p5z`
   files, MaxPack leaves it, as Windows wants: choose MaxPack once in **Open with › Choose another app ›
@@ -326,7 +351,8 @@ them.
 
 A plain text for an issue on GitHub: MaxPack's version, the engine's, the system and its version, the
 CPU threads, the memory, the settings that matter (mode, level, threads, runtime built in or your own,
-low priority, the originals, the template of the names) and, for the games it is about, what each one is
+low priority, the originals, the template of the names, whether an FPKG passcode was given) and, for
+the games it is about, what each one is
 (for an image, its kind: "PFS container (.ffpfsc) with an exFAT image inside, compressed", and what its
 file takes, which its row for the list is against), its sizes, its volumes and how it ended. It never has a game's name, its title ID or a path. For a
 `.p5z` (or a game just compressed) it ends with the row for the
@@ -402,4 +428,5 @@ why.
 - **No ID.** If a game's `param.json` does not give its ID (TITLE_ID), MaxPack warns you before
   starting with "MaxPack installer": MaxPack for the console does not accept a `.p5z` without one. A
   `param.json` with a BOM or with padding at the end is read fine.
-- MaxPack never writes to the source game and does not touch keys, encryption or DRM.
+- MaxPack never writes to the source game, has no keys and does not touch DRM. The only encryption it
+  reads is that of a debug package (`.pkg`), with the passcode it was made with.

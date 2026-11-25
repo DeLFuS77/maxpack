@@ -55,9 +55,13 @@ Then follow the steps for your system.
 **Linux**
 - Unpack the `.tar.gz` and run `sh install.sh`. It puts MaxPack in the applications menu, with its
   icon, and `maxpack` in `~/.local/bin`; and, in `~/.local/share`, the type of `.p5z` files and a
-  thumbnailer, so file managers that use freedesktop thumbnailers show each `.p5z` with its game's
-  cover (its `sce_sys/icon0.png`, which `maxpack-core icon` takes out). `sh install.sh --uninstall`
-  removes it all.
+  freedesktop thumbnailer, which gives each `.p5z` its game's cover (its `sce_sys/icon0.png`, which
+  `maxpack-core icon` takes out). `sh install.sh --uninstall` removes it all.
+- Where the covers show: in file managers that run `.thumbnailer` files outside a sandbox, such as
+  Thunar (through Tumbler); other file managers may show them too. **GNOME Files** runs thumbnailers in
+  a sandbox that cannot see `~/.local`, where this install puts the engine, so it shows no covers, and
+  **KDE Dolphin** does not use `.thumbnailer` files. A file manager that tried a `.p5z` before may
+  remember that it failed (in `~/.cache/thumbnails/fail`): deleting that folder lets it try again.
 - It needs GTK 3 and WebKitGTK 4.1, which almost every desktop has.
 
 On all three systems, opening MaxPack with games or folders (dragging them to the icon, Send to, the

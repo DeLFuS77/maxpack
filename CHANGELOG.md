@@ -23,8 +23,10 @@ All notable changes to MaxPack are listed here. The format follows
   no DLL, and still writes nothing in Windows.
 - **Linux:** `install.sh` also installs, in `~/.local/share`, the type of `.p5z` files
   (`application/x-maxpack-p5z`, by the name and by the first bytes) and a freedesktop thumbnailer
-  that runs `maxpack-core icon`, so file managers that use thumbnailers show the covers too;
-  `install.sh --uninstall` removes them. The menu entry says MaxPack opens `.p5z` files.
+  that runs `maxpack-core icon`, for the covers in file managers that run `.thumbnailer` files outside
+  a sandbox, such as Thunar (through Tumbler); others may show them too. GNOME Files runs thumbnailers
+  in a sandbox that cannot see `~/.local`, where this install puts the engine, and KDE Dolphin does not
+  use `.thumbnailer` files: neither shows the covers. `install.sh --uninstall` removes them. The menu entry says MaxPack opens `.p5z` files.
 
 ## [1.0.6] - 2026-11-25
 

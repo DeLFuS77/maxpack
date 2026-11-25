@@ -328,7 +328,9 @@ line does is there, without typing a command.
   MaxPack** and **Details** on a `.p5z`, **Send to › MaxPack**, and a double click on a `.p5z` that shows
   its card in Details, with Verify and Decompress. The portable version writes nothing in Windows.
 - **Covers in the file manager:** with `.p5z` files opened with MaxPack, the Explorer shows each `.p5z`
-  with its game's cover as its thumbnail; on Linux, `install.sh` adds a thumbnailer that does the same.
+  with its game's cover as its thumbnail. On Linux, `install.sh` adds a freedesktop thumbnailer, for
+  file managers that run thumbnailers outside a sandbox, such as Thunar; GNOME Files (whose sandbox
+  cannot see `~/.local`) and KDE Dolphin (which does not use them) show no covers with it.
 - **Light and dark themes**, a single window (opening more games adds them to it, from the Explorer too),
   progress on the Windows taskbar or the macOS Dock, a system notification when it ends, and the PC kept
   awake while there is work.

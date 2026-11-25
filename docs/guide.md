@@ -160,8 +160,11 @@ Then, depending on your system:
   Settings are saved in its `settings` folder, which has a short `README.txt` saying what is kept there.
 - **macOS.** Open the `.dmg` and drag `MaxPack.app` to Applications.
 - **Linux.** Unpack the `.tar.gz` and run `sh install.sh`. It puts MaxPack in the applications menu
-  and `maxpack` in `~/.local/bin`, and a thumbnailer so file managers show each `.p5z` with its game's
-  cover. `sh install.sh --uninstall` removes it all.
+  and `maxpack` in `~/.local/bin`, and a freedesktop thumbnailer for the covers of `.p5z` files, which
+  file managers that run thumbnailers outside a sandbox use, such as Thunar; others may. GNOME Files
+  (its sandbox cannot see `~/.local`) and KDE Dolphin (it does not use `.thumbnailer` files) show no
+  covers.
+  `sh install.sh --uninstall` removes it all.
 
 The first time, Windows and macOS warn you because the program is not signed:
 - **Windows:** "Windows protected your PC" appears. Press **More info**, then **Run anyway**.

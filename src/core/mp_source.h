@@ -30,8 +30,8 @@ const char *mp_source_kind_name(const mp_source *s);
 // For "pfsc": the kind of the image inside that holds the files ("exfat", "ufs2" or "pfs"; the
 // innermost when they nest); "" otherwise.
 const char *mp_source_inner_name(const mp_source *s);
-// In words, for reports: "folder", "exFAT image", "UFS2 image", "PFS image", "PFS container (exFAT
-// image inside)".
+// In words, for reports: "folder", "exFAT image", "UFS2 image", "PFS image", "PFS container with an
+// exFAT image inside, compressed".
 const char *mp_source_kind_text(const mp_source *s, char *buf, size_t n);
 // 1 if reading the files decompresses PFSC blocks.
 int mp_source_compressed(const mp_source *s);

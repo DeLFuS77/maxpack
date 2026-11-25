@@ -140,7 +140,7 @@ MP_TEST(images_kinds) {
     mp_err e = {{0}};
     mp_source *s = open_fx("basic.exfat.ffpfsc", &e);
     char buf[64];
-    if (s) MP_CHECK_STR(mp_source_kind_text(s, buf, sizeof buf), "PFS container (exFAT image inside, compressed)");
+    if (s) MP_CHECK_STR(mp_source_kind_text(s, buf, sizeof buf), "PFS container with an exFAT image inside, compressed");
     MP_CHECK(s && mp_source_kind_of(s) == MP_SRC_PFS);
     mp_source_close(s);
 }

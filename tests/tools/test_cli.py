@@ -721,7 +721,7 @@ try:
         rep = json.load(f)
     check("analyze_json_ffpfsc", rc == 0 and rep["source"]["kind"] == "pfsc" and rep["source"]["inner"] == "exfat"
           and rep["files"]["total"] == manifest_count(), str(rep.get("source")) + err[-200:])
-    check("analyze_text_ffpfsc", "PFS container (exFAT image inside, compressed)" in out, out[:300])
+    check("analyze_text_ffpfsc", "(PFS container with an exFAT image inside, compressed)" in out, out[:300])
 except Exception as ex:  # noqa: BLE001
     check("analyze_json_ffpfsc", False, repr(ex) + err[-300:])
 rc, out, err = run("analyze", os.path.join(FX, "basic.ffpkg"), "--levels", "3", "--threads", "2")

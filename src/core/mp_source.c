@@ -146,10 +146,12 @@ const char *mp_source_inner_name(const mp_source *s) { return s->container ? kin
 
 const char *mp_source_kind_text(const mp_source *s, char *buf, size_t n) {
     static const char *words[] = {"folder", "exFAT image", "UFS2 image", "PFS image"};
+    static const char *articles[] = {"a", "an", "a", "a"};
     mp_source_kind k = s->container ? s->inner : s->kind;
-    const char *w = k >= MP_SRC_EXFAT && k <= MP_SRC_PFS ? words[k - 1] : words[0];
+    size_t at = k >= MP_SRC_EXFAT && k <= MP_SRC_PFS ? (size_t)k - 1 : 0;
+    const char *w = words[at];
     if (s->container)
-        snprintf(buf, n, "PFS container (%s inside%s)", w, s->compressed ? ", compressed" : "");
+        snprintf(buf, n, "PFS container with %s %s inside%s", articles[at], w, s->compressed ? ", compressed" : "");
     else if (s->compressed)
         snprintf(buf, n, "%s, compressed", w);
     else

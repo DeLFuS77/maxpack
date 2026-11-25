@@ -133,6 +133,9 @@ What a `.p5z` gives you:
 - **One file per game**, easy to back up, copy and carry on the PC or on a USB drive.
 - **About half the size**: 40–70 % smaller on the games tested ([results](#tested-on-a-real-ps5)).
 - **Checked**: it records the SHA-256 of every file of the dump, and `maxpack verify` checks them all.
+- **Complete, or it says so**: when a dump carries the original package's list of its files
+  (`sce_sys/playgo-hash-table.dat`), MaxPack tells before packing, in Details and in Verify whether any
+  is missing, and leaves out what dump tools leave behind once that list proves it is not the game's.
 - **Repairable**: with standard PAR2 repair data next to it, a damaged `.p5z` is repaired back to its
   exact bytes (the PC window makes and uses it; any PAR2 tool can too).
   A cut or damaged `.p5z` is detected as soon as it is opened.

@@ -4,6 +4,37 @@ All notable changes to MaxPack are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **Whether a dump is complete** (engine and window). A PS5 package lists the files of its image in
+  `sce_sys/playgo-hash-table.dat` (one hash per path, no names), and a dump that still carries it is
+  checked against it: how many files the original package has, how many the dump has, how many are
+  missing, what the dump has that the package does not (OS junk and the package's own entries in
+  `sce_sys/` aside) and, of that, what dump tools leave behind (a `decrypted/` folder at the root,
+  `*.auth_info` files, `entitlements.txt` and `entitlement_key.dat`). `sce_sys/about/right.sprx` is
+  not counted: package builders add their own. A dump without the table, or with one of another
+  format, is not checked, and says why.
+  - `analyze` (text and JSON), `info --json` and `verify` (text and its JSON result) gain
+    `completeness`: `checkable`, `reason`, `listed`, `present`, `missing`, `extra_count`,
+    `extra_bytes`, `leftover_count`, `leftover_bytes`, and the first extra paths (`extra_paths`, in
+    `analyze --json` and `info --json`). A `.p5z` is checked against the table it carries, a compressed
+    folder with the files in its packs. `pack` warns when files are missing and packs all the same;
+    its JSON result has the counts too. No change to the `.p5z` format.
+  - `pack --leave-out-leftovers` leaves out what dump tools leave behind, only when the table proves it
+    is not the game's: without one, everything stays and `pack` says so. `verify --against` does not
+    count what was left out as missing.
+  - **The window**: a Compress row warns "3 files of the original game are missing" before anything is
+    packed; Details (and the card of a `.p5z`) says whether the game is complete, what is not in the
+    original package and what dump tools left, with its size; Verify says it under each `.p5z` and
+    compressed folder it can check. Settings › While working has **Leave out what dump tools leave
+    behind** (on): what Compress does with them when the table proves they are not the game's. **Copy
+    report** has the counts, never a name or a path. In the 11 languages.
+  - The hash and the table's layout are adapted from
+    [ProsperoPkgTool](https://github.com/pearlxcore/ProsperoPkgTool) by pearlxcore (MIT); its notice is
+    in `src/core/mp_playgo.c` and in `THIRD_PARTY_NOTICES`.
+
 ## [1.0.5] - 2026-11-25
 
 ### Added

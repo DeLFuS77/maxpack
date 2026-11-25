@@ -33,6 +33,14 @@ enum { MP_OPEN_GAME = 1, MP_OPEN_DLC = 2, MP_OPEN_ANY = 3 };
 int mp_source_open_as(const char *utf8_path, int what, mp_source **out, mp_err *e);
 // 1 if it is a package of additional content (CNT content type 0x21).
 int mp_source_is_dlc_package(const mp_source *s);
+// A source made of others: the files of base, those of each of parts[0..nparts) under its folder
+// prefixes[k] ("addcont0": "addcont0/data/a.bin"), and, when extra_path is not NULL, one file of the
+// extra_len bytes given (copied) with that date. It takes base and every part, closed with it or on
+// failure. Its kind, package ID and whether it is compressed are base's; its reading threads, the most
+// any of them takes. A path that would be twice stops it ("<path> is twice").
+int mp_source_merge(mp_source *base, mp_source *const *parts, const char *const *prefixes, size_t nparts,
+                    const char *extra_path, const uint8_t *extra, size_t extra_len, int64_t extra_mtime,
+                    mp_source **out, mp_err *e);
 // The same with a passcode for a package (NULL or "" = the default).
 int mp_source_open_passcode(const char *utf8_path, const char *passcode, mp_source **out, mp_err *e);
 // The passcode mp_source_open uses for packages from now on (NULL or "" = the default). For a

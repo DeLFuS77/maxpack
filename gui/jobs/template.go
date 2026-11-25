@@ -180,8 +180,11 @@ type RenameResult struct {
 	State, Detail string
 }
 
-// newName is the name a game takes by the template: a .p5z and an image keep their extension,
-// a dump folder takes the name of an original, and a folder for the console its TITLE_ID.
+// newName is the name a game takes by the template: a .p5z and an image keep their extension
+// (in its case), a dump folder takes the name of an original, and a folder for the console its
+// TITLE_ID. A file whose extension is not the one of what the engine says it is (an image renamed:
+// MaxPack for the console, for one, finds images by their extension) takes the extension of what
+// it is.
 func newName(it Item, template string) string {
 	switch {
 	case it.Kind == "folder" && it.Packed:
@@ -190,6 +193,9 @@ func newName(it Item, template string) string {
 		return folderName(it, template)
 	}
 	ext := filepath.Ext(it.Path)
+	if want := kindExt(it.Kind); want != "" && !strings.EqualFold(ext, want) {
+		ext = want
+	}
 	return nameIn(it, template, maxName-len(ext)) + ext
 }
 

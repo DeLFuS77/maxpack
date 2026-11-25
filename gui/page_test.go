@@ -119,6 +119,13 @@ func TestExpandSections(t *testing.T) {
 	deep := makeDump(t, other, "Profundo", "PPSA00002", "Profundo")
 	makeDump(t, deep, "Dentro", "PPSA00003", "Dentro") // inside a dump: the dump is the game
 	gone := filepath.Join(root, "no-existe.exfat")
+	// the images of ShadowMountPlus, in any case, one level below too
+	ufs2 := touch(t, root, "e.ffpkg", 1)
+	pfs := touch(t, root, "f.FFPFS", 1)
+	pfsc := touch(t, root, "g.ffpfsc", 1)
+	touch(t, root, "g.ffpfsc.maxpack-tmp", 1)
+	nested := touch(t, other, "h.ffpfsc", 1)
+	images := []string{image, ufs2, pfs, pfsc}
 
 	a := &App{}
 	cases := []struct {
@@ -127,15 +134,18 @@ func TestExpandSections(t *testing.T) {
 		want    []string
 	}{
 		// a folder that is not a game: the dumps and images one level below, by name
-		{"compress", []string{root}, []string{dump, image}},
+		{"compress", []string{root}, append([]string{dump}, images...)},
 		{"compress", []string{dump}, []string{dump}},
 		{"compress", []string{image, p5z, gone}, []string{image}},
-		{"compress", []string{root, dump, image, root}, []string{dump, image}},
-		{"compress", []string{other}, []string{deep}},
+		{"compress", []string{pfsc, ufs2, p5z, pfs}, []string{pfsc, ufs2, pfs}},
+		{"compress", []string{root, dump, image, root}, append([]string{dump}, images...)},
+		{"compress", []string{other}, []string{deep, nested}},
 		{"decompress", []string{root}, []string{upper, p5z}},
-		{"decompress", []string{p5z, dump, image}, []string{p5z}},
+		{"decompress", []string{p5z, dump, image, pfsc}, []string{p5z}},
 		{"verify", []string{root}, []string{upper, dump, p5z}},
-		{"details", []string{root}, []string{upper, dump, image, p5z}},
+		{"verify", []string{pfsc, ufs2}, []string{}},
+		{"details", []string{root}, []string{upper, dump, image, p5z, ufs2, pfs, pfsc}},
+		{"rename", []string{root}, []string{upper, dump, image, p5z, ufs2, pfs, pfsc}},
 		{"details", []string{dump + string(filepath.Separator)}, []string{dump}},
 		{"settings", []string{root}, []string{}},
 		{"compress", nil, []string{}},
@@ -513,5 +523,75 @@ func TestStartOneAtATime(t *testing.T) {
 	a.Cancel() // with nothing running, nothing happens
 	if err := a.Start("details", []jobs.Item{item}, o); err == nil {
 		t.Fatal("Details does not start anything")
+	}
+}
+
+// The dialog of Add files shows the images ShadowMountPlus mounts wherever a section takes them.
+func TestSectionPatterns(t *testing.T) {
+	images := "*.exfat;*.ffpkg;*.ffpfs;*.ffpfsc"
+	for section, want := range map[string]string{"compress": images, "details": images + ";*.p5z", "rename": images + ";*.p5z", "decompress": "*.p5z", "verify": "*.p5z"} {
+		if got := sectionPatterns[section]; got != want {
+			t.Errorf("%s: %q, want %q", section, got, want)
+		}
+	}
+}
+
+// Details of an image says what it is by its contents (a renamed one too): its kind, what a
+// container holds, whether it is compressed, and what its file takes, which for a compressed one
+// is less than the game in it.
+func TestDetailsOfImages(t *testing.T) {
+	engine, fixtures := needCore(t)
+	useSettings(t, t.TempDir())
+	renamed := filepath.Join(t.TempDir(), "renamed.exfat")
+	data, err := os.ReadFile(filepath.Join(fixtures, "basic.ffpkg"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(renamed, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	a := &App{core: engine}
+	for _, c := range []struct {
+		path, kind, inner string
+		compressed        bool
+	}{
+		{filepath.Join(fixtures, "basic.exfat"), "exfat", "", false},
+		{filepath.Join(fixtures, "basic.ffpkg"), "ufs2", "", false},
+		{renamed, "ufs2", "", false},
+		{filepath.Join(fixtures, "basic.ffpfs"), "pfs", "", false},
+		{filepath.Join(fixtures, "basic_c.ffpfs"), "pfs", "", true},
+		{filepath.Join(fixtures, "mkpfs_exfat.ffpfsc"), "pfsc", "exfat", true},
+		{filepath.Join(fixtures, "mkpfs_ufs2.ffpfsc"), "pfsc", "ufs2", true},
+		{filepath.Join(fixtures, "mkpfs_pfs.ffpfsc"), "pfsc", "pfs", true},
+	} {
+		stat, err := os.Stat(c.path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		d, err := a.Details(c.path)
+		if err != nil {
+			t.Errorf("%s: %v", c.path, err)
+			continue
+		}
+		if d.Kind != c.kind || d.Inner != c.inner || d.Compressed != c.compressed || d.Packed || d.ImageSize != uint64(stat.Size()) ||
+			d.TitleID == "" || d.Files == 0 || d.OriginalSize == 0 {
+			t.Errorf("%s: %+v (file %d bytes)", filepath.Base(c.path), d, stat.Size())
+		}
+		if c.compressed && d.ImageSize >= d.OriginalSize {
+			t.Errorf("%s: the image takes %d, the game %d", filepath.Base(c.path), d.ImageSize, d.OriginalSize)
+		}
+	}
+	// a folder and a .p5z are not images
+	dump := makeDump(t, t.TempDir(), "Dump", "PPSA00001", "Dump")
+	if d, err := a.Details(dump); err != nil || d.ImageSize != 0 || d.Kind != "folder" {
+		t.Errorf("a folder: %+v %v", d, err)
+	}
+	// Rename gives the renamed one the extension of what it is
+	game, err := a.Describe(renamed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plans := a.RenamePlan([]jobs.Item{game.Item}); filepath.Ext(plans[0].To) != ".ffpkg" {
+		t.Errorf("rename: %+v", plans[0])
 	}
 }

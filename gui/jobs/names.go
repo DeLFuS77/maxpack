@@ -67,11 +67,42 @@ func cut(s string, n int) string {
 	return strings.TrimRight(s[:n], ". ")
 }
 
+// The images of a game the engine reads, the ones ShadowMountPlus mounts: by the kind `info --json`
+// gives them, the extension they go by. The extension is only the quick hint the lists, the
+// dialogs, the command line and the Explorer go by; what a file is, the engine tells by its
+// contents, and that is what counts once it has read it.
+var imageExt = map[string]string{"exfat": ".exfat", "ufs2": ".ffpkg", "pfs": ".ffpfs", "pfsc": ".ffpfsc"}
+
+// ImageExts are the extensions of the images, in the order the window names them.
+var ImageExts = []string{".exfat", ".ffpkg", ".ffpfs", ".ffpfsc"}
+
+// IsImageName tells whether a name has the extension of an image, in any case.
+func IsImageName(name string) bool {
+	ext := strings.ToLower(filepath.Ext(name))
+	for _, image := range ImageExts {
+		if ext == image {
+			return true
+		}
+	}
+	return false
+}
+
+// IsImage tells whether a kind the engine gives is one of an image (not a folder nor a .p5z).
+func IsImage(kind string) bool { return imageExt[kind] != "" }
+
+// kindExt is the extension of a kind: the one of its image, or .p5z; "" for a folder or a kind
+// this window does not know.
+func kindExt(kind string) string {
+	if kind == "p5z" {
+		return ".p5z"
+	}
+	return imageExt[kind]
+}
+
 // baseName is the name of the folder or image of a game, without the extension of an image.
 func baseName(path string) string {
 	name := filepath.Base(filepath.Clean(path))
-	switch strings.ToLower(filepath.Ext(name)) {
-	case ".exfat", ".p5z", ".ffpkg":
+	if IsImageName(name) || strings.EqualFold(filepath.Ext(name), ".p5z") {
 		name = strings.TrimSuffix(name, filepath.Ext(name))
 	}
 	return name

@@ -31,11 +31,13 @@ var links = map[string]string{
 	"game": "https://github.com/DeLFuS77/maxpack-ps5/issues/new?template=game_report.yml",
 }
 
-// ReportGame is a game as the page tells it for a report: what it is, its sizes, and how it ended
-// in a queue (State and Detail, "" when it was not in one). Out is what the queue made, read for
-// its volumes; it is never written in the report.
+// ReportGame is a game as the page tells it for a report: what it is (for a container, the image in
+// it, and whether the image is compressed), its sizes, and how it ended in a queue (State and
+// Detail, "" when it was not in one). Out is what the queue made, read for its volumes; it is never
+// written in the report.
 type ReportGame struct {
-	Kind                      string
+	Kind, Inner               string
+	Compressed                bool
 	Packed                    bool
 	OriginalSize, InstallSize uint64
 	P5zSize, OutSize, Volumes uint64
@@ -84,17 +86,41 @@ func codesOf(detail string) string {
 	return strings.Join(codes, ", ")
 }
 
-// kindWords is what a game is, in the words of the report.
+// imageWords are the images by kind, in the words of the report; inImage, the one inside a
+// container.
+var (
+	imageWords = map[string]string{"exfat": "exFAT image (.exfat)", "ufs2": "UFS2 image (.ffpkg)", "pfs": "PFS image (.ffpfs)", "pfsc": "PFS container (.ffpfsc)"}
+	inImage    = map[string]string{"exfat": "an exFAT image", "ufs2": "a UFS2 image", "pfs": "a PFS image"}
+	// a kind of a later engine is said by its code, which is never a name
+	kindCode = regexp.MustCompile(`^[a-z0-9]{1,16}$`)
+)
+
+// kindWords is what a game is, in the words of the report: a folder (as a dump or compressed), a
+// .p5z, or an image by its kind, with what a container holds and whether it is compressed.
 func kindWords(g ReportGame) string {
 	switch {
 	case g.Kind == "p5z":
 		return ".p5z"
-	case g.Kind == "exfat":
-		return "exFAT image"
-	case g.Packed:
-		return "compressed folder"
+	case g.Kind == "" || g.Kind == "folder":
+		if g.Packed {
+			return "compressed folder"
+		}
+		return "dump folder"
 	}
-	return "dump folder"
+	words, known := imageWords[g.Kind]
+	switch {
+	case !known && kindCode.MatchString(g.Kind):
+		return "image (" + g.Kind + ")"
+	case !known:
+		return "image"
+	}
+	if inner := inImage[g.Inner]; g.Kind == "pfsc" && inner != "" {
+		words += " with " + inner + " inside"
+	}
+	if g.Compressed {
+		words += ", compressed"
+	}
+	return words
 }
 
 var modeWords = map[string]string{

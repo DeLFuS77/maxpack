@@ -404,3 +404,41 @@ func TestSeveralFoldersAtOnce(t *testing.T) {
 		t.Errorf("%v %v", got, err)
 	}
 }
+
+// A report says what each image is (its kind, what a container holds, whether it is compressed),
+// never "dump folder", and nothing of its name.
+func TestReportSaysTheImage(t *testing.T) {
+	useSettings(t, t.TempDir())
+	t.Setenv(fakecore.Env, "info")
+	t.Setenv(fakecore.InfoEnv, filepath.Join(t.TempDir(), "none.json"))
+	a := &App{core: os.Args[0]}
+	games := []ReportGame{
+		{Kind: "exfat", OriginalSize: 10 << 30},
+		{Kind: "ufs2", OriginalSize: 10 << 30},
+		{Kind: "pfs", Compressed: true, OriginalSize: 10 << 30},
+		{Kind: "pfsc", Inner: "exfat", Compressed: true, OriginalSize: 10 << 30, OutSize: 4 << 30, State: "ok"},
+		{Kind: "pfsc", Inner: "ufs2", OriginalSize: 10 << 30},
+		{Kind: "pfsc", Inner: "pfs", Compressed: true, OriginalSize: 10 << 30},
+		{Kind: "later", OriginalSize: 10 << 30},
+		{Kind: "Iron Harbor", OriginalSize: 10 << 30},
+	}
+	text := a.reportText(ReportRequest{Section: "compress", Mode: "p5z", Games: games})
+	for _, want := range []string{
+		"Kind: exFAT image (.exfat)\n", "Kind: UFS2 image (.ffpkg)\n", "Kind: PFS image (.ffpfs), compressed\n",
+		"Kind: PFS container (.ffpfsc) with an exFAT image inside, compressed\n",
+		"Kind: PFS container (.ffpfsc) with a UFS2 image inside\n",
+		"Kind: PFS container (.ffpfsc) with a PFS image inside, compressed\n",
+		"Kind: image (later)\n", "Kind: image\n",
+		// the row for the compatibility list counts the game, not the image
+		"| 10.0 → 4.0 GiB (−60 %) | p5z | ? |",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("the report does not say %q:\n%s", want, text)
+		}
+	}
+	for _, banned := range []string{"dump folder", "Iron Harbor"} {
+		if strings.Contains(text, banned) {
+			t.Errorf("the report says %q:\n%s", banned, text)
+		}
+	}
+}

@@ -34,7 +34,8 @@ type Game struct {
 }
 
 // GameDetails is all the engine says of a game, for Details: with its packs, the files stored
-// in them and their volumes (0 when it is not compressed), and the repair data of a .p5z.
+// in them and their volumes (0 when it is not compressed), the repair data of a .p5z, and what the
+// file of an image takes (0 for a folder or a .p5z), less than the game when it is compressed.
 type GameDetails struct {
 	Game
 	InstallSize, P5zSize uint64
@@ -42,6 +43,7 @@ type GameDetails struct {
 	PackedFiles, Volumes uint64
 	HasRuntime           bool
 	Repair               RepairView
+	ImageSize            uint64
 }
 
 // RepairView is the repair data of a .p5z as the page tells it: State is "none" (it has none),
@@ -99,6 +101,7 @@ type PlanView struct {
 // takes are the games a section works on.
 type takes struct{ dumps, images, p5z bool }
 
+// The images are the ones ShadowMountPlus mounts (jobs.ImageExts): .exfat, .ffpkg, .ffpfs, .ffpfsc.
 var sectionTakes = map[string]takes{
 	"compress": {dumps: true, images: true},
 	// Rename names .p5z files, dump folders and images by what they are
@@ -109,22 +112,33 @@ var sectionTakes = map[string]takes{
 	"details": {dumps: true, images: true, p5z: true},
 }
 
+// imagePatterns are the images in the "Add files" dialog: "*.exfat;*.ffpkg;*.ffpfs;*.ffpfsc".
+var imagePatterns = func() string {
+	patterns := make([]string, len(jobs.ImageExts))
+	for i, ext := range jobs.ImageExts {
+		patterns[i] = "*" + ext
+	}
+	return strings.Join(patterns, ";")
+}()
+
 // the files a section takes in the "Add files" dialog (its folders, with "Add folder")
 var sectionPatterns = map[string]string{
-	"compress":   "*.exfat",
+	"compress":   imagePatterns,
 	"decompress": "*.p5z",
 	"verify":     "*.p5z",
-	"details":    "*.exfat;*.p5z",
-	"rename":     "*.exfat;*.p5z",
+	"details":    imagePatterns + ";*.p5z",
+	"rename":     imagePatterns + ";*.p5z",
 }
 
 var errNoWindow = errors.New("no window")
 
+// file tells whether the section takes a file, by its extension: the engine says what it is once
+// it reads it.
 func (k takes) file(path string) bool {
-	switch strings.ToLower(filepath.Ext(path)) {
-	case ".exfat":
+	switch {
+	case jobs.IsImageName(path):
 		return k.images
-	case ".p5z":
+	case strings.EqualFold(filepath.Ext(path), ".p5z"):
 		return k.p5z
 	}
 	return false
@@ -146,8 +160,8 @@ func pathKey(path string) string {
 }
 
 // Expand gives the games of a section among the paths given: a game itself (a dump folder, an
-// .exfat image or a .p5z, as the section takes them), or the ones one level below a folder that
-// is not a game. Each comes once, in the order given, and by name within a folder.
+// image or a .p5z, as the section takes them), or the ones one level below a folder that is not a
+// game. Each comes once, in the order given, and by name within a folder.
 func (a *App) Expand(paths []string, section string) []string {
 	found := []string{}
 	k, ok := sectionTakes[section]
@@ -240,7 +254,7 @@ func (a *App) Describe(path string) (Game, error) {
 }
 
 // Details gives all the engine says of a game: Describe, and its sizes installed and as a .p5z,
-// its files, its packs and its runtime of ampr-emu-ng.
+// its files, its packs and its runtime of ampr-emu-ng; for an image, what its file takes.
 func (a *App) Details(path string) (GameDetails, error) {
 	game, info, err := a.describe(path)
 	if err != nil {
@@ -253,6 +267,11 @@ func (a *App) Details(path string) (GameDetails, error) {
 		HasRuntime: carries}
 	if game.Kind == "p5z" {
 		details.Repair = repairView(path)
+	}
+	if jobs.IsImage(game.Kind) {
+		if stat, err := os.Stat(path); err == nil && !stat.IsDir() {
+			details.ImageSize = uint64(stat.Size())
+		}
 	}
 	return details, nil
 }

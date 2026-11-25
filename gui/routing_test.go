@@ -21,8 +21,9 @@ func routed(t *testing.T) (dir string, compress, details []string) {
 }
 
 // The space a path goes to: the one asked for (by the menu of the Explorer, or Details for a double
-// click) when it takes the path; else Compress for a folder or an .exfat image and Details for a
-// .p5z, whose card offers Verify and Decompress; nothing for any other file.
+// click) when it takes the path; else Compress for a folder or an image (.exfat, .ffpkg, .ffpfs,
+// .ffpfsc) and Details for a .p5z, whose card offers Verify and Decompress; nothing for any other
+// file.
 func TestSpaceOf(t *testing.T) {
 	for _, c := range []struct {
 		name   string
@@ -50,6 +51,17 @@ func TestSpaceOf(t *testing.T) {
 		{"game.p5z", false, "compress", "details"},
 		{"notes.txt", false, "details", ""},
 		{"game.p5z", false, "nowhere", "details"},
+		// the images of ShadowMountPlus go as an .exfat does
+		{"image.ffpkg", false, "", "compress"},
+		{"image.ffpfs", false, "", "compress"},
+		{"image.ffpfsc", false, "", "compress"},
+		{"IMAGE.FFPFSC", false, "", "compress"},
+		{"image.ffpfsc", false, "compress", "compress"},
+		{"image.ffpkg", false, "details", "details"},
+		{"image.ffpfs", false, "details", "details"},
+		{"image.ffpfsc", false, "verify", "compress"},
+		{"image.ffpfsc.maxpack-tmp", false, "", ""},
+		{"image.ffp", false, "", ""},
 	} {
 		if got := spaceOf(c.name, c.folder, c.asked); got != c.want {
 			t.Errorf("%s (folder %v, asked %q): %q, want %q", c.name, c.folder, c.asked, got, c.want)
@@ -118,5 +130,29 @@ func TestStartupFilesPending(t *testing.T) {
 	a.startup(nil)
 	if got := a.PendingFiles(); len(got.Details) != 1 || got.Show != "details" {
 		t.Fatalf("%+v", got)
+	}
+}
+
+// The images of ShadowMountPlus given to MaxPack (its menu in the Explorer, Send to, files dropped
+// on its icon) go to Compress, as an .exfat does, and to Details when the Explorer asks for it.
+func TestRouteImages(t *testing.T) {
+	dir := t.TempDir()
+	var paths []string
+	for _, name := range []string{"a.ffpkg", "b.ffpfs", "c.ffpfsc", "D.FFPFSC", "e.exfat"} {
+		path := filepath.Join(dir, name)
+		os.WriteFile(path, []byte("x"), 0o644)
+		paths = append(paths, path)
+	}
+	if got := routeFiles(launch{files: paths}); !reflect.DeepEqual(got, FilesAdd{Compress: paths}) {
+		t.Errorf("%+v", got)
+	}
+	if got := routeFiles(launch{files: paths, section: "compress"}); !reflect.DeepEqual(got, FilesAdd{Compress: paths, Show: "compress"}) {
+		t.Errorf("compress: %+v", got)
+	}
+	if got := routeFiles(launch{files: paths, section: "details"}); !reflect.DeepEqual(got, FilesAdd{Details: paths, Show: "details"}) {
+		t.Errorf("details: %+v", got)
+	}
+	if got := routeFiles(launch{files: paths, section: "verify"}); !reflect.DeepEqual(got, FilesAdd{Compress: paths}) {
+		t.Errorf("verify: %+v", got)
 	}
 }

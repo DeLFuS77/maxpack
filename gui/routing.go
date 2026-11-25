@@ -6,6 +6,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/DeLFuS77/maxpack/gui/jobs"
+
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -38,25 +40,26 @@ func (f *FilesAdd) list(space string) *[]string {
 
 // spaceOf tells the space a path goes to, by its name and whether it is a folder: the one asked
 // for when it takes it (Verify takes .p5z files and folders, compressed or not, as the page tells
-// them apart; Details takes them all; Compress folders and .exfat images); else Compress for a
-// folder or an .exfat image, and Details for a .p5z (any case), whose card offers Verify and
-// Decompress. Anything else goes nowhere ("").
+// them apart; Details takes them all; Compress folders and images); else Compress for a folder or
+// an image (.exfat, .ffpkg, .ffpfs, .ffpfsc), and Details for a .p5z (any case), whose card offers
+// Verify and Decompress. Anything else goes nowhere (""). The name is only the quick hint: the
+// list the path goes to asks the engine what it is.
 func spaceOf(name string, folder bool, asked string) string {
 	kind := ""
-	switch name = strings.ToLower(name); {
+	switch {
 	case folder:
 		kind = "folder"
-	case strings.HasSuffix(name, ".p5z"):
+	case strings.HasSuffix(strings.ToLower(name), ".p5z"):
 		kind = "p5z"
-	case strings.HasSuffix(name, ".exfat"):
-		kind = "exfat"
+	case jobs.IsImageName(name):
+		kind = "image"
 	default:
 		return ""
 	}
 	takes := map[string]map[string]bool{
-		"compress": {"folder": true, "exfat": true},
+		"compress": {"folder": true, "image": true},
 		"verify":   {"folder": true, "p5z": true},
-		"details":  {"folder": true, "exfat": true, "p5z": true},
+		"details":  {"folder": true, "image": true, "p5z": true},
 	}
 	if takes[asked][kind] {
 		return asked

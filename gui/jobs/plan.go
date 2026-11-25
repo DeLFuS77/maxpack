@@ -30,9 +30,14 @@ const (
 const fat32Max = 1<<32 - 1
 
 // Item is a game the user gave. ContentID is the one of its param.json ("EP0001-PPSA10001_00-..."),
-// which tells its region; "" when it is not known.
+// which tells its region; "" when it is not known. Kind is what the engine says it is: "folder",
+// "p5z" or an image ("exfat", "ufs2", "pfs", or "pfsc" for a PFS container); Inner, for a container,
+// the image that holds the game, and Compressed, whether reading it decompresses PFSC blocks.
+// OriginalSize is the size of the game, which for a compressed image is more than its file takes.
 type Item struct {
 	Path, TitleID, Name, Version, Kind string
+	Inner                              string
+	Compressed                         bool
 	ContentID                          string
 	OriginalSize                       uint64
 	HasZstdRuntime                     bool
@@ -96,7 +101,8 @@ type Plan struct {
 	Block    string
 	Args     []string // the arguments of the engine, without the ones for the progress
 	// Need is the most the game may take on the drive it is written to (or repaired on), which the
-	// space of a queue adds up: its original size, with its repair data when it gets some
+	// space of a queue adds up: its original size (the game's, not what its image takes), with its
+	// repair data when it gets some
 	Need uint64
 	// KeepOriginal keeps the original of this game whatever Options.Originals says: a game added
 	// to a queue that runs, whose original the user said to keep
@@ -136,8 +142,8 @@ func FromInfo(path string, info map[string]any) Item {
 	flag := func(key string) bool { b, _ := info[key].(bool); return b }
 	it := Item{
 		Path: path, TitleID: text("title_id"), Name: text("name"), Version: text("version"),
-		Kind: text("kind"), OriginalSize: number("original_size"), HasZstdRuntime: flag("has_zstd_runtime"),
-		Packed: flag("packed"), ContentID: text("content_id"),
+		Kind: text("kind"), Inner: text("inner"), Compressed: flag("compressed"), OriginalSize: number("original_size"),
+		HasZstdRuntime: flag("has_zstd_runtime"), Packed: flag("packed"), ContentID: text("content_id"),
 	}
 	if it.Name == "" {
 		it.Name = baseName(path)

@@ -6,7 +6,8 @@ import "path/filepath"
 
 // Drive is what a queue asks of one drive: its root, the most its games may take there (each one
 // at most its original size, as a .p5z or a folder is never bigger, with its repair data; a repair,
-// a whole copy of its .p5z) and what is free on it.
+// a whole copy of its .p5z) and what is free on it. The original size is the game's, as the engine
+// says it: a compressed image takes less than the game in it, and what is made of it may not.
 type Drive struct {
 	Root       string
 	Need, Free uint64

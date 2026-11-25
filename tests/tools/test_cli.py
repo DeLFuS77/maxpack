@@ -1054,5 +1054,71 @@ check("capabilities_dlc", json.loads(so).get("dlc") is True, so)
 rc, _, err = run("analyze", os.path.join(FX, "dlc_data.pkg"), "--list")
 check("analyze_dlc_refused", rc == 1 and "with --dlc" in err, err[-300:])
 
+# ---- pack --dlc: the mini game with a DLC with data and a license ----
+MINI_PKG = os.path.join(FX, "mini.pkg")
+DLC_DATA_SIZE = sum(os.path.getsize(os.path.join(r, f)) for r, _, fs in os.walk(os.path.join(FX, "dlc_data")) for f in fs)
+INI = ("[PSAC]\ncontent_id=" + DATA_CID + "\nmount_point=/app0/addcont0\n\n[PSAL]\ncontent_id=" + LICENSE_CID +
+       "\ndownload_status=NO_EXTRA_DATA\n").encode()
+
+
+def fresh(path):
+    if os.path.isdir(path):
+        rmtree(path)
+    elif os.path.exists(path):
+        os.remove(path)
+    return path
+
+
+g5 = fresh(os.path.join(TMP, "dlc_game.p5z"))
+rc, so, err = run("pack", MINI_PKG, "--dlc", os.path.join(FX, "dlc_data.pkg"), "--dlc", os.path.join(FX, "dlc_license.pkg"),
+                  "-o", g5, "--p5z", "--level", "3", "--threads", "2")
+check("pack_dlc_p5z", rc == 0 and "  DLC:    1 with data (addcont0/), 1 license only" in so, so[-500:] + err[-300:])
+rc, d, err = info_json(g5)
+check("info_json_p5z_dlc", rc == 0 and d.get("content") == "game" and d.get("dlc") == [
+    {"content_id": DATA_CID, "data": True, "folder": "addcont0", "size": DLC_DATA_SIZE, "files": 6},
+    {"content_id": LICENSE_CID, "data": False, "folder": "", "size": 0, "files": 0}], str(d.get("dlc")) + err[-300:])
+check("info_json_p5z_dlc_complete", d.get("completeness", {}).get("extra_count") == 0, str(d.get("completeness")))
+rc, so, err = run("verify", g5)
+check("verify_p5z_dlc", rc == 0, so[-300:] + err[-300:])
+orig = fresh(os.path.join(TMP, "dlc_orig"))
+rc, _, err = run("unpack", g5, "--original", "-o", orig)
+ini_path = os.path.join(orig, "dlc_emu.ini")
+check("unpack_dlc_original", rc == 0 and os.path.exists(ini_path) and open(ini_path, "rb").read() == INI
+      and os.path.exists(os.path.join(orig, "addcont0", "data", "sub", "dlc2.bin"))
+      and not os.path.exists(os.path.join(orig, "addcont1")), err[-300:])
+g5j = fresh(os.path.join(TMP, "dlc_game_json.p5z"))
+rc, so, err = run("pack", MINI_PKG, "--dlc", os.path.join(FX, "dlc_data"), "--dlc", os.path.join(FX, "dlc_license"),
+                  "-o", g5j, "--p5z", "--level", "3", "--threads", "2", "--progress", "json")
+res = last_result(json_lines(so))
+check("pack_dlc_result", rc == 0 and res.get("ok") is True and res.get("dlc_data") == 1 and res.get("dlc_license") == 1
+      and res.get("dlc_bytes") == DLC_DATA_SIZE, str(res) + err[-300:])
+# for the console: addcont0/ and the ini in the folder, which verifies
+fo = fresh(os.path.join(TMP, "dlc_folder"))
+rc, so, err = run("pack", os.path.join(FX, "mini"), "--dlc", os.path.join(FX, "dlc_data.pkg"), "-o", fo, "--level", "3",
+                  "--threads", "2")
+rc2, so2, err2 = run("verify", fo)
+check("pack_dlc_folder", rc == 0 and rc2 == 0 and os.path.exists(os.path.join(fo, "dlc_emu.ini"))
+      and os.path.exists(os.path.join(fo, "addcont0", "module", "libdlc.prx")), err[-300:] + so2[-300:] + err2[-300:])
+# what stops it: exit 1 with the reason, the error code for a front end, nothing left
+for name, game, dlc, code, words in (
+        ("other_game", MINI_PKG, os.path.join(FX, "dlc_other.pkg"), "dlc_refused", "a DLC of another game"),
+        ("own_ini", os.path.join(PG, "leftovers"), os.path.join(FX, "dlc_data"), "dlc_has_ini", "already has a dlc_emu.ini"),
+        ("a_game", MINI_PKG, MINI_PKG, "dlc_refused", "a game's package, not additional content"),
+        ("not_there", MINI_PKG, os.path.join(FX, "no_such_dlc.pkg"), "dlc_refused", "does not exist")):
+    out = fresh(os.path.join(TMP, "dlc_bad_" + name + ".p5z"))
+    rc, so, err = run("pack", game, "--dlc", dlc, "-o", out, "--p5z", "--threads", "2", "--progress", "json")
+    res = last_result(json_lines(so))
+    check("pack_dlc_refused_" + name, rc == 1 and words in err and res.get("error") == code and not os.path.exists(out),
+          "rc=%d %s %s" % (rc, res, err[-300:]))
+rc, _, err = run("pack", MINI_PKG, "-o", os.path.join(TMP, "x.p5z"), "--p5z", "--dlc")
+check("pack_dlc_missing_value", rc == 2 and "missing value for: --dlc" in err, err[-300:])
+dcopy = fresh(os.path.join(TMP, "dlc_copy"))
+shutil.copytree(os.path.join(FX, "dlc_license"), dcopy)
+rc, _, err = run("pack", MINI_PKG, "--dlc", dcopy, "-o", os.path.join(dcopy, "out.p5z"), "--p5z")
+check("pack_dlc_output_inside", rc == 2 and "the output cannot be a DLC or be inside one" in err
+      and not os.path.exists(os.path.join(dcopy, "out.p5z")), err[-300:])
+rc, so, _ = run("--help")
+check("help_dlc", "--dlc DLC" in so, so[:2000])
+
 print("test_cli: %d failures" % len(failures))
 sys.exit(1 if failures else 0)

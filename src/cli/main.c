@@ -35,7 +35,7 @@ static void usage(FILE *out) {
             "Usage:\n"
             "  maxpack analyze <folder|image|package> [options]\n"
             "  maxpack analyze <folder|image|package> --levels [L,L,...] [options]   compare the levels\n"
-            "  maxpack pack <folder|image|package> -o <output> [options]\n"
+            "  maxpack pack <folder|image|package> -o <output> [--dlc <DLC> ...] [options]\n"
             "  maxpack unpack <game.p5z> --folder|--original -o <folder> [--threads N]\n"
             "  maxpack info <game.p5z>\n"
             "  maxpack info --json <folder|image|package|game.p5z>\n"
@@ -68,6 +68,13 @@ static void usage(FILE *out) {
             "  --leave-out-leftovers  leave out what dump tools leave behind (decrypted/, *.auth_info)\n"
             "                     when the game's sce_sys/playgo-hash-table.dat proves it is not the\n"
             "                     game's; without one, everything stays\n"
+            "  --dlc DLC          a DLC of the game to put inside what is made (can be repeated): a\n"
+            "                     DLC package (.pkg, with the same --passcode) or a dumped DLC folder\n"
+            "                     (sce_sys/param.json and no eboot.bin), of the game's title ID. One\n"
+            "                     with files of its own goes to addcont0/, addcont1/... in the order\n"
+            "                     given (at most 100), a license only adds nothing but its entry, and\n"
+            "                     MaxPack writes the dlc_emu.ini that lists them; a game that has its\n"
+            "                     own dlc_emu.ini is not given more\n"
             "\n"
             "analyze, info --json, pack and verify tell whether the dump is complete against the list\n"
             "of the original package's files it carries (sce_sys/playgo-hash-table.dat) or, without it,\n"
@@ -788,14 +795,19 @@ static int run_pack(int argc, char **argv) {
     const char *src = NULL, *dst = NULL;
     int p5z = 0;
     uint64_t max_size = 0;
-    const char **keep = calloc((size_t)argc + 1, sizeof *keep);
-    if (!keep) return 1;
+    const char **keep = calloc((size_t)argc + 1, sizeof *keep), **dlc = calloc((size_t)argc + 1, sizeof *dlc);
+    if (!keep || !dlc) {
+        free(keep);
+        free(dlc);
+        return 1;
+    }
     for (int i = 0; i < argc; i++) {
         const char *a = argv[i];
         int has_value = i + 1 < argc;
         int common = common_opt(argc, argv, &i);
         if (common < 0) {
             free(keep);
+            free(dlc);
             return 2;
         }
         if (common) {
@@ -808,11 +820,13 @@ static int run_pack(int argc, char **argv) {
             o.leave_out_leftovers = 1;
         } else if (!strcmp(a, "-o") || !strcmp(a, "--level") || !strcmp(a, "--threads") ||
                    !strcmp(a, "--runtime") || !strcmp(a, "--keep-loose") || !strcmp(a, "--max-file-size") ||
-                   !strcmp(a, "--volume-limit")) {
+                   !strcmp(a, "--volume-limit") || !strcmp(a, "--dlc")) {
             if (!has_value) return bad_usage("missing value for", a);
             const char *v = argv[++i];
             char *end = NULL;
-            if (!strcmp(a, "--max-file-size")) {
+            if (!strcmp(a, "--dlc")) {
+                dlc[o.ndlc++] = v;
+            } else if (!strcmp(a, "--max-file-size")) {
                 unsigned long long m = strtoull(v, &end, 10);
                 if (end == v || *end || m == 0 || v[0] == '-') return bad_usage("--max-file-size must be a number of bytes greater than 0", v);
                 max_size = m;
@@ -849,6 +863,7 @@ static int run_pack(int argc, char **argv) {
     if (!dst) return bad_usage("missing the output (-o)", NULL);
     if (max_size && !p5z) return bad_usage("--max-file-size only works with --p5z", NULL);
     o.keep_loose = keep;
+    o.dlc = dlc;
     if (mp_path_kind(src) == 0) {
         g_err_code = "bad_input";
         fprintf(stderr, "error: does not exist: %s\n", src);
@@ -856,6 +871,9 @@ static int run_pack(int argc, char **argv) {
     }
     if (mp_same_file(dst, src) || (mp_path_kind(src) == 2 && mp_path_is_inside(dst, src)))
         return bad_usage("the output cannot be the game or be inside it", dst);
+    for (size_t k = 0; k < o.ndlc; k++)
+        if (mp_same_file(dst, dlc[k]) || (mp_path_kind(dlc[k]) == 2 && mp_path_is_inside(dst, dlc[k])))
+            return bad_usage("the output cannot be a DLC or be inside one", dst);
     if (p5z) {
         if (mp_path_kind(dst) != 0) {
             g_err_code = "exists";
@@ -883,6 +901,7 @@ static int run_pack(int argc, char **argv) {
     if ((p5z ? mp_pack_out_p5z_ex(dst, o.threads, max_size, &out, &e) : mp_pack_out_dir(dst, &out, &e)) != 0) {
         fprintf(stderr, "error: %s\n", e.msg);
         free(keep);
+        free(dlc);
         return 1;
     }
     mp_pack_result r;
@@ -891,8 +910,10 @@ static int run_pack(int argc, char **argv) {
     int too_big = rc != 0 && p5z && mp_pack_out_p5z_too_big(&out);
     out.destroy(out.ctx);
     free(keep);
+    free(dlc);
     if (rc != 0) {
         if (too_big) g_err_code = "too_big";
+        if (r.dlc_error) g_err_code = r.dlc_error;   // a DLC that needs another passcode says so below
         passcode_code(e.msg);
         mp_err why = {{0}};
         int left;
@@ -929,17 +950,28 @@ static int run_pack(int argc, char **argv) {
         print_size(hum, r.left_out_bytes);
         fprintf(hum, "\n");
     }
+    if (r.dlc_data || r.dlc_license) {
+        fprintf(hum, "  DLC:    ");
+        if (r.dlc_data == 1)
+            fprintf(hum, "1 with data (addcont0/)");
+        else if (r.dlc_data)
+            fprintf(hum, "%u with data (addcont0/ to addcont%u/)", r.dlc_data, r.dlc_data - 1);
+        if (r.dlc_license)
+            fprintf(hum, "%s%u %s only", r.dlc_data ? ", " : "", r.dlc_license, r.dlc_license == 1 ? "license" : "licenses");
+        fprintf(hum, "\n");
+    }
     if (g_json) {
-        char extra[512];
+        char extra[640];
         snprintf(extra, sizeof extra,
                  ",\"original_size\":%llu,\"output_size\":%llu,\"loose_bytes\":%llu,\"packed_bytes\":%llu,"
                  "\"stored_bytes\":%llu,\"volumes\":%llu,\"runtime_without_zstd\":%s,\"left_out_files\":%llu,"
-                 "\"left_out_bytes\":%llu,\"completeness\":",
+                 "\"left_out_bytes\":%llu,\"dlc_data\":%u,\"dlc_license\":%u,\"dlc_bytes\":%llu,\"completeness\":",
                  (unsigned long long)(r.loose_bytes + r.packed_bytes),
                  (unsigned long long)(p5z ? psize : folder_bytes(dst)), (unsigned long long)r.loose_bytes,
                  (unsigned long long)r.packed_bytes, (unsigned long long)r.stored_bytes,
                  (unsigned long long)r.volumes, r.runtime_without_zstd ? "true" : "false",
-                 (unsigned long long)r.left_out_files, (unsigned long long)r.left_out_bytes);
+                 (unsigned long long)r.left_out_files, (unsigned long long)r.left_out_bytes, r.dlc_data, r.dlc_license,
+                 (unsigned long long)r.dlc_bytes);
         mp_jbuf b = {0};
         mp_jbuf_raw(&b, extra);
         mp_complete_json(&r.complete, 0, &b);

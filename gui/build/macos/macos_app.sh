@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Puts the window and the engine in a macOS app, MaxPack.app, to open it from the Finder; the
-# command line is MaxPack.app/Contents/MacOS/maxpack. The app is signed "ad hoc", as
-# macOS requires on Apple chips: it is not notarized, so the first time it is opened with
-# right-click, Open. The icon (.icns) comes from the PNG with sips and iconutil.
-#   macos_app.sh <window> <maxpack-core> <version> <app folder> <appicon.png>
+# Puts the window, the engine and maxpack-par2 (the repair data of a .p5z) in a macOS app,
+# MaxPack.app, to open it from the Finder; the command line is MaxPack.app/Contents/MacOS/maxpack.
+# The app is signed "ad hoc", as macOS requires on Apple chips: it is not notarized, so the first
+# time it is opened with right-click, Open. The icon (.icns) comes from the PNG with sips and
+# iconutil.
+#   macos_app.sh <window> <maxpack-core> <version> <app folder> <appicon.png> <maxpack-par2>
 set -euo pipefail
 
 program="$1"
@@ -12,12 +13,14 @@ core="$2"
 version="$3"
 app="$4/MaxPack.app"
 png="$5"
+par2="$6"
 
 rm -rf "${app}"
 mkdir -p "${app}/Contents/MacOS" "${app}/Contents/Resources"
 cp "${program}" "${app}/Contents/MacOS/maxpack"
 cp "${core}" "${app}/Contents/MacOS/maxpack-core"
-chmod 755 "${app}/Contents/MacOS/maxpack" "${app}/Contents/MacOS/maxpack-core"
+cp "${par2}" "${app}/Contents/MacOS/maxpack-par2"
+chmod 755 "${app}/Contents/MacOS/maxpack" "${app}/Contents/MacOS/maxpack-core" "${app}/Contents/MacOS/maxpack-par2"
 
 iconset="$(mktemp -d)/icon.iconset"
 mkdir -p "${iconset}"

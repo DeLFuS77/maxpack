@@ -2,7 +2,8 @@
 ;
 ; MaxPack's installer for Windows. It is built with makensis and these definitions:
 ;   VERSION  (for example dev-1a2b3c4 or 1.2.3)    NUMBERS  (4 numbers: 1.2.3.0)
-;   PROGRAM  (MaxPack.exe)   CORE (maxpack-core.exe)   LICENSE (LICENSE)   NOTICES (THIRD_PARTY_NOTICES)
+;   PROGRAM  (MaxPack.exe)   CORE (maxpack-core.exe)   PAR2 (maxpack-par2.exe)   LICENSE (LICENSE)
+;   NOTICES (THIRD_PARTY_NOTICES)
 ;   ICON (appicon.ico)
 ;   OUTFILE  (the installer that comes out)
 ;
@@ -309,9 +310,10 @@ FunctionEnd
 
 Section "MaxPack"
   SetOutPath "$INSTDIR"
-  ; the window looks for the engine next to it
+  ; the window looks for the engine, and for maxpack-par2 (the repair data of a .p5z), next to it
   File "/oname=MaxPack.exe" "${PROGRAM}"
   File "/oname=maxpack-core.exe" "${CORE}"
+  File "/oname=maxpack-par2.exe" "${PAR2}"
   File "/oname=LICENSE.txt" "${LICENSE}"
   File "/oname=THIRD_PARTY_NOTICES.txt" "${NOTICES}"
   WriteUninstaller "$INSTDIR\uninstall.exe"
@@ -366,6 +368,7 @@ Section "Uninstall"
   ${EndIf}
   Delete "$INSTDIR\MaxPack.exe"
   Delete "$INSTDIR\maxpack-core.exe"
+  Delete "$INSTDIR\maxpack-par2.exe"
   Delete "$INSTDIR\LICENSE.txt"
   Delete "$INSTDIR\THIRD_PARTY_NOTICES.txt"
   Delete "$INSTDIR\uninstall.exe"

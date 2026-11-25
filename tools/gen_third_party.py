@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Generates THIRD_PARTY_NOTICES: zstd and zlib (from the submodules), the ampr-emu-ng inside the
-window (gui/bundled/ampr-emu-ng) and the Go modules in gui/go.mod.
+window (gui/bundled/ampr-emu-ng), the Go modules in gui/go.mod and par2cmdline-turbo (the submodule
+built as maxpack-par2).
 
   python tools/gen_third_party.py            # rewrites THIRD_PARTY_NOTICES
   python tools/gen_third_party.py --check    # fails if it does not match what would come out now
@@ -196,7 +197,33 @@ def build():
         w("")
         w(license_text(folder))
     w("")
+    w("")
+    par2(w)
+    w("")
     return "\n".join(o)
+
+
+def par2(w):
+    """par2cmdline-turbo, built from its submodule as maxpack-par2, a program of its own."""
+    folder = os.path.join(ROOT, "third_party", "par2cmdline-turbo")
+    configure = read(os.path.join(folder, "configure.ac"))
+    start = configure.index("AC_INIT([par2cmdline-turbo], [") + len("AC_INIT([par2cmdline-turbo], [")
+    version = configure[start:configure.index("]", start)]
+    commit = run(["git", "rev-parse", "HEAD:third_party/par2cmdline-turbo"], ROOT).strip()
+    w("3. Repair data (maxpack-par2)")
+    w("-" * 29)
+    w("")
+    w(f"par2cmdline-turbo {version} - https://github.com/animetosho/par2cmdline-turbo (third_party/par2cmdline-turbo)")
+    w("  License: GPL-2.0-or-later. maxpack-par2 is par2cmdline-turbo built from that submodule, unchanged,")
+    w("  as a program of its own next to maxpack-core: the window runs it to make and use the PAR2 repair")
+    w("  data of a .p5z. It includes ParPar's processing backend (by Anime Tosho, part of par2cmdline-turbo),")
+    w("  a CRC32 routine from Intel's zlib patch (zlib license, the text is above), Hedley (CC0-1.0) and the")
+    w("  Khronos OpenCL headers (Apache-2.0, the text is above with github.com/tkrajina/go-reflector).")
+    w(f"  Corresponding Source: the submodule at commit {commit} (its tag v{version}),")
+    w(f"  https://github.com/animetosho/par2cmdline-turbo/tree/{commit}, which this repository pins at the")
+    w("  tag of each MaxPack version.")
+    w("")
+    w(read(os.path.join(folder, "COPYING")))
 
 
 def main():

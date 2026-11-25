@@ -1,8 +1,9 @@
 #!/bin/sh
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Installs MaxPack for this user: the window and the engine in ~/.local/lib/maxpack (together, because
-# the window looks for maxpack-core next to it), with a link in ~/.local/bin, and its icon and its entry
-# in the applications menu. With --uninstall it removes everything.
+# Installs MaxPack for this user: the window, the engine and maxpack-par2 in ~/.local/lib/maxpack
+# (together, because the window looks for maxpack-core and maxpack-par2 next to it), with a link in
+# ~/.local/bin, and its icon and its entry in the applications menu. With --uninstall it removes
+# everything.
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -28,6 +29,7 @@ fi
 mkdir -p "$bin" "$lib" "$(dirname "$icon")" "$(dirname "$entry")"
 install -m 755 "$here/maxpack" "$lib/maxpack"
 install -m 755 "$here/maxpack-core" "$lib/maxpack-core"
+install -m 755 "$here/maxpack-par2" "$lib/maxpack-par2"
 install -m 644 "$here/maxpack.png" "$icon"
 ln -sf "$lib/maxpack" "$bin/maxpack"
 # the entry opens the program where it ended up, also if ~/.local/bin is not in the PATH

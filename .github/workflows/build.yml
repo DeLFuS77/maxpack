@@ -51,9 +51,10 @@ jobs:
       - run: cmake --build build --config Release -j 4
       - run: ctest --test-dir build -C Release --output-on-failure
 
-  # The PC window: the engine (CMake, Release) next to it as maxpack-core, the Go tests
-  # with that engine and the test images, and each system's packages. Each system uses its
-  # webview (WebView2, WebKitGTK, WebKit) and its C compiler (cgo).
+  # The PC window: the engine (CMake, Release) next to it as maxpack-core, and maxpack-par2 (the
+  # repair data of a .p5z: par2cmdline-turbo built from its submodule), the Go tests with both and
+  # the test images, and each system's packages. Each system uses its webview (WebView2,
+  # WebKitGTK, WebKit) and its C compiler (cgo).
   gui:
     strategy:
       fail-fast: false
@@ -85,7 +86,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev desktop-file-utils
+          sudo apt-get install -y --no-install-recommends build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev desktop-file-utils autoconf automake
 
       # the tag without the "v" (v1.2.3 -> 1.2.3), or "dev-" and the commit; NUMBERS is the X.Y.Z part
       - name: Version
@@ -114,6 +115,44 @@ jobs:
           fi
           echo "MAXPACK_CORE=${core}" >> "${GITHUB_ENV}"
           "${core}" --version
+
+      # maxpack-par2: par2cmdline-turbo from third_party/par2cmdline-turbo (pinned at its v1.5.0 tag),
+      # built as its own CI builds its releases: MSBuild with clang-cl on Windows (its static runtime),
+      # autotools on Linux (linked statically) and on macOS (for the arch of the runner). Never a binary
+      # downloaded: what is shipped is built here from the submodule
+      - name: maxpack-par2 (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        working-directory: third_party/par2cmdline-turbo
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $msbuild = & $vswhere -latest -requires Microsoft.Component.MSBuild -find "MSBuild\**\Bin\MSBuild.exe" | Select-Object -First 1
+          & $msbuild -nologo -verbosity:minimal -m "-property:PlatformToolset=ClangCL" "-property:Configuration=Release" "-property:Platform=x64" par2cmdline.sln
+          if ($LASTEXITCODE -ne 0) { throw "msbuild failed" }
+          $par2 = (Resolve-Path x64/Release/par2.exe).Path
+          & $par2 -V
+          if ($LASTEXITCODE -ne 0) { throw "par2 -V" }
+          "MAXPACK_PAR2=$par2" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: maxpack-par2 (Linux and macOS)
+        if: runner.os != 'Windows'
+        working-directory: third_party/par2cmdline-turbo
+        run: |
+          if [ "${RUNNER_OS}" = "macOS" ]; then
+            brew list automake >/dev/null 2>&1 || brew install automake
+            jobs=$(sysctl -n hw.ncpu)
+            # setting CFLAGS takes away autoconf's -O2: -O3, as par2cmdline-turbo's releases
+            export CFLAGS="-O3" CXXFLAGS="-O3"
+          else
+            jobs=$(nproc)
+            export LDFLAGS="-static"
+          fi
+          ./automake.sh
+          ./configure
+          make -j"${jobs}" par2
+          strip par2
+          ./par2 -V
+          echo "MAXPACK_PAR2=${PWD}/par2" >> "${GITHUB_ENV}"
 
       - name: Test images
         run: |
@@ -150,15 +189,18 @@ jobs:
           fi
           exe="maxpack"
           core="maxpack-core"
+          par2="maxpack-par2"
           if [ "${RUNNER_OS}" = "Windows" ]; then
             exe="MaxPack.exe"
             core="maxpack-core.exe"
+            par2="maxpack-par2.exe"
           fi
           go vet -tags "${tags}" ./...
           go test -tags "${tags}" ./...
           go build -tags "${tags}" -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o "out/${exe}" .
-          # the engine, next to the window
+          # the engine and maxpack-par2, next to the window
           cp "${MAXPACK_CORE}" "out/${core}"
+          cp "${MAXPACK_PAR2}" "out/${par2}"
           ls -l out
           "./out/${exe}" --version
 
@@ -169,7 +211,7 @@ jobs:
           mkdir -p ../dist
           # the portable zip: the window, the engine and the settings folder, where it keeps everything of its own
           mkdir -p out/portable/MaxPack/settings
-          cp out/MaxPack.exe out/maxpack-core.exe ../LICENSE out/portable/MaxPack/
+          cp out/MaxPack.exe out/maxpack-core.exe out/maxpack-par2.exe ../LICENSE out/portable/MaxPack/
           cp ../THIRD_PARTY_NOTICES out/portable/MaxPack/THIRD_PARTY_NOTICES.txt
           printf '%s\r\n' "MaxPack keeps its settings, its copy of ampr-emu-ng, the window's size and position and its page's data here." "If you delete this folder, MaxPack keeps its own in your user folder." > out/portable/MaxPack/settings/README.txt
           pwsh -NoProfile -Command "Compress-Archive -Path out/portable/MaxPack -DestinationPath ../dist/maxpack-${{ matrix.name }}-portable.zip"
@@ -188,7 +230,7 @@ jobs:
           $numbers = "$($env:NUMBERS).0"
           $dist = (Resolve-Path ../dist).Path
           & $makensis /V2 "/DVERSION=$env:VERSION" "/DNUMBERS=$numbers" `
-            "/DPROGRAM=$((Resolve-Path out/MaxPack.exe).Path)" "/DCORE=$((Resolve-Path out/maxpack-core.exe).Path)" `
+            "/DPROGRAM=$((Resolve-Path out/MaxPack.exe).Path)" "/DCORE=$((Resolve-Path out/maxpack-core.exe).Path)" "/DPAR2=$((Resolve-Path out/maxpack-par2.exe).Path)" `
             "/DLICENSE=$((Resolve-Path ../LICENSE).Path)" "/DNOTICES=$((Resolve-Path ../THIRD_PARTY_NOTICES).Path)" "/DICON=$((Resolve-Path build/appicon.ico).Path)" `
             "/DOUTFILE=$dist\maxpack-${{ matrix.name }}-setup.exe" `
             build/windows/installer/maxpack.nsi
@@ -213,17 +255,20 @@ jobs:
           if ($open -ne "`"$folder\MaxPack.exe`" --open `"%1`"") { throw ".p5z files do not open with MaxPack: $open" }
           if (-not (Test-Path -LiteralPath $sendTo)) { throw "MaxPack is not in Send to" }
           $key = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\MaxPack"
-          foreach ($file in "MaxPack.exe", "maxpack-core.exe", "LICENSE.txt", "THIRD_PARTY_NOTICES.txt", "uninstall.exe") {
+          foreach ($file in "MaxPack.exe", "maxpack-core.exe", "maxpack-par2.exe", "LICENSE.txt", "THIRD_PARTY_NOTICES.txt", "uninstall.exe") {
             if (-not (Test-Path "$folder\$file")) { throw "missing $file" }
           }
           if ((Get-ItemProperty $key).InstallLocation -ne $folder) { throw "does not appear in Installed apps" }
           & "$folder\MaxPack.exe" --version
           if ($LASTEXITCODE -ne 0) { throw "--version" }
+          & "$folder\maxpack-par2.exe" -V
+          if ($LASTEXITCODE -ne 0) { throw "maxpack-par2 -V" }
           $out = Join-Path $env:RUNNER_TEMP "probe.p5z"
           & "$folder\MaxPack.exe" pack "$env:MP_FIXTURES\basic.exfat" -o $out --p5z
           if ($LASTEXITCODE -ne 0 -or -not (Test-Path $out)) { throw "pack" }
           Start-Process -FilePath "$folder\uninstall.exe" -ArgumentList "/S", "_?=$folder" -Wait
           if (Test-Path "$folder\MaxPack.exe") { throw "was not uninstalled" }
+          if (Test-Path "$folder\maxpack-par2.exe") { throw "maxpack-par2 was not uninstalled" }
           if (Test-Path $key) { throw "is still in Installed apps" }
           foreach ($left in "$classes\MaxPack.p5z", "$classes\SystemFileAssociations\.p5z\shell\MaxPack.1Verify", "$classes\Directory\shell\MaxPack.Compress", "HKCU:\Software\MaxPack\Capabilities") {
             if (Test-Path -LiteralPath $left) { throw "$left is still there" }
@@ -234,7 +279,7 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           mkdir -p dist
-          bash gui/build/macos/macos_app.sh gui/out/maxpack gui/out/maxpack-core "${VERSION}" gui/out gui/build/appicon.png
+          bash gui/build/macos/macos_app.sh gui/out/maxpack gui/out/maxpack-core "${VERSION}" gui/out gui/build/appicon.png gui/out/maxpack-par2
           cp LICENSE THIRD_PARTY_NOTICES gui/out/
           tar -czf "dist/maxpack-${{ matrix.name }}.tar.gz" -C gui/out MaxPack.app LICENSE THIRD_PARTY_NOTICES
           # the disk image for dragging MaxPack to Applications, without any script
@@ -261,6 +306,7 @@ jobs:
           ditto "${mount}/MaxPack.app" "${apps}/MaxPack.app"
           codesign --verify "${apps}/MaxPack.app"
           "${apps}/MaxPack.app/Contents/MacOS/maxpack" --version
+          "${apps}/MaxPack.app/Contents/MacOS/maxpack-par2" -V
           "${apps}/MaxPack.app/Contents/MacOS/maxpack" pack "${MP_FIXTURES}/basic.exfat" -o "${apps}/probe.p5z" --p5z
           test -s "${apps}/probe.p5z"
           rm -rf "${apps}/MaxPack.app"
@@ -269,12 +315,12 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           mkdir -p dist gui/out/MaxPack
-          cp gui/out/maxpack gui/out/maxpack-core gui/build/linux/maxpack.desktop gui/build/linux/maxpack.png gui/build/linux/install.sh LICENSE THIRD_PARTY_NOTICES gui/out/MaxPack/
-          chmod 755 gui/out/MaxPack/maxpack gui/out/MaxPack/maxpack-core gui/out/MaxPack/install.sh
+          cp gui/out/maxpack gui/out/maxpack-core gui/out/maxpack-par2 gui/build/linux/maxpack.desktop gui/build/linux/maxpack.png gui/build/linux/install.sh LICENSE THIRD_PARTY_NOTICES gui/out/MaxPack/
+          chmod 755 gui/out/MaxPack/maxpack gui/out/MaxPack/maxpack-core gui/out/MaxPack/maxpack-par2 gui/out/MaxPack/install.sh
           tar -czf "dist/maxpack-${{ matrix.name }}.tar.gz" -C gui/out MaxPack
           ls -l dist
 
-      # install.sh puts the window, the engine, the icon and the menu entry in place, and removes them
+      # install.sh puts the window, the engine, maxpack-par2, the icon and the menu entry in place, and removes them
       - name: Test the install on Linux
         if: runner.os == 'Linux'
         run: |
@@ -283,6 +329,8 @@ jobs:
           HOME="$home" sh gui/out/MaxPack/install.sh
           test -x "$home/.local/lib/maxpack/maxpack"
           test -x "$home/.local/lib/maxpack/maxpack-core"
+          test -x "$home/.local/lib/maxpack/maxpack-par2"
+          "$home/.local/lib/maxpack/maxpack-par2" -V
           test -f "$home/.local/share/icons/hicolor/256x256/apps/maxpack.png"
           desktop-file-validate "$home/.local/share/applications/maxpack.desktop"
           grep -q "^Exec=$home/.local/lib/maxpack/maxpack %F$" "$home/.local/share/applications/maxpack.desktop"

@@ -442,8 +442,10 @@ function repairLineText(row) {
   if (repair.state === "other") return t("repairOtherLine");
   return repair.state === "unreadable" ? t("repairUnreadableLine") : "";
 }
-// a .p5z of Verify that the engine found damaged and that has repair data of its own: it can be repaired
-const canRepair = row => row.section === "verify" && !!row.game && row.game.Kind === "p5z" && row.state === "error" && !!row.repair && row.repair.state === "match";
+// a .p5z of Verify that the engine found damaged and that has repair data of its own: it can be
+// repaired (not again once its repair data was found to be too little)
+const canRepair = row => row.section === "verify" && !!row.game && row.game.Kind === "p5z" && row.state === "error" && !!row.repair && row.repair.state === "match"
+  && !/^repair_not_possible/.test(row.detail);
 
 function paintRow(row) {
   const tr = row.tr, game = row.game;

@@ -40,13 +40,16 @@ const working = ["packing", "verifying", "unpacking", "protecting", "repairing"]
 const notStarted = ["waiting", "queued"];
 // the shortcuts of the level, as in NXPress: the level each one sets, and the ones it covers
 const presets = [[3, 1, 6], [12, 7, 14], [19, 15, 22]];
+// the images of a game ShadowMountPlus mounts, which the window takes as it takes a dump folder
+// (jobs.ImageExts): by their extension until the engine says what each one is
+const images = [".exfat", ".ffpkg", ".ffpfs", ".ffpfsc"].map(type => [type, ""]);
 // what each section takes, as the empty list says it: [type, its text or none]
 const takes = {
-  compress: [["", "typeDump"], [".exfat", ""]],
+  compress: [["", "typeDump"], ...images],
   decompress: [[".p5z", ""]],
   verify: [[".p5z", ""], ["", "typePacked"]],
-  details: [["", "typeDump"], [".exfat", ""], [".p5z", ""]],
-  rename: [["", "typeDump"], [".exfat", ""], [".p5z", ""]],
+  details: [["", "typeDump"], ...images, [".p5z", ""]],
+  rename: [["", "typeDump"], ...images, [".p5z", ""]],
 };
 const defaultTemplate = "{title} [{id}]";
 const defaults = { Lang: "", Theme: "system", Runtime: "", LastDest: "", Mode: "p5z", Level: 19, DeleteOriginals: false, DeletePermanently: false, LowPriority: false, NameTemplate: defaultTemplate, Threads: 0,
@@ -349,10 +352,24 @@ function progressOf(job) {
 
 // ---- what a game says ----------------------------------------------------------------------------
 
+// what a game is, by the kind the engine gives it: a folder (a dump, or compressed), a .p5z, or an
+// image, which the engine tells by its contents whatever its extension says
 function kindName(game) {
-  if (game.Kind === "p5z") return ".p5z";
-  if (game.Kind === "exfat") return t("kindImage");
-  return game.Packed ? t("kindPacked") : t("kindDump");
+  switch (game.Kind) {
+    case "p5z": return ".p5z";
+    case "folder": case "": case undefined: return game.Packed ? t("kindPacked") : t("kindDump");
+  }
+  return imageName(game.Kind);
+}
+// an image by its kind: exFAT, UFS2, PFS, or a PFS container that holds one of them
+function imageName(kind) {
+  switch (kind) {
+    case "exfat": return t("kindImage");
+    case "ufs2": return t("kindUfs2");
+    case "pfs": return t("kindPfs");
+    case "pfsc": return t("kindPfsc");
+  }
+  return t("kindOther");
 }
 
 // the warnings of a game in its section: the ones of the list, and the ones of its plan
@@ -360,7 +377,9 @@ function rowWarnings(row) {
   const game = row.game, list = [];
   if (!game) return list;
   if (row.section === "compress" && game.Packed) list.push(t("detail_already_packed"));
-  if (row.section === "verify" && game.Kind === "folder" && !game.Packed) list.push(t("detail_not_packed"));
+  // only a .p5z or a compressed folder can be verified: what the engine says is neither (a dump, or
+  // an image named as a .p5z) has nothing to verify
+  if (row.section === "verify" && !game.Packed) list.push(t("detail_not_packed"));
   // only a folder needs ampr-emu-ng in its fakelib/: MaxPack for the console puts its own in when it
   // plays a .p5z. A folder that lacks one is given the one in use, when there is one
   const lacks = row.section === "compress" && modeOf("compress") === "folder" && !game.Packed && !game.HasZstdRuntime && !runtimeInUse();
@@ -406,10 +425,14 @@ function paintFacts(row) {
   if (facts.hidden) return;
   facts.replaceChildren();
   fact(facts, t("factKind"), kindName(game));
+  // a container: the image that holds the game
+  if (game.Kind === "pfsc" && game.Inner) fact(facts, t("factInside"), imageName(game.Inner));
   fact(facts, t("factId"), game.TitleID || "—");
   fact(facts, t("factVersion"), game.Version || "—");
   fact(facts, t("factFiles"), String(game.Files || 0));
   fact(facts, t("factOriginal"), size(game.OriginalSize));
+  // an image: what its file takes, less than the game when it is PFSC-compressed
+  if (game.ImageSize) fact(facts, t("factImageFile"), size(game.ImageSize) + (game.Compressed ? " · " + t("imageCompressed") : ""));
   fact(facts, t("factInstalled"), size(game.InstallSize));
   if (game.P5zSize) fact(facts, ".p5z", size(game.P5zSize));
   // what it saves: the .p5z, or the compressed folder installed, against the original
@@ -964,7 +987,7 @@ function readyRows(section, kind) {
   return state.lists[section].filter(row => {
     if (!row.game || row.state === "ok") return false;
     if (section === "compress" && row.game.Packed) return false;
-    if (section === "verify" && row.game.Kind === "folder" && !row.game.Packed) return false;
+    if (section === "verify" && !row.game.Packed) return false;
     return true;
   });
 }
@@ -1151,7 +1174,7 @@ async function joinQueue() {
   const job = state.job;
   if (!running() || job.joining) return;
   const rows = toJoin.splice(0).filter(row => row.game && state.lists[job.section].includes(row) && !job.rows.includes(row)
-    && row.state !== "ok" && !(job.section === "compress" && row.game.Packed) && !(job.section === "verify" && row.game.Kind === "folder" && !row.game.Packed));
+    && row.state !== "ok" && !(job.section === "compress" && row.game.Packed) && !(job.section === "verify" && !row.game.Packed));
   if (!rows.length) return;
   job.joining = true;
   try {
@@ -1352,8 +1375,9 @@ function nextStep(job) {
   return t("nextMove")(folders.length === 1 ? folders[0] : job.dest);
 }
 
-// a game as a report tells it: what it is, its sizes and how it ended, never its name, ID or path
-// (the window leaves them out); a game of Details says how it ended in another list
+// a game as a report tells it: what it is (for an image, its kind, what a container holds and
+// whether it is compressed), its sizes and how it ended, never its name, ID or path (the window
+// leaves them out); a game of Details says how it ended in another list
 function gameReport(row) {
   const game = row.game || {};
   let ran = row;
@@ -1363,7 +1387,7 @@ function gameReport(row) {
       if (other) { ran = other; break; }
     }
   }
-  return { Kind: game.Kind || "", Packed: !!game.Packed, OriginalSize: game.OriginalSize || 0, InstallSize: game.InstallSize || 0,
+  return { Kind: game.Kind || "", Inner: game.Inner || "", Compressed: !!game.Compressed, Packed: !!game.Packed, OriginalSize: game.OriginalSize || 0, InstallSize: game.InstallSize || 0,
     P5zSize: game.P5zSize || 0, OutSize: ran.outSize || 0, Volumes: game.Volumes || 0, Files: game.Files || 0,
     HasZstdRuntime: !!game.HasZstdRuntime, HasRuntime: !!game.HasRuntime, State: ran.state || "", Detail: ran.detail || "", Out: ran.out || "" };
 }

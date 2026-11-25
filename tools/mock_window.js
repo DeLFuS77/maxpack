@@ -30,6 +30,7 @@
 //   ?nopar2=1           a build without maxpack-par2: the page offers no repair data, and says why
 //   ?verify=1           three .p5z in Verify: one with repair data that verifies, one damaged with repair
 //                       data of its own (Verify finds it damaged, then Repair), one with the set of another file
+//   ?images=1           the images of ShadowMountPlus in Details (.exfat, .ffpkg, .ffpfsc), to see their cards
 // Start runs a queue made up here: each game packs and verifies in a few seconds (and gets its repair
 // data), the games added meanwhile join it, and the card of the end shows; in Verify the damaged
 // .p5z fails, and Repair and Add repair data run their own steps. Compare levels and Measure this PC tell made-up
@@ -59,11 +60,19 @@ const mock = `
   const builtIn = query.get("nobuiltin") ? {} : { builtInRuntime: "C:\\\\Users\\\\user\\\\AppData\\\\Roaming\\\\MaxPack\\\\ampr-emu-ng\\\\libSceAmpr.sprx", builtInRuntimeVersion: "v0.5.1-maxpack.1" };
   const games = {
     "D:\\\\dumps\\\\Starfall.Odyssey-PPSA10001": { TitleID: "PPSA10001", Name: "Starfall Odyssey", Version: "01.000.010", ContentID: "EP0001-PPSA10001_00-STARFALL00000000", Kind: "folder", OriginalSize: 8390000000, HasZstdRuntime: false, Icon: "", Packed: false },
-    "D:\\\\dumps\\\\Iron.Harbor-PPSA10002.exfat": { TitleID: "PPSA10002", Name: "Iron Harbor", Version: "01.000.021", ContentID: "", Kind: "exfat", OriginalSize: 180400000000, HasZstdRuntime: true, Icon: "", Packed: false },
+    "D:\\\\dumps\\\\Iron.Harbor-PPSA10002.exfat": { TitleID: "PPSA10002", Name: "Iron Harbor", Version: "01.000.021", ContentID: "", Kind: "exfat", OriginalSize: 180400000000, HasZstdRuntime: true, Icon: "", Packed: false,
+      ImageSize: 185300000000 },
+    // a PFS container made by MkPFS, PFSC-compressed, with an exFAT image inside: its file is smaller than the game
+    "D:\\\\dumps\\\\Quiet Tide [PPSA10005].ffpfsc": { TitleID: "PPSA10005", Name: "Quiet Tide", Version: "01.000.004", ContentID: "UP0005-PPSA10005_00-QUIETTIDE0000000", Kind: "pfsc", Inner: "exfat", Compressed: true,
+      OriginalSize: 52300000000, HasZstdRuntime: false, Icon: "", Packed: false, ImageSize: 37900000000 },
     "D:\\\\dumps\\\\Neon Meridian-PPSA10003": { TitleID: "PPSA10003", Name: "Neon Meridian", Version: "01.000.000", ContentID: "UP0003-PPSA10003_00-NEONMERIDIAN0000", Kind: "folder", OriginalSize: 133590000000, HasZstdRuntime: false, Icon: "", Packed: false },
     "D:\\\\more\\\\Lost Signal-PPSA10004": { TitleID: "PPSA10004", Name: "Lost Signal", Version: "01.000.002", ContentID: "JP0004-PPSA10004_00-LOSTSIGNAL000000", Kind: "folder", OriginalSize: 21400000000, HasZstdRuntime: true, Icon: "", Packed: false },
+    // a UFS2 image (ShadowMountPlus's mkufs2.sh)
+    "D:\\\\more\\\\Glass Orbit.ffpkg": { TitleID: "PPSA10006", Name: "Glass Orbit", Version: "01.000.000", ContentID: "EP0006-PPSA10006_00-GLASSORBIT000000", Kind: "ufs2", OriginalSize: 14800000000, HasZstdRuntime: false, Icon: "", Packed: false,
+      ImageSize: 15400000000 },
   };
-  const first = Object.keys(games).slice(0, 3);
+  const first = Object.keys(games).slice(0, 4);
+  const imagesShown = Object.keys(games).filter(file => /\\.(exfat|ffpkg|ffpfs|ffpfsc)$/i.test(file));
   // the .p5z of Verify (?verify=1): good, damaged, and one with the set of another file next to it
   const good = "E:\\\\Starfall Odyssey [PPSA10001].p5z", damaged = "E:\\\\Iron Harbor [PPSA10002].p5z", foreign = "E:\\\\Neon Meridian [PPSA10003].p5z";
   const repairs = {};
@@ -209,13 +218,18 @@ const mock = `
     GetSettings: async () => Object.assign({}, settings),
     SetSettings: async next => { Object.assign(settings, next); if (!validTemplate(settings.NameTemplate)) settings.NameTemplate = templates[0]; },
     PendingFiles: async () => (query.get("opened") ? { compress: [], verify: [], details: [p5z], show: "details" } : query.get("empty") ? null
+      : query.get("images") ? { compress: first, verify: [], details: imagesShown, show: "details" }
       : { compress: first, verify: query.get("verify") ? [good, damaged, foreign] : [], details: query.get("verify") ? [damaged] : [], show: query.get("verify") ? "verify" : "" }),
     RepairInfo: async file => repairs[file] || { state: /\\.p5z$/i.test(file) ? "none" : "", percent: 0, blocks: 0, blockSize: 0, capacity: 0, bytes: 0 },
     Expand: async paths => paths,
     Describe: async file => Object.assign({ Path: file }, games[file] || { TitleID: "PPSA00000", Name: file.split(/[\\\\/]/).pop(), Version: "01.000.000", Kind: "folder", OriginalSize: 1e9, Packed: false }),
-    Details: async file => Object.assign({ Path: file, InstallSize: 7900000000, P5zSize: 2400000000, Files: 2165, PackedFiles: 2119, Volumes: 1, HasRuntime: true }, games[file] || {},
-      { Repair: repairs[file] || { state: /\\.p5z$/i.test(file) ? "none" : "" } }),
-    ChooseFiles: async () => Object.keys(games).slice(3), ChooseFolder: async () => Object.keys(games), ChooseDest: async () => "E:\\\\", ChooseRuntime: async () => "",
+    // what is not compressed has no packs; a .p5z or a compressed folder has its own numbers
+    Details: async file => {
+      const game = games[file] || {}, packed = game.Kind === "p5z" || !!game.Packed;
+      return Object.assign({ Path: file, InstallSize: packed ? 7900000000 : game.OriginalSize || 1e9, P5zSize: game.Kind === "p5z" ? 2400000000 : 0, Files: 2165,
+        PackedFiles: packed ? 2119 : 0, Volumes: packed ? 1 : 0, HasRuntime: packed || !!game.HasZstdRuntime }, game, { Repair: repairs[file] || { state: /\\.p5z$/i.test(file) ? "none" : "" } });
+    },
+    ChooseFiles: async () => Object.keys(games).slice(4), ChooseFolder: async () => Object.keys(games), ChooseDest: async () => "E:\\\\", ChooseRuntime: async () => "",
     CloseTexts: async () => {}, TellLanguage: async () => {}, ConfirmClose: async () => {},
     Plan: async (section, items, opts) => items.map(item => Object.assign(plan(item, opts), opts.Mode === "repair" && !(repairs[item.Path] && repairs[item.Path].state === "match") ? { Block: "no_repair_data" } : {})),
     Space: async (section, items, opts) => (query.get("space") ? [{ Root: "E:\\\\", Need: 322390000000, Free: 118200000000 }] : []),
@@ -243,7 +257,7 @@ const mock = `
       return { P5z: nameOf(it, use) + ".p5z", Original: nameOf(it, use), Folder: it.TitleID, Error: error };
     },
     RenamePlan: async items => items.map(item => {
-      const ext = item.Kind === "exfat" ? ".exfat" : item.Kind === "p5z" ? ".p5z" : "";
+      const ext = { exfat: ".exfat", ufs2: ".ffpkg", pfs: ".ffpfs", pfsc: ".ffpfsc", p5z: ".p5z" }[item.Kind] || "";
       const to = item.Path.replace(/[^\\\\/]+$/, "") + nameOf(item, settings.NameTemplate) + ext;
       return { Item: item, From: item.Path, To: to, Block: to === item.Path ? "same_name" : item.TitleID === "PPSA10004" ? "name_taken" : "" };
     }),

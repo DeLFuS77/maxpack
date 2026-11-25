@@ -90,6 +90,18 @@ sizes are estimates from the sample; the times assume the game is read about as 
 so a game on a hard drive may compress faster than they say. It is `maxpack analyze --levels` (see
 the [guide](guide.md#analyze---levels-compare-the-levels-on-this-pc)).
 
+**Complete dumps.** A dump that still carries the list of the original package's files
+(`sce_sys/playgo-hash-table.dat`) is checked against it as it is added: one that lacks some shows "3
+files of the original game are missing" on its row, before anything starts. It is compressed all the
+same, and what is made lacks them too: dump it again if you can. Details says more (below). What dump
+tools leave behind (a `decrypted/` folder, `.auth_info` files) is left out of what is made, when the
+list proves it is not the game's; **Leave out what dump tools leave behind**, in Settings, keeps it.
+Most dumps do not carry that list, but most carry the one their dump tool wrote (`ampr_emu.index`):
+then the copy is checked against it, and a copy that lacks files the dump tool wrote, or has them of
+another size, says so ("2 files the dump tool wrote are missing"); that list does not prove the dump has
+every file of the game, so it never says complete, and nothing is left out because of it. See
+[the guide](guide.md#whether-a-dump-is-complete).
+
 Before anything starts, MaxPack adds up what the games may take on each drive (each one at most its
 original size, the game's and not its image's, with its repair data when it gets some) and, if the queue
 may not fit, says so with the numbers: "up to 322.4 GB needed, 118.2 GB free". You can choose another
@@ -241,12 +253,23 @@ Afterwards:
   - the **Original dump (bit for bit)**, with every file checked against its SHA-256; or
   - the **Folder for the PS5**, the same one that "Play from the USB" produces.
 - **Verify** reads a `.p5z` or a compressed folder and checks that it is still whole. It changes
-  nothing. It does not take images or packages (see [Images](#images)). Under a `.p5z` with repair data it says what
+  nothing. It does not take images or packages (see [Images](#images)). When the dump it was made of
+  carried the list of the original package's files, a line under it says whether that dump was complete
+  ("Complete: all 1234 files of the original package", or "Incomplete: 3 of the 1234 files of the
+  original package are missing"); without it, from the dump tool's list, "All 95 files the dump tool
+  wrote are here" or "Damaged copy: ...". Under a `.p5z` with repair data it says what
   it can repair; a damaged one with repair data of its own gets **Repair**, and **Add repair data** and
   **Repair the damaged ones** do it for the list (see [Repair data](#5-repair-data)).
 - **Details** shows what a game says: title, ID, version, sizes, files, packs and whether it carries a
-  runtime that reads zstd. An image or a package says what it is (a container, also the image inside
-  it) and what its file takes. **Copy report** under each game copies a text for an issue on GitHub (see
+  runtime that reads zstd. **Complete** says whether it has every file of the original package ("Yes:
+  all 1234 files...", how many are missing, or why it cannot tell: no list, a list of another format, a
+  damaged one); **Not in the original package** what it has that the package does not, with its size;
+  **Left by dump tools** what of that dump tools leave behind, with its size and whether Compress leaves
+  it out (only when the list proves it is not the game's). Without the original package's list, **Dump
+  tool's list** says whether the copy has every file its dump tool wrote, with its size, and **Not in the
+  dump tool's list** what was added since; it never says complete. An image or a package says what it
+  is (a container, also the image inside it) and what its file takes. **Copy report** under each game
+  copies a text for an issue on GitHub (see
   [Copy report](#copy-report)). A `.p5z` shows as a card with what it saved against the original, its
   volumes and its repair data (how much, or none), and two buttons: **Verify** and **Decompress** take it to those sections, where you start
   them. A `.p5z` opened with a double click (see [Windows Explorer](#windows-explorer)) opens here.
@@ -296,6 +319,10 @@ Afterwards:
   less than 5 % slower than the fastest: on a PC whose last threads add little, Compress goes as fast
   and leaves the PC freer. **Use them all** goes back to all of them. Decompress and Verify always use
   all of them. **Cancel**, Escape or closing the card stops it, and the threads stay as they were.
+  **Leave out what dump tools leave behind** (on by default): the `decrypted/` folder and the
+  `.auth_info` files some dump tools leave stay out of what Compress makes, only when the game's own
+  list of the original package's files proves they are not the game's; a game without that list keeps
+  them.
   **Repair data for each .p5z** is the default of the box next to Compress, with its share (1, 5 or
   10 %). **Delete the originals once checked** is the default of the box next to Compress, and **Delete
   them for good, not to the recycle bin** skips the recycle bin.
@@ -352,7 +379,8 @@ them.
 A plain text for an issue on GitHub: MaxPack's version, the engine's, the system and its version, the
 CPU threads, the memory, the settings that matter (mode, level, threads, runtime built in or your own,
 low priority, the originals, the template of the names, whether an FPKG passcode was given) and, for
-the games it is about, what each one is
+the games it is about, whether each is complete against the original package (the counts: files
+listed, missing, not in the package and left by dump tools, never which), what each one is
 (for an image, its kind: "PFS container (.ffpfsc) with an exFAT image inside, compressed", and what its
 file takes, which its row for the list is against), its sizes, its volumes and how it ended. It never has a game's name, its title ID or a path. For a
 `.p5z` (or a game just compressed) it ends with the row for the

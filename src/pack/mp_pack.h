@@ -6,6 +6,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "mp_complete.h"
 #include "mp_zpk.h"
 
 typedef struct {
@@ -16,6 +17,10 @@ typedef struct {
     const char *const *keep_loose;
     size_t nkeep;
     uint64_t volume_limit;           // MP_ZPK_VOLUME_LIMIT
+    // leave out what dump tools leave behind (mp_complete.h), only when the game's own list of the
+    // original package's files proves it is not the game's (the dump tool's list does not): without
+    // one, everything stays
+    int leave_out_leftovers;
 } mp_pack_opts;
 
 void mp_pack_opts_default(mp_pack_opts *o);
@@ -68,6 +73,8 @@ typedef struct {
     uint64_t loose_files, loose_bytes, packed_files, packed_bytes, stored_bytes, volumes;
     int runtime_without_zstd;   // the final libSceAmpr.sprx does not seem to read zstd packs
     char title_id[16];          // the TITLE_ID from sce_sys/param.json ("" if it gives none)
+    mp_complete complete;       // the source against its list of the original package (counts only)
+    uint64_t left_out_files, left_out_bytes;   // the leftovers left out (leave_out_leftovers)
 } mp_pack_result;
 
 int mp_pack_run(const char *src_path, mp_pack_out *out, const mp_pack_opts *o, mp_pack_result *r,

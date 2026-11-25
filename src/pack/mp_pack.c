@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Packing core: decides what goes loose and what into packs, validates everything before writing and
 // sends the files to the output in this order: loose files, packs, ampr_emu.index, runtime,
-// replaced originals and, last, ampr_zstd.index (without it the runtime mounts nothing).
+// replaced originals and, last, ampr_zstd.index (without it the runtime mounts nothing). With
+// leave_out_leftovers, what dump tools leave behind that the game's own list proves is not the
+// game's goes nowhere: not loose, not packed, not in either index nor in the manifest.
 #include "mp_pack.h"
 #include "mp_param.h"
 
@@ -141,6 +143,9 @@ int mp_pack_run(const char *src_path, mp_pack_out *out, const mp_pack_opts *o, m
     mp_idx3_row *rows = NULL;
     uint32_t *packable = NULL;
     int *role = NULL;
+    uint8_t *cls = NULL;
+    mp_pack_manifest fin;
+    memset(&fin, 0, sizeof fin);
     uint8_t *idx3 = NULL, *zidx = NULL, *rt = NULL, *buf = NULL, (*psha)[32] = NULL;
     size_t idx3_len = 0, zidx_len = 0, rt_len = 0;
     mp_pack_manifest man;
@@ -159,9 +164,17 @@ int mp_pack_run(const char *src_path, mp_pack_out *out, const mp_pack_opts *o, m
     role = malloc(n * sizeof *role);
     man.v = calloc(n, sizeof *man.v);
     buf = malloc(COPY_PIECE);
-    if (!rules || !rows || !packable || !role || !man.v || !buf) goto oom;
+    cls = malloc(n);
+    if (!rules || !rows || !packable || !role || !man.v || !buf || !cls) goto oom;
     for (size_t k = 0; k < o->nkeep; k++)
         if (mp_rules_add_keep_loose(rules, o->keep_loose[k], e) != 0) goto done;
+
+    // 0. The source against its list of the original package: what to say of it and, when asked,
+    // the leftovers that list proves are not the game's.
+    if (mp_complete_source(src, &r->complete, cls, e) != 0) goto done;
+    mp_complete_counts_only(&r->complete);
+    int drop = o->leave_out_leftovers && mp_complete_proves_leftovers(&r->complete);
+#define LEFT_OUT(i) (drop && cls[i] == MP_CF_LEFTOVER)
 
     // 1. Special files in the source.
     size_t orig_idx3 = SIZE_MAX, orig_rt = SIZE_MAX, param = SIZE_MAX;
@@ -183,6 +196,12 @@ int mp_pack_run(const char *src_path, mp_pack_out *out, const mp_pack_opts *o, m
     size_t nrows = 0, npack = 0;
     for (size_t i = 0; i < n; i++) {
         const mp_entry *en = mp_source_entry(src, i);
+        if (LEFT_OUT(i)) {
+            role[i] = -1;
+            r->left_out_files++;
+            r->left_out_bytes += en->size;
+            continue;
+        }
         man.v[i].path = mp_strdup(en->path);
         if (!man.v[i].path) goto oom;
         man.v[i].size = en->size;
@@ -236,7 +255,7 @@ int mp_pack_run(const char *src_path, mp_pack_out *out, const mp_pack_opts *o, m
     }
     int64_t gen_mtime = 0;   // date of the generated files: the game's most recent
     for (size_t i = 0; i < n; i++)
-        if (mp_source_entry(src, i)->mtime > gen_mtime) gen_mtime = mp_source_entry(src, i)->mtime;
+        if (!LEFT_OUT(i) && mp_source_entry(src, i)->mtime > gen_mtime) gen_mtime = mp_source_entry(src, i)->mtime;
 
     // 4. Loose files.
     mp_progress prog;
@@ -296,14 +315,23 @@ int mp_pack_run(const char *src_path, mp_pack_out *out, const mp_pack_opts *o, m
     // 7. ampr_zstd.index last.
     if (npack && put_buffer(out, "ampr_zstd.index", MP_ROLE_ZPK_INDEX, zidx, zidx_len, gen_mtime, e) != 0)
         goto done;
-    man.n = n;
-    man.level = o->level;
-    if (mp_cancel_check(e) != 0 || out->finish(out->ctx, &man, e) != 0) goto done;
+    // the manifest has what went, in path order: without what was left out
+    fin = man;
+    fin.v = malloc((n ? n : 1) * sizeof *fin.v);
+    if (!fin.v) goto oom;
+    fin.n = 0;
+    for (size_t i = 0; i < n; i++)
+        if (man.v[i].path) fin.v[fin.n++] = man.v[i];
+    fin.level = o->level;
+    if (mp_cancel_check(e) != 0 || out->finish(out->ctx, &fin, e) != 0) goto done;
     rc = 0;
     goto done;
 oom:
     mp_err_set(e, "out of memory");
 done:
+#undef LEFT_OUT
+    free(fin.v);   // its entries are man's
+    free(cls);
     man.n = n;
     mp_pack_manifest_free(&man);
     free(idx3);

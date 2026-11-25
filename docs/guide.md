@@ -214,6 +214,12 @@ The sidebar has four work sections and Settings. Everything is explained, with s
 
 What it does by itself:
 - A folder that is already compressed is skipped ("it is compressed already").
+- A dump that lacks files of the original game says so on its row ("3 files of the original game are
+  missing") before anything starts, and is compressed all the same: dump it again if you can (see
+  [Whether a dump is complete](#whether-a-dump-is-complete)). A copy that lacks files its dump tool
+  wrote, or has them cut short, says so too ("2 files the dump tool wrote are missing"): copy it again.
+- What dump tools leave behind (a `decrypted/` folder, `.auth_info` files) is left out, when the game's
+  own list of the original package's files proves it is not the game's; Settings can keep it.
 - Each game is written apart (`<name>.maxpack-tmp`) and verified, and only then takes its name.
 - Before it starts, it checks that the whole queue fits on the destination drive, and says so with the
   numbers if it may not. It counts each game's own size, as `maxpack-core` reads it, not what its image
@@ -246,15 +252,23 @@ or a package is not checked here, as before: compress it, and what is made of it
 with repair data it says how much it can repair ("Repair data: 5 % — can repair up to 200 blocks of
 1.3 MB, 268.8 MB in all"); a `.p5z` that Verify finds damaged and that has repair data of its own gets
 **Repair**. **Add repair data** and **Repair the damaged ones**, on the right, do it for the whole list.
-See [Repair data](#repair-data).
+See [Repair data](#repair-data). Under a game made from a dump that carried the list of the original
+package's files it also says whether that dump was complete ("Complete: all 1234 files of the original
+package", or how many are missing); without it, from the list the dump tool wrote, whether the copy
+had every file it wrote ("All 95 files the dump tool wrote are here", or "Damaged copy: ...").
 
 ### Details
 
-Shows the title, ID, version, sizes, files, packs and whether it carries a runtime that reads zstd. An
-image says what it is (exFAT, UFS2 or PFS image, or PFS container and the image inside it) and what its
-file takes, with "PFSC compression" when it is compressed: its original size is the game's. A
-`.pkg` says "PS5 package (FPKG)" and, under **Package file**, what it takes ("Kraken compression"
-when its blocks are compressed).
+Shows the title, ID, version, sizes, files, packs and whether it carries a runtime that reads zstd, and
+whether it is complete: **Complete** says yes, how many files of the original package are missing, or
+why it cannot tell; **Not in the original package** and **Left by dump tools** say what of it is not
+the game's and what it takes. A dump without the original package's list but with its dump tool's shows
+**Dump tool's list** instead (every file it wrote is there, or what is missing or of another size) and
+**Not in the dump tool's list**; it never says complete from it. An image says what it is (exFAT, UFS2
+or PFS image, or PFS container and the image inside it) and what its file takes, with "PFSC
+compression" when it is compressed: its original size is the game's. A `.pkg` says "PS5 package
+(FPKG)" and, under **Package file**, what it takes ("Kraken compression" when its blocks are
+compressed).
 **Copy report** under a game copies a text for an issue on GitHub, without its name or ID. A `.p5z` is a
 card that also says what it saved and its repair data (how much, or none), with **Verify** and
 **Decompress**, which take it to those sections.
@@ -284,7 +298,10 @@ only accepts a `libSceAmpr.sprx` that reads zstd.
   fewest threads that go as fast as the most, which Compress then uses; **Use them all** goes back to
   the default), **Repair data for each .p5z** (off by default, 1, 5 or 10 %: what Compress starts with),
   **Delete the originals once checked** (off by default) and **Delete them for good, not to the recycle
-  bin**. What is removed is written in `maxpack.log`, in the settings folder.
+  bin**. What is removed is written in `maxpack.log`, in the settings folder. **Leave out what dump
+  tools leave behind** (on by default): the `decrypted/` folder and the `.auth_info` files some dump
+  tools leave stay out of what Compress makes, when the game's own list of the original package's files
+  proves they are not the game's; a game without that list keeps them.
 - **File names:** the template of the names of the `.p5z` files and the originals unpacked, with
   `{title}`, `{id}`, `{version}` and `{region}`, three ready-made ones and a preview. `{title} [{id}]`
   is the default, the names of before. A folder for the console keeps its `TITLE_ID`.
@@ -542,6 +559,7 @@ maxpack pack "D:\dumps\MyGame.exfat" -o "D:\games\MyGame [PPSA00000].p5z" --p5z 
 | `--keep-loose GLOB` | Also leave loose whatever matches. Can be repeated. `*` and `?` work inside one folder; `**`, across any number of folders. | `--keep-loose "**/*.bnk"` |
 | `--max-file-size N` | Only with `--p5z`: if the `.p5z` is going to pass N bytes, it stops and deletes it. | `--max-file-size 4294967295` (FAT32) |
 | `--volume-limit N` | For testing: each pack volume takes at most N bytes (from 262208 to 4294901760, the default). Lets a small game have several volumes; you do not need it to play. | `--volume-limit 524288` |
+| `--leave-out-leftovers` | Leaves out what dump tools leave behind (`decrypted/`, `*.auth_info`, the entitlement files), only when the game's `sce_sys/playgo-hash-table.dat` proves it is not the game's; without one, everything stays and it says so. See [Whether a dump is complete](#whether-a-dump-is-complete). | `--leave-out-leftovers` |
 | `--progress json` | One JSON line per event on stdout; the text for people stays on stderr. | `--progress json` |
 | `--control stdin` | Reads the input: the line `cancel`, or closing the input, cancels and deletes what was written. | `--control stdin` |
 
@@ -555,6 +573,9 @@ What it guarantees:
 Warnings it may print at the end:
 - `warning: the fakelib/libSceAmpr.sprx runtime does not seem to read zstd packs: use ampr-emu-ng's libSceAmpr.sprx (--runtime)`
 - `warning: sce_sys/param.json gives no TITLE_ID for the game (titleId): MaxPack's installer will not accept this .p5z` (the last part appears only with `--p5z`)
+- `warning: the dump is incomplete: 3 of the 1234 files of the original package are missing: what was made of it lacks them too`
+- `warning: damaged copy: 2 of the 95 files the dump tool wrote are missing, 1 has another size: what was made of it lacks them too`
+- `note: kept: 1 file (7.00 KB) that looks like what dump tools leave behind: only the game's sce_sys/playgo-hash-table.dat proves it is not the game's (--leave-out-leftovers)`
 
 With `--progress json`, the lines look like this:
 
@@ -586,8 +607,10 @@ is already closed (for example with `< /dev/null`), it cancels at once.
 | `--threads N` | Threads. | `--threads 8` |
 | `--progress json`, `--control stdin` | As in `pack`. | `--control stdin` |
 
-When it ends it prints, for example, `verify: 216 OK, 0 failed (0 s)`. If any file fails, it exits with
-code 1.
+When it ends it prints, for example, `verify: 216 OK, 0 failed (0 s)`, and then whether the dump it was
+made of is complete (`complete: all 1234 files of the original package`, or how many are missing, or
+`not checked: ...`; see [Whether a dump is complete](#whether-a-dump-is-complete)). If any file fails,
+it exits with code 1; a dump that was not complete is no failure of the `.p5z`.
 
 ### `info` and `icon`: what a game says
 
@@ -613,7 +636,62 @@ The `info --json` line carries `kind` (`folder`, `p5z`, `exfat`, `ufs2` for an `
 inside, else `""`), `compressed` (whether reading it decompresses PFSC or Kraken blocks), `title_id`,
 `version`, `name`, `content_id` (from `param.json`, also of a `.p5z`, an image or a package; its first two letters are the region,
 and it is `""` when `param.json` gives none), `original_size`, `install_size`, `p5z_size`, `files`,
-`packed_files`, `volumes`, `has_runtime`, `has_zstd_runtime` and `packed`.
+`packed_files`, `volumes`, `has_runtime`, `has_zstd_runtime`, `packed` and `completeness` (below).
+
+### Whether a dump is complete
+
+A PS5 package lists the files of its image in `sce_sys/playgo-hash-table.dat`: one 64-bit hash per
+path (the hash of the PS5 flat path table, of the path in upper case), and no names. When a dump still
+carries it, MaxPack checks the dump's files against it, in `analyze`, `info --json`, `pack` and
+`verify`. It only reads the table: nothing is written, and nothing stops because of what it finds.
+
+- **Missing** are files the list has and the dump does not. Only their number is known: the list has
+  no names. A dump with missing files makes a `.p5z` that lacks them too; dump the game again if you
+  can.
+- **Extra** are files the dump has and the list does not, such as the emulators a dump tool adds
+  (`fakelib/`, `dlc_emu.ini`). OS junk (`Thumbs.db`, `.DS_Store`, `._*`, `__MACOSX/`...) is not
+  counted, nor is anything in `sce_sys/` that the list does not have: a dump puts there the package's
+  own entries (`param.json`, the PlayGo tables...), which are not files of the image.
+- **Leftovers** are the extra files dump tools are known to leave: a `decrypted/` folder at the root
+  (the raw copies of the executables), `*.auth_info` files next to the executables, and
+  `entitlements.txt` and `entitlement_key.dat` at the root. `pack --leave-out-leftovers` (on in the
+  window) leaves them out, only when the list proves they are not the game's: a file the list has is
+  the game's, whatever its name.
+- `sce_sys/about/right.sprx` is not counted, listed or not: package builders add their own.
+- **Without the table, the dump tool's list.** Most dumps do not carry the table, but most carry the
+  list their dump tool wrote: `ampr_emu.index` at the root (every file it wrote, with its size; the
+  index ampr_emu and ampr-emu-ng read). Then the dump is checked against it, and `source` says so
+  (`dump_index`; `playgo` for the table). It proves less: that the copy has every file the dump tool
+  wrote, with the size it wrote (`missing`, `size_mismatch`), which finds a copy cut short or damaged.
+  It does not prove the dump tool got every file of the game, so MaxPack never says "complete" from it:
+  "all 95 files the dump tool wrote are here", or "damaged copy: ...".
+  - Not counted, as a fine dump differs from its list in them: info and checksum files that are not the game's (`*.nfo`, `*.sfv`,
+    `*.diz`), the emulators you change (`fakelib/`, `fakelib2/`, `dlc_emu.ini`), what the game writes
+    while it runs (anything under a `Saved/` folder, `*.log`), the runtime's files (`ampr_commands.bin`,
+    `apr_emu.log`) and the list itself. The dates are never compared: copies and archives change them.
+  - Extra are the files the list does not have (added after the dump, such as backports in
+    `fakelib/`); leftovers are only said by their names: the dump tool writes them too, so this list
+    does not prove they are not the game's, and `--leave-out-leftovers` keeps them.
+  - The table wins when there is one. A `.p5z` keeps the dump tool's list (the original
+    `ampr_emu.index`) and says the same as the dump it was made of; a compressed folder carries
+    MaxPack's own list, which is not used.
+- **Not checked**: a dump without either list (`no_table`), with a table in another format
+  (`unknown_format`) or whose size does not match its count (`damaged`), and no dump tool's list; or
+  with a dump tool's list that cannot be trusted: damaged (`dump_index_damaged`), one of which nothing
+  is there or that most files disagree with in size, as another game's or version's would
+  (`dump_index_mismatch`), or one whose files are in AMPRPAK4 or zstd packs, not loose
+  (`dump_index_packed`). Then the leftovers by those names are said, but kept.
+
+The `completeness` object of `info --json` (and of `analyze --json`, and of the result line of `verify`
+and `pack` with `--progress json`, without the paths):
+
+```
+"completeness":{"checkable":true,"reason":"","source":"playgo","listed":1234,"present":1231,"missing":3,"size_mismatch":0,"extra_count":2,"extra_bytes":10240,"leftover_count":1,"leftover_bytes":8192,"extra_paths":["decrypted/eboot.bin","dlc_emu.ini"]}
+```
+
+`extra_paths` are the first 20 extra files, by path. A `.p5z` is checked against the table it carries
+(the table is one of the game's files), with the files of the dump it was made of; a compressed folder,
+with its loose files and the ones in its packs.
 
 ### `analyze`: measure before compressing
 
@@ -957,6 +1035,23 @@ the queue starts, or choose **Delete them for good** in Settings.
 - **On the command line,** `--control stdin` lets you cancel with the line `cancel`. The engine deletes
   what it was writing and exits with code 130.
 
+### "N files of the original game are missing"
+
+The dump carries the list of the original package's files (`sce_sys/playgo-hash-table.dat`) and some
+of them are not in it: the dump, or its copy to the PC, did not finish. MaxPack compresses it all the
+same, and what it makes lacks them too. What to do: dump the game again, or copy it again from the
+console, and check it in Details before compressing. The list has no names, so MaxPack cannot say
+which files they are. See [Whether a dump is complete](#whether-a-dump-is-complete).
+
+### "N files the dump tool wrote are missing" or "not the size the dump tool wrote"
+
+The dump has no list of the original package's files, so MaxPack checked it against the list its dump
+tool wrote (`ampr_emu.index`), and the copy lacks some of those files, or has some of another size: the
+copy from the console to the PC, or between drives, did not finish or was damaged. MaxPack compresses it
+all the same, and what it makes lacks them too. What to do: copy the dump again from the console, or
+from where it was whole, and check it in Details. See
+[Whether a dump is complete](#whether-a-dump-is-complete).
+
 ### Other window warnings
 
 - "the destination is the game itself, or inside it: choose another destination".
@@ -1087,7 +1182,9 @@ based on [NXPress](https://github.com/DeLFuS77/NXPress), by the same author.
   [SQLite](https://www.sqlite.org).
 
 [ampr_emu](https://github.com/drakmor/ampr_emu) is also where the `ampr_emu.index` index format comes
-from, which MaxPack generates for each game. [ps5upload](https://github.com/phantomptr/ps5upload), by
+from, which MaxPack generates for each game. The hash of the PS5 flat path table and the layout of
+`playgo-hash-table.dat`, with which MaxPack tells whether a dump is complete, are adapted from
+[ProsperoPkgTool](https://github.com/pearlxcore/ProsperoPkgTool), by pearlxcore (MIT). [ps5upload](https://github.com/phantomptr/ps5upload), by
 phantomptr (GPL-3.0), is another tool of the scene.
 
 MaxPack is not affiliated with or endorsed by Sony Interactive Entertainment. It is for compressing

@@ -76,6 +76,10 @@ type Settings struct {
 	// Passcode is the one the engine opens a PS5 debug package (.pkg) with when it was not made
 	// with the default (32 zeros): 32 printable characters, or "" for the default
 	Passcode string
+	// KeepLeftovers keeps in what Compress makes what dump tools leave behind (a decrypted/ folder,
+	// *.auth_info); off by default, so it is left out when the game's own list of the original
+	// package's files proves it is not the game's (jobs.Options.KeepLeftovers)
+	KeepLeftovers bool
 }
 
 const fileName = "settings.json"
@@ -185,6 +189,7 @@ func Load() (Settings, error) {
 	read("RepairData", &s.RepairData)
 	read("RepairPercent", &s.RepairPercent)
 	read("Passcode", &s.Passcode)
+	read("KeepLeftovers", &s.KeepLeftovers)
 	return s.Normalize(), nil
 }
 

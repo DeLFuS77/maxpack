@@ -322,7 +322,7 @@ func (a *App) plans(section string, items []jobs.Item, choices Choices) ([]jobs.
 		o.Runtime = a.builtInRuntime()
 	}
 	saved, _ := settings.Load()
-	o.NameTemplate, o.LowPriority = saved.NameTemplate, saved.LowPriority
+	o.NameTemplate, o.LowPriority, o.KeepLeftovers = saved.NameTemplate, saved.LowPriority, saved.KeepLeftovers
 	// the threads a measure of this PC found, to compress and for par2 (0: all the CPU's)
 	o.Threads = 0
 	if section == "compress" || o.Mode == jobs.ModeRepair || o.Mode == jobs.ModeProtect {

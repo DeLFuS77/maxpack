@@ -155,6 +155,10 @@ if(MAXPACK_BUILD_TESTS)
   add_test(NAME gen_fpkg COMMAND ${Python3_EXECUTABLE} -I
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/tools/make_fpkg.py --out ${MP_FIXTURES_DIR} --xts $<TARGET_FILE:mp_fpkgtool>)
   set_tests_properties(gen_fpkg PROPERTIES FIXTURES_SETUP fpkg TIMEOUT 600)
+  # Dumps with a list of the original package's files (sce_sys/playgo-hash-table.dat).
+  add_test(NAME gen_playgo COMMAND ${Python3_EXECUTABLE} -I
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/tools/make_playgo.py --out ${MP_FIXTURES_DIR})
+  set_tests_properties(gen_playgo PROPERTIES FIXTURES_SETUP playgo)
 
   mp_add_test(test_smoke)
   mp_add_test(test_platform)
@@ -222,10 +226,12 @@ if(MAXPACK_BUILD_TESTS)
   mp_add_test(test_cancel FIXTURES)
   mp_add_test(test_verify FIXTURES)
   mp_add_test(test_malformed FIXTURES)
+  mp_add_test(test_complete FIXTURES)
+  set_tests_properties(test_complete PROPERTIES FIXTURES_REQUIRED "exfat;playgo")
   add_test(NAME test_cli COMMAND ${Python3_EXECUTABLE} -I
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/tools/test_cli.py $<TARGET_FILE:maxpack> ${MP_FIXTURES_DIR}
     ${MP_TEST_TMP}/cli)
-  set_tests_properties(test_cli PROPERTIES FIXTURES_REQUIRED "exfat;images;fpkg" TIMEOUT 300)
+  set_tests_properties(test_cli PROPERTIES FIXTURES_REQUIRED "exfat;images;fpkg;playgo" TIMEOUT 300)
 
   # A package's version comes from the tag (v1.2.3 -> 1.2.3); needs bash.
   find_program(MP_BASH bash)

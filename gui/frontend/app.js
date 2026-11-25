@@ -53,7 +53,7 @@ const takes = {
 };
 const defaultTemplate = "{title} [{id}]";
 const defaults = { Lang: "", Theme: "system", Runtime: "", LastDest: "", Mode: "p5z", Level: 19, DeleteOriginals: false, DeletePermanently: false, LowPriority: false, NameTemplate: defaultTemplate, Threads: 0,
-  RepairData: false, RepairPercent: 5, Passcode: "" };
+  RepairData: false, RepairPercent: 5, Passcode: "", KeepLeftovers: false };
 // the shares of repair data the window offers (a PAR2 set next to each .p5z)
 const percents = [1, 5, 10];
 
@@ -402,6 +402,13 @@ function rowWarnings(row) {
   const game = row.game, list = [];
   if (!game) return list;
   if (row.section === "compress" && game.Packed) list.push(t("detail_already_packed"));
+  // a dump that lacks files of the original game makes a backup that lacks them too: said before
+  // it is packed, which it still is
+  if (row.section === "compress" && !game.Packed) {
+    const c = game.Completeness;
+    if (fromDumpTool(c)) list.push(...copyProblems(c));
+    else if (missingOf(game)) list.push(t("warn_missing_files")(missingOf(game)));
+  }
   // only a .p5z or a compressed folder can be verified: what the engine says is neither (a dump, or
   // an image named as a .p5z) has nothing to verify
   if (row.section === "verify" && !game.Packed) list.push(t("detail_not_packed"));
@@ -437,6 +444,67 @@ function partText(part) {
   return t("detail_other") + ": " + part;
 }
 
+// ---- whether a game has every file of the original package ---------------------------------------
+
+// the files of the original package a game lacks, as the engine counts them against the list the
+// game carries (sce_sys/playgo-hash-table.dat); 0 when it could not be checked, or was not said
+function missingOf(game) {
+  const c = game && game.Completeness;
+  return c && c.Checkable ? Number(c.Missing) || 0 : 0;
+}
+// whether it was checked against the dump tool's list (ampr_emu.index), not the original package's:
+// that list proves only that the copy has every file the dump tool wrote, with its size, never that
+// the dump is complete
+const fromDumpTool = c => !!(c && c.Checkable && c.Source === "dump_index");
+// what a copy lacks against the dump tool's list: the files missing, and the ones of another size
+function copyProblems(c) {
+  const list = [];
+  if (Number(c.Missing) > 0) list.push(t("copyMissing")(Number(c.Missing)));
+  if (Number(c.SizeMismatch) > 0) list.push(t("copyOtherSize")(Number(c.SizeMismatch)));
+  return list;
+}
+// whether it is complete, for its card in Details: yes, how many are missing, or why it cannot be told;
+// against the dump tool's list, whether the copy has every file it wrote
+function completenessText(c) {
+  if (fromDumpTool(c)) {
+    const problems = copyProblems(c);
+    return problems.length ? t("damagedCopy") + ": " + problems.join(", ") : t("dumpListAll")(c.Listed) + " · " + t("dumpListHint");
+  }
+  if (c.Checkable) return c.Missing ? t("completeNo")(c.Missing, c.Listed) : t("completeYes")(c.Listed);
+  const why = { no_table: "completeNoTable", unknown_format: "completeUnknownFormat", damaged: "completeDamaged", unreadable: "completeUnreadable",
+    dump_index_damaged: "completeDumpIndexDamaged", dump_index_mismatch: "completeDumpIndexMismatch", dump_index_packed: "completeDumpIndexPacked" }[c.Reason];
+  return t(why || "completeOther");
+}
+// the facts of Details of a game against its list, as [name, value]: whether it is complete, what of
+// it is not in the original package and what dump tools left, with what Compress does with that: it
+// leaves it out when the list proves it is not the game's, unless Settings keeps it. A .p5z only
+// says what it has. None when the engine said nothing.
+function completenessFacts(game) {
+  const c = game && game.Completeness;
+  if (!c) return [];
+  const dumpTool = fromDumpTool(c);
+  const facts = [[t(dumpTool ? "factDumpList" : "factComplete"), completenessText(c)]];
+  if (c.Checkable && c.ExtraCount) facts.push([t(dumpTool ? "factNotInDumpList" : "factExtra"), t("extraOf")(c.ExtraCount, size(c.ExtraBytes))]);
+  if (c.LeftoverCount) {
+    const what = t("leftoversOf")(size(c.LeftoverBytes), c.LeftoverCount);
+    // only the original package's list proves they are not the game's
+    const proven = c.Checkable && !dumpTool;
+    const fate = game.Kind === "p5z" || game.Packed ? "" : !proven ? t("leftoversUnproven") : state.settings.KeepLeftovers ? t("leftoversKept") : t("leftoversOut");
+    facts.push([t("factLeftovers"), fate ? what + " · " + fate : what]);
+  }
+  return facts;
+}
+// the line of a game of Verify: whether what it checked is complete, when that could be told
+function completeLineText(row) {
+  const c = row.game && row.game.Completeness;
+  if (row.section !== "verify" || !c || !c.Checkable) return "";
+  if (fromDumpTool(c)) {
+    const problems = copyProblems(c);
+    return problems.length ? t("damagedCopy") + ": " + problems.join(", ") : t("dumpListAll")(c.Listed);
+  }
+  return c.Missing ? t("incompleteLine")(c.Missing, c.Listed) : t("completeLine")(c.Listed);
+}
+
 function fact(list, name, value) {
   const dt = document.createElement("dt"), dd = document.createElement("dd");
   dt.textContent = name;
@@ -455,6 +523,7 @@ function paintFacts(row) {
   fact(facts, t("factId"), game.TitleID || "—");
   fact(facts, t("factVersion"), game.Version || "—");
   fact(facts, t("factFiles"), String(game.Files || 0));
+  for (const [name, value] of completenessFacts(game)) fact(facts, name, value);
   fact(facts, t("factOriginal"), size(game.OriginalSize));
   // an image: what its file takes, less than the game when it is PFSC-compressed; a package, its
   // file, Kraken-compressed or not
@@ -520,6 +589,10 @@ function paintRow(row) {
   // what it took before (an image's file) and takes now
   sizes.hidden = !(row.section === "compress" && game && row.outSize && row.state === "ok" && sizeBefore(game));
   if (!sizes.hidden) sizes.textContent = size(sizeBefore(game)) + " → " + size(row.outSize) + (row.repairSize ? " · " + t("withRepair")(size(row.repairSize)) : "");
+  const completeLine = tr.querySelector(".complete-line"), completeText = completeLineText(row);
+  completeLine.hidden = !completeText;
+  completeLine.textContent = completeText;
+  completeLine.classList.toggle("incomplete", !!completeText && (missingOf(game) > 0 || Number(game.Completeness.SizeMismatch) > 0));
   const repairLine = tr.querySelector(".repair-line"), repairText = repairLineText(row);
   repairLine.hidden = !repairText;
   repairLine.textContent = repairText;
@@ -773,6 +846,7 @@ function paintSettings() {
     $("pref-passcode").value = s.Passcode || "";
     $("passcode-bad").hidden = true;
   }
+  $("pref-leftovers").checked = !s.KeepLeftovers;
   // the threads Compress gives the engine: all of them, or the ones a measure found
   const cpu = cpuThreads();
   $("pref-threads").textContent = s.Threads > 0 ? t("threadsSome")(s.Threads, cpu) : t("threadsAll")(cpu);
@@ -1428,7 +1502,15 @@ function gameReport(row) {
   return { Kind: game.Kind || "", Inner: game.Inner || "", Compressed: !!game.Compressed, Packed: !!game.Packed, ImageSize: game.ImageSize || 0,
     OriginalSize: game.OriginalSize || 0, InstallSize: game.InstallSize || 0,
     P5zSize: game.P5zSize || 0, OutSize: ran.outSize || 0, Volumes: game.Volumes || 0, Files: game.Files || 0,
-    HasZstdRuntime: !!game.HasZstdRuntime, HasRuntime: !!game.HasRuntime, State: ran.state || "", Detail: ran.detail || "", Out: ran.out || "" };
+    HasZstdRuntime: !!game.HasZstdRuntime, HasRuntime: !!game.HasRuntime, State: ran.state || "", Detail: ran.detail || "", Out: ran.out || "",
+    Completeness: completenessCounts(game.Completeness) };
+}
+// of what the engine said against the list of the original package's files, the counts alone
+function completenessCounts(c) {
+  if (!c) return null;
+  const n = key => Number(c[key]) || 0;
+  return { Checkable: !!c.Checkable, Reason: String(c.Reason || ""), Source: String(c.Source || ""), Listed: n("Listed"), Present: n("Present"),
+    Missing: n("Missing"), SizeMismatch: n("SizeMismatch"), ExtraCount: n("ExtraCount"), ExtraBytes: n("ExtraBytes"), LeftoverCount: n("LeftoverCount"), LeftoverBytes: n("LeftoverBytes") };
 }
 function copyReport(rows, section, mode) {
   go.call("CopyReport", { Section: section || "", Mode: mode || "", Games: rows.map(gameReport) })
@@ -1755,6 +1837,8 @@ function wire() {
           describe(row);
         }
   });
+  // what dump tools leave behind goes, unless Settings keeps it; the cards of Details say it
+  $("pref-leftovers").addEventListener("change", () => { keep({ KeepLeftovers: !$("pref-leftovers").checked }); render(); });
   $("pref-delete").addEventListener("change", () => { keep({ DeleteOriginals: $("pref-delete").checked }); state.deleteOriginals = $("pref-delete").checked; render(); });
   $("pref-forgood").addEventListener("change", () => { keep({ DeletePermanently: $("pref-forgood").checked }); render(); });
   // a template of one's own is kept once it is one; meanwhile the preview says what it gives

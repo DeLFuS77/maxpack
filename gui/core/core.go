@@ -33,8 +33,10 @@ var ErrClosing = errors.New("the window is closing")
 // Required is what the window needs of the engine, as `maxpack --capabilities` says it: an engine
 // that does not say one of them is of another version. "images": it reads the images ShadowMountPlus
 // mounts (.ffpkg, .ffpfs, .ffpfsc), which the window offers besides folders and .exfat; "fpkg" and
-// "passcode": it reads PS5 debug packages (.pkg), with the passcode of Settings.
-var Required = []string{"progress_json", "control_stdin", "max_file_size", "info_json", "icon", "packs", "content_id", "levels", "measure", "images", "fpkg", "passcode"}
+// "passcode": it reads PS5 debug packages (.pkg), with the passcode of Settings; "completeness":
+// info --json says whether a game has every file of the original package, and pack takes
+// --leave-out-leftovers.
+var Required = []string{"progress_json", "control_stdin", "max_file_size", "info_json", "icon", "packs", "content_id", "levels", "measure", "images", "fpkg", "passcode", "completeness"}
 
 // passcode is the one of Settings › FPKG passcode ("" is the default, which the engine knows).
 var passcode atomic.Value

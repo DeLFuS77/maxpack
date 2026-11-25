@@ -34,7 +34,8 @@ const fat32Max = 1<<32 - 1
 // "p5z" or an image ("exfat", "ufs2", "pfs", or "pfsc" for a PFS container); Inner, for a container,
 // the image that holds the game, and Compressed, whether reading it decompresses PFSC blocks.
 // OriginalSize is the size of the game, which for a compressed image is more than its file takes;
-// ImageSize, what the file of an image takes on disk (0 for a folder or a .p5z).
+// ImageSize, what the file of an image takes on disk (0 for a folder or a .p5z). Completeness is
+// whether it has every file of the original package, nil when the engine does not say it.
 type Item struct {
 	Path, TitleID, Name, Version, Kind string
 	Inner                              string
@@ -45,6 +46,54 @@ type Item struct {
 	HasZstdRuntime                     bool
 	Packed                             bool
 	Icon                               string
+	Completeness                       *Completeness
+}
+
+// Completeness is a game against a list of its files, as the engine says it. Source is the list:
+// "playgo", the files of the original package's image that the game carries
+// (sce_sys/playgo-hash-table.dat), whose hashes have no names, so Missing is a count; or
+// "dump_index", without that table, the list the dump tool wrote (ampr_emu.index), which only tells
+// whether the copy has every file the dump tool wrote (Missing) with its size (SizeMismatch), never
+// that the dump has every file of the game. With no list, or one it cannot use, it is not Checkable
+// and Reason says why ("no_table", "unknown_format", "damaged", "unreadable", "dump_index_damaged",
+// "dump_index_mismatch", "dump_index_packed"). Extra are files of the game that the list does not
+// have; Leftover, what dump tools leave behind (a decrypted/ folder, *.auth_info), which only the
+// table proves are not the game's. Never a path: what is said of a game never names its files.
+type Completeness struct {
+	Checkable                    bool
+	Reason                       string
+	Source                       string
+	Listed, Present, Missing     uint64
+	SizeMismatch                 uint64
+	ExtraCount, ExtraBytes       uint64
+	LeftoverCount, LeftoverBytes uint64
+}
+
+// MissingFiles is how many files of its list the game lacks: 0 when that is not known.
+func (c *Completeness) MissingFiles() uint64 {
+	if c == nil || !c.Checkable {
+		return 0
+	}
+	return c.Missing
+}
+
+// DumpTool tells whether it was checked against the dump tool's list, which proves less than the
+// original package's.
+func (c *Completeness) DumpTool() bool { return c != nil && c.Checkable && c.Source == "dump_index" }
+
+// completenessOf reads the "completeness" object of info --json (nil when there is none).
+func completenessOf(info map[string]any) *Completeness {
+	raw, ok := info["completeness"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	number := func(key string) uint64 { n, _ := raw[key].(float64); return uint64(n) }
+	checkable, _ := raw["checkable"].(bool)
+	reason, _ := raw["reason"].(string)
+	source, _ := raw["source"].(string)
+	return &Completeness{Checkable: checkable, Reason: reason, Source: source, Listed: number("listed"), Present: number("present"),
+		Missing: number("missing"), SizeMismatch: number("size_mismatch"), ExtraCount: number("extra_count"),
+		ExtraBytes: number("extra_bytes"), LeftoverCount: number("leftover_count"), LeftoverBytes: number("leftover_bytes")}
 }
 
 // Options are what the user chose for a queue.
@@ -70,6 +119,10 @@ type Options struct {
 	// (ModeP5z), or that is added to each one (ModeProtect), as a percentage of it: 1, 5 or 10; 0 is
 	// none. A folder never has any
 	Repair int
+	// KeepLeftovers keeps, when compressing, what dump tools leave behind (a decrypted/ folder,
+	// *.auth_info). Else the engine leaves it out (--leave-out-leftovers), and only when the game's
+	// own list of the original package's files proves it is not the game's: with no list, it stays
+	KeepLeftovers bool
 }
 
 // What becomes of the original of a game once its new one is checked (Options.Originals).
@@ -146,6 +199,7 @@ func FromInfo(path string, info map[string]any) Item {
 		Path: path, TitleID: text("title_id"), Name: text("name"), Version: text("version"),
 		Kind: text("kind"), Inner: text("inner"), Compressed: flag("compressed"), OriginalSize: number("original_size"),
 		HasZstdRuntime: flag("has_zstd_runtime"), Packed: flag("packed"), ContentID: text("content_id"),
+		Completeness: completenessOf(info),
 	}
 	if it.Name == "" {
 		it.Name = baseName(path)
@@ -306,6 +360,9 @@ func PlanCompress(items []Item, o Options, fs FS) []Plan {
 		a = append(a, core.PasscodeArgs()...)
 		if !it.HasZstdRuntime && o.Runtime != "" {
 			a = append(a, "--runtime", o.Runtime)
+		}
+		if !o.KeepLeftovers {
+			a = append(a, "--leave-out-leftovers")
 		}
 		return a
 	}

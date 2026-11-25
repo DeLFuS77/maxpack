@@ -162,6 +162,7 @@ jobs:
           tool="${GITHUB_WORKSPACE}/build/Release/mp_fpkgtool.exe"
           [ -f "${tool}" ] || tool="${GITHUB_WORKSPACE}/build/mp_fpkgtool"
           python -I tests/tools/make_fpkg.py --out build/fixtures --xts "${tool}"
+          python -I tests/tools/make_playgo.py --out build/fixtures
           echo "MP_FIXTURES=${GITHUB_WORKSPACE}/build/fixtures" >> "${GITHUB_ENV}"
 
       # the icon, the manifest and the version of the Windows program

@@ -6,6 +6,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "mp_complete.h"
 #include "mp_dedup.h"
 #include "mp_measure.h"
 #include "mp_source.h"
@@ -67,6 +68,7 @@ typedef struct {
     int xport_done;
     mp_xport_stat xport;
     uint64_t p5z_transport;               // transport + compressed loose files
+    mp_complete complete;                 // against the list of the original package's files
     uint64_t elapsed_ns;
 } mp_report;
 

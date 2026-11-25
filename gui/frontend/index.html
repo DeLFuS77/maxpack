@@ -181,6 +181,10 @@
           <input id="pref-passcode" class="passcode" type="text" spellcheck="false" autocomplete="off" maxlength="32" data-t-placeholder="passcodeDefault">
         </div>
         <div class="pref-item">
+          <div class="pref-text"><b id="leftovers-name" data-t="prefLeftovers"></b><small data-t="prefLeftoversHint"></small></div>
+          <input id="pref-leftovers" class="switch" type="checkbox" role="switch" aria-labelledby="leftovers-name">
+        </div>
+        <div class="pref-item">
           <div class="pref-text"><b data-t="threadsTitle"></b><small class="pref-path" id="pref-threads"></small><small data-t="measureHint"></small></div>
           <div class="pref-buttons"><button id="pref-measure" data-t="measurePc"></button><button id="pref-threads-all" class="quiet" data-t="threadsUseAll"></button></div>
         </div>
@@ -255,6 +259,7 @@
           <div class="file"></div>
           <div class="sizes" hidden></div>
           <div class="where" hidden></div>
+          <div class="complete-line" hidden></div>
           <div class="repair-line" hidden></div>
           <div class="list-warn" hidden></div>
           <dl class="facts" hidden></dl>

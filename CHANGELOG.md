@@ -46,6 +46,47 @@ All notable changes to MaxPack are listed here. The format follows
   - **Settings › FPKG passcode**: for packages made with a passcode other than the default. A package
     that needs one says so in its row, in the 11 languages, and is read again once it is given.
   - The window needs an engine that says `fpkg` and `passcode` in `--capabilities`.
+- **Whether a dump is complete** (engine and window). A PS5 package lists the files of its image in
+  `sce_sys/playgo-hash-table.dat` (one hash per path, no names), and a dump that still carries it is
+  checked against it: how many files the original package has, how many the dump has, how many are
+  missing, what the dump has that the package does not (OS junk and the package's own entries in
+  `sce_sys/` aside) and, of that, what dump tools leave behind (a `decrypted/` folder at the root,
+  `*.auth_info` files, `entitlements.txt` and `entitlement_key.dat`). `sce_sys/about/right.sprx` is
+  not counted: package builders add their own. A dump without the table, or with one of another
+  format, is not checked, and says why.
+  - `analyze` (text and JSON), `info --json` and `verify` (text and its JSON result) gain
+    `completeness`: `checkable`, `reason`, `listed`, `present`, `missing`, `extra_count`,
+    `extra_bytes`, `leftover_count`, `leftover_bytes`, and the first extra paths (`extra_paths`, in
+    `analyze --json` and `info --json`). A `.p5z` is checked against the table it carries, a compressed
+    folder with the files in its packs. `pack` warns when files are missing and packs all the same;
+    its JSON result has the counts too. No change to the `.p5z` format.
+  - `pack --leave-out-leftovers` leaves out what dump tools leave behind, only when the table proves it
+    is not the game's: without one, everything stays and `pack` says so. `verify --against` does not
+    count what was left out as missing.
+  - **The window**: a Compress row warns "3 files of the original game are missing" before anything is
+    packed; Details (and the card of a `.p5z`) says whether the game is complete, what is not in the
+    original package and what dump tools left, with its size; Verify says it under each `.p5z` and
+    compressed folder it can check. Settings › While working has **Leave out what dump tools leave
+    behind** (on): what Compress does with them when the table proves they are not the game's. **Copy
+    report** has the counts, never a name or a path. In the 11 languages.
+  - **Without that table, the dump tool's list.** Most dumps do not carry the table; most carry the
+    list their dump tool wrote, `ampr_emu.index` (every file it wrote, with its size). It is checked
+    instead, and said so (`source`: `playgo` or `dump_index`): it tells whether the copy has every
+    file the dump tool wrote with the size it wrote (`missing`, and the new `size_mismatch`), which
+    finds copies cut short or damaged; never that the dump is complete. What a fine dump differs from
+    its list in is not counted: info and checksum files that are not the game's (`*.nfo`, `*.sfv`, `*.diz`), the emulators the user
+    changes (`fakelib/`, `fakelib2/`, `dlc_emu.ini`), what the game writes while it runs (`Saved/`,
+    `*.log`) and the runtime's own files; on 15 real dumps it raised no false alarm
+    (12 checked, 3 without a list). A list that cannot be trusted is not used, and the reason says why
+    (`dump_index_damaged`, `dump_index_mismatch` for another game or version, `dump_index_packed`).
+    The table wins when there is one, and only the table proves leftovers are not the game's. A
+    `.p5z` keeps the dump tool's list, and says the same as its dump; a compressed folder has
+    MaxPack's own list, which is not used. The window says "All 95 files the dump tool wrote are
+    here" or "Damaged copy: 2 files the dump tool wrote are missing", never "complete", in Compress,
+    Details, Verify and Copy report.
+  - The hash and the table's layout are adapted from
+    [ProsperoPkgTool](https://github.com/pearlxcore/ProsperoPkgTool) by pearlxcore (MIT); its notice is
+    in `src/core/mp_playgo.c` and in `THIRD_PARTY_NOTICES`.
 
 ## [1.0.5] - 2026-11-25
 

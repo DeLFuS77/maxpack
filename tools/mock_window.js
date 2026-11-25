@@ -33,6 +33,12 @@
 //   ?images=1           the images of ShadowMountPlus and the PS5 packages in Details (.exfat, .ffpkg,
 //                       .ffpfsc, .pkg), to see their cards; one more .pkg needs another passcode until
 //                       Settings › FPKG passcode has one
+//   ?complete=1         Details with what each game says against the list of the original package's files: a
+//                       complete dump, one that lacks three files (Compress warns of it too), one without a
+//                       list, one whose list proves its leftovers are not the game's, and a .p5z of each kind;
+//                       and, without that list, against the dump tool's (ampr_emu.index): a copy with every
+//                       file it wrote, and a damaged one (Compress warns of it too); and a .pkg, complete
+//                       against the table its builder made
 // Start runs a queue made up here: each game packs and verifies in a few seconds (and gets its repair
 // data), the games added meanwhile join it, and the card of the end shows; in Verify the damaged
 // .p5z fails, and Repair and Add repair data run their own steps. Compare levels and Measure this PC tell made-up
@@ -57,7 +63,7 @@ const mock = `
   const templates = ["{title} [{id}]", "{title} [{id}] [v{version}]", "{title} [{id}] [{region}] [v{version}]"];
   const settings = { Lang: query.get("lang") || "", Theme: "system", Runtime: query.get("runtime") || "", LastDest: "E:\\\\", Mode: query.get("mode") === "folder" ? "folder" : "p5z", Level: 19,
     DeleteOriginals: !!query.get("delete"), DeletePermanently: query.get("delete") === "good", LowPriority: !!query.get("low"), NameTemplate: query.get("template") || templates[0],
-    Threads: Number(query.get("threads")) || 0, RepairData: !!query.get("repair"), RepairPercent: Number(query.get("percent")) || 5 };
+    Threads: Number(query.get("threads")) || 0, RepairData: !!query.get("repair"), RepairPercent: Number(query.get("percent")) || 5, KeepLeftovers: false };
   if (query.get("nodest")) settings.LastDest = "";
   const builtIn = query.get("nobuiltin") ? {} : { builtInRuntime: "C:\\\\Users\\\\user\\\\AppData\\\\Roaming\\\\MaxPack\\\\ampr-emu-ng\\\\libSceAmpr.sprx", builtInRuntimeVersion: "v0.5.1-maxpack.1" };
   const games = {
@@ -81,6 +87,23 @@ const mock = `
   games[locked] = { TitleID: "PPSA10008", Name: "Ember Reach", Version: "01.000.000", ContentID: "UP0008-PPSA10008_00-EMBERREACH000000", Kind: "fpkg", Compressed: false,
     OriginalSize: 9300000000, HasZstdRuntime: false, Icon: "", Packed: false, ImageSize: 9500000000 };
   const lockedError = () => new Error("info of " + locked + ": exit status 1: " + locked + ": this package was made with another passcode; give it with --passcode");
+  // what the engine says of each against the list of the original package's files it carries
+  // (sce_sys/playgo-hash-table.dat): complete, three files missing, no list, leftovers it proves
+  // are not the game's
+  const counts = (listed, missing, extra, extraBytes, left, leftBytes) => ({ Checkable: true, Reason: "", Source: "playgo", Listed: listed, Present: listed - missing, Missing: missing, SizeMismatch: 0,
+    ExtraCount: extra, ExtraBytes: extraBytes, LeftoverCount: left, LeftoverBytes: leftBytes });
+  const noList = (left, leftBytes) => ({ Checkable: false, Reason: "no_table", Source: "", Listed: 0, Present: 0, Missing: 0, SizeMismatch: 0, ExtraCount: 0, ExtraBytes: 0, LeftoverCount: left, LeftoverBytes: leftBytes });
+  // against the dump tool's list: every file it wrote, or a copy that lacks some and has one cut short
+  const dumpList = (listed, missing, other, extra, extraBytes) => ({ Checkable: true, Reason: "", Source: "dump_index", Listed: listed, Present: listed - missing - other,
+    Missing: missing, SizeMismatch: other, ExtraCount: extra, ExtraBytes: extraBytes, LeftoverCount: 0, LeftoverBytes: 0 });
+  games["D:\\\\dumps\\\\Starfall.Odyssey-PPSA10001"].Completeness = counts(2165, 0, 0, 0, 0, 0);
+  games["D:\\\\dumps\\\\Iron.Harbor-PPSA10002.exfat"].Completeness = counts(5120, 3, 2, 41000, 0, 0);
+  games["D:\\\\dumps\\\\Neon Meridian-PPSA10003"].Completeness = noList(12, 3300000000);
+  games["D:\\\\more\\\\Lost Signal-PPSA10004"].Completeness = counts(1880, 0, 15, 2900000000, 14, 2890000000);
+  games["D:\\\\dumps\\\\Quiet Tide [PPSA10005].ffpfsc"].Completeness = dumpList(955, 0, 0, 1, 3759);
+  games["D:\\\\more\\\\Glass Orbit.ffpkg"].Completeness = dumpList(2023, 2, 1, 0, 0);
+  // a package carries the table its builder made of its own files
+  games["D:\\\\pkgs\\\\Copper Vale-PPSA10007.pkg"].Completeness = counts(3410, 0, 0, 0, 0, 0);
   const first = Object.keys(games).slice(0, 4);
   const imagesShown = Object.keys(games).filter(file => /\\.(exfat|ffpkg|ffpfs|ffpfsc|pkg)$/i.test(file));
   // the .p5z of Verify (?verify=1): good, damaged, and one with the set of another file next to it
@@ -91,6 +114,7 @@ const mock = `
   repairs[good] = ownSet(3618000000);
   repairs[damaged] = ownSet(74400000000);
   repairs[foreign] = { state: "other", percent: 0, blocks: 0, blockSize: 0, capacity: 0, bytes: 0 };
+  const listOf = { [good]: counts(2165, 0, 0, 0, 0, 0), [damaged]: counts(5120, 3, 2, 41000, 0, 0), [foreign]: noList(0, 0) };
   let broken = true;
   // a .p5z, for Details, Verify and Decompress
   const p5z = "E:\\\\Starfall Odyssey [PPSA10001].p5z";
@@ -100,6 +124,10 @@ const mock = `
     InstallSize: 9100000000, P5zSize: 74400000000, Files: 5120, PackedFiles: 5011, Volumes: 19, HasRuntime: true };
   games[foreign] = { TitleID: "PPSA10003", Name: "Neon Meridian", Version: "01.000.000", ContentID: "UP0003-PPSA10003_00-NEONMERIDIAN0000", Kind: "p5z", OriginalSize: 133590000000, HasZstdRuntime: true, Icon: "", Packed: true,
     InstallSize: 6400000000, P5zSize: 61000000000, Files: 3811, PackedFiles: 3770, Volumes: 15, HasRuntime: true };
+  for (const file of [good, damaged, foreign]) games[file].Completeness = listOf[file];
+  const completeShown = ["D:\\\\dumps\\\\Starfall.Odyssey-PPSA10001", "D:\\\\dumps\\\\Iron.Harbor-PPSA10002.exfat", "D:\\\\dumps\\\\Neon Meridian-PPSA10003",
+    "D:\\\\more\\\\Lost Signal-PPSA10004", "D:\\\\dumps\\\\Quiet Tide [PPSA10005].ffpfsc", "D:\\\\more\\\\Glass Orbit.ffpkg",
+    "D:\\\\pkgs\\\\Copper Vale-PPSA10007.pkg", good, damaged, foreign];
   // MaxPack in the Explorer: each place "" (not there), "here" or "moved"
   const listed = name => (query.get(name) || "").split(",");
   const explorer = { available: query.get("explorer") !== "none", menu: "", sendTo: "", files: "", filesOther: !!query.get("other") };
@@ -231,6 +259,7 @@ const mock = `
     SetSettings: async next => { Object.assign(settings, next); if (!validTemplate(settings.NameTemplate)) settings.NameTemplate = templates[0]; },
     PendingFiles: async () => (query.get("opened") ? { compress: [], verify: [], details: [p5z], show: "details" } : query.get("empty") ? null
       : query.get("images") ? { compress: first, verify: [], details: imagesShown, show: "details" }
+      : query.get("complete") ? { compress: first.concat(["D:\\\\more\\\\Glass Orbit.ffpkg"]), verify: [good, damaged, foreign], details: completeShown, show: "details" }
       : { compress: first, verify: query.get("verify") ? [good, damaged, foreign] : [], details: query.get("verify") ? [damaged] : [], show: query.get("verify") ? "verify" : "" }),
     RepairInfo: async file => repairs[file] || { state: /\\.p5z$/i.test(file) ? "none" : "", percent: 0, blocks: 0, blockSize: 0, capacity: 0, bytes: 0 },
     Expand: async paths => paths,

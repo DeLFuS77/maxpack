@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Generates THIRD_PARTY_NOTICES: zstd and zlib (from the submodules), the ampr-emu-ng inside the
-window (gui/bundled/ampr-emu-ng), the Go modules in gui/go.mod and par2cmdline-turbo (the submodule
-built as maxpack-par2).
+"""Generates THIRD_PARTY_NOTICES: zstd and zlib (from the submodules), the code of ProsperoPkgTool the
+engine adapts (its license, which the header of src/core/mp_playgo.c also keeps), the ampr-emu-ng
+inside the window (gui/bundled/ampr-emu-ng), the Go modules in gui/go.mod and par2cmdline-turbo (the
+submodule built as maxpack-par2).
 
   python tools/gen_third_party.py            # rewrites THIRD_PARTY_NOTICES
   python tools/gen_third_party.py --check    # fails if it does not match what would come out now
@@ -108,8 +109,8 @@ def license_text(folder):
     raise SystemExit(f"no license in {folder}")
 
 
-# ProsperoPkgTool's licence (its LICENSE at the commit read, 2026): MaxPack has no copy of its code to
-# read it from, only C ported from it.
+# ProsperoPkgTool's licence (its LICENSE at the commit read, 2026). The header of src/core/mp_playgo.c
+# keeps the same text; prospero() checks that they agree.
 PROSPERO_MIT = """MIT License
 
 Copyright (c) 2026 pearlxcore
@@ -183,15 +184,7 @@ def build():
     b = zh.index("*/", a)
     w("\n".join(ln.strip() for ln in zh[a:b].splitlines()).strip("\n"))
     w("")
-    w("ProsperoPkgTool - https://github.com/pearlxcore/ProsperoPkgTool")
-    w("  License: MIT. The engine's reading of PS5 debug packages (src/core/mp_fpkg.c, mp_naps.c and")
-    w("  mp_source_fpkg.c: the package header, the CNT, the key derivation, the outer PFS, the block map")
-    w("  of the inner image and its PFS) and its Kraken decoder (src/core/mp_kraken.c) are C ported from")
-    w("  its C# code; so is the builder of the test packages (tests/tools/fpkg_build.py and fpkg_kraken.py),")
-    w("  which is not in the packages. Alembic (https://github.com/fthdgn-gh/Alembic, GPL-3.0-or-later),")
-    w("  which ports the same code, was read as a second reference.")
-    w("")
-    w(PROSPERO_MIT)
+    prospero(w)
     w("")
     w("")
     w("2. PC window (MaxPack.exe / maxpack)")
@@ -236,6 +229,30 @@ def build():
     par2(w)
     w("")
     return "\n".join(o)
+
+
+def prospero(w):
+    """ProsperoPkgTool, whose code the engine adapts twice: the reading of PS5 debug packages and the
+    PS5 flat path table hash with the layout of playgo-hash-table.dat (src/core/mp_playgo.c, whose
+    header keeps the license). The license is written once, and the copy in mp_playgo.c must be the
+    same text."""
+    src = read(os.path.join(ROOT, "src", "core", "mp_playgo.c"))
+    start, end = src.index("// MIT License"), src.index("// (end of the license of ProsperoPkgTool)")
+    text = "\n".join(ln[3:] if ln.startswith("// ") else ln[2:] for ln in src[start:end].splitlines()).strip("\n")
+    if text != PROSPERO_MIT:
+        raise SystemExit("src/core/mp_playgo.c's copy of ProsperoPkgTool's license is not PROSPERO_MIT")
+    w("ProsperoPkgTool - https://github.com/pearlxcore/ProsperoPkgTool")
+    w("  License: MIT. The engine's reading of PS5 debug packages (src/core/mp_fpkg.c, mp_naps.c and")
+    w("  mp_source_fpkg.c: the package header, the CNT, the key derivation, the outer PFS, the block map")
+    w("  of the inner image and its PFS) and its Kraken decoder (src/core/mp_kraken.c) are C ported from")
+    w("  its C# code; so is the builder of the test packages (tests/tools/fpkg_build.py and fpkg_kraken.py),")
+    w("  which is not in the packages. Alembic (https://github.com/fthdgn-gh/Alembic, GPL-3.0-or-later),")
+    w("  which ports the same code, was read as a second reference. The PS5 flat path table hash")
+    w("  (FltPathHash) and the layout of sce_sys/playgo-hash-table.dat (ProsperoPlayGoHashTableBuilder) are")
+    w("  adapted in src/core/mp_playgo.c, which MaxPack uses to tell whether a dump has every file of the")
+    w("  original package.")
+    w("")
+    w(PROSPERO_MIT)
 
 
 def par2(w):

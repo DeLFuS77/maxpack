@@ -827,5 +827,134 @@ for name, words in (("retail.pkg", "retail packages need keys this tool does not
     rc, _, err = run("pack", os.path.join(FX, name), "-o", dst, "--p5z", "--threads", "2")
     check("pack_refused_" + name, rc == 1 and words in err and not os.path.exists(dst), "rc=%d %s" % (rc, err[-300:]))
 
+# Completeness: the dump against the list of the original package's files it carries
+# (sce_sys/playgo-hash-table.dat), in analyze, info --json, pack and verify; the fixtures of make_playgo.py.
+PG = os.path.join(FX, "playgo")
+FIELDS = {"checkable", "reason", "listed", "present", "missing", "extra_count", "extra_bytes", "leftover_count",
+          "leftover_bytes"}
+
+
+def info_complete(path):
+    rc, so, err = run("info", "--json", path)
+    try:
+        return rc, json.loads(so).get("completeness"), err
+    except Exception:  # noqa: BLE001
+        return rc, None, so + err
+
+
+rc, c, err = info_complete(os.path.join(PG, "complete"))
+check("info_json_complete", rc == 0 and c is not None and FIELDS <= set(c) and c["checkable"] is True
+      and c["reason"] == "" and c["listed"] == 8 and c["present"] == 8 and c["missing"] == 0 and c["extra_count"] == 0
+      and c["extra_paths"] == [], str(c) + err)
+rc, c, err = info_complete(os.path.join(PG, "missing"))
+check("info_json_missing", rc == 0 and c and c["checkable"] and c["missing"] == 2 and c["present"] == 6, str(c) + err)
+rc, c, err = info_complete(os.path.join(PG, "missing.ffpkg"))
+check("info_json_missing_ufs2", rc == 0 and c and c["checkable"] and c["missing"] == 2, str(c) + err)
+rc, c, err = info_complete(os.path.join(PG, "leftovers"))
+check("info_json_leftovers", rc == 0 and c and c["missing"] == 0 and c["extra_count"] == 4 and c["leftover_count"] == 3
+      and c["leftover_bytes"] == 7000 + 4000 + 64 and c["extra_paths"][0] == "decrypted/eboot.bin"
+      and "Thumbs.db" not in c["extra_paths"], str(c) + err)
+for name, reason in (("notable", "no_table"), ("badtable", "damaged"), ("alien", "unknown_format")):
+    rc, c, err = info_complete(os.path.join(PG, name))
+    check("info_json_" + name, rc == 0 and c and c["checkable"] is False and c["reason"] == reason
+          and c["missing"] == 0, str(c) + err)
+rc, c, err = info_complete(BASIC)
+check("info_json_completeness_without_table", rc == 0 and c and c["checkable"] is False and c["reason"] == "no_table",
+      str(c) + err)
+# analyze: a line of text, and the object in its JSON
+js4 = os.path.join(TMP, "missing.json")
+rc, out, err = run("analyze", os.path.join(PG, "missing"), "--no-dedup", "--no-transport", "--json", js4)
+try:
+    with open(js4, encoding="utf-8") as f:
+        rep = json.load(f)
+    check("analyze_json_completeness", rc == 0 and rep["completeness"]["missing"] == 2
+          and rep["completeness"]["listed"] == 8 and "extra_paths" in rep["completeness"], str(rep.get("completeness")))
+except Exception as ex:  # noqa: BLE001
+    check("analyze_json_completeness", False, repr(ex) + err[-300:])
+check("analyze_text_completeness", "Completeness: incomplete: 2 of the 8 files of the original package are missing" in out,
+      out[:600])
+rc, out, err = run("analyze", os.path.join(PG, "complete"), "--no-dedup", "--no-transport")
+check("analyze_text_complete", rc == 0 and "Completeness: complete: all 8 files of the original package" in out, out[:600])
+rc, out, err = run("analyze", os.path.join(PG, "notable"), "--no-dedup", "--no-transport")
+check("analyze_text_no_table", rc == 0 and "Completeness: not checked: it has no list" in out
+      and "1 file (7.00 KB) looks like what dump tools leave behind" in out, out[:800])
+# pack warns of what is missing and never stops for it
+mp5 = os.path.join(TMP, "pg_missing.p5z")
+if os.path.exists(mp5):
+    os.remove(mp5)
+rc, so, err = run("pack", os.path.join(PG, "missing"), "-o", mp5, "--p5z", "--level", "3", "--threads", "2",
+                  "--progress", "json")
+res = last_result(json_lines(so))
+check("pack_warns_missing", rc == 0 and os.path.exists(mp5)
+      and "warning: the dump is incomplete: 2 of the 8 files of the original package are missing" in err, err[-500:])
+check("pack_result_completeness", res.get("completeness", {}).get("missing") == 2
+      and "extra_paths" not in res.get("completeness", {}) and res.get("left_out_files") == 0, str(res))
+# verify of a .p5z checks against the table it carries
+rc, so, err = run("verify", mp5)
+check("verify_p5z_incomplete", rc == 0 and "incomplete: 2 of the 8 files of the original package are missing" in so, so + err)
+rc, so, err = run("verify", mp5, "--progress", "json")
+res = last_result(json_lines(so))
+check("verify_result_completeness", rc == 0 and res.get("ok") is True and res.get("completeness", {}).get("missing") == 2,
+      str(res))
+# --leave-out-leftovers: out when the table proves it, kept (and said) when there is none
+lp5 = os.path.join(TMP, "pg_left.p5z")
+if os.path.exists(lp5):
+    os.remove(lp5)
+rc, so, err = run("pack", os.path.join(PG, "leftovers"), "-o", lp5, "--p5z", "--level", "3", "--threads", "2",
+                  "--leave-out-leftovers", "--progress", "json")
+res = last_result(json_lines(so))
+check("pack_leave_out_leftovers", rc == 0 and res.get("left_out_files") == 3 and res.get("left_out_bytes") == 11064
+      and "left out: 3 files dump tools left behind" in err, str(res) + err[-300:])
+rc, so, err = run("verify", lp5)
+check("verify_p5z_complete", rc == 0 and "complete: all 8 files of the original package" in so
+      and "1 file is not in the original package (120 B)" in so, so + err)
+np5 = os.path.join(TMP, "pg_notable.p5z")
+if os.path.exists(np5):
+    os.remove(np5)
+rc, so, err = run("pack", os.path.join(PG, "notable"), "-o", np5, "--p5z", "--level", "3", "--threads", "2",
+                  "--leave-out-leftovers")
+check("pack_keeps_unproven_leftovers", rc == 0 and "note: kept: 1 file" in err and "playgo-hash-table.dat" in err,
+      err[-400:])
+_, c, _ = info_complete(np5)
+check("info_json_p5z_no_table", c and c["checkable"] is False and c["leftover_count"] == 1, str(c))
+rc, so, _ = run("--help")
+check("help_leave_out_leftovers", "--leave-out-leftovers" in so, so[-1500:])
+rc, so, _ = run("--capabilities")
+check("capabilities_completeness", json.loads(so).get("completeness") is True, so)
+
+# Without a usable table, the dump tool's own list (ampr_emu.index): whether the copy has every file it
+# wrote, with its size; never "complete". The fixtures of make_playgo.py in dumpindex/.
+DI = os.path.join(FX, "dumpindex")
+rc, c, err = info_complete(os.path.join(DI, "ok"))
+check("info_json_dump_index_ok", rc == 0 and c and c["checkable"] is True and c["source"] == "dump_index"
+      and c["listed"] == 13 and c["present"] == 13 and c["missing"] == 0 and c["size_mismatch"] == 0
+      and c["extra_count"] == 2, str(c) + err)
+rc, c, err = info_complete(os.path.join(DI, "broken"))
+check("info_json_dump_index_broken", rc == 0 and c and c["source"] == "dump_index" and c["missing"] == 2
+      and c["size_mismatch"] == 1 and c["present"] == 10, str(c) + err)
+for name, reason in (("foreign", "dump_index_mismatch"), ("damaged", "dump_index_damaged"), ("packed", "dump_index_packed")):
+    rc, c, err = info_complete(os.path.join(DI, name))
+    check("info_json_dump_index_" + name, rc == 0 and c and c["checkable"] is False and c["reason"] == reason
+          and c["source"] == "", str(c) + err)
+rc, c, err = info_complete(os.path.join(DI, "both"))
+check("info_json_table_wins", rc == 0 and c and c["source"] == "playgo" and c["missing"] == 0, str(c) + err)
+rc, c, err = info_complete(os.path.join(PG, "complete"))
+check("info_json_source_playgo", c and c["source"] == "playgo" and c["size_mismatch"] == 0, str(c))
+rc, out, err = run("analyze", os.path.join(DI, "ok"), "--no-dedup", "--no-transport")
+check("analyze_text_dump_index", rc == 0 and "Completeness: all 13 files the dump tool wrote are here (its list does not "
+      "prove it got every file of the game)" in out and "Completeness: complete" not in out, out[:700])
+bp5 = os.path.join(TMP, "di_broken.p5z")
+if os.path.exists(bp5):
+    os.remove(bp5)
+rc, so, err = run("pack", os.path.join(DI, "broken"), "-o", bp5, "--p5z", "--level", "3", "--threads", "2",
+                  "--leave-out-leftovers", "--progress", "json")
+res = last_result(json_lines(so))
+check("pack_warns_damaged_copy", rc == 0 and "warning: damaged copy: 2 of the 13 files the dump tool wrote are missing, "
+      "1 has another size: what was made of it lacks them too" in err, err[-600:])
+check("pack_dump_index_keeps_leftovers", res.get("left_out_files") == 0 and res.get("completeness", {}).get("source") == "dump_index"
+      and "note: kept: 1 file" in err, str(res) + err[-300:])
+rc, so, err = run("verify", bp5)
+check("verify_p5z_dump_index", rc == 0 and "damaged copy: 2 of the 13 files the dump tool wrote are missing" in so, so + err)
+
 print("test_cli: %d failures" % len(failures))
 sys.exit(1 if failures else 0)

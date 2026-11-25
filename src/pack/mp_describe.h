@@ -8,7 +8,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "mp_complete.h"
 #include "mp_err.h"
+#include "mp_p5z.h"
 
 typedef struct {
     char kind[8];   // "p5z", "folder", "exfat", "ufs2" (.ffpkg), "pfs" (.ffpfs), "pfsc" (.ffpfsc)
@@ -28,6 +30,15 @@ typedef struct {
 
 // 0 if it could describe it; -1 with the reason in e.
 int mp_describe_path(const char *path, mp_describe *d, mp_err *e);
+// The same and, when c is not NULL, whether the game is complete against the list of the original
+// package's files it carries (mp_complete.h); the caller frees c with mp_complete_free. A .p5z checks
+// its manifest (the files of the dump it was made of), a compressed folder its loose files and the
+// ones in its packs.
+int mp_describe_path_ex(const char *path, mp_describe *d, mp_complete *c, mp_err *e);
+// Only whether it is complete (what verify says after it checks).
+int mp_describe_complete(const char *path, mp_complete *c, mp_err *e);
+// Whether the dump a .p5z was made of is complete, from the table the .p5z carries.
+int mp_complete_p5z(mp_p5z *p, mp_complete *c, mp_err *e);
 // sce_sys/icon0.png: 0 with the bytes in *png (allocated with malloc; the caller frees them);
 // -1 if it has no icon or it could not be read (e says why).
 int mp_describe_icon(const char *path, uint8_t **png, size_t *len, mp_err *e);

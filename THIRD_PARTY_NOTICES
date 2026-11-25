@@ -86,7 +86,10 @@ ProsperoPkgTool - https://github.com/pearlxcore/ProsperoPkgTool
   of the inner image and its PFS) and its Kraken decoder (src/core/mp_kraken.c) are C ported from
   its C# code; so is the builder of the test packages (tests/tools/fpkg_build.py and fpkg_kraken.py),
   which is not in the packages. Alembic (https://github.com/fthdgn-gh/Alembic, GPL-3.0-or-later),
-  which ports the same code, was read as a second reference.
+  which ports the same code, was read as a second reference. The PS5 flat path table hash
+  (FltPathHash) and the layout of sce_sys/playgo-hash-table.dat (ProsperoPlayGoHashTableBuilder) are
+  adapted in src/core/mp_playgo.c, which MaxPack uses to tell whether a dump has every file of the
+  original package.
 
 MIT License
 

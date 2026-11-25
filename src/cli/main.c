@@ -17,6 +17,7 @@
 
 #include "mp_analyze.h"
 #include "mp_bench.h"
+#include "mp_complete.h"
 #include "mp_describe.h"
 #include "mp_levels.h"
 #include "mp_p5z.h"
@@ -64,6 +65,13 @@ static void usage(FILE *out) {
             "  --max-file-size N  with --p5z: stop and delete the .p5z if it goes over N bytes\n"
             "  --volume-limit N   for testing: volumes of at most N bytes (262208 to 4294901760,\n"
             "                     default 4294901760), to get several from a small game\n"
+            "  --leave-out-leftovers  leave out what dump tools leave behind (decrypted/, *.auth_info)\n"
+            "                     when the game's sce_sys/playgo-hash-table.dat proves it is not the\n"
+            "                     game's; without one, everything stays\n"
+            "\n"
+            "analyze, info --json, pack and verify tell whether the dump is complete against the list\n"
+            "of the original package's files it carries (sce_sys/playgo-hash-table.dat) or, without it,\n"
+            "whether the copy has every file the dump tool wrote (its ampr_emu.index).\n"
             "\n"
             "Options for pack, unpack, verify, analyze --levels and measure (for a front end):\n"
             "  --progress json    one JSON line per event on stdout (the text stays on stderr)\n"
@@ -735,6 +743,45 @@ static int cmd_pack(int argc, char **argv) {
     return finish_cmd(run_pack(argc, argv));
 }
 
+// What pack says of a dump that is not complete, or of a copy of it that is not whole, on stderr:
+// never a reason not to pack.
+static void complete_warnings(const mp_complete *c, int leave_out) {
+    char line[256], size[32];
+    if (c->checkable && (c->missing || c->size_mismatch)) {
+        mp_complete_summary(c, line, sizeof line);
+        int dump_tool = c->source && !strcmp(c->source, "dump_index");
+        fprintf(stderr, "warning: %s%s: what was made of it lacks them too\n", dump_tool ? "" : "the dump is ", line);
+    }
+    if (!mp_complete_proves_leftovers(c) && c->leftover_count && leave_out) {
+        size_text(size, sizeof size, c->leftover_bytes);
+        int one = c->leftover_count == 1;
+        fprintf(stderr, "note: kept: %llu %s (%s) that look%s like what dump tools leave behind: only the game's "
+                        "sce_sys/playgo-hash-table.dat proves %s not the game's (--leave-out-leftovers)\n",
+                (unsigned long long)c->leftover_count, one ? "file" : "files", size, one ? "s" : "", one ? "it is" : "they are");
+    }
+}
+
+// The completeness of what was verified, as a line for people (stdout, or stderr with --progress
+// json) and the object for the "result" line (malloc; NULL when it could not be told).
+static char *verify_completeness(const char *target, FILE *hum) {
+    mp_complete c;
+    mp_err e = {{0}};
+    if (mp_describe_complete(target, &c, &e) != 0) return NULL;
+    char line[256];
+    mp_complete_summary(&c, line, sizeof line);
+    fprintf(hum, "%s\n", line);
+    mp_complete_extra_line(&c, line, sizeof line);
+    if (line[0]) fprintf(hum, "  %s\n", line);
+    mp_jbuf b = {0};
+    mp_complete_json(&c, 0, &b);
+    mp_complete_free(&c);
+    if (b.oom) {
+        mp_jbuf_free(&b);
+        return NULL;
+    }
+    return b.p;
+}
+
 static int run_pack(int argc, char **argv) {
     mp_pack_opts o;
     mp_pack_opts_default(&o);
@@ -757,6 +804,8 @@ static int run_pack(int argc, char **argv) {
             p5z = 0;
         } else if (!strcmp(a, "--p5z")) {
             p5z = 1;
+        } else if (!strcmp(a, "--leave-out-leftovers")) {
+            o.leave_out_leftovers = 1;
         } else if (!strcmp(a, "-o") || !strcmp(a, "--level") || !strcmp(a, "--threads") ||
                    !strcmp(a, "--runtime") || !strcmp(a, "--keep-loose") || !strcmp(a, "--max-file-size") ||
                    !strcmp(a, "--volume-limit")) {
@@ -875,17 +924,29 @@ static int run_pack(int argc, char **argv) {
         print_size(hum, psize);
         fprintf(hum, "\n");
     }
+    if (r.left_out_files) {
+        fprintf(hum, "  left out: %llu files dump tools left behind, ", (unsigned long long)r.left_out_files);
+        print_size(hum, r.left_out_bytes);
+        fprintf(hum, "\n");
+    }
     if (g_json) {
-        char extra[256];
+        char extra[512];
         snprintf(extra, sizeof extra,
                  ",\"original_size\":%llu,\"output_size\":%llu,\"loose_bytes\":%llu,\"packed_bytes\":%llu,"
-                 "\"stored_bytes\":%llu,\"volumes\":%llu,\"runtime_without_zstd\":%s",
+                 "\"stored_bytes\":%llu,\"volumes\":%llu,\"runtime_without_zstd\":%s,\"left_out_files\":%llu,"
+                 "\"left_out_bytes\":%llu,\"completeness\":",
                  (unsigned long long)(r.loose_bytes + r.packed_bytes),
                  (unsigned long long)(p5z ? psize : folder_bytes(dst)), (unsigned long long)r.loose_bytes,
                  (unsigned long long)r.packed_bytes, (unsigned long long)r.stored_bytes,
-                 (unsigned long long)r.volumes, r.runtime_without_zstd ? "true" : "false");
-        json_result(1, NULL, extra);
+                 (unsigned long long)r.volumes, r.runtime_without_zstd ? "true" : "false",
+                 (unsigned long long)r.left_out_files, (unsigned long long)r.left_out_bytes);
+        mp_jbuf b = {0};
+        mp_jbuf_raw(&b, extra);
+        mp_complete_json(&r.complete, 0, &b);
+        json_result(1, NULL, b.p && !b.oom ? b.p : extra);
+        mp_jbuf_free(&b);
     }
+    complete_warnings(&r.complete, o.leave_out_leftovers);
     if (r.runtime_without_zstd)
         fprintf(stderr, "warning: the fakelib/libSceAmpr.sprx runtime does not seem to read zstd packs: use "
                         "ampr-emu-ng's libSceAmpr.sprx (--runtime)\n");
@@ -936,7 +997,8 @@ static void print_json_string(const char *s) {
 static int cmd_info_json(const char *path) {
     mp_err e = {{0}};
     mp_describe d;
-    if (mp_describe_path(path, &d, &e) != 0) {
+    mp_complete c;
+    if (mp_describe_path_ex(path, &d, &c, &e) != 0) {
         fprintf(stderr, "error: %s\n", e.msg);
         return 1;
     }
@@ -955,8 +1017,16 @@ static int cmd_info_json(const char *path) {
     if (!strcmp(d.kind, "p5z")) printf(",\"loose_bytes\":%llu", (unsigned long long)d.loose_bytes);
     printf(",\"packed_files\":%llu,\"volumes\":%llu", (unsigned long long)d.packed_files,
            (unsigned long long)d.volumes);
-    printf(",\"has_runtime\":%s,\"has_zstd_runtime\":%s,\"packed\":%s}\n", d.has_runtime ? "true" : "false",
+    printf(",\"has_runtime\":%s,\"has_zstd_runtime\":%s,\"packed\":%s", d.has_runtime ? "true" : "false",
            d.has_zstd_runtime ? "true" : "false", d.packed ? "true" : "false");
+    // whether the game is complete against the list of the original package's files (with the
+    // first extra paths)
+    mp_jbuf b = {0};
+    mp_complete_json(&c, 1, &b);
+    mp_complete_free(&c);
+    if (b.p && !b.oom) printf(",\"completeness\":%s", b.p);
+    mp_jbuf_free(&b);
+    printf("}\n");
     fflush(stdout);
     return 0;
 }
@@ -1162,12 +1232,22 @@ static int run_verify(int argc, char **argv) {
     FILE *hum = g_json ? stderr : stdout;
     fprintf(hum, "verify: %llu OK, %llu failed (%.0f s)\n", (unsigned long long)r.files_ok,
             (unsigned long long)r.files_bad, (double)(mp_now_ns() - t0) / 1e9);
+    // the dump it was made of, against the list of the original package it carries
+    char *complete = verify_completeness(target, hum);
     if (g_json) {
         char extra[96];
         snprintf(extra, sizeof extra, ",\"files_ok\":%llu,\"files_bad\":%llu", (unsigned long long)r.files_ok,
                  (unsigned long long)r.files_bad);
-        json_result(r.files_bad == 0, NULL, extra);
+        mp_jbuf b = {0};
+        mp_jbuf_raw(&b, extra);
+        if (complete) {
+            mp_jbuf_raw(&b, ",\"completeness\":");
+            mp_jbuf_raw(&b, complete);
+        }
+        json_result(r.files_bad == 0, NULL, b.p && !b.oom ? b.p : extra);
+        mp_jbuf_free(&b);
     }
+    free(complete);
     return r.files_bad ? 1 : 0;
 }
 
@@ -1329,7 +1409,7 @@ int main(int argc, char **argv) {
         // what the window needs from this version of the engine
         printf("{\"progress_json\":true,\"control_stdin\":true,\"max_file_size\":true,\"info_json\":true,"
                "\"icon\":true,\"packs\":true,\"content_id\":true,\"levels\":true,\"measure\":true,"
-               "\"images\":true,\"fpkg\":true,\"passcode\":true}\n");
+               "\"images\":true,\"fpkg\":true,\"passcode\":true,\"completeness\":true}\n");
         return 0;
     }
     if (argc >= 2 && (!strcmp(argv[1], "--help") || !strcmp(argv[1], "-h") || !strcmp(argv[1], "help"))) {

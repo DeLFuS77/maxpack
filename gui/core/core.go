@@ -33,7 +33,9 @@ var ErrClosing = errors.New("the window is closing")
 // Required is what the window needs of the engine, as `maxpack --capabilities` says it: an engine
 // that does not say one of them is of another version. "images": it reads the images ShadowMountPlus
 // mounts (.ffpkg, .ffpfs, .ffpfsc), which the window offers besides folders and .exfat.
-var Required = []string{"progress_json", "control_stdin", "max_file_size", "info_json", "icon", "packs", "content_id", "levels", "measure", "images"}
+// "completeness": info --json says whether a game has every file of the original package, and pack
+// takes --leave-out-leftovers.
+var Required = []string{"progress_json", "control_stdin", "max_file_size", "info_json", "icon", "packs", "content_id", "levels", "measure", "images", "completeness"}
 
 // Event is a line of the engine: "progress" or the final "result".
 type Event struct {

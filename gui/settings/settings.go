@@ -71,6 +71,10 @@ type Settings struct {
 	// RepairPercent of it: 1, 5 or 10, kept also while it is off
 	RepairData    bool
 	RepairPercent int
+	// KeepLeftovers keeps in what Compress makes what dump tools leave behind (a decrypted/ folder,
+	// *.auth_info); off by default, so it is left out when the game's own list of the original
+	// package's files proves it is not the game's (jobs.Options.KeepLeftovers)
+	KeepLeftovers bool
 }
 
 const fileName = "settings.json"
@@ -176,6 +180,7 @@ func Load() (Settings, error) {
 	read("Threads", &s.Threads)
 	read("RepairData", &s.RepairData)
 	read("RepairPercent", &s.RepairPercent)
+	read("KeepLeftovers", &s.KeepLeftovers)
 	return s.Normalize(), nil
 }
 

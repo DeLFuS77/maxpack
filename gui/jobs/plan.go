@@ -34,7 +34,8 @@ const fat32Max = 1<<32 - 1
 // "p5z" or an image ("exfat", "ufs2", "pfs", or "pfsc" for a PFS container); Inner, for a container,
 // the image that holds the game, and Compressed, whether reading it decompresses PFSC blocks.
 // OriginalSize is the size of the game, which for a compressed image is more than its file takes;
-// ImageSize, what the file of an image takes on disk (0 for a folder or a .p5z).
+// ImageSize, what the file of an image takes on disk (0 for a folder or a .p5z). Completeness is
+// whether it has every file of the original package, nil when the engine does not say it.
 type Item struct {
 	Path, TitleID, Name, Version, Kind string
 	Inner                              string
@@ -45,6 +46,45 @@ type Item struct {
 	HasZstdRuntime                     bool
 	Packed                             bool
 	Icon                               string
+	Completeness                       *Completeness
+}
+
+// Completeness is a game against the list of the files of the original package's image that it
+// carries (sce_sys/playgo-hash-table.dat), as the engine says it: with no list, or one it cannot
+// read, it is not Checkable and Reason says why ("no_table", "unknown_format", "damaged",
+// "unreadable"). The list has hashes, not names: Missing is a count. Extra are files of the game
+// that the list does not have (not OS junk nor the package's own entries in sce_sys/); Leftover,
+// what dump tools leave behind (a decrypted/ folder, *.auth_info): of the extra ones when it is
+// checkable, else only the files by those names, which nothing proves are not the game's. Never a
+// path: what is said of a game never names its files.
+type Completeness struct {
+	Checkable                    bool
+	Reason                       string
+	Listed, Present, Missing     uint64
+	ExtraCount, ExtraBytes       uint64
+	LeftoverCount, LeftoverBytes uint64
+}
+
+// MissingFiles is how many files of the original package the game lacks: 0 when that is not known.
+func (c *Completeness) MissingFiles() uint64 {
+	if c == nil || !c.Checkable {
+		return 0
+	}
+	return c.Missing
+}
+
+// completenessOf reads the "completeness" object of info --json (nil when there is none).
+func completenessOf(info map[string]any) *Completeness {
+	raw, ok := info["completeness"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	number := func(key string) uint64 { n, _ := raw[key].(float64); return uint64(n) }
+	checkable, _ := raw["checkable"].(bool)
+	reason, _ := raw["reason"].(string)
+	return &Completeness{Checkable: checkable, Reason: reason, Listed: number("listed"), Present: number("present"),
+		Missing: number("missing"), ExtraCount: number("extra_count"), ExtraBytes: number("extra_bytes"),
+		LeftoverCount: number("leftover_count"), LeftoverBytes: number("leftover_bytes")}
 }
 
 // Options are what the user chose for a queue.
@@ -70,6 +110,10 @@ type Options struct {
 	// (ModeP5z), or that is added to each one (ModeProtect), as a percentage of it: 1, 5 or 10; 0 is
 	// none. A folder never has any
 	Repair int
+	// KeepLeftovers keeps, when compressing, what dump tools leave behind (a decrypted/ folder,
+	// *.auth_info). Else the engine leaves it out (--leave-out-leftovers), and only when the game's
+	// own list of the original package's files proves it is not the game's: with no list, it stays
+	KeepLeftovers bool
 }
 
 // What becomes of the original of a game once its new one is checked (Options.Originals).
@@ -146,6 +190,7 @@ func FromInfo(path string, info map[string]any) Item {
 		Path: path, TitleID: text("title_id"), Name: text("name"), Version: text("version"),
 		Kind: text("kind"), Inner: text("inner"), Compressed: flag("compressed"), OriginalSize: number("original_size"),
 		HasZstdRuntime: flag("has_zstd_runtime"), Packed: flag("packed"), ContentID: text("content_id"),
+		Completeness: completenessOf(info),
 	}
 	if it.Name == "" {
 		it.Name = baseName(path)
@@ -305,6 +350,9 @@ func PlanCompress(items []Item, o Options, fs FS) []Plan {
 		}
 		if !it.HasZstdRuntime && o.Runtime != "" {
 			a = append(a, "--runtime", o.Runtime)
+		}
+		if !o.KeepLeftovers {
+			a = append(a, "--leave-out-leftovers")
 		}
 		return a
 	}

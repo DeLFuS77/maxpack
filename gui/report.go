@@ -33,8 +33,9 @@ var links = map[string]string{
 }
 
 // ReportGame is a game as the page tells it for a report: what it is (for a container, the image in
-// it, and whether the image is compressed), its sizes, and how it ended in a queue (State and
-// Detail, "" when it was not in one). Out is what the queue made, read for its volumes; it is never
+// it, and whether the image is compressed), its sizes, how it ended in a queue (State and Detail,
+// "" when it was not in one) and whether it has every file of the original package (its counts;
+// nil when the engine did not say). Out is what the queue made, read for its volumes; it is never
 // written in the report.
 type ReportGame struct {
 	Kind, Inner               string
@@ -47,6 +48,7 @@ type ReportGame struct {
 	HasZstdRuntime            bool
 	HasRuntime                bool
 	State, Detail, Out        string
+	Completeness              *jobs.Completeness
 }
 
 // ReportRequest is what a report is about: the section and mode of the games, and the games; none
@@ -63,6 +65,46 @@ func gib(bytes uint64) string {
 
 // sized is a size and its bytes.
 func sized(bytes uint64) string { return fmt.Sprintf("%s (%d bytes)", gib(bytes), bytes) }
+
+// files is a count of files: "1 file", "3 files".
+func files(n uint64) string {
+	if n == 1 {
+		return "1 file"
+	}
+	return fmt.Sprintf("%d files", n)
+}
+
+// completenessLines are what a report says of a game against the list of the original package's
+// files: whether it is complete (or why it could not be told), what is not in the package and what
+// of it dump tools left; counts and sizes only, as the list has no names.
+func completenessLines(c *jobs.Completeness) []string {
+	if c == nil {
+		return nil
+	}
+	var lines []string
+	switch {
+	case c.Checkable && c.Missing == 0:
+		lines = append(lines, fmt.Sprintf("Completeness: complete, all %d files of the original package", c.Listed))
+	case c.Checkable:
+		lines = append(lines, fmt.Sprintf("Completeness: incomplete, %d of the %d files of the original package missing", c.Missing, c.Listed))
+	default:
+		reason := c.Reason
+		if !detailCode.MatchString(reason) || detailCode.FindString(reason) != reason {
+			reason = "other"
+		}
+		lines = append(lines, "Completeness: not checked ("+reason+")")
+	}
+	switch {
+	case c.Checkable && c.ExtraCount > 0 && c.LeftoverCount > 0:
+		lines = append(lines, fmt.Sprintf("Not in the original package: %s, %s; left by dump tools: %s, %s",
+			files(c.ExtraCount), sized(c.ExtraBytes), files(c.LeftoverCount), sized(c.LeftoverBytes)))
+	case c.Checkable && c.ExtraCount > 0:
+		lines = append(lines, fmt.Sprintf("Not in the original package: %s, %s", files(c.ExtraCount), sized(c.ExtraBytes)))
+	case !c.Checkable && c.LeftoverCount > 0:
+		lines = append(lines, fmt.Sprintf("Left by dump tools, not proven: %s, %s", files(c.LeftoverCount), sized(c.LeftoverBytes)))
+	}
+	return lines
+}
 
 // detailCode keeps of a part of a detail its code ("files_bad:2", "tmp_not_deleted"): what comes
 // after it (a path, a message of the system or of the engine) can have the name of a game.
@@ -252,6 +294,9 @@ func (a *App) reportText(r ReportRequest) string {
 		}
 		if g.Files > 0 {
 			line("Files: %d", g.Files)
+		}
+		for _, l := range completenessLines(g.Completeness) {
+			line("%s", l)
 		}
 		if g.Kind != "" {
 			carries := "none"

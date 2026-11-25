@@ -47,7 +47,7 @@ def all_finite(v):
 os.makedirs(TMP, exist_ok=True)
 
 rc, out, _ = run("--version")
-check("version", rc == 0 and re.fullmatch(r"maxpack 1[.]0[.]5 \(zstd 1\.5\.6, zlib 1\.3\.1\)\s*", out) is not None, out)
+check("version", rc == 0 and re.fullmatch(r"maxpack 1[.]0[.]6 \(zstd 1\.5\.6, zlib 1\.3\.1\)\s*", out) is not None, out)
 rc, _, _ = run()
 check("sin_argumentos_sale_2", rc == 2, str(rc))
 rc, _, _ = run("analyze")

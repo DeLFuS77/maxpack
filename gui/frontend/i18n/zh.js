@@ -41,6 +41,7 @@ texts.zh = {
   madeAt: path => "位于 " + path,
   percent: n => n + "%",
   smallerBy: n => "−" + n + "%",
+  largerBy: n => "+" + n + "%",
   added: n => "已添加 " + n + " 个游戏",
   dropNothing: "这里没有可添加的新内容。",
 
@@ -308,6 +309,8 @@ texts.zh = {
   levelsTime: "时间",
   levelsUse: "使用",
   levelsAbout: (sample, share, threads) => `根据 ${sample} 的样本估算（占要打包内容的 ${share}%）；时间是在这台电脑上用 ${threads} 个线程压缩整个游戏所需的时间。`,
+  vsImage: (ext, change) => "相对你的 " + ext + "：" + change,
+  levelsImage: (ext, image, game) => "各级别节省的空间是相对其中的游戏（" + game + "）计算的；你的 " + ext + " 占用 " + image + "。",
   levelChosen: level => "已选择级别 " + level,
   toolBusy: "请等待当前的工作结束。",
   threadsTitle: "压缩使用的线程",

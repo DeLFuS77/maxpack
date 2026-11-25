@@ -19,6 +19,7 @@ import (
 	"github.com/DeLFuS77/maxpack/gui/bundled"
 	"github.com/DeLFuS77/maxpack/gui/core"
 	"github.com/DeLFuS77/maxpack/gui/internal/system"
+	"github.com/DeLFuS77/maxpack/gui/jobs"
 	"github.com/DeLFuS77/maxpack/gui/settings"
 
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
@@ -39,6 +40,7 @@ type ReportGame struct {
 	Kind, Inner               string
 	Compressed                bool
 	Packed                    bool
+	ImageSize                 uint64
 	OriginalSize, InstallSize uint64
 	P5zSize, OutSize, Volumes uint64
 	Files                     int
@@ -129,9 +131,13 @@ var modeWords = map[string]string{
 }
 
 // row is the row of a game for the compatibility list, "" when the PC does not know its sizes as
-// packed: each "?" is for the user to fill in, as the console page leaves it.
+// packed: each "?" is for the user to fill in, as the console page leaves it. An image is against
+// its file, what the disk gets back (none when it is not known), a folder or a .p5z the game.
 func row(g ReportGame, mode string) string {
 	before, after, format, volumes := g.OriginalSize, uint64(0), "", "—"
+	if jobs.IsImage(g.Kind) {
+		before = g.ImageSize
+	}
 	switch {
 	case g.Kind == "p5z" && g.P5zSize > 0:
 		after, format = g.P5zSize, "p5z"
@@ -229,6 +235,9 @@ func (a *App) reportText(r ReportRequest) string {
 		line("Game %d", n+1)
 		line("Kind: %s", kindWords(g))
 		line("Size: %s", sized(g.OriginalSize))
+		if jobs.IsImage(g.Kind) && g.ImageSize > 0 {
+			line("Image file: %s", sized(g.ImageSize))
+		}
 		if g.InstallSize > 0 {
 			line("Installed: %s", sized(g.InstallSize))
 		}

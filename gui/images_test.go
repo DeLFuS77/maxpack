@@ -34,8 +34,9 @@ func copyImage(t *testing.T, from, to string) string {
 // window: the folder that has the image is given to Compress, the engine says what it is (a PFS
 // container MkPFS made, PFSC-compressed, with an exFAT image inside, from tests/data), the plan
 // counts the game's size and not the image's, and the queue packs it to the .p5z the engine makes
-// of it, verifies it and deletes the image (the original) for good, as Settings says. That .p5z
-// decompresses to the game's folder.
+// of it, verifies it and deletes the image (the original) for good, as Settings says; what it says it
+// saved is against the image's file, what the disk got back. That .p5z decompresses to the game's
+// folder.
 func TestCompressAnImageThroughTheQueue(t *testing.T) {
 	engine, fixtures := needCore(t)
 	useSettings(t, t.TempDir())
@@ -59,7 +60,7 @@ func TestCompressAnImageThroughTheQueue(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if game.Kind != "pfsc" || game.Inner != "exfat" || !game.Compressed || game.TitleID != "BREW00000" || game.OriginalSize <= imageSize {
+	if game.Kind != "pfsc" || game.Inner != "exfat" || !game.Compressed || game.TitleID != "BREW00000" || game.OriginalSize <= imageSize || game.ImageSize != imageSize {
 		t.Fatalf("%+v (the image takes %d)", game.Item, imageSize)
 	}
 	dest := t.TempDir()
@@ -102,7 +103,8 @@ func TestCompressAnImageThroughTheQueue(t *testing.T) {
 	if last := events.last(0); last.Out != out || last.Size != uint64(len(made)) || !strings.Contains(last.Detail, "original_deleted") {
 		t.Errorf("%+v", last)
 	}
-	if sum.Done != 1 || sum.Deleted != 1 || sum.DeletedSize != imageSize || sum.Saved != game.OriginalSize-uint64(len(made)) {
+	if sum.Done != 1 || sum.Deleted != 1 || sum.DeletedSize != imageSize || sum.Saved != imageSize-uint64(len(made)) ||
+		len(sum.Top) != 1 || sum.Top[0].Saved != sum.Saved {
 		t.Errorf("%+v (game %d, made %d)", sum, game.OriginalSize, len(made))
 	}
 	if _, err := os.Stat(image); !errors.Is(err, fs.ErrNotExist) {

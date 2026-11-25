@@ -43,13 +43,15 @@ const (
 	StateCancelled  = "cancelled"
 )
 
-// TopItem is a game of the ones that saved the most.
+// TopItem is a game of the ones that saved the most (see Summary for what Saved is against).
 type TopItem struct {
 	Name, TitleID string
 	Saved         uint64
 }
 
-// Summary is what a queue did. NoZstdRuntime are the folders done that will not start until given
+// Summary is what a queue did. Saved is what the games done take less than before: a dump folder
+// against the game, an image against its file (Item.SizeBefore). NoZstdRuntime are the folders done
+// that will not start until given
 // a libSceAmpr.sprx that reads zstd (they have none, or one that does not); a .p5z is never one.
 // Trashed, Deleted and Kept are the originals that went to the recycle bin, were deleted for good
 // or stayed because their drive has no bin (with Options.Originals), and TrashedSize and
@@ -323,8 +325,15 @@ func (r *Runner) one(ctx context.Context, i int, p Plan, o Options) outcome {
 			}
 			return fail(state, discard(failure))
 		}
-		if original, output := number(result, "original_size"), number(result, "output_size"); compress && original > output {
-			saved = original - output
+		// against what the game took before: an image's file, what the disk gets back (an .ffpfsc is
+		// compressed, and the game in it is bigger than the file), else the game the engine read
+		if original, output := number(result, "original_size"), number(result, "output_size"); compress {
+			if IsImage(p.Item.Kind) {
+				original = p.Item.SizeBefore()
+			}
+			if original > output {
+				saved = original - output
+			}
 		}
 	}
 	if ctx.Err() != nil {

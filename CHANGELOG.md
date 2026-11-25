@@ -30,10 +30,14 @@ All notable changes to MaxPack are listed here. The format follows
     and the image inside it) and what the image file takes, with "PFSC compression" when it is
     compressed. **Copy report** says the kind ("PFS container (.ffpfsc) with an exFAT image inside,
     compressed"), never "dump folder", and no names or paths.
-  - **The size is the game's.** The list, the space of the queue, the end card and the levels compared
-    count the size of the game as the engine reads it, not the image's: an `.ffpfsc` is usually smaller
-    than the game in it, and may be smaller than what is made of it. What deleting an original frees is
-    the image's.
+  - **The room is the game's; the saving is against the image's file.** The list and the space of the
+    queue count the size of the game as the engine reads it (an `.ffpfsc` is usually smaller than the
+    game in it, and may be smaller than what is made of it). What a game saved (under it, the card at
+    the end, the notice, **Copy report** and its row for the compatibility list) is against the image's
+    file on disk, what the disk gets back, never against the game; a dump folder is against the game.
+    **Compare levels** also says, for a compressed image, what each level gives against its file ("vs
+    your .ffpfsc: −8 %"), and says the savings are against the game in it. `analyze` and `analyze
+    --levels` say the same in their text for a compressed image.
   - **Rename** keeps an image's extension, or gives a renamed one the extension of what it is, so its
     name says it (MaxPack for the console finds images by their extension). In **Verify**, anything that
     is not compressed (an image named as a `.p5z` too) says there is nothing to verify, as a dump folder

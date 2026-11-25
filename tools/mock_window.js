@@ -147,8 +147,10 @@ const mock = `
         }
         const out = plan(item, q.opts).Out, made = Math.round(total * 0.42);
         const detail = q.opts.DeleteOriginals && !q.keep[i] ? (query.get("nobin") && !settings.DeletePermanently ? "original_kept_too_big" : settings.DeletePermanently ? "original_deleted" : "original_trashed") : "";
-        q.sum.Done++; q.sum.Saved += total - made;
-        q.sum.Top.push({ Name: item.Name, TitleID: item.TitleID, Saved: total - made });
+        // what it saved is against what it took before: an image's file, a folder the game
+        const before = item.Kind === "folder" ? total : item.ImageSize || 0, saved = Math.max(0, before - made);
+        q.sum.Done++; q.sum.Saved += saved;
+        if (saved) q.sum.Top.push({ Name: item.Name, TitleID: item.TitleID, Saved: saved });
         if (detail === "original_trashed") { q.sum.Trashed++; q.sum.TrashedSize += total; }
         if (detail === "original_deleted") { q.sum.Deleted++; q.sum.DeletedSize += total; }
         if (detail.startsWith("original_kept")) q.sum.Kept++;

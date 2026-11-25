@@ -33,13 +33,15 @@ const fat32Max = 1<<32 - 1
 // which tells its region; "" when it is not known. Kind is what the engine says it is: "folder",
 // "p5z" or an image ("exfat", "ufs2", "pfs", or "pfsc" for a PFS container); Inner, for a container,
 // the image that holds the game, and Compressed, whether reading it decompresses PFSC blocks.
-// OriginalSize is the size of the game, which for a compressed image is more than its file takes.
+// OriginalSize is the size of the game, which for a compressed image is more than its file takes;
+// ImageSize, what the file of an image takes on disk (0 for a folder or a .p5z).
 type Item struct {
 	Path, TitleID, Name, Version, Kind string
 	Inner                              string
 	Compressed                         bool
 	ContentID                          string
 	OriginalSize                       uint64
+	ImageSize                          uint64
 	HasZstdRuntime                     bool
 	Packed                             bool
 	Icon                               string
@@ -148,12 +150,29 @@ func FromInfo(path string, info map[string]any) Item {
 	if it.Name == "" {
 		it.Name = baseName(path)
 	}
+	if IsImage(it.Kind) {
+		it.ImageSize = fileSize(path)
+	}
 	// the engine says the content ID of every game (1.0.2 on); with one of before, a dump folder
 	// has it in its param.json
 	if it.ContentID == "" && it.Kind == "folder" {
 		it.ContentID = paramContentID(path)
 	}
 	return it
+}
+
+// SizeBefore is what a game took before it was compressed, which is what the queue counts what it
+// saved against: an image's file on disk (as it is now, else as it was when it was read), else the
+// game itself. An image whose file is not known gives 0: nothing it saved is claimed, as no saving
+// may be said that the disk did not get back. The room a game needs is still its OriginalSize.
+func (it Item) SizeBefore() uint64 {
+	if !IsImage(it.Kind) {
+		return it.OriginalSize
+	}
+	if size := fileSize(it.Path); size > 0 {
+		return size
+	}
+	return it.ImageSize
 }
 
 func isRoot(dest string, fs FS) bool { return same(fs.Root(dest), dest) }

@@ -60,16 +60,41 @@ console.log(vm.runInContext(` + "`" + `(() => {
   state.lists.verify = [row("verify", { Kind: "p5z", Packed: true }), row("verify", { Kind: "folder", Packed: true }), row("verify", { Kind: "folder" })];
   if (readyRows("verify").length !== 2) say("Verify takes " + readyRows("verify").length + " of a .p5z, a compressed folder and a dump");
   // a report says what the image is, never its name
-  const report = gameReport(row("compress", { Kind: "pfsc", Inner: "ufs2", Compressed: true, Path: "D:/Iron Harbor.ffpfsc" }));
-  if (report.Kind !== "pfsc" || report.Inner !== "ufs2" || report.Compressed !== true) say("the report of a container: " + JSON.stringify(report));
+  const report = gameReport(row("compress", { Kind: "pfsc", Inner: "ufs2", Compressed: true, ImageSize: 7, Path: "D:/Iron Harbor.ffpfsc" }));
+  if (report.Kind !== "pfsc" || report.Inner !== "ufs2" || report.Compressed !== true || report.ImageSize !== 7) say("the report of a container: " + JSON.stringify(report));
   if (JSON.stringify(report).includes("Iron Harbor") || JSON.stringify(report).includes("PPSA")) say("the report has a name: " + JSON.stringify(report));
+  // what a game took before: an image's file on disk, a folder the game; an image whose file is not
+  // known, nothing (no saving is claimed)
+  for (const [game, want] of [
+    [{ Kind: "folder", OriginalSize: 100 }, 100], [{ Kind: "pfsc", OriginalSize: 100, ImageSize: 70 }, 70],
+    [{ Kind: "exfat", OriginalSize: 100, ImageSize: 104 }, 104], [{ Kind: "ufs2", OriginalSize: 100 }, 0],
+  ]) {
+    if (sizeBefore(game) !== want) say("sizeBefore(" + JSON.stringify(game) + ") is " + sizeBefore(game) + ", not " + want);
+  }
+  // the end card is against what each took before: the image's file for an image
+  const made = (game, outSize) => Object.assign(row("compress", game), { state: "ok", outSize });
+  const card = doneSizes({ section: "compress", rows: [made({ Kind: "pfsc", OriginalSize: 100, ImageSize: 70 }, 60), made({ Kind: "folder", OriginalSize: 50 }, 20)] });
+  if (!card || card.before !== 120 || card.after !== 80) say("the end card: " + JSON.stringify(card));
+  if (doneSizes({ section: "compress", rows: [made({ Kind: "pfsc", OriginalSize: 100 }, 60)] }) !== null) say("the end card claims a saving against an image of unknown size");
+  // Compare levels: for a compressed image, what a level gives against its file too; nothing more
+  // for anything else
+  const container = { Kind: "pfsc", Compressed: true, OriginalSize: 100, ImageSize: 80, Path: "D:/x/Tide.FFPFSC" };
+  if (vsImage(container, 60) !== "vs your .ffpfsc: " + t("smallerBy")(25)) say("vsImage smaller: " + vsImage(container, 60));
+  if (vsImage(container, 88) !== "vs your .ffpfsc: " + t("largerBy")(10)) say("vsImage larger: " + vsImage(container, 88));
+  if (vsImage(Object.assign({}, container, { Kind: "pfs" }), 60) !== "vs your .ffpfsc: " + t("smallerBy")(25)) say("a compressed .ffpfs: " + vsImage(Object.assign({}, container, { Kind: "pfs" }), 60));
+  for (const game of [{ Kind: "pfs", Compressed: false, ImageSize: 80 }, { Kind: "exfat", ImageSize: 80 }, { Kind: "folder", OriginalSize: 100 }, { Kind: "pfsc", Compressed: true }]) {
+    if (vsImage(game, 60) !== "") say("vsImage(" + JSON.stringify(game) + ") says " + vsImage(game, 60));
+  }
+  if (!t("levelsImage")(".ffpfsc", "3 GB", "4 GB").includes(".ffpfsc")) say("levelsImage does not name the image");
   return problems.join("\\n");
 })()` + "`" + `, context));
 `
 
 // TestPageImages: the page says what each image is by the kind the engine gives (an .ffpkg is a UFS2
 // image, an .ffpfsc a PFS container), takes the four kinds where it takes an .exfat, sends them to
-// Compress and not to Verify, and a report says the kind of each one without its name.
+// Compress and not to Verify, and a report says the kind of each one without its name. What a game
+// took before, on the end card, is an image's file, never more; Compare levels says what each level
+// gives against a compressed image's file too.
 func TestPageImages(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {

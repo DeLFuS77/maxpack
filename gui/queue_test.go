@@ -406,7 +406,8 @@ func TestSeveralFoldersAtOnce(t *testing.T) {
 }
 
 // A report says what each image is (its kind, what a container holds, whether it is compressed),
-// never "dump folder", and nothing of its name.
+// never "dump folder", and nothing of its name; its sizes before are the image's file, which the row
+// for the compatibility list is against (no row when it is not known), a folder's the game's.
 func TestReportSaysTheImage(t *testing.T) {
 	useSettings(t, t.TempDir())
 	t.Setenv(fakecore.Env, "info")
@@ -416,11 +417,14 @@ func TestReportSaysTheImage(t *testing.T) {
 		{Kind: "exfat", OriginalSize: 10 << 30},
 		{Kind: "ufs2", OriginalSize: 10 << 30},
 		{Kind: "pfs", Compressed: true, OriginalSize: 10 << 30},
-		{Kind: "pfsc", Inner: "exfat", Compressed: true, OriginalSize: 10 << 30, OutSize: 4 << 30, State: "ok"},
+		{Kind: "pfsc", Inner: "exfat", Compressed: true, OriginalSize: 10 << 30, ImageSize: 6 << 30, OutSize: 4 << 30, State: "ok"},
 		{Kind: "pfsc", Inner: "ufs2", OriginalSize: 10 << 30},
 		{Kind: "pfsc", Inner: "pfs", Compressed: true, OriginalSize: 10 << 30},
 		{Kind: "later", OriginalSize: 10 << 30},
 		{Kind: "Iron Harbor", OriginalSize: 10 << 30},
+		// an image whose file is not known: no row, as nothing it saved is known
+		{Kind: "ufs2", OriginalSize: 12 << 30, OutSize: 3 << 30, State: "ok"},
+		{Kind: "folder", OriginalSize: 8 << 30, OutSize: 2 << 30, State: "ok"},
 	}
 	text := a.reportText(ReportRequest{Section: "compress", Mode: "p5z", Games: games})
 	for _, want := range []string{
@@ -429,16 +433,22 @@ func TestReportSaysTheImage(t *testing.T) {
 		"Kind: PFS container (.ffpfsc) with a UFS2 image inside\n",
 		"Kind: PFS container (.ffpfsc) with a PFS image inside, compressed\n",
 		"Kind: image (later)\n", "Kind: image\n",
-		// the row for the compatibility list counts the game, not the image
-		"| 10.0 → 4.0 GiB (−60 %) | p5z | ? |",
+		// the image's file, and the row for the compatibility list against it; a folder's, the game's
+		"Image file: 6.0 GiB (6442450944 bytes)\n",
+		"| 6.0 → 4.0 GiB (−33 %) | p5z | ? |",
+		"| 8.0 → 2.0 GiB (−75 %) | p5z | ? |",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("the report does not say %q:\n%s", want, text)
 		}
 	}
-	for _, banned := range []string{"dump folder", "Iron Harbor"} {
+	for _, banned := range []string{"Iron Harbor", "10.0 → 4.0", "12.0 → 3.0"} {
 		if strings.Contains(text, banned) {
 			t.Errorf("the report says %q:\n%s", banned, text)
 		}
+	}
+	// only the folder is a dump folder
+	if strings.Count(text, "dump folder") != 1 {
+		t.Errorf("the report calls an image a dump folder:\n%s", text)
 	}
 }

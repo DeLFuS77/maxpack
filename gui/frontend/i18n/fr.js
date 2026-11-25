@@ -41,6 +41,7 @@ texts.fr = {
   madeAt: path => "Dans " + path,
   percent: n => n + " %",
   smallerBy: n => "−" + n + " %",
+  largerBy: n => "+" + n + " %",
   added: n => n < 2 ? n + " jeu ajouté" : n + " jeux ajoutés",
   dropNothing: "Rien de nouveau à ajouter ici.",
 
@@ -308,6 +309,8 @@ texts.fr = {
   levelsTime: "Temps",
   levelsUse: "Choisir",
   levelsAbout: (sample, share, threads) => `Estimé sur un échantillon de ${sample} (${share} % de ce qui est empaqueté) ; les temps sont ceux de la compression du jeu entier sur ce PC avec ${threads} threads.`,
+  vsImage: (ext, change) => "par rapport à votre " + ext + " : " + change,
+  levelsImage: (ext, image, game) => "Ce que chaque niveau économise est compté sur le jeu qu'il contient (" + game + ") ; votre " + ext + " occupe " + image + ".",
   levelChosen: level => "Niveau " + level + " choisi",
   toolBusy: "Attendez la fin du travail en cours.",
   threadsTitle: "Threads pour compresser",

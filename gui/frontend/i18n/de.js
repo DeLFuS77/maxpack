@@ -41,6 +41,7 @@ texts.de = {
   madeAt: path => "In " + path,
   percent: n => n + " %",
   smallerBy: n => "−" + n + " %",
+  largerBy: n => "+" + n + " %",
   added: n => n === 1 ? "1 Spiel hinzugefügt" : n + " Spiele hinzugefügt",
   dropNothing: "Hier gibt es nichts Neues hinzuzufügen.",
 
@@ -308,6 +309,8 @@ texts.de = {
   levelsTime: "Zeit",
   levelsUse: "Nehmen",
   levelsAbout: (sample, share, threads) => `Geschätzt aus einer Stichprobe von ${sample} (${share} % dessen, was gepackt wird); die Zeiten gelten für das ganze Spiel auf diesem PC mit ${threads} Threads.`,
+  vsImage: (ext, change) => "gegenüber Ihrer Datei " + ext + ": " + change,
+  levelsImage: (ext, image, game) => "Die Ersparnis jeder Stufe bezieht sich auf das enthaltene Spiel (" + game + "); Ihre Datei " + ext + " belegt " + image + ".",
   levelChosen: level => "Stufe " + level + " gewählt",
   toolBusy: "Warte, bis die laufende Arbeit fertig ist.",
   threadsTitle: "Threads zum Komprimieren",

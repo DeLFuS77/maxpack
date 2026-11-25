@@ -41,6 +41,7 @@ texts.ja = {
   madeAt: path => "場所：" + path,
   percent: n => n + "%",
   smallerBy: n => "−" + n + "%",
+  largerBy: n => "+" + n + "%",
   added: n => n + " 件のゲームを追加しました",
   dropNothing: "ここには追加できる新しいものはありません。",
 
@@ -308,6 +309,8 @@ texts.ja = {
   levelsTime: "時間",
   levelsUse: "使う",
   levelsAbout: (sample, share, threads) => `${sample} のサンプル（パックされる分の ${share}%）からの推定です。時間はこの PC で ${threads} スレッドを使いゲーム全体を圧縮した場合です。`,
+  vsImage: (ext, change) => "お使いの " + ext + " と比べて: " + change,
+  levelsImage: (ext, image, game) => "各レベルの削減量は中のゲーム（" + game + "）に対するものです。お使いの " + ext + " は " + image + " です。",
   levelChosen: level => "レベル " + level + " を選びました",
   toolBusy: "進行中の作業が終わるまでお待ちください。",
   threadsTitle: "圧縮に使うスレッド",

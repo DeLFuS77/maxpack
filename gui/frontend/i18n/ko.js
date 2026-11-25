@@ -41,6 +41,7 @@ texts.ko = {
   madeAt: path => "위치: " + path,
   percent: n => n + "%",
   smallerBy: n => "−" + n + "%",
+  largerBy: n => "+" + n + "%",
   added: n => "게임 " + n + "개를 추가했습니다",
   dropNothing: "여기에는 새로 추가할 항목이 없습니다.",
 
@@ -308,6 +309,8 @@ texts.ko = {
   levelsTime: "시간",
   levelsUse: "사용",
   levelsAbout: (sample, share, threads) => `${sample} 샘플(패킹되는 데이터의 ${share}%)로 추정한 값입니다. 시간은 이 PC에서 스레드 ${threads}개로 게임 전체를 압축하는 시간입니다.`,
+  vsImage: (ext, change) => "내 " + ext + " 대비: " + change,
+  levelsImage: (ext, image, game) => "각 레벨의 절약량은 안에 든 게임(" + game + ") 기준입니다. 내 " + ext + " 파일은 " + image + "입니다.",
   levelChosen: level => "수준 " + level + " 선택됨",
   toolBusy: "진행 중인 작업이 끝날 때까지 기다리세요.",
   threadsTitle: "압축에 쓰는 스레드",

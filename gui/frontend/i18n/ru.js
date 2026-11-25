@@ -44,6 +44,7 @@ texts.ru = {
   madeAt: path => "В " + path,
   percent: n => n + "%",
   smallerBy: n => "−" + n + "%",
+  largerBy: n => "+" + n + "%",
   added: n => "Добавлено игр: " + n,
   dropNothing: "Здесь нет ничего нового для добавления.",
 
@@ -311,6 +312,8 @@ texts.ru = {
   levelsTime: "Время",
   levelsUse: "Выбрать",
   levelsAbout: (sample, share, threads) => `Оценка по выборке ${sample} (${share}% того, что упаковывается); время — для сжатия всей игры на этом ПК, потоков: ${threads}.`,
+  vsImage: (ext, change) => "относительно вашего " + ext + ": " + change,
+  levelsImage: (ext, image, game) => "Экономия каждого уровня считается от игры внутри образа (" + game + "); ваш " + ext + " занимает " + image + ".",
   levelChosen: level => "Выбран уровень " + level,
   toolBusy: "Дождитесь окончания текущей работы.",
   threadsTitle: "Потоки для сжатия",

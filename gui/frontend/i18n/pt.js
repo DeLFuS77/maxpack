@@ -41,6 +41,7 @@ texts.pt = {
   madeAt: path => "Em " + path,
   percent: n => n + "%",
   smallerBy: n => "−" + n + "%",
+  largerBy: n => "+" + n + "%",
   added: n => n === 1 ? "1 jogo adicionado" : n + " jogos adicionados",
   dropNothing: "Nada novo para adicionar aqui.",
 
@@ -308,6 +309,8 @@ texts.pt = {
   levelsTime: "Tempo",
   levelsUse: "Usar",
   levelsAbout: (sample, share, threads) => `Estimado a partir de uma amostra de ${sample} (${share}% do que é empacotado); os tempos são para comprimir o jogo inteiro neste PC com ${threads} threads.`,
+  vsImage: (ext, change) => "em relação ao seu " + ext + ": " + change,
+  levelsImage: (ext, image, game) => "A economia de cada nível é em relação ao jogo dentro dele (" + game + "); o seu " + ext + " ocupa " + image + ".",
   levelChosen: level => "Nível " + level + " escolhido",
   toolBusy: "Espere o trabalho em andamento terminar.",
   threadsTitle: "Threads para comprimir",

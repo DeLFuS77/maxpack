@@ -44,6 +44,7 @@ texts.ar = {
   madeAt: path => "في " + path,
   percent: n => n + "%",
   smallerBy: n => "−" + n + "%",
+  largerBy: n => "+" + n + "%",
   added: n => "تمت إضافة " + arCount(n, "لعبة واحدة", "لعبتين", "ألعاب", "لعبة"),
   dropNothing: "لا يوجد هنا شيء جديد لإضافته.",
 
@@ -311,6 +312,8 @@ texts.ar = {
   levelsTime: "الوقت",
   levelsUse: "استخدام",
   levelsAbout: (sample, share, threads) => "تقدير من عيّنة حجمها " + sample + " (" + share + "% مما يُحزم)؛ والأوقات لضغط اللعبة كاملة على هذا الكمبيوتر باستخدام " + arCount(threads, "خيط واحد", "خيطين", "خيوط", "خيطًا") + ".",
+  vsImage: (ext, change) => "مقارنة بملف ‎" + ext + "‎ لديك: " + change,
+  levelsImage: (ext, image, game) => "ما يوفّره كل مستوى محسوب مقابل اللعبة التي بداخلها (" + game + ")؛ ملف ‎" + ext + "‎ لديك يشغل " + image + ".",
   levelChosen: level => "اختير المستوى " + level,
   toolBusy: "انتظر حتى ينتهي العمل الجاري.",
   threadsTitle: "الخيوط المستخدمة للضغط",

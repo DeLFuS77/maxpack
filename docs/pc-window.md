@@ -148,7 +148,8 @@ anything half made or unverified:
   the path, so you can delete it yourself.
 
 When it ends, the result shows. If the queue compressed and saved space, the size before squeezes down
-to the size now, with a bar that shrinks, and the GB saved count up. Below, you see what saved the most
+to the size now, with a bar that shrinks, and the GB saved count up. For a game that was an image, the
+size before is the image's file, so what it says is saved is what the disk gets back. Below, you see what saved the most
 and what to do next. If the system asks for less motion, the final numbers show without animation.
 
 ![The result: what saved the most and what to do next](img/window-result.jpg)
@@ -173,11 +174,15 @@ again, no other tool and no temporary space. MaxPack takes the images
   is, and Rename gives it the extension of what it is. The `.p5z` is the one of the same game as a
   folder; only the files' dates can differ, as the image gives them
   ([source-images.md](source-images.md)).
-- **Its size is the game's.** The list, the space of the queue, the end card and **Compare levels**
-  count the size of the game in the image, as `maxpack-core` reads it, not what the image takes: an
-  `.ffpfsc` is compressed, so the game in it (and what is made of it) can be bigger than the file.
-  Details shows both: the original size and, under **Image file**, what the file takes ("PFSC
-  compression" when it is compressed).
+- **The room it needs is the game's; what it saves is against the image's file.** The list and the
+  space of the queue count the size of the game in the image, as `maxpack-core` reads it: an `.ffpfsc`
+  is compressed, so the game in it (and what is made of it) can be bigger than the file. What a game
+  saved, under it, on the card at the end ("before" and "saved"), in the notice and in **Copy
+  report**, is against the image's file on disk, what your disk gets back, never against the game.
+  **Compare levels** says what each level saves against the game, and for a compressed image
+  (`.ffpfsc`, or an `.ffpfs` with compressed files) also against your file ("vs your .ffpfsc: −8 %"),
+  with a line saying which is which. Details shows both sizes: the original size and, under **Image
+  file**, what the file takes ("PFSC compression" when it is compressed).
 - **The image is the original.** With **Delete the originals once checked**, it is the image that goes,
   once its `.p5z` or folder is made, verified and in its place, as a dump folder would.
 - A `.p5z` made from an image decompresses to the game's folder, not to an image.
@@ -322,8 +327,8 @@ them.
 A plain text for an issue on GitHub: MaxPack's version, the engine's, the system and its version, the
 CPU threads, the memory, the settings that matter (mode, level, threads, runtime built in or your own,
 low priority, the originals, the template of the names) and, for the games it is about, what each one is
-(for an image, its kind: "PFS container (.ffpfsc) with an exFAT image inside, compressed"), its sizes,
-its volumes and how it ended. It never has a game's name, its title ID or a path. For a
+(for an image, its kind: "PFS container (.ffpfsc) with an exFAT image inside, compressed", and what its
+file takes, which its row for the list is against), its sizes, its volumes and how it ended. It never has a game's name, its title ID or a path. For a
 `.p5z` (or a game just compressed) it ends with the row for the
 [compatibility list](https://github.com/DeLFuS77/maxpack-ps5/blob/main/docs/compatibility.md), with the
 sizes and the volumes filled in and a `?` for what only the console knows. **Report a bug** and **Report

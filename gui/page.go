@@ -34,8 +34,8 @@ type Game struct {
 }
 
 // GameDetails is all the engine says of a game, for Details: with its packs, the files stored
-// in them and their volumes (0 when it is not compressed), the repair data of a .p5z, and what the
-// file of an image takes (0 for a folder or a .p5z), less than the game when it is compressed.
+// in them and their volumes (0 when it is not compressed), and the repair data of a .p5z. What the
+// file of an image takes is in its Item (ImageSize), less than the game when it is compressed.
 type GameDetails struct {
 	Game
 	InstallSize, P5zSize uint64
@@ -43,7 +43,6 @@ type GameDetails struct {
 	PackedFiles, Volumes uint64
 	HasRuntime           bool
 	Repair               RepairView
-	ImageSize            uint64
 }
 
 // RepairView is the repair data of a .p5z as the page tells it: State is "none" (it has none),
@@ -267,11 +266,6 @@ func (a *App) Details(path string) (GameDetails, error) {
 		HasRuntime: carries}
 	if game.Kind == "p5z" {
 		details.Repair = repairView(path)
-	}
-	if jobs.IsImage(game.Kind) {
-		if stat, err := os.Stat(path); err == nil && !stat.IsDir() {
-			details.ImageSize = uint64(stat.Size())
-		}
 	}
 	return details, nil
 }

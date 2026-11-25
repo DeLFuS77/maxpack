@@ -371,6 +371,25 @@ function imageName(kind) {
   }
   return t("kindOther");
 }
+const imageKinds = { exfat: ".exfat", ufs2: ".ffpkg", pfs: ".ffpfs", pfsc: ".ffpfsc" };
+// what a game took before it was compressed, as the end card and what it saved count it (Item.SizeBefore
+// in jobs/plan.go): an image's file on disk, what the disk gets back, never more; a folder, the game.
+// 0 for an image whose file is not known: nothing is claimed for it
+function sizeBefore(game) {
+  return Number(imageKinds[game.Kind] ? game.ImageSize : game.OriginalSize) || 0;
+}
+// a compressed image (a PFS container, or a PFS image whose files are PFSC-compressed) takes less
+// than the game in it, so what a level saves against the game is more than against its file
+const compressedImage = game => (game.Kind === "pfsc" || game.Kind === "pfs" && !!game.Compressed) && Number(game.ImageSize) > 0;
+// the extension of an image as the user has it, else the one of its kind
+const imageExt = game => ((/\.[^.\\/]+$/.exec(game.Path || "") || [""])[0] || imageKinds[game.Kind] || "").toLowerCase();
+// what something made of a compressed image of made bytes takes against its file ("vs your .ffpfsc:
+// −8%", or "+3%" when it is bigger); "" for anything else, where the saving is already against what it takes
+function vsImage(game, made) {
+  if (!compressedImage(game)) return "";
+  const image = Number(game.ImageSize), change = Math.round(Math.abs(1 - made / image) * 100);
+  return t("vsImage")(imageExt(game), made <= image ? t("smallerBy")(change) : t("largerBy")(change));
+}
 
 // the warnings of a game in its section: the ones of the list, and the ones of its plan
 function rowWarnings(row) {
@@ -488,8 +507,9 @@ function paintRow(row) {
 
   // once made: the size before and after (compressed), and where it is
   const sizes = tr.querySelector(".sizes"), where = tr.querySelector(".where");
-  sizes.hidden = !(row.section === "compress" && game && row.outSize && row.state === "ok");
-  if (!sizes.hidden) sizes.textContent = size(game.OriginalSize) + " → " + size(row.outSize) + (row.repairSize ? " · " + t("withRepair")(size(row.repairSize)) : "");
+  // what it took before (an image's file) and takes now
+  sizes.hidden = !(row.section === "compress" && game && row.outSize && row.state === "ok" && sizeBefore(game));
+  if (!sizes.hidden) sizes.textContent = size(sizeBefore(game)) + " → " + size(row.outSize) + (row.repairSize ? " · " + t("withRepair")(size(row.repairSize)) : "");
   const repairLine = tr.querySelector(".repair-line"), repairText = repairLineText(row);
   repairLine.hidden = !repairText;
   repairLine.textContent = repairText;
@@ -558,8 +578,9 @@ function paintState(row) {
   }
   // what it saved, once made
   const saved = tr.querySelector(".saved"), game = row.game;
-  const smaller = row.section === "compress" && row.state === "ok" && game && row.outSize && row.outSize < game.OriginalSize;
-  const savedText = smaller ? t("smallerBy")(Math.round((1 - row.outSize / game.OriginalSize) * 100)) : "";
+  const before = game ? sizeBefore(game) : 0;
+  const smaller = row.section === "compress" && row.state === "ok" && game && row.outSize && row.outSize < before;
+  const savedText = smaller ? t("smallerBy")(Math.round((1 - row.outSize / before) * 100)) : "";
   if (savedText && !saved.textContent) saved.classList.add("pop");
   saved.textContent = savedText;
   tr.querySelector(".remove button").disabled = running() && job.rows.includes(row) && !notStarted.includes(row.state);
@@ -1307,14 +1328,15 @@ function showDone(job, summary) {
 }
 
 // what the games made well took before and take now, when the queue compressed and every one of
-// them says its size; null otherwise (unpacking, nothing made, a size missing)
+// them says its size; null otherwise (unpacking, nothing made, a size missing). Before is an image's
+// file, what the disk gets back, as the summary's saved is (sizeBefore)
 function doneSizes(job) {
   if (job.section !== "compress") return null;
   let before = 0, after = 0;
   for (const row of job.rows) {
     if (row.state !== "ok") continue;
-    if (!row.game || !row.outSize) return null;
-    before += row.game.OriginalSize;
+    if (!row.game || !row.outSize || !sizeBefore(row.game)) return null;
+    before += sizeBefore(row.game);
     after += row.outSize;
   }
   return before > 0 ? { before, after } : null;
@@ -1387,7 +1409,8 @@ function gameReport(row) {
       if (other) { ran = other; break; }
     }
   }
-  return { Kind: game.Kind || "", Inner: game.Inner || "", Compressed: !!game.Compressed, Packed: !!game.Packed, OriginalSize: game.OriginalSize || 0, InstallSize: game.InstallSize || 0,
+  return { Kind: game.Kind || "", Inner: game.Inner || "", Compressed: !!game.Compressed, Packed: !!game.Packed, ImageSize: game.ImageSize || 0,
+    OriginalSize: game.OriginalSize || 0, InstallSize: game.InstallSize || 0,
     P5zSize: game.P5zSize || 0, OutSize: ran.outSize || 0, Volumes: game.Volumes || 0, Files: game.Files || 0,
     HasZstdRuntime: !!game.HasZstdRuntime, HasRuntime: !!game.HasRuntime, State: ran.state || "", Detail: ran.detail || "", Out: ran.out || "" };
 }
@@ -1509,7 +1532,16 @@ function paintLevels(tool) {
     const saved = Math.max(0, original - made);
     tr.querySelector(".level").textContent = String(level.Level);
     tr.querySelector(".size-cell").textContent = size(made);
-    tr.querySelector(".saved-cell").textContent = original ? size(saved) + " · " + isolate(t("smallerBy")(Math.round(saved / original * 100))) : "—";
+    const savedCell = tr.querySelector(".saved-cell");
+    savedCell.textContent = original ? size(saved) + " · " + isolate(t("smallerBy")(Math.round(saved / original * 100))) : "—";
+    // a compressed image: also against its file, which takes less than the game in it
+    const vs = vsImage(game, made);
+    if (vs) {
+      const line = document.createElement("small");
+      line.className = "vs-image";
+      line.textContent = isolate(vs);
+      savedCell.append(line);
+    }
     tr.querySelector(".time-cell").textContent = time(seconds || 0);
     tr.classList.toggle("current", Number(state.settings.Level) === level.Level);
     const use = tr.querySelector(".use");
@@ -1519,6 +1551,9 @@ function paintLevels(tool) {
     return tr;
   });
   $("levels-rows").replaceChildren(...rows);
+  // what the savings are against, for a compressed image: the game in it, not its file
+  $("levels-image").hidden = !compressedImage(game);
+  $("levels-image").textContent = compressedImage(game) ? t("levelsImage")(imageExt(game), size(game.ImageSize), size(original)) : "";
   const result = tool.result;
   $("levels-about").textContent = result ? t("levelsAbout")(size(result.SampleBytes), Math.round((result.SampleRate || 0) * 100), result.Threads || cpuThreads()) : t("compareHint");
 }

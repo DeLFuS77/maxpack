@@ -219,7 +219,9 @@ What it does by itself:
   next to it (a step of its own in its bar). If that fails or you cancel it, the game is still done (its
   `.p5z` is good) and its row says why; nothing of the set is left behind.
 - At the end it says how much was saved, how long it took, what saved the most, how much repair data it
-  made, and what to do next; **Copy report** there copies a text for an issue, with no game names.
+  made, and what to do next; **Copy report** there copies a text for an issue, with no game names. For a
+  game that was an image, what was saved is against the image's file, what the disk got back: an
+  `.ffpfsc` is compressed already, so it is less than against the game in it.
 - **Cancel** stops the game in progress, deletes what it had written and leaves the destination as it
   was.
 
@@ -615,7 +617,9 @@ maxpack analyze "D:\dumps\MyGame.exfat" --json report.json
 | `--list` | Only lists the files and whether they would go loose or packed, without measuring. | `maxpack analyze "D:\dumps\MyGame.exfat" --list` |
 
 Progress goes to stderr and the report to stdout. How to read it:
-[analyze-report.md](analyze-report.md).
+[analyze-report.md](analyze-report.md). "Saved" is against the game; for a compressed image (an
+`.ffpfsc`, or an `.ffpfs` with compressed files), which takes less than the game in it, the report says
+so and also compares the `.p5z` estimate with the image file.
 
 ### `analyze --levels`: compare the levels on this PC
 
@@ -634,7 +638,9 @@ same code and the same threads as `pack`, into nothing. For each level it says t
 what it saves, the size of the folder for the console, and the time to compress the whole game: the
 loose files, then the packs at the speed the sample was packed or read at, whichever is slower. At
 level 19 the size is exactly what `analyze` estimates for `v1-l19` (the same sample, extrapolated the
-same way); with `--full` it is exactly what `pack` makes of the packs.
+same way); with `--full` it is exactly what `pack` makes of the packs. For a compressed image, a line
+under the table compares each `.p5z` with the image file too ("Against the image file: level 3
+-78.8 %, level 19 -83.2 %"), as "saved" is against the game in it.
 
 | Option | What it does | Example |
 |---|---|---|

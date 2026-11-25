@@ -53,7 +53,7 @@ func textKeys(t *testing.T, lang string) map[string]bool {
 // failed or was skipped), with the ones the page gives itself.
 func pageCodes() []string {
 	states := []string{jobs.StateWaiting, jobs.StateQueued, jobs.StatePacking, jobs.StateVerifying, jobs.StateUnpacking,
-		jobs.StateOK, jobs.StateError, jobs.StateSkipped, jobs.StateCancelled}
+		jobs.StateProtecting, jobs.StateRepairing, jobs.StateOK, jobs.StateError, jobs.StateSkipped, jobs.StateCancelled}
 	warnings := []string{"fat32", "needs_runtime", "may_not_fit", "duplicate_target", "no_title_id"}
 	details := []string{
 		// blocks of a plan, which the Runner gives as the detail of a skip
@@ -69,11 +69,16 @@ func pageCodes() []string {
 		"same_name", "name_taken", "duplicate_target", "cannot_read", "in_use", "gone",
 		// the engine
 		"bad_input", "too_big",
+		// the repair data of a .p5z: made, added, and used to repair it (jobs/repair.go)
+		"repair_data_failed", "repair_data_cancelled", "repair_data_other", "repair_data_unreadable", "repair_data_same",
+		"no_par2", "not_p5z", "no_repair_data", "repair_folder_exists", "repair_no_space", "repair_failed",
+		"repair_verify_failed", "repair_place_failed", "repair_restore_failed", "repair_backup_not_deleted", "repaired",
+		"repair_not_needed", "old_repair_data_not_deleted", "repair_not_possible",
 		// the page: skipped by the user, a game that cannot go, and anything else
 		"skipped_by_user", "already_packed", "not_packed", "other",
 	}
-	// the phases of the progress of the engine (phase_code in src/cli/main.c)
-	phases := []string{"copying", "packing", "verifying", "unpacking", "working"}
+	// the phases of the progress of the engine (phase_code in src/cli/main.c), and of par2
+	phases := []string{"copying", "packing", "verifying", "unpacking", "working", "protecting", "repairing"}
 	var keys []string
 	for _, s := range states {
 		keys = append(keys, "state_"+s)
@@ -516,6 +521,7 @@ func TestPageSections(t *testing.T) {
 	}
 	for _, id := range []string{"settings", "options", "files", "done-dialog", "replace-dialog", "fat32-dialog", "runtime-dialog", "block-dialog", "warn-dialog", "close-dialog",
 		"delete-dialog", "space-dialog", "leftover-dialog", "delete-originals", "pref-low", "pref-delete", "pref-forgood", "template", "pref-report", "done-report",
+		"repair-data", "repair-percent", "repair-hint", "pref-repair", "pref-repair-percent", "verify-percent", "add-repair", "repair-damaged", "done-repair", "space-dest", "space-go",
 		"pref-explorer", "explorer-portable", "explorer-for", "pref-menu", "pref-sendto", "pref-files", "menu-status", "sendto-status", "files-status"} {
 		if ids[id] == nil {
 			t.Errorf("#%s is missing", id)

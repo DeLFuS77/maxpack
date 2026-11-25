@@ -321,7 +321,7 @@ func (r *Runner) repairOne(ctx context.Context, i int, p Plan, o Options) outcom
 	}
 	size := fileSize(file)
 	if free, err := system.FreeSpace(filepath.Dir(file)); err == nil && free < size+repairMargin(size) {
-		return fail(StateError, "no_space")
+		return fail(StateError, "repair_no_space")
 	}
 	r.keep(work)
 	if err := os.Mkdir(work, 0o755); err != nil {

@@ -112,6 +112,13 @@
       <p class="hint" id="delete-hint"></p>
     </section>
 
+    <!-- the repair data of each .p5z: a PAR2 set next to it, off until it is ticked -->
+    <section class="block" data-for="compress decompress">
+      <label class="check top"><input id="repair-data" type="checkbox"><span data-t="repairData"></span></label>
+      <div class="segmented" id="repair-percent" role="radiogroup" data-t-label="repairPercentName"></div>
+      <p class="hint" id="repair-hint"></p>
+    </section>
+
     <section class="block" data-for="compress">
       <div class="label">ampr-emu-ng</div>
       <div class="runtime" id="runtime-state"></div>
@@ -122,6 +129,16 @@
     <section class="block" data-for="verify">
       <h2 data-t="verify"></h2>
       <p class="hint" data-t="verifyHint"></p>
+    </section>
+
+    <section class="block" data-for="verify">
+      <h2 data-t="factRepair"></h2>
+      <div class="segmented" id="verify-percent" role="radiogroup" data-t-label="repairPercentName"></div>
+      <button id="add-repair" class="link" data-t="addRepair"></button>
+      <p class="hint" data-t="addRepairHint"></p>
+      <button id="repair-damaged" class="link" data-t="repairDamaged"></button>
+      <p class="hint" data-t="repairDamagedHint"></p>
+      <p class="warning" id="verify-repair-why" hidden></p>
     </section>
 
     <section class="block" data-for="rename">
@@ -162,6 +179,10 @@
         <div class="pref-item">
           <div class="pref-text"><b data-t="threadsTitle"></b><small class="pref-path" id="pref-threads"></small><small data-t="measureHint"></small></div>
           <div class="pref-buttons"><button id="pref-measure" data-t="measurePc"></button><button id="pref-threads-all" class="quiet" data-t="threadsUseAll"></button></div>
+        </div>
+        <div class="pref-item">
+          <div class="pref-text"><b id="repair-name" data-t="prefRepair"></b><small data-t="prefRepairHint"></small><small class="pref-status" id="pref-repair-why"></small></div>
+          <div class="pref-buttons"><div class="segmented" id="pref-repair-percent" role="radiogroup" aria-labelledby="repair-name"></div><input id="pref-repair" class="switch" type="checkbox" role="switch" aria-labelledby="repair-name"></div>
         </div>
         <div class="pref-item">
           <div class="pref-text"><b id="delete-name" data-t="deleteOriginals"></b><small data-t="deleteSettingHint"></small></div>
@@ -230,12 +251,14 @@
           <div class="file"></div>
           <div class="sizes" hidden></div>
           <div class="where" hidden></div>
+          <div class="repair-line" hidden></div>
           <div class="list-warn" hidden></div>
           <dl class="facts" hidden></dl>
           <div class="card-actions" hidden><button class="to-verify"></button><button class="to-decompress"></button></div>
           <div class="note" hidden></div>
           <button class="link report" hidden></button>
           <button class="link compare" hidden></button>
+          <button class="link repair" hidden></button>
         </div>
       </div>
     </td>
@@ -279,7 +302,7 @@
   <h2 id="block-title"><svg class="warn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 2.8 19.5h18.4z"/><path d="M12 9.5v4.5M12 16.8v.2"/></svg><span data-t="blockTitle"></span></h2>
   <p class="muted" data-t="blockText"></p>
   <ul class="space-list" id="block-list"></ul>
-  <form method="dialog" class="dialog-actions"><button value="cancel" class="quiet" data-t="cancel"></button><button value="skip" id="block-skip" data-t="blockSkip"></button><button value="dest" class="primary" data-t="otherDest" autofocus></button></form>
+  <form method="dialog" class="dialog-actions"><button value="cancel" class="quiet" data-t="cancel"></button><button value="skip" id="block-skip" data-t="blockSkip"></button><button value="dest" id="block-dest" class="primary" data-t="otherDest" autofocus></button></form>
 </dialog>
 
 <dialog id="warn-dialog" class="warn-dialog" aria-labelledby="warn-title">
@@ -299,15 +322,16 @@
 
 <dialog id="space-dialog" class="warn-dialog" aria-labelledby="space-title" aria-describedby="space-text">
   <h2 id="space-title"><svg class="warn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 2.8 19.5h18.4z"/><path d="M12 9.5v4.5M12 16.8v.2"/></svg><span data-t="spaceTitle"></span></h2>
-  <p class="muted" id="space-text" data-t="spaceText"></p>
+  <p class="muted" id="space-text"></p>
   <ul class="space-list" id="space-list"></ul>
-  <form method="dialog" class="dialog-actions"><button value="cancel" class="quiet" data-t="cancel"></button><button value="dest" data-t="otherDest" autofocus></button><button value="go" class="primary" data-t="startAnyway"></button></form>
+  <form method="dialog" class="dialog-actions"><button value="cancel" class="quiet" data-t="cancel"></button><button value="dest" id="space-dest" data-t="otherDest" autofocus></button><button value="go" id="space-go" class="primary" data-t="startAnyway"></button></form>
 </dialog>
 
 <dialog id="leftover-dialog" class="warn-dialog" aria-labelledby="leftover-title" aria-describedby="leftover-text">
   <h2 id="leftover-title"><svg class="warn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 2.8 19.5h18.4z"/><path d="M12 9.5v4.5M12 16.8v.2"/></svg><span data-t="leftoverTitle"></span></h2>
   <p class="muted" id="leftover-text" data-t="leftoverText"></p>
   <ul class="space-list" id="leftover-list"></ul>
+  <p class="hint" id="leftover-repair" data-t="leftoverRepairNote" hidden></p>
   <form method="dialog" class="dialog-actions"><button value="later" class="quiet" data-t="leftoverLater"></button><button value="delete" class="primary" data-t="leftoverDelete" autofocus></button></form>
 </dialog>
 
@@ -333,6 +357,7 @@
   <div class="done-tiles"><div><small data-t="doneTime"></small><b id="done-tile-time"></b></div><div><small data-t="doneGames"></small><b id="done-tile-games"></b></div><div><small data-t="doneSpeed"></small><b id="done-tile-speed"></b></div></div>
   <p class="muted" id="done-stats"></p>
   <p class="done-originals" id="done-originals" hidden></p>
+  <p class="done-originals" id="done-repair" hidden></p>
   <div id="done-top-block">
     <h3 data-t="doneTop"></h3>
     <ol class="done-top" id="done-top"></ol>

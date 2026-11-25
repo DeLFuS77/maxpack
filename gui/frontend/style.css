@@ -190,10 +190,13 @@ td.remove button { padding: 2px 8px; }
 .game .sizes { color: var(--text); font-variant-numeric: tabular-nums; margin-top: 2px; }
 .game .where { overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; }
 .game .list-warn { font-size: 12px; color: var(--warn); margin-top: 2px; }
+.game .repair-line { font-size: 12px; color: var(--muted); margin-top: 2px; font-variant-numeric: tabular-nums; }
+.game .repair-line.other { color: var(--warn); }
 .game .list-warn::before { content: "⚠ "; }
 .game .note { font-size: 12px; color: var(--muted); margin-top: 3px; user-select: text; -webkit-user-select: text; overflow-wrap: anywhere; }
 .game .note.bad { color: var(--bad); }
 .game .note.warn { color: var(--warn); }
+.game .note.good { color: var(--ok); }
 /* Details: what the engine says of the game */
 .facts { display: grid; grid-template-columns: max-content 1fr; gap: 3px 12px; margin: 8px 0 0; font-size: 12px; user-select: text; -webkit-user-select: text; }
 .facts dt { color: var(--muted); }
@@ -323,7 +326,8 @@ input.switch:disabled { opacity: .45; cursor: default; }
 .hint.plain { margin: 0; }
 label.check.top { margin-top: 0; align-items: flex-start; }
 label.check.top input { margin-top: 2px; }
-.game button.link.report, .game button.link.compare { margin-top: 6px; font-size: 12px; }
+.game button.link.report, .game button.link.compare, .game button.link.repair { margin-top: 6px; font-size: 12px; }
+.pref-buttons .segmented { margin-top: 0; }
 /* the card of a .p5z in Details, as a double click on one opens it: Verify and Decompress */
 .card-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .card-actions button { font-size: 12px; padding: 5px 12px; }

@@ -26,8 +26,13 @@
 //   ?opened=1           MaxPack opened by a double click on a .p5z: its card in Details
 //   ?handoff=details    a .p5z handed over by another MaxPack a moment after the page opens, as a
 //                       double click while the window is open does (or verify, from the menu)
-// Start runs a queue made up here: each game packs and verifies in a few seconds, the games added
-// meanwhile join it, and the card of the end shows. Compare levels and Measure this PC tell made-up
+//   ?repair=1           Compress makes repair data (the RepairData setting), at ?percent=10 (5 by default)
+//   ?nopar2=1           a build without maxpack-par2: the page offers no repair data, and says why
+//   ?verify=1           three .p5z in Verify: one with repair data that verifies, one damaged with repair
+//                       data of its own (Verify finds it damaged, then Repair), one with the set of another file
+// Start runs a queue made up here: each game packs and verifies in a few seconds (and gets its repair
+// data), the games added meanwhile join it, and the card of the end shows; in Verify the damaged
+// .p5z fails, and Repair and Add repair data run their own steps. Compare levels and Measure this PC tell made-up
 // rows over a few seconds. Settings are kept in memory (they are lost
 // when the page is reloaded). Nothing here is part of MaxPack.
 "use strict";
@@ -49,7 +54,7 @@ const mock = `
   const templates = ["{title} [{id}]", "{title} [{id}] [v{version}]", "{title} [{id}] [{region}] [v{version}]"];
   const settings = { Lang: query.get("lang") || "", Theme: "system", Runtime: query.get("runtime") || "", LastDest: "E:\\\\", Mode: query.get("mode") === "folder" ? "folder" : "p5z", Level: 19,
     DeleteOriginals: !!query.get("delete"), DeletePermanently: query.get("delete") === "good", LowPriority: !!query.get("low"), NameTemplate: query.get("template") || templates[0],
-    Threads: Number(query.get("threads")) || 0 };
+    Threads: Number(query.get("threads")) || 0, RepairData: !!query.get("repair"), RepairPercent: Number(query.get("percent")) || 5 };
   if (query.get("nodest")) settings.LastDest = "";
   const builtIn = query.get("nobuiltin") ? {} : { builtInRuntime: "C:\\\\Users\\\\user\\\\AppData\\\\Roaming\\\\MaxPack\\\\ampr-emu-ng\\\\libSceAmpr.sprx", builtInRuntimeVersion: "v0.5.1-maxpack.1" };
   const games = {
@@ -59,10 +64,23 @@ const mock = `
     "D:\\\\more\\\\Lost Signal-PPSA10004": { TitleID: "PPSA10004", Name: "Lost Signal", Version: "01.000.002", ContentID: "JP0004-PPSA10004_00-LOSTSIGNAL000000", Kind: "folder", OriginalSize: 21400000000, HasZstdRuntime: true, Icon: "", Packed: false },
   };
   const first = Object.keys(games).slice(0, 3);
+  // the .p5z of Verify (?verify=1): good, damaged, and one with the set of another file next to it
+  const good = "E:\\\\Starfall Odyssey [PPSA10001].p5z", damaged = "E:\\\\Iron Harbor [PPSA10002].p5z", foreign = "E:\\\\Neon Meridian [PPSA10003].p5z";
+  const repairs = {};
+  const ownSet = size => { const bs = Math.ceil(size / 4000 / 4096) * 4096, blocks = Math.round(Math.ceil(size / bs) * (settings.RepairPercent || 5) / 100);
+    return { state: "match", percent: settings.RepairPercent || 5, blocks, blockSize: bs, capacity: blocks * bs, bytes: blocks * (bs + 68) + 400000 }; };
+  repairs[good] = ownSet(3618000000);
+  repairs[damaged] = ownSet(74400000000);
+  repairs[foreign] = { state: "other", percent: 0, blocks: 0, blockSize: 0, capacity: 0, bytes: 0 };
+  let broken = true;
   // a .p5z, for Details, Verify and Decompress
   const p5z = "E:\\\\Starfall Odyssey [PPSA10001].p5z";
   games[p5z] = { TitleID: "PPSA10001", Name: "Starfall Odyssey", Version: "01.000.010", ContentID: "EP0001-PPSA10001_00-STARFALL00000000", Kind: "p5z", OriginalSize: 8390000000, HasZstdRuntime: true, Icon: "", Packed: true,
     InstallSize: 412000000, P5zSize: 3618000000, Files: 2165, PackedFiles: 2119, Volumes: 2, HasRuntime: true };
+  games[damaged] = { TitleID: "PPSA10002", Name: "Iron Harbor", Version: "01.000.021", ContentID: "", Kind: "p5z", OriginalSize: 180400000000, HasZstdRuntime: true, Icon: "", Packed: true,
+    InstallSize: 9100000000, P5zSize: 74400000000, Files: 5120, PackedFiles: 5011, Volumes: 19, HasRuntime: true };
+  games[foreign] = { TitleID: "PPSA10003", Name: "Neon Meridian", Version: "01.000.000", ContentID: "UP0003-PPSA10003_00-NEONMERIDIAN0000", Kind: "p5z", OriginalSize: 133590000000, HasZstdRuntime: true, Icon: "", Packed: true,
+    InstallSize: 6400000000, P5zSize: 61000000000, Files: 3811, PackedFiles: 3770, Volumes: 15, HasRuntime: true };
   // MaxPack in the Explorer: each place "" (not there), "here" or "moved"
   const listed = name => (query.get(name) || "").split(",");
   const explorer = { available: query.get("explorer") !== "none", menu: "", sendTo: "", files: "", filesOther: !!query.get("other") };
@@ -97,15 +115,27 @@ const mock = `
       if (q.cancelled) { q.items.forEach((item, i) => { if (!q.removed[i] && i >= q.at) emit("job:item", { i, state: "cancelled", detail: "" }); }); return finish(); }
       while (q.at < q.items.length && q.removed[q.at]) q.at++;
       if (q.at >= q.items.length) return finish();
-      const i = q.at++, item = q.items[i], total = item.OriginalSize;
-      let done = 0, phase = "packing";
-      emit("job:item", { i, state: "packing", detail: "" });
+      const i = q.at++, item = q.items[i], total = item.OriginalSize, mode = q.opts.Mode;
+      // the steps of the game in this queue, as the window does them
+      const steps = mode === "verify" ? ["verifying"] : mode === "repair" ? ["repairing", "verifying"] : mode === "protect" ? ["verifying", "protecting"]
+        : mode === "p5z" && q.opts.Repair ? ["packing", "verifying", "protecting"] : ["packing", "verifying"];
+      let done = 0, at = 0;
+      emit("job:item", { i, state: steps[0], detail: "" });
       const tick = setInterval(() => {
         done = Math.min(total, done + total / 12);
-        emit("job:progress", { i, phase, done, total, rate: 310 * 1048576 });
+        emit("job:progress", { i, phase: steps[at], done, total, rate: 310 * 1048576 });
         if (done < total) return;
-        if (phase === "packing") { phase = "verifying"; done = 0; emit("job:item", { i, state: "verifying", detail: "" }); return; }
+        if (at + 1 < steps.length) { at++; done = 0; emit("job:item", { i, state: steps[at], detail: "" }); return; }
         clearInterval(tick);
+        if (mode === "verify" || mode === "repair" || mode === "protect") {
+          const bad = mode === "verify" && item.Path === damaged && broken;
+          if (mode === "repair") { broken = false; q.sum.Repaired++; }
+          if (mode === "protect") { repairs[item.Path] = repairs[item.Path] || ownSet(item.P5zSize || total); q.sum.Protected++; q.sum.ProtectedSize += repairs[item.Path].bytes; }
+          if (bad) q.sum.Failed++; else q.sum.Done++;
+          emit("job:item", { i, state: bad ? "error" : "ok", detail: bad ? "files_bad:3" : mode === "repair" ? "repaired" : "", repair: mode === "protect" ? repairs[item.Path].bytes : 0 });
+          step();
+          return;
+        }
         const out = plan(item, q.opts).Out, made = Math.round(total * 0.42);
         const detail = q.opts.DeleteOriginals && !q.keep[i] ? (query.get("nobin") && !settings.DeletePermanently ? "original_kept_too_big" : settings.DeletePermanently ? "original_deleted" : "original_trashed") : "";
         q.sum.Done++; q.sum.Saved += total - made;
@@ -113,7 +143,9 @@ const mock = `
         if (detail === "original_trashed") { q.sum.Trashed++; q.sum.TrashedSize += total; }
         if (detail === "original_deleted") { q.sum.Deleted++; q.sum.DeletedSize += total; }
         if (detail.startsWith("original_kept")) q.sum.Kept++;
-        emit("job:item", { i, state: "ok", detail, out, size: made, homebrew: q.opts.Mode === "folder" });
+        const repair = q.opts.Mode === "p5z" && q.opts.Repair ? Math.round(made * q.opts.Repair / 100) + 400000 : 0;
+        if (repair) { q.sum.Protected++; q.sum.ProtectedSize += repair; }
+        emit("job:item", { i, state: "ok", detail, out, size: made, homebrew: q.opts.Mode === "folder", repair });
         step();
       }, 260);
     };
@@ -144,7 +176,9 @@ const mock = `
   });
   const App = {
     Setup: async () => Object.assign({ version: "1.0.2-mock", coreVersion: "maxpack 1.0.2", lang: settings.Lang || "en", theme: "system", coreError: "", builtInRuntime: "", builtInRuntimeVersion: "",
-      logFile: "C:\\\\Users\\\\user\\\\AppData\\\\Roaming\\\\MaxPack\\\\maxpack.log", templates, cpuThreads: 32, explorer: explorer.available, portable: !!query.get("portable") }, builtIn),
+      logFile: "C:\\\\Users\\\\user\\\\AppData\\\\Roaming\\\\MaxPack\\\\maxpack.log", templates, cpuThreads: 32, explorer: explorer.available, portable: !!query.get("portable"),
+      par2: query.get("nopar2") ? "" : "C:\\\\Program Files\\\\MaxPack\\\\maxpack-par2.exe", par2Version: query.get("nopar2") ? "" : "par2cmdline-turbo version 1.5.0",
+      par2Error: query.get("nopar2") ? "maxpack-par2 not found: it should be next to the program, at C:\\\\Program Files\\\\MaxPack\\\\maxpack-par2.exe" : "" }, builtIn),
     ExplorerPlaces: async () => Object.assign({}, explorer),
     SetExplorerPlace: async (place, on, texts) => {
       if (query.get("portable")) throw new Error("the portable MaxPack writes nothing in Windows: install MaxPack to add it to the Explorer");
@@ -174,16 +208,20 @@ const mock = `
     CancelTool: async () => { if (tool) tool.cancelled = true; },
     GetSettings: async () => Object.assign({}, settings),
     SetSettings: async next => { Object.assign(settings, next); if (!validTemplate(settings.NameTemplate)) settings.NameTemplate = templates[0]; },
-    PendingFiles: async () => (query.get("opened") ? { compress: [], verify: [], details: [p5z], show: "details" } : query.get("empty") ? null : { compress: first, verify: [], details: [], show: "" }),
+    PendingFiles: async () => (query.get("opened") ? { compress: [], verify: [], details: [p5z], show: "details" } : query.get("empty") ? null
+      : { compress: first, verify: query.get("verify") ? [good, damaged, foreign] : [], details: query.get("verify") ? [damaged] : [], show: query.get("verify") ? "verify" : "" }),
+    RepairInfo: async file => repairs[file] || { state: /\\.p5z$/i.test(file) ? "none" : "", percent: 0, blocks: 0, blockSize: 0, capacity: 0, bytes: 0 },
     Expand: async paths => paths,
     Describe: async file => Object.assign({ Path: file }, games[file] || { TitleID: "PPSA00000", Name: file.split(/[\\\\/]/).pop(), Version: "01.000.000", Kind: "folder", OriginalSize: 1e9, Packed: false }),
-    Details: async file => Object.assign({ Path: file, InstallSize: 7900000000, P5zSize: 2400000000, Files: 2165, PackedFiles: 2119, Volumes: 1, HasRuntime: true }, games[file] || {}),
+    Details: async file => Object.assign({ Path: file, InstallSize: 7900000000, P5zSize: 2400000000, Files: 2165, PackedFiles: 2119, Volumes: 1, HasRuntime: true }, games[file] || {},
+      { Repair: repairs[file] || { state: /\\.p5z$/i.test(file) ? "none" : "" } }),
     ChooseFiles: async () => Object.keys(games).slice(3), ChooseFolder: async () => Object.keys(games), ChooseDest: async () => "E:\\\\", ChooseRuntime: async () => "",
     CloseTexts: async () => {}, TellLanguage: async () => {}, ConfirmClose: async () => {},
-    Plan: async (section, items, opts) => items.map(item => plan(item, opts)),
+    Plan: async (section, items, opts) => items.map(item => Object.assign(plan(item, opts), opts.Mode === "repair" && !(repairs[item.Path] && repairs[item.Path].state === "match") ? { Block: "no_repair_data" } : {})),
     Space: async (section, items, opts) => (query.get("space") ? [{ Root: "E:\\\\", Need: 322390000000, Free: 118200000000 }] : []),
     Start: async (section, items, opts) => {
-      queue = { section, items: items.slice(), opts, at: 0, removed: {}, keep: {}, started: Date.now(), sum: { Done: 0, Failed: 0, Skipped: 0, Cancelled: 0, NoZstdRuntime: 0, Saved: 0, Top: [], Duration: 0, Trashed: 0, Deleted: 0, Kept: 0, TrashedSize: 0, DeletedSize: 0 } };
+      queue = { section, items: items.slice(), opts, at: 0, removed: {}, keep: {}, started: Date.now(), sum: { Done: 0, Failed: 0, Skipped: 0, Cancelled: 0, NoZstdRuntime: 0, Saved: 0, Top: [], Duration: 0, Trashed: 0, Deleted: 0, Kept: 0, TrashedSize: 0, DeletedSize: 0,
+        Protected: 0, Unprotected: 0, ProtectedSize: 0, Repaired: 0 } };
       runQueue();
     },
     Append: async (section, items, replace, keepOriginals) => {
@@ -194,7 +232,8 @@ const mock = `
     },
     Unqueue: async (section, i) => { if (!queue || i < queue.at) return false; queue.removed[i] = true; return true; },
     Cancel: async () => { if (queue) queue.cancelled = true; },
-    Leftovers: async () => (query.get("leftovers") ? [{ Path: "E:\\\\Starfall Odyssey [PPSA10001].p5z.maxpack-tmp", Size: 3123456789 }, { Path: "E:\\\\homebrew\\\\PPSA10003.maxpack-tmp", Size: 41234567890 }] : []),
+    Leftovers: async () => (query.get("leftovers") ? [{ Path: "E:\\\\Starfall Odyssey [PPSA10001].p5z.maxpack-tmp", Size: 3123456789 }, { Path: "E:\\\\homebrew\\\\PPSA10003.maxpack-tmp", Size: 41234567890 },
+      { Path: "E:\\\\Iron Harbor [PPSA10002].p5z.maxpack-repair", Size: 148800000000, Restore: "E:\\\\Iron Harbor [PPSA10002].p5z", Keep: false }] : []),
     CleanLeftovers: async () => [],
     CopyReport: async request => "MaxPack report\\n" + JSON.stringify(request),
     OpenLink: async name => { console.log("open link", name); },

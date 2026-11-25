@@ -35,7 +35,7 @@ const go = {
 const queues = ["compress", "decompress", "verify"];
 const writes = ["compress", "decompress"];
 const ended = ["ok", "error", "skipped", "cancelled"];
-const working = ["packing", "verifying", "unpacking"];
+const working = ["packing", "verifying", "unpacking", "protecting", "repairing"];
 // the states of a game of a queue that did not start: there from the start, or added while it runs
 const notStarted = ["waiting", "queued"];
 // the shortcuts of the level, as in NXPress: the level each one sets, and the ones it covers
@@ -49,7 +49,10 @@ const takes = {
   rename: [["", "typeDump"], [".exfat", ""], [".p5z", ""]],
 };
 const defaultTemplate = "{title} [{id}]";
-const defaults = { Lang: "", Theme: "system", Runtime: "", LastDest: "", Mode: "p5z", Level: 19, DeleteOriginals: false, DeletePermanently: false, LowPriority: false, NameTemplate: defaultTemplate, Threads: 0 };
+const defaults = { Lang: "", Theme: "system", Runtime: "", LastDest: "", Mode: "p5z", Level: 19, DeleteOriginals: false, DeletePermanently: false, LowPriority: false, NameTemplate: defaultTemplate, Threads: 0,
+  RepairData: false, RepairPercent: 5 };
+// the shares of repair data the window offers (a PAR2 set next to each .p5z)
+const percents = [1, 5, 10];
 
 const $ = id => document.getElementById(id);
 const windows = /win/i.test(navigator.platform || navigator.userAgent || "");
@@ -90,6 +93,11 @@ const running = () => !!(state.busy && state.job && state.job.running && !state.
 // else that one (the window puts it in, see plans in page.go)
 const builtInRuntime = () => (state.setup && state.setup.builtInRuntime) || "";
 const runtimeInUse = () => state.settings.Runtime || builtInRuntime();
+// maxpack-par2, which makes and uses the repair data, as Setup tells it: without it (a build of the
+// window alone) the page offers no repair data, and says why
+const hasPar2 = () => !!(state.setup && state.setup.par2);
+// the share of repair data Compress gives each .p5z, 0 for none
+const repairOf = () => (state.settings.RepairData && hasPar2() && percents.includes(Number(state.settings.RepairPercent)) ? Number(state.settings.RepairPercent) : 0);
 
 // a text of the language chosen, else the English one
 const t = key => (texts[state.lang] && texts[state.lang][key] !== undefined ? texts[state.lang] : texts.en)[key];
@@ -136,12 +144,14 @@ const pathKey = path => (windows ? String(path).toLowerCase() : String(path));
 
 function newRow(path, section) {
   const tr = $("row-template").content.firstElementChild.cloneNode(true);
-  const row = { path, section, game: null, error: "", state: "", detail: "", step: "", phase: "", offset: 0, done: 0, total: 0, out: "", outSize: 0, homebrew: false, warnings: [], renameTo: "", renameBlock: "", tr };
+  const row = { path, section, game: null, error: "", state: "", detail: "", step: "", phase: "", offset: 0, done: 0, total: 0, out: "", outSize: 0, homebrew: false, warnings: [], renameTo: "", renameBlock: "",
+    repair: null, repairSize: 0, tr };
   tr.querySelector(".remove button").addEventListener("click", () => removeRow(row));
   tr.querySelector(".report").addEventListener("click", () => copyReport([row], row.section));
   tr.querySelector(".compare").addEventListener("click", () => compareLevels(row));
   tr.querySelector(".to-verify").addEventListener("click", () => takeTo(row, "verify"));
   tr.querySelector(".to-decompress").addEventListener("click", () => takeTo(row, "decompress"));
+  tr.querySelector(".repair").addEventListener("click", () => startQueue("repair", [row]));
   // the entrance of a row and the pop of what it saved play once: a row put back in the list
   // (every render puts them all back) does not play them again
   tr.addEventListener("animationend", event => {
@@ -165,18 +175,27 @@ function nextDescribe() {
     if (!state.lists[row.section].includes(row)) continue;
     describing++;
     go.call(row.section === "details" ? "Details" : "Describe", row.path)
-      .then(game => { row.game = game; }, error => { row.error = message(error); })
+      .then(game => { row.game = game; if (row.section === "details") row.repair = game.Repair || null; }, error => { row.error = message(error); })
+      .then(() => (row.section === "verify" && row.game && row.game.Kind === "p5z" ? readRepair(row) : null))
       .finally(() => {
         describing--;
         paintRow(row);
         paintSummary();
         paintStart();
-        // a game added to the section whose queue runs joins it; one of Rename shows its new name
-        if (row.game && running() && state.job.section === row.section && !state.job.rows.includes(row)) join(row);
+        // a game added to the section whose queue runs joins it (not a repair, nor repair data being
+        // added: a game is not given those unasked); one of Rename shows its new name
+        if (row.game && running() && state.job.section === row.section && !state.job.rows.includes(row) && !["repair", "protect"].includes(state.job.mode)) join(row);
         if (row.section === "rename") planRenames();
         nextDescribe();
       });
   }
+}
+
+// readRepair asks the window what repair data a .p5z of the list has next to it
+async function readRepair(row) {
+  row.repair = await go.call("RepairInfo", row.path).catch(() => null);
+  paintRow(row);
+  if (state.section === row.section) paintOptions();
 }
 
 // addPaths adds games to the list of a section, each once
@@ -287,23 +306,31 @@ function clearList() {
 
 // ---- how far a game is -------------------------------------------------------------------------
 
-// the steps of a game in a queue of a mode, each a part of its bar: what is made is verified
-// before it takes its name, but the original dump, which the engine checks as it writes it
-function stepsOf(row, mode) {
-  if (mode === "p5z" || mode === "folder" || mode === "console") return [mode === "console" ? "unpacking" : "packing", "verifying"];
+// the steps of a game in a queue, each a part of its bar (stepsOf in progress.go): what is made is
+// verified before it takes its name, but the original dump, which the engine checks as it writes
+// it; a .p5z with repair data gets it once in its place; a .p5z is verified before it gets repair
+// data, and after it is repaired
+function stepsOf(job) {
+  const mode = job.mode;
+  if (mode === "p5z") return job.repair ? ["packing", "verifying", "protecting"] : ["packing", "verifying"];
+  if (mode === "folder" || mode === "console") return [mode === "console" ? "unpacking" : "packing", "verifying"];
   if (mode === "verify") return ["verifying"];
+  if (mode === "protect") return ["verifying", "protecting"];
+  if (mode === "repair") return ["repairing", "verifying"];
   return ["unpacking"];
 }
 // how far the step at work is, from 0 to 1: the phases of a step follow one another (copying the
-// loose files, then packing the rest) and their bytes add up to the size of the game
+// loose files, then packing the rest) and their bytes add up to the size of the game; the other
+// steps go through the bytes of the file they read
 function stepShare(row) {
   if (!row.total) return 0;
-  const whole = Math.max(row.offset + row.total, row.step === "verifying" || !row.game ? 0 : row.game.OriginalSize || 0);
+  const bySize = (row.step === "packing" || row.step === "unpacking") && row.game;
+  const whole = Math.max(row.offset + row.total, bySize ? row.game.OriginalSize || 0 : 0);
   return Math.min(1, (row.offset + row.done) / whole);
 }
-function rowShare(row, mode) {
+function rowShare(row, job) {
   if (ended.includes(row.state)) return 1;
-  const steps = stepsOf(row, mode), index = steps.indexOf(row.step);
+  const steps = stepsOf(job), index = steps.indexOf(row.step);
   return index < 0 ? 0 : (index + stepShare(row)) / steps.length;
 }
 // the games of a queue, without the ones taken out of it before their turn
@@ -312,9 +339,9 @@ const inQueue = job => job.rows.filter(row => row && !row.unqueued);
 function progressOf(job) {
   let whole = 0, done = 0;
   for (const row of inQueue(job)) {
-    const weight = stepsOf(row, job.mode).length * Math.max(1, row.game ? row.game.OriginalSize : 1);
+    const weight = stepsOf(job).length * Math.max(1, row.game ? row.game.OriginalSize : 1);
     whole += weight;
-    done += rowShare(row, job.mode) * weight;
+    done += rowShare(row, job) * weight;
   }
   job.shown = Math.max(job.shown || 0, whole ? done / whole : 0);
   return { share: job.shown, left: job.rate > 0 ? (whole - done) / job.rate : 0 };
@@ -353,6 +380,8 @@ function detailText(detail) {
 function partText(part) {
   let found = /^files_bad:(\d+)$/.exec(part);
   if (found) return t("detail_files_bad")(+found[1]);
+  found = /^repair_not_possible: (\d+)$/.exec(part);
+  if (found) return t("detail_repair_not_possible")(+found[1]);
   found = /^exit_(-?\d+)$/.exec(part);
   if (found) return t("detail_exit")(+found[1]);
   found = /^([a-z_]+)(?:: ([\s\S]*))?$/.exec(part);
@@ -389,6 +418,8 @@ function paintFacts(row) {
   fact(facts, t("factPacked"), game.Packed ? t("yes") : t("no"));
   if (game.Packed) fact(facts, t("factPacks"), t("packsOf")(game.PackedFiles || 0, game.Volumes || 0));
   fact(facts, "ampr-emu-ng", game.HasZstdRuntime ? t("runtimeZstd") : game.HasRuntime ? t("runtimeOld") : t("runtimeNone"));
+  // the repair data of a .p5z (its card, as a double click opens it): how much, or none
+  if (game.Kind === "p5z") fact(facts, t("factRepair"), repairFactText(row.repair));
   const where = document.createElement("dd");
   where.className = "path-fact";
   where.textContent = game.Path;
@@ -396,6 +427,23 @@ function paintFacts(row) {
   label.textContent = t("factPath");
   facts.append(label, where);
 }
+
+// what the repair data next to a .p5z is, for its card in Details
+function repairFactText(repair) {
+  if (!repair || !repair.state || repair.state === "none") return t("repairNone");
+  if (repair.state === "match") return t("repairFact")(repair.percent, repair.blocks, size(repair.blockSize));
+  return repair.state === "other" ? t("repairOtherShort") : t("repairUnreadableLine");
+}
+// the line of a .p5z of Verify with repair data: what it can repair; and the set of another file
+function repairLineText(row) {
+  const repair = row.repair;
+  if (row.section !== "verify" || !repair) return "";
+  if (repair.state === "match") return t("repairLine")(repair.percent, repair.blocks, size(repair.blockSize), size(repair.capacity));
+  if (repair.state === "other") return t("repairOtherLine");
+  return repair.state === "unreadable" ? t("repairUnreadableLine") : "";
+}
+// a .p5z of Verify that the engine found damaged and that has repair data of its own: it can be repaired
+const canRepair = row => row.section === "verify" && !!row.game && row.game.Kind === "p5z" && row.state === "error" && !!row.repair && row.repair.state === "match";
 
 function paintRow(row) {
   const tr = row.tr, game = row.game;
@@ -416,7 +464,15 @@ function paintRow(row) {
   // once made: the size before and after (compressed), and where it is
   const sizes = tr.querySelector(".sizes"), where = tr.querySelector(".where");
   sizes.hidden = !(row.section === "compress" && game && row.outSize && row.state === "ok");
-  if (!sizes.hidden) sizes.textContent = size(game.OriginalSize) + " → " + size(row.outSize);
+  if (!sizes.hidden) sizes.textContent = size(game.OriginalSize) + " → " + size(row.outSize) + (row.repairSize ? " · " + t("withRepair")(size(row.repairSize)) : "");
+  const repairLine = tr.querySelector(".repair-line"), repairText = repairLineText(row);
+  repairLine.hidden = !repairText;
+  repairLine.textContent = repairText;
+  repairLine.classList.toggle("other", !!row.repair && row.repair.state !== "match");
+  const repairButton = tr.querySelector(".repair");
+  repairButton.hidden = !canRepair(row) || !hasPar2();
+  repairButton.textContent = t("repairButton");
+  repairButton.disabled = state.busy;
   where.hidden = !row.out;
   if (row.out) where.textContent = t("madeAt")(row.out);
   if (row.section === "rename") {
@@ -446,7 +502,9 @@ function paintRow(row) {
   const said = row.error || (row.detail && row.detail !== "cancelled" ? detailText(row.detail) : row.section === "rename" && row.renameBlock && row.state !== "ok" ? detailText(row.renameBlock) : "");
   note.hidden = !said;
   note.textContent = said;
-  note.className = "note " + (row.error || row.state === "error" ? "bad" : "warn");
+  // a repair that ended well says so as good news, not as a warning
+  const good = row.state === "ok" && /^(repaired|repair_not_needed)$/.test(row.detail);
+  note.className = "note " + (row.error || row.state === "error" ? "bad" : good ? "good" : "warn");
   paintFacts(row);
   paintState(row);
 }
@@ -464,14 +522,14 @@ function paintState(row) {
   segs.hidden = !active;
   step.textContent = "";
   if (active) {
-    const steps = stepsOf(row, job.mode), index = steps.indexOf(row.step), share = stepShare(row);
+    const steps = stepsOf(job), index = steps.indexOf(row.step), share = stepShare(row);
     if (segs.children.length !== steps.length) segs.replaceChildren(...steps.map(() => $("seg-template").content.firstElementChild.cloneNode(true)));
     [...segs.children].forEach((seg, n) => {
-      seg.className = "seg " + (steps[n] === "verifying" ? "tone-check" : "tone-work");
+      seg.className = "seg " + (steps[n] === "verifying" || steps[n] === "protecting" ? "tone-check" : "tone-work");
       seg.firstElementChild.style.transform = "scaleX(" + (n < index ? 1 : n === index ? share : 0) + ")";
     });
     const phase = row.phase ? t("phase_" + row.phase) : "";
-    step.textContent = [phase, t("percent")(Math.floor(rowShare(row, job.mode) * 100))].filter(Boolean).join(" · ");
+    step.textContent = [phase, t("percent")(Math.floor(rowShare(row, job) * 100))].filter(Boolean).join(" · ");
   }
   // what it saved, once made
   const saved = tr.querySelector(".saved"), game = row.game;
@@ -573,6 +631,52 @@ function paintOptions() {
   runtime.title = runtimeInUse();
   $("choose-runtime").textContent = s.Runtime ? t("runtimeChange") : builtIn ? t("runtimeChooseOther") : t("runtimeChoose");
   for (const element of document.querySelectorAll("#options input, #options button")) element.disabled = state.busy;
+  paintRepairOptions();
+}
+
+// the buttons of the shares of repair data in a group, the one of Settings on, each choosing it
+function paintPercents(group, enabled) {
+  const chosen = Number(state.settings.RepairPercent) || 5;
+  if (group.children.length !== percents.length) {
+    group.replaceChildren(...percents.map(percent => {
+      const button = document.createElement("button");
+      button.setAttribute("role", "radio");
+      button.dataset.percent = String(percent);
+      button.addEventListener("click", () => { keep({ RepairPercent: percent }); render(); });
+      return button;
+    }));
+  }
+  for (const button of group.children) {
+    const on = Number(button.dataset.percent) === chosen;
+    button.textContent = t("percent")(Number(button.dataset.percent));
+    button.classList.toggle("on", on);
+    button.setAttribute("aria-checked", on);
+    button.disabled = !enabled;
+  }
+}
+
+// why a section offers no repair data: a folder, Decompress, or no maxpack-par2; "" when it does
+function repairWhyNot(section) {
+  if (!hasPar2()) return t("repairNoPar2");
+  if (section === "decompress") return t("repairNotHere");
+  if (section === "compress" && modeOf("compress") === "folder") return t("repairOnlyP5z");
+  return "";
+}
+
+// the repair data in Compress (the box and its share, off until it is ticked, as Settings keeps
+// it) and in Verify (add it to the .p5z of the list, or repair the damaged ones with theirs)
+function paintRepairOptions() {
+  const s = state.settings, why = repairWhyNot(state.section), offered = !why && !state.busy;
+  $("repair-data").checked = !!s.RepairData && !why;
+  $("repair-data").disabled = !offered;
+  paintPercents($("repair-percent"), offered && !!s.RepairData);
+  $("repair-hint").textContent = why || t("repairDataHint");
+  const list = state.lists.verify, verifyWhy = hasPar2() ? "" : t("repairNoPar2");
+  paintPercents($("verify-percent"), !verifyWhy && !state.busy);
+  $("add-repair").disabled = !!verifyWhy || state.busy || !list.some(row => row.game && row.game.Kind === "p5z");
+  $("repair-damaged").disabled = !!verifyWhy || state.busy || !list.some(canRepair);
+  $("verify-repair-why").hidden = !verifyWhy;
+  $("verify-repair-why").textContent = verifyWhy;
 }
 
 function paintLevel(level) {
@@ -617,6 +721,10 @@ function paintSettings() {
   $("pref-forgood").checked = !!s.DeletePermanently;
   $("pref-forgood").disabled = !s.DeleteOriginals;
   $("pref-forgood-row").classList.toggle("off", !s.DeleteOriginals);
+  $("pref-repair").checked = !!s.RepairData && hasPar2();
+  $("pref-repair").disabled = !hasPar2();
+  paintPercents($("pref-repair-percent"), hasPar2());
+  $("pref-repair-why").textContent = hasPar2() ? "" : t("repairNoPar2");
   $("pref-log").textContent = setup && setup.logFile ? t("logAt")(setup.logFile) : "";
   const templates = (setup && setup.templates) || [defaultTemplate];
   if ($("templates").children.length !== templates.length) {
@@ -846,8 +954,11 @@ function modeOf(section) {
   return "verify";
 }
 
-// the games of the section that can go: read, not done yet, and of what the section works on
-function readyRows(section) {
+// the games of the section that can go: read, not done yet, and of what the section works on;
+// repair data goes to every .p5z of Verify, and a repair to the damaged ones that have theirs
+function readyRows(section, kind) {
+  if (kind === "protect") return state.lists.verify.filter(row => row.game && row.game.Kind === "p5z");
+  if (kind === "repair") return state.lists.verify.filter(canRepair);
   return state.lists[section].filter(row => {
     if (!row.game || row.state === "ok") return false;
     if (section === "compress" && row.game.Packed) return false;
@@ -887,11 +998,12 @@ async function plan(section, rows, opts) {
       if (answer !== "without") return null;
       state.askedRuntime = true;
     }
-    // what cannot go to this destination
+    // what cannot go to this destination (or be repaired, or get repair data)
     const blocked = plans.map((p, n) => n).filter(n => plans[n].Block);
     if (blocked.length) {
       $("block-list").replaceChildren(...blocked.map(n => line(names(n), detailText(plans[n].Block))));
       $("block-skip").hidden = blocked.length === plans.length;
+      $("block-dest").hidden = !writes.includes(section);
       const answer = await ask($("block-dialog"));
       if (answer === "dest") {
         const dest = await chooseDest();
@@ -905,13 +1017,17 @@ async function plan(section, rows, opts) {
   }
 }
 
-async function startQueue() {
-  const section = state.section;
+// startQueue starts the queue of the section open; kind "protect" adds repair data to the .p5z of
+// Verify, and "repair" repairs the damaged ones with theirs (the ones given, or all that can be)
+async function startQueue(kind, only) {
+  const section = kind ? "verify" : state.section;
   if (state.busy || !queues.includes(section)) return;
-  const rows = readyRows(section);
-  if (!rows.length) { toast(t("nothingToDo")); return; }
-  const opts = { Mode: modeOf(section), Dest: "", Level: Number(state.settings.Level) || 19, Runtime: state.settings.Runtime || "", ContinueFat32: false, Replace: [],
-    DeleteOriginals: section === "compress" && state.deleteOriginals, DeleteNoBin: false };
+  const rows = only || readyRows(section, kind);
+  if (!rows.length) { toast(kind === "repair" ? t("repairNothing") : kind === "protect" ? t("protectNothing") : t("nothingToDo")); return; }
+  const mode = kind || modeOf(section);
+  const repair = mode === "p5z" ? repairOf() : mode === "protect" ? Number(state.settings.RepairPercent) || 5 : 0;
+  const opts = { Mode: mode, Dest: "", Level: Number(state.settings.Level) || 19, Runtime: state.settings.Runtime || "", ContinueFat32: false, Replace: [],
+    DeleteOriginals: section === "compress" && state.deleteOriginals, DeleteNoBin: false, Repair: repair };
   if (writes.includes(section)) {
     opts.Dest = state.settings.LastDest || await chooseDest();
     if (!opts.Dest) return;
@@ -961,6 +1077,10 @@ async function startQueue() {
     const short = await go.call("Space", section, going.map(n => rows[n]).map(itemOf), opts).catch(() => []);
     if (short && short.length) {
       $("space-list").replaceChildren(...short.map(drive => line(ltr(drive.Root), t("spaceLine")(size(drive.Need), size(drive.Free)))));
+      // a repair writes a whole copy next to the .p5z: without room for it, it does not start
+      $("space-text").textContent = mode === "repair" ? t("spaceRepairText") : t("spaceText");
+      $("space-dest").hidden = !writes.includes(section);
+      $("space-go").hidden = mode === "repair";
       const answer = await ask($("space-dialog"));
       if (answer === "dest") { again = await chooseDest(); return; }
       if (answer !== "go") return;
@@ -974,10 +1094,10 @@ async function startQueue() {
     }
     // the games left out are said in the list; the others wait for their turn
     for (const [row, detail] of skipped) Object.assign(row, { state: "skipped", detail, out: "", outSize: 0, warnings: [] });
-    job = { section, mode: opts.Mode, dest: opts.Dest, runtime: opts.Runtime || builtInRuntime(), rows: going.map(n => rows[n]), shown: 0, rate: 0,
+    job = { section, mode: opts.Mode, repair: opts.Repair, dest: opts.Dest, runtime: opts.Runtime || builtInRuntime(), rows: going.map(n => rows[n]), shown: 0, rate: 0,
       opts: Object.assign({}, opts, { Replace: [] }), deletes: opts.DeleteOriginals, early: {} };
     for (const n of going) {
-      Object.assign(rows[n], { state: "waiting", detail: "", step: "", phase: "", offset: 0, done: 0, total: 0, out: "", outSize: 0,
+      Object.assign(rows[n], { state: "waiting", detail: "", step: "", phase: "", offset: 0, done: 0, total: 0, out: "", outSize: 0, repairSize: 0,
         warnings: plans[n].Warnings || [] });
     }
     job.running = true;
@@ -995,7 +1115,7 @@ async function startQueue() {
     render();
   }
   // another destination was chosen for the space: the queue is planned again with it
-  if (again && !started) startQueue();
+  if (again && !started) startQueue(kind, only);
 }
 
 // askOriginals says which originals go once checked, and asks: "delete", "keep" or "cancel". It
@@ -1073,8 +1193,11 @@ function onItem(event) {
   row.state = event.state;
   row.detail = event.detail || "";
   if (event.out) Object.assign(row, { out: event.out, outSize: event.size || 0, homebrew: !!event.homebrew });
+  row.repairSize = event.repair || 0;
   paintRow(row);
   paintSummary();
+  // a .p5z repaired, or given repair data: what it has next to it now
+  if (ended.includes(event.state) && (job.mode === "repair" || job.mode === "protect")) readRepair(row);
 }
 
 function onProgress(event) {
@@ -1096,6 +1219,8 @@ function onDone(summary) {
   job.summary = summary;
   render();
   if (writes.includes(job.section) && summary.Done + summary.Failed > 0) showDone(job, summary);
+  if (job.mode === "repair") toast(t("repairedCount")(summary.Repaired || 0));
+  if (job.mode === "protect") toast(t("protectedCount")(summary.Protected || 0));
 }
 
 // the games of a queue, in the words of the notice of the system (noticeText in notify.go)
@@ -1124,6 +1249,12 @@ function showDone(job, summary) {
   if (summary.Kept) originals.push(t("doneKept")(summary.Kept));
   $("done-originals").hidden = !originals.length;
   $("done-originals").textContent = originals.join(" ");
+  // the repair data made with the games, and the games that did not get the one asked for
+  const repair = [];
+  if (summary.Protected) repair.push(t("doneRepair")(summary.Protected, summary.ProtectedSize || 0));
+  if (summary.Unprotected) repair.push(t("doneNoRepair")(summary.Unprotected));
+  $("done-repair").hidden = !repair.length;
+  $("done-repair").textContent = repair.join(" ");
   const top = (summary.Top || []).map(game => {
     const item = document.createElement("li");
     const name = document.createElement("span"), saved = document.createElement("b");
@@ -1522,6 +1653,12 @@ function wire() {
   $("empty-folder").addEventListener("click", chooseFolder);
   $("clear").addEventListener("click", clearList);
   $("start").addEventListener("click", () => (state.section === "rename" ? renameAll() : startQueue()));
+  // the repair data: Compress gives it to each .p5z when ticked (5 % the first time), as Settings
+  // keeps it; Verify adds it to the .p5z of the list, or repairs the damaged ones with theirs
+  $("repair-data").addEventListener("change", () => { keep({ RepairData: $("repair-data").checked }); render(); });
+  $("pref-repair").addEventListener("change", () => { keep({ RepairData: $("pref-repair").checked }); render(); });
+  $("add-repair").addEventListener("click", () => startQueue("protect"));
+  $("repair-damaged").addEventListener("click", () => startQueue("repair"));
   $("delete-originals").addEventListener("change", () => { state.deleteOriginals = $("delete-originals").checked; render(); });
   $("pref-low").addEventListener("change", () => keep({ LowPriority: $("pref-low").checked }));
   $("pref-delete").addEventListener("change", () => { keep({ DeleteOriginals: $("pref-delete").checked }); state.deleteOriginals = $("pref-delete").checked; render(); });
@@ -1618,7 +1755,11 @@ async function main() {
 async function offerLeftovers() {
   const left = await go.call("Leftovers").catch(() => null);
   if (!left || !left.length) return;
-  $("leftover-list").replaceChildren(...left.map(item => line(ltr(item.Path), size(item.Size))));
+  // a repair cut short puts its .p5z back (the one that verified, else the damaged one as it was);
+  // a folder that may have a copy of a .p5z that is in its place stays
+  const about = item => [size(item.Size), item.Restore ? t("leftoverRestore")(ltr(item.Restore)) : "", item.Keep ? t("leftoverKeep") : ""].filter(Boolean).join(" · ");
+  $("leftover-list").replaceChildren(...left.map(item => line(ltr(item.Path), about(item))));
+  $("leftover-repair").hidden = !left.some(item => item.Restore || item.Keep);
   if (await ask($("leftover-dialog")) !== "delete") return;
   const failed = await go.call("CleanLeftovers").catch(error => [message(error)]);
   toast(failed && failed.length ? t("leftoverFailed")(failed.length) + " " + failed.join("; ") : t("leftoverDone"));

@@ -301,8 +301,7 @@ int mp_grow_run(const char *p5z, mp_source *dump, mp_grow_known known, void *kct
             if (mp_cancelled()) mp_cancel_check(e);
             goto done;
         }
-        if (prog.print) fprintf(stderr, "\rComparing with the .p5z: 100.0 %%\n");
-        mp_progress_free(&prog);
+        mp_progress_free(&prog);   // mp_parallel_run has printed its end
         prog_on = 0;
     }
 

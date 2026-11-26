@@ -1123,5 +1123,136 @@ check("pack_dlc_output_inside", rc == 2 and "the output cannot be a DLC or be in
 rc, so, _ = run("--help")
 check("help_dlc", "--dlc DLC" in so, so[:2000])
 
+
+# ---- growing a .p5z: add, update, compact, and the journal of an append that stopped -----------------
+import struct  # noqa: E402
+import zlib  # noqa: E402
+GAME = os.path.join(FX, "game")
+
+
+def version_of(folder, version):
+    pj = os.path.join(folder, "sce_sys", "param.json")
+    with open(pj, encoding="utf-8") as f:
+        d = json.load(f)
+    d["contentVersion"] = version
+    with open(pj, "w", encoding="utf-8") as f:
+        json.dump(d, f)
+
+
+def game_copy(name, version=None):
+    dst = fresh(os.path.join(TMP, name))
+    shutil.copytree(GAME, dst)
+    if version:
+        version_of(dst, version)
+    return dst
+
+
+gp = fresh(os.path.join(TMP, "grow.p5z"))
+rc, so, err = run("pack", GAME, "-o", gp, "--p5z", "--threads", "2")
+check("grow_pack", rc == 0, err[-300:])
+before = os.path.getsize(gp)
+v2 = game_copy("grow_v2", "01.001.000")
+with open(os.path.join(v2, "data", "new_cli.bin"), "wb") as f:
+    f.write(b"a file that version 2 brings " * 10000)
+rc, so, err = run("update", gp, v2, "--threads", "2", "--progress", "json")
+evs = json_lines(so)
+res = last_result(evs)
+check("update_cli", rc == 0 and res.get("ok") is True and res.get("new_files") == 1 and res.get("changed_files") == 1
+      and res.get("removed_files") == 0 and res.get("grown") == 1 and res.get("p5z_size") == os.path.getsize(gp)
+      and res.get("added_bytes") == os.path.getsize(gp) - before and res.get("unused_bytes", 0) > 0
+      and res.get("nothing") is False and res.get("par2") is False, str(res) + err[-300:])
+check("update_cli_comparing", any(e.get("event") == "progress" and e.get("phase") == "comparing" for e in evs), so[-500:])
+rc, so, err = run("info", "--json", gp)
+d = json.loads(so or "{}") if rc == 0 else {}
+check("info_json_grown", rc == 0 and d.get("grown") == 1 and d.get("unused_bytes", 0) > 0 and d.get("recovered") is False
+      and d.get("version") == "01.001.000", so[-300:] + err[-300:])
+rc, out, err = run("info", gp)
+check("info_text_grown", rc == 0 and "Grown:      1 time" in out and "Unused:" in out, out + err)
+rc, out, err = run("update", gp, v2)
+check("update_text", rc == 1 and "the version the .p5z has already" in err, out + err[-300:])
+rc, so, err = run("update", gp, v2, "--progress", "json")
+check("update_same_version", rc == 1 and last_result(json_lines(so)).get("error") == "same_version", so + err[-300:])
+other = game_copy("grow_other", "01.002.000")
+with open(os.path.join(other, "sce_sys", "param.json"), encoding="utf-8") as f:
+    d = json.load(f)
+d["titleId"] = "PPSA99999"
+with open(os.path.join(other, "sce_sys", "param.json"), "w", encoding="utf-8") as f:
+    json.dump(d, f)
+rc, so, err = run("update", gp, other, "--progress", "json")
+check("update_other_game", rc == 1 and last_result(json_lines(so)).get("error") == "other_game", so + err[-300:])
+v3 = game_copy("grow_v3", "01.003.000")
+with open(os.path.join(v3, "data", "lots.bin"), "wb") as f:
+    f.write(os.urandom(4 << 20))
+size_v2 = os.path.getsize(gp)
+rc, so, err = run("update", gp, v3, "--progress", "json")
+check("update_mostly_changed", rc == 1 and last_result(json_lines(so)).get("error") == "mostly_changed"
+      and "--force" in err and os.path.getsize(gp) == size_v2, so + err[-300:])
+rc, so, err = run("update", gp, v3, "--force", "--progress", "json")
+check("update_force", rc == 0 and last_result(json_lines(so)).get("grown") == 2, so[-300:] + err[-300:])
+# add, with repair data next to it: it says they no longer match
+with open(gp + ".par2", "wb") as f:
+    f.write(b"PAR2\0PKT")
+rc, so, err = run("add", gp, "--dlc", os.path.join(FX, "dlc_data"), "--threads", "2", "--progress", "json")
+res = last_result(json_lines(so))
+check("add_cli", rc == 0 and res.get("dlc_data") == 1 and res.get("dlc_license") == 0 and res.get("grown") == 3
+      and res.get("par2") is True and "repair data" in err, str(res) + err[-300:])
+os.remove(gp + ".par2")
+rc, so, err = run("add", gp, "--dlc", os.path.join(FX, "dlc_data"), "--progress", "json")
+check("add_again_refused", rc == 1 and last_result(json_lines(so)).get("error") == "dlc_refused", so + err[-300:])
+rc, out, err = run("add", gp, "--dlc", os.path.join(FX, "dlc_license"))
+check("add_text", rc == 0 and "1 license only" in out and "the .p5z grew by" in out, out + err[-300:])
+rc, so, err = run("info", "--play", gp)
+d = json.loads(so or "{}") if rc == 0 else {}
+check("info_play_grown", rc == 0 and d.get("index_version") == 2 and d.get("grown") == 4
+      and [v["id"] for v in d.get("volumes", [])] == list(range(len(d.get("volumes", []))))
+      and len(d.get("volumes", [])) >= 3, so[-400:] + err[-300:])
+rc, so, err = run("verify", gp, "--progress", "json")
+check("verify_grown", rc == 0 and last_result(json_lines(so)).get("files_bad") == 0, so[-300:] + err[-300:])
+back = fresh(os.path.join(TMP, "grow_back"))
+rc, _, err = run("unpack", gp, "--folder", "-o", back)
+check("unpack_folder_grown", rc == 0 and os.path.isfile(os.path.join(back, "ampr_zstd-000.pak"))
+      and not os.path.exists(os.path.join(back, "ampr_zstd-001.pak")), err[-300:])
+rc, _, err = run("verify", back, "--against", v3)
+check("unpack_folder_grown_verifies", rc == 0, err[-300:])
+# compact: a copy without the room the updates left, of version 1
+cp = fresh(os.path.join(TMP, "grow_compact.p5z"))
+rc, so, err = run("compact", gp, "-o", cp, "--threads", "2", "--progress", "json")
+res = last_result(json_lines(so))
+rc2, so2, _ = run("info", "--json", cp)
+d = json.loads(so2 or "{}") if rc2 == 0 else {}
+check("compact_cli", rc == 0 and res.get("p5z_size") == os.path.getsize(cp) and res.get("saved_bytes", 0) > 0
+      and d.get("grown") == 0 and d.get("unused_bytes") == 0 and os.path.getsize(cp) < os.path.getsize(gp),
+      str(res) + so2[-300:] + err[-300:])
+rc, _, err = run("compact", gp, "-o", cp)
+check("compact_exists", rc == 2 and "already exists" in err, err[-300:])
+rc, _, err = run("compact", gp)
+check("compact_needs_o", rc == 2 and "-o" in err, err[-300:])
+rc, _, err = run("update", gp)
+check("update_needs_dump", rc == 2, err[-300:])
+rc, _, err = run("add", gp)
+check("add_needs_dlc", rc == 2 and "--dlc" in err, err[-300:])
+# an append that stopped (as a power cut leaves it): the next command undoes it
+jp = fresh(os.path.join(TMP, "grow_journal.p5z"))
+shutil.copyfile(cp, jp)
+size = os.path.getsize(jp)
+with open(jp, "rb") as f:
+    f.seek(size - 32)
+    foot = f.read(32)
+head = b"P5ZJRNL1" + struct.pack("<IIQ", 1, 64, size) + foot + struct.pack("<I", 0)
+with open(jp + ".maxpack-append", "wb") as f:
+    f.write(head + struct.pack("<I", zlib.crc32(head) & 0xFFFFFFFF))
+with open(jp, "ab") as f:
+    f.write(b"half of an append" * 1000)
+rc, so, err = run("info", "--json", jp)
+d = json.loads(so or "{}") if rc == 0 else {}
+check("recover_on_info", rc == 0 and d.get("recovered") is True and "was undone" in err and os.path.getsize(jp) == size
+      and not os.path.exists(jp + ".maxpack-append") and open(jp, "rb").read() == open(cp, "rb").read(),
+      so[-300:] + err[-300:])
+rc, so, _ = run("--capabilities")
+check("capabilities_grow", json.loads(so or "{}").get("grow") is True, so)
+rc, so, _ = run("--help")
+check("help_grow", "maxpack add <game.p5z> --dlc" in so and "maxpack update <game.p5z>" in so
+      and "maxpack compact <in.p5z> -o <out.p5z>" in so, so[:3000])
+
 print("test_cli: %d failures" % len(failures))
 sys.exit(1 if failures else 0)

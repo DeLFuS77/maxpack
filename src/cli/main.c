@@ -19,6 +19,7 @@
 #include "mp_bench.h"
 #include "mp_complete.h"
 #include "mp_describe.h"
+#include "mp_grow.h"
 #include "mp_levels.h"
 #include "mp_p5z.h"
 #include "mp_parallel.h"
@@ -37,6 +38,9 @@ static void usage(FILE *out) {
             "  maxpack analyze <folder|image|package> --levels [L,L,...] [options]   compare the levels\n"
             "  maxpack pack <folder|image|package> -o <output> [--dlc <DLC> ...] [options]\n"
             "  maxpack unpack <game.p5z> --folder|--original -o <folder> [--threads N]\n"
+            "  maxpack add <game.p5z> --dlc <DLC> [--dlc ...] [options]   DLC into a .p5z already made\n"
+            "  maxpack update <game.p5z> <new dump> [options]   only what a new version of the game changes\n"
+            "  maxpack compact <in.p5z> -o <out.p5z> [--threads N]   a copy without the room they leave\n"
             "  maxpack info <game.p5z>\n"
             "  maxpack info --json <folder|image|package|game.p5z>\n"
             "  maxpack info --play <game.p5z>   what the console needs to play it without installing (JSON)\n"
@@ -76,11 +80,22 @@ static void usage(FILE *out) {
             "                     MaxPack writes the dlc_emu.ini that lists them; a game that has its\n"
             "                     own dlc_emu.ini is not given more\n"
             "\n"
+            "add and update grow the .p5z by appending to it (nothing before its end is written again); if\n"
+            "they stop, or the power goes, the next command that opens it leaves it as it was. A .p5z that\n"
+            "grew needs an ampr-emu-ng that takes it (p5z mode, v0.5.2-maxpack.1 or later); compact makes a\n"
+            "copy as a fresh pack writes it, which any one takes. Their options:\n"
+            "  --dlc DLC          add: a DLC to put in, as pack --dlc takes it (can be repeated); the ones\n"
+            "                     with files of their own go to the addcontN/ after the game's last\n"
+            "  --force            update: go on when more than half of the game changed (packing the new\n"
+            "                     dump again would give a smaller .p5z)\n"
+            "  --leave-out-leftovers, --keep-loose GLOB   update: as pack's, for the new dump\n"
+            "  --threads N, --max-file-size N, --volume-limit N   as pack's (--max-file-size: the whole .p5z)\n"
+            "\n"
             "analyze, info --json, pack and verify tell whether the dump is complete against the list\n"
             "of the original package's files it carries (sce_sys/playgo-hash-table.dat) or, without it,\n"
             "whether the copy has every file the dump tool wrote (its ampr_emu.index).\n"
             "\n"
-            "Options for pack, unpack, verify, analyze --levels and measure (for a front end):\n"
+            "Options for pack, unpack, verify, add, update, compact, analyze --levels and measure (for a front end):\n"
             "  --progress json    one JSON line per event on stdout (the text stays on stderr)\n"
             "  --control stdin    read from stdin: the line \"cancel\" or closing the input cancels\n"
             "  Exit codes: 0 ok, 1 error, 2 usage, 130 cancelled\n"
@@ -118,6 +133,7 @@ static int g_result_done;           // the "result" line has already been writte
 
 static const char *phase_code(const char *phase) {
     if (!strncmp(phase, "Copying", 7)) return "copying";
+    if (!strncmp(phase, "Comparing", 9)) return "comparing";
     if (!strncmp(phase, "Packing", 7)) return "packing";
     if (!strncmp(phase, "Verifying", 9)) return "verifying";
     if (!strncmp(phase, "Extracting", 10) || !strncmp(phase, "Rebuilding", 10)) return "unpacking";
@@ -988,6 +1004,283 @@ static int run_pack(int argc, char **argv) {
     return 0;
 }
 
+// ---- growing a .p5z: add, update, compact ------------------------------------------------------------
+
+// Before a command reads a .p5z: an append that stopped (a power cut, a crash) is undone, and said.
+static int recover_note(const char *path) {
+    int what = 0;
+    mp_err e = {{0}};
+    if (mp_p5z_recover(path, &what, &e) != 0) {
+        fprintf(stderr, "warning: %s\n", e.msg);
+        return 0;
+    }
+    if (what == MP_RECOVER_RESTORED)
+        fprintf(stderr, "note: an interrupted change of %s was undone: it is as it was before it\n", path);
+    return what == MP_RECOVER_RESTORED;
+}
+
+// Options common to add and update. 0 = not ours, 1 = consumed, -1 = bad usage (already said).
+static int grow_opt(int argc, char **argv, int *i, mp_grow_opts *o, uint64_t *max_size) {
+    const char *a = argv[*i];
+    if (strcmp(a, "--threads") && strcmp(a, "--max-file-size") && strcmp(a, "--volume-limit")) return 0;
+    if (*i + 1 >= argc) {
+        bad_usage("missing value for", a);
+        return -1;
+    }
+    const char *v = argv[++*i];
+    char *end = NULL;
+    if (!strcmp(a, "--threads")) {
+        long t = strtol(v, &end, 10);
+        if (end == v || *end || t < 1 || t > 1024) {
+            bad_usage("--threads must be between 1 and 1024", v);
+            return -1;
+        }
+        o->threads = (unsigned)t;
+    } else if (!strcmp(a, "--max-file-size")) {
+        unsigned long long m = strtoull(v, &end, 10);
+        if (end == v || *end || m == 0 || v[0] == '-') {
+            bad_usage("--max-file-size must be a number of bytes greater than 0", v);
+            return -1;
+        }
+        *max_size = m;
+    } else {
+        unsigned long long m = strtoull(v, &end, 10);
+        if (end == v || *end || v[0] == '-' || m < MP_ZPK_VOL_HEADER + MP_BLOCK_V1 || m > MP_ZPK_VOLUME_LIMIT) {
+            bad_usage("--volume-limit must be between 262208 and 4294901760 bytes", v);
+            return -1;
+        }
+        o->volume_limit = m;
+    }
+    return 1;
+}
+
+// What add and update did, for people and for a front end.
+static void grow_report(const char *p5z, const mp_grow_result *r, int add, uint64_t t0) {
+    FILE *hum = g_json ? stderr : stdout;
+    char a[32], b[32], c[32];
+    if (r->nothing) {
+        fprintf(hum, "Nothing to do: %s has that dump already\n", p5z);
+    } else {
+        if (add)
+            fprintf(hum, "Added to %s (%.0f s)\n", p5z, (double)(mp_now_ns() - t0) / 1e9);
+        else
+            fprintf(hum, "Updated %s from version %s to %s (%.0f s)\n", p5z, r->old_version[0] ? r->old_version : "?",
+                    r->new_version[0] ? r->new_version : "?", (double)(mp_now_ns() - t0) / 1e9);
+        if (add) {
+            fprintf(hum, "  DLC:      ");
+            if (r->dlc_data) fprintf(hum, "%u with data", r->dlc_data);
+            if (r->dlc_license)
+                fprintf(hum, "%s%u %s only", r->dlc_data ? ", " : "", r->dlc_license, r->dlc_license == 1 ? "license" : "licenses");
+            fprintf(hum, "\n");
+        }
+        fprintf(hum, "  files:    %llu the same, %llu new, %llu changed, %llu removed\n", (unsigned long long)r->same_files,
+                (unsigned long long)r->new_files, (unsigned long long)r->changed_files,
+                (unsigned long long)r->removed_files);
+        size_text(a, sizeof a, r->stored_bytes);
+        size_text(b, sizeof b, r->added_bytes);
+        size_text(c, sizeof c, r->p5z_size);
+        fprintf(hum, "  stored:   %s of files; the .p5z grew by %s and is %s, in %llu volumes\n", a, b, c,
+                (unsigned long long)r->volumes);
+        if (r->unused_bytes) {
+            size_text(a, sizeof a, r->unused_bytes);
+            fprintf(hum, "  unused:   %s (maxpack compact %s -o <new.p5z> makes a copy without it)\n", a, p5z);
+        }
+    }
+    if (r->par2 && !r->nothing)
+        fprintf(stderr, "note: the repair data (PAR2) next to %s no longer match it: make them again\n", p5z);
+    if (g_json) {
+        char extra[768];
+        snprintf(extra, sizeof extra,
+                 ",\"same_files\":%llu,\"new_files\":%llu,\"changed_files\":%llu,\"removed_files\":%llu,"
+                 "\"stored_bytes\":%llu,\"added_bytes\":%llu,\"p5z_size\":%llu,\"volumes\":%llu,\"unused_bytes\":%llu,"
+                 "\"grown\":%u,\"nothing\":%s,\"par2\":%s,\"dlc_data\":%u,\"dlc_license\":%u,\"dlc_bytes\":%llu",
+                 (unsigned long long)r->same_files, (unsigned long long)r->new_files,
+                 (unsigned long long)r->changed_files, (unsigned long long)r->removed_files,
+                 (unsigned long long)r->stored_bytes, (unsigned long long)r->added_bytes,
+                 (unsigned long long)r->p5z_size, (unsigned long long)r->volumes, (unsigned long long)r->unused_bytes,
+                 r->grown, r->nothing ? "true" : "false", r->par2 ? "true" : "false", r->dlc_data, r->dlc_license,
+                 (unsigned long long)r->dlc_bytes);
+        json_result(1, NULL, extra);
+    }
+}
+
+static int grow_target_ok(const char *p5z) {
+    if (mp_path_kind(p5z) != 1) {
+        g_err_code = "bad_input";
+        fprintf(stderr, "error: %s %s\n", mp_path_kind(p5z) == 0 ? "does not exist:" : "is not a .p5z file:", p5z);
+        return 0;
+    }
+    return 1;
+}
+
+static int run_grow(int argc, char **argv, int add) {
+    mp_grow_opts o;
+    mp_grow_opts_default(&o);
+    uint64_t max_size = 0;
+    const char *p5z = NULL, *dump = NULL;
+    const char **dlc = calloc((size_t)argc + 1, sizeof *dlc), **keep = calloc((size_t)argc + 1, sizeof *keep);
+    size_t ndlc = 0;
+    int rc = 2;
+    if (!dlc || !keep) goto out;
+    for (int i = 0; i < argc; i++) {
+        const char *a = argv[i];
+        int common = common_opt(argc, argv, &i);
+        if (common < 0) goto out;
+        if (common) continue;
+        int g = grow_opt(argc, argv, &i, &o, &max_size);
+        if (g < 0) goto out;
+        if (g) continue;
+        if (add && !strcmp(a, "--dlc")) {
+            if (i + 1 >= argc) {
+                rc = bad_usage("missing value for", a);
+                goto out;
+            }
+            dlc[ndlc++] = argv[++i];
+        } else if (!add && !strcmp(a, "--force")) {
+            o.force = 1;
+        } else if (!add && !strcmp(a, "--leave-out-leftovers")) {
+            o.leave_out_leftovers = 1;
+        } else if (!add && !strcmp(a, "--keep-loose")) {
+            if (i + 1 >= argc) {
+                rc = bad_usage("missing value for", a);
+                goto out;
+            }
+            keep[o.nkeep++] = argv[++i];
+        } else if (a[0] == '-') {
+            rc = bad_usage("unknown option", a);
+            goto out;
+        } else if (!p5z) {
+            p5z = a;
+        } else if (!add && !dump) {
+            dump = a;
+        } else {
+            rc = bad_usage("extra argument", a);
+            goto out;
+        }
+    }
+    o.keep_loose = keep;
+    o.max_size = max_size;
+    if (!p5z) {
+        rc = bad_usage(add ? "add needs the .p5z and --dlc <DLC>" : "update needs the .p5z and the new dump", NULL);
+        goto out;
+    }
+    if (add && !ndlc) {
+        rc = bad_usage("add needs the DLC to add: --dlc <DLC> (can be repeated)", NULL);
+        goto out;
+    }
+    if (!add && !dump) {
+        rc = bad_usage("update needs the new dump after the .p5z", NULL);
+        goto out;
+    }
+    rc = 1;
+    if (!grow_target_ok(p5z)) goto out;
+    if (!add && mp_path_kind(dump) == 0) {
+        g_err_code = "bad_input";
+        fprintf(stderr, "error: does not exist: %s\n", dump);
+        goto out;
+    }
+    start_json_and_control();
+    recover_note(p5z);
+    mp_err e = {{0}};
+    mp_grow_result r;
+    uint64_t t0 = mp_now_ns();
+    int grc = add ? mp_grow_add(p5z, dlc, ndlc, &o, &r, &e) : mp_grow_update(p5z, dump, &o, &r, &e);
+    if (grc != 0) {
+        if (r.code) g_err_code = r.code;
+        passcode_code(e.msg);
+        fprintf(stderr, "error: %s\n", e.msg);
+        goto out;
+    }
+    grow_report(p5z, &r, add, t0);
+    rc = 0;
+out:
+    free(dlc);
+    free(keep);
+    return rc;
+}
+
+static int cmd_add(int argc, char **argv) {
+    prescan_json(argc, argv);
+    return finish_cmd(run_grow(argc, argv, 1));
+}
+
+static int cmd_update(int argc, char **argv) {
+    prescan_json(argc, argv);
+    return finish_cmd(run_grow(argc, argv, 0));
+}
+
+static int run_compact(int argc, char **argv) {
+    const char *in = NULL, *out = NULL;
+    unsigned threads = mp_cpu_count();
+    uint64_t limit = MP_ZPK_VOLUME_LIMIT;
+    for (int i = 0; i < argc; i++) {
+        const char *a = argv[i];
+        int common = common_opt(argc, argv, &i);
+        if (common < 0) return 2;
+        if (common) continue;
+        if (!strcmp(a, "-o") || !strcmp(a, "--threads") || !strcmp(a, "--volume-limit")) {
+            if (i + 1 >= argc) return bad_usage("missing value for", a);
+            const char *v = argv[++i];
+            char *end = NULL;
+            if (!strcmp(a, "-o")) {
+                out = v;
+            } else if (!strcmp(a, "--threads")) {
+                long t = strtol(v, &end, 10);
+                if (end == v || *end || t < 1 || t > 1024) return bad_usage("--threads must be between 1 and 1024", v);
+                threads = (unsigned)t;
+            } else {
+                unsigned long long m = strtoull(v, &end, 10);
+                if (end == v || *end || v[0] == '-' || m < MP_ZPK_VOL_HEADER + MP_BLOCK_V1 || m > MP_ZPK_VOLUME_LIMIT)
+                    return bad_usage("--volume-limit must be between 262208 and 4294901760 bytes", v);
+                limit = m;
+            }
+        } else if (a[0] == '-') {
+            return bad_usage("unknown option", a);
+        } else if (!in) {
+            in = a;
+        } else {
+            return bad_usage("extra argument", a);
+        }
+    }
+    if (!in) return bad_usage("missing the .p5z to compact", NULL);
+    if (!out) return bad_usage("missing the new .p5z (-o)", NULL);
+    if (mp_path_kind(out) != 0) {
+        g_err_code = "exists";
+        return bad_usage("the output .p5z already exists", out);
+    }
+    char *dir = mp_full_path(out);
+    int parent_ok = dir && to_parent(dir) && mp_path_kind(dir) == 2;
+    free(dir);
+    if (!parent_ok) return bad_usage("the folder to save the .p5z in does not exist", out);
+    if (!grow_target_ok(in)) return 1;
+    start_json_and_control();
+    recover_note(in);
+    mp_err e = {{0}};
+    uint64_t t0 = mp_now_ns(), size = 0, before = 0;
+    mp_stat(in, &before, NULL);
+    if (mp_compact(in, out, threads, limit, 1, &size, &e) != 0) {
+        fprintf(stderr, "error: %s\n", e.msg);
+        return 1;
+    }
+    FILE *hum = g_json ? stderr : stdout;
+    char a[32], b[32];
+    size_text(a, sizeof a, size);
+    size_text(b, sizeof b, before > size ? before - size : 0);
+    fprintf(hum, "Compacted to %s (%.0f s): %s, %s less\n", out, (double)(mp_now_ns() - t0) / 1e9, a, b);
+    if (g_json) {
+        char extra[96];
+        snprintf(extra, sizeof extra, ",\"p5z_size\":%llu,\"saved_bytes\":%llu", (unsigned long long)size,
+                 (unsigned long long)(before > size ? before - size : 0));
+        json_result(1, NULL, extra);
+    }
+    return 0;
+}
+
+static int cmd_compact(int argc, char **argv) {
+    prescan_json(argc, argv);
+    return finish_cmd(run_compact(argc, argv));
+}
+
 // Writes s as a JSON string: quotes, backslashes and control characters escaped; invalid UTF-8 becomes U+FFFD.
 static void print_json_string(const char *s) {
     const unsigned char *p = (const unsigned char *)s;
@@ -1027,6 +1320,7 @@ static void print_json_string(const char *s) {
 }
 
 static int cmd_info_json(const char *path) {
+    int recovered = recover_note(path);
     mp_err e = {{0}};
     mp_describe d;
     mp_complete c;
@@ -1048,7 +1342,9 @@ static int cmd_info_json(const char *path) {
     printf(",\"original_size\":%llu,\"install_size\":%llu,\"p5z_size\":%llu,\"files\":%llu",
            (unsigned long long)d.original_size, (unsigned long long)d.install_size,
            (unsigned long long)d.p5z_size, (unsigned long long)d.files);
-    if (!strcmp(d.kind, "p5z")) printf(",\"loose_bytes\":%llu", (unsigned long long)d.loose_bytes);
+    if (!strcmp(d.kind, "p5z"))
+        printf(",\"loose_bytes\":%llu,\"grown\":%u,\"unused_bytes\":%llu,\"recovered\":%s", (unsigned long long)d.loose_bytes,
+               d.grown, (unsigned long long)d.unused_bytes, recovered ? "true" : "false");
     printf(",\"packed_files\":%llu,\"volumes\":%llu", (unsigned long long)d.packed_files,
            (unsigned long long)d.volumes);
     printf(",\"has_runtime\":%s,\"has_zstd_runtime\":%s,\"packed\":%s", d.has_runtime ? "true" : "false",
@@ -1078,6 +1374,7 @@ static int cmd_info_json(const char *path) {
 
 // info --play: what the console needs to play the .p5z without installing it.
 static int cmd_info_play(const char *path) {
+    recover_note(path);
     char err[512] = {0};
     mp_play *p = mp_play_open(path, err, sizeof err);
     if (!p) {
@@ -1102,6 +1399,7 @@ static int cmd_info(int argc, char **argv) {
     if (argc == 2 && !strcmp(argv[0], "--json")) return cmd_info_json(argv[1]);
     if (argc == 2 && !strcmp(argv[1], "--json")) return cmd_info_json(argv[0]);
     if (argc != 1 || !strcmp(argv[0], "--json")) return bad_usage("info needs a .p5z file (or --json or --play and a path)", NULL);
+    recover_note(argv[0]);
     mp_err e = {{0}};
     mp_p5z *p = NULL;
     if (mp_p5z_open(argv[0], &p, &e) != 0) {
@@ -1129,6 +1427,7 @@ static int cmd_icon(int argc, char **argv) {
         }
     }
     if (!src || !out) return bad_usage("icon needs a source and -o <icon.png>", NULL);
+    recover_note(src);
     mp_err e = {{0}};
     uint8_t *png = NULL;
     size_t len = 0;
@@ -1196,6 +1495,7 @@ static int run_unpack(int argc, char **argv) {
     }
     int existed = mp_path_kind(dst) == 2;
     start_json_and_control();
+    recover_note(src);
     mp_err e = {{0}};
     mp_p5z *p = NULL;
     if (mp_p5z_open(src, &p, &e) != 0) {
@@ -1265,6 +1565,7 @@ static int run_verify(int argc, char **argv) {
     }
     if (kind == 1 && against) return bad_usage("--against only works for folders (the .p5z already carries its SHA-256 hashes)", NULL);
     start_json_and_control();
+    if (kind == 1) recover_note(target);
     mp_err e = {{0}};
     mp_verify_result r;
     uint64_t t0 = mp_now_ns();
@@ -1454,7 +1755,7 @@ int main(int argc, char **argv) {
         // what the window needs from this version of the engine
         printf("{\"progress_json\":true,\"control_stdin\":true,\"max_file_size\":true,\"info_json\":true,"
                "\"icon\":true,\"packs\":true,\"content_id\":true,\"levels\":true,\"measure\":true,"
-               "\"images\":true,\"fpkg\":true,\"passcode\":true,\"completeness\":true,\"dlc\":true}\n");
+               "\"images\":true,\"fpkg\":true,\"passcode\":true,\"completeness\":true,\"dlc\":true,\"grow\":true}\n");
         return 0;
     }
     if (argc >= 2 && (!strcmp(argv[1], "--help") || !strcmp(argv[1], "-h") || !strcmp(argv[1], "help"))) {
@@ -1463,7 +1764,8 @@ int main(int argc, char **argv) {
     }
     // --passcode, for the commands that open a game: taken out here, before each one reads its options
     if (argc >= 2 && (!strcmp(argv[1], "analyze") || !strcmp(argv[1], "pack") || !strcmp(argv[1], "info") ||
-                      !strcmp(argv[1], "icon") || !strcmp(argv[1], "verify"))) {
+                      !strcmp(argv[1], "icon") || !strcmp(argv[1], "verify") || !strcmp(argv[1], "add") ||
+                      !strcmp(argv[1], "update"))) {
         int rc = take_passcode(&argc, argv);
         if (rc) return rc;
     }
@@ -1474,6 +1776,9 @@ int main(int argc, char **argv) {
     if (argc >= 2 && strcmp(argv[1], "icon") == 0) return cmd_icon(argc - 2, argv + 2);
     if (argc >= 2 && strcmp(argv[1], "verify") == 0) return cmd_verify(argc - 2, argv + 2);
     if (argc >= 2 && strcmp(argv[1], "measure") == 0) return cmd_measure(argc - 2, argv + 2);
+    if (argc >= 2 && strcmp(argv[1], "add") == 0) return cmd_add(argc - 2, argv + 2);
+    if (argc >= 2 && strcmp(argv[1], "update") == 0) return cmd_update(argc - 2, argv + 2);
+    if (argc >= 2 && strcmp(argv[1], "compact") == 0) return cmd_compact(argc - 2, argv + 2);
     if (argc >= 2) return bad_usage("unknown command", argv[1]);
     usage(stderr);
     return 2;

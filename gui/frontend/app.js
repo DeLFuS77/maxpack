@@ -415,11 +415,10 @@ function rowWarnings(row) {
   if (!game) return list;
   // a DLC of Compress: why it goes inside no game, or not inside the one that started without it
   if (row.section === "compress" && isDlc(game)) {
-    const games = gameRowsOf(row);
+    const { games, late } = dlcStatus(row);
     if (!firstOfItsId(row)) list.push(t("dlcTwin"));
     else if (!games.length) list.push(t("dlcNoGame")(titleOf(game)));
-    const late = games.filter(other => running() && state.job.rows.includes(other) && !(other.dlcSent || []).includes(row.path));
-    if (firstOfItsId(row) && late.length) list.push(t("dlcLate")(late.map(other => other.game.Name).join(", ")));
+    if (late.length) list.push(t("dlcLate")(namesOf(late)));
     return list;
   }
   if (row.section === "compress" && game.Packed) list.push(t("detail_already_packed"));
@@ -550,16 +549,27 @@ function dlcRowsOf(row) {
   const id = titleOf(row.game);
   return id ? state.lists.compress.filter(other => readRow(other) && isDlc(other.game) && titleOf(other.game) === id && firstOfItsId(other)) : [];
 }
-const dlcCountOf = row => dlcRowsOf(row).length;
+// whether what a game of Compress is made with is set: it is made, or in the queue that runs (its DLC
+// went with it when it joined)
+const setRow = row => row.state === "ok" || (running() && state.job.rows.includes(row));
+// how many DLC go inside a game of Compress: the ones that went, once that is set
+const dlcCountOf = row => (row.dlcSent && setRow(row) ? row.dlcSent.length : dlcRowsOf(row).length);
+// what becomes of a DLC row of Compress: the games of its title (games), the ones that were set
+// without it (late), the ones it goes inside (going) and, of those, the ones made (made)
+function dlcStatus(row) {
+  const games = gameRowsOf(row);
+  const late = games.filter(other => setRow(other) && !(other.dlcSent || []).includes(row.path));
+  const going = games.filter(other => !late.includes(other));
+  return { games, late, going, made: going.filter(other => other.state === "ok") };
+}
+const namesOf = rows => rows.map(other => other.game.Name).join(", ");
 // the line of a DLC of Compress: the games it goes inside, or went inside once they are made; "" for
 // one that goes in none (its warning says why)
 function dlcLineText(row) {
   if (row.section !== "compress" || !readRow(row) || !isDlc(row.game)) return "";
-  const games = gameRowsOf(row);
-  if (!games.length) return "";
-  const names = list => list.map(other => other.game.Name).join(", ");
-  const made = games.filter(other => other.state === "ok" && (other.dlcSent || []).includes(row.path));
-  return made.length === games.length ? t("dlcPackedInto")(names(made)) : t("dlcGoesWith")(names(games));
+  const { going, made } = dlcStatus(row);
+  if (!going.length) return "";
+  return made.length === going.length ? t("dlcPackedInto")(namesOf(made)) : t("dlcGoesWith")(namesOf(going));
 }
 // the facts of Details of the DLC a game carries (a .p5z made with them), as [name, value]: how many,
 // and each one with its content ID and what it has

@@ -81,6 +81,14 @@ console.log(vm.runInContext(` + "`" + `(() => {
   state.lists.compress = [dlcA, game1];
   Object.assign(game1, { state: "ok", dlcSent: ["D:/dlc/a.pkg"] });
   if (dlcLineText(dlcA) !== t("dlcPackedInto")("Copper Vale")) say("once made: " + dlcLineText(dlcA));
+  // a DLC added once its game is made did not go inside it, and says so; the game counts what went
+  const after = row("D:/dlc/e", { Content: "dlc", DLCData: true, ContentID: "UP0000-PPSA00000_00-EEEEEEEEEEEEEEEE" });
+  state.lists.compress = [dlcA, game1, after];
+  if (dlcLineText(after) !== "" || !rowWarnings(after).includes(t("dlcLate")("Copper Vale"))) say("after its game was made: " + dlcLineText(after) + " / " + rowWarnings(after));
+  if (dlcCountOf(game1) !== 1) say("the game made counts " + dlcCountOf(game1));
+  // a game that failed takes it the next time
+  game1.state = "error";
+  if (dlcLineText(after) !== t("dlcGoesWith")("Copper Vale") || rowWarnings(after).length) say("after its game failed: " + dlcLineText(after) + " / " + rowWarnings(after));
   Object.assign(game1, { state: "", dlcSent: undefined });
   // the report counts them, never their content IDs
   state.lists.compress = [dlcA, game1, dlcB];

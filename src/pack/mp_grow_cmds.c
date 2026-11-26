@@ -169,6 +169,8 @@ int mp_grow_update(const char *p5z, const char *dump, const mp_grow_opts *o, mp_
     mp_dlc_list have;
     memset(&have, 0, sizeof have);
     const char *code = NULL;
+    char *ini = NULL;   // the .p5z's dlc_emu.ini, when its DLC go on with it
+    size_t ini_len = 0;
     int rc = -1;
     if (open_recovered(p5z, &p, r, e) != 0) goto done;
     if (mp_source_open(dump, &d, e) != 0) goto done;
@@ -202,8 +204,6 @@ int mp_grow_update(const char *p5z, const char *dump, const mp_grow_opts *o, mp_
     carried c = {p, &have};
     const char *cc = NULL;
     mp_err ce = {{0}};
-    char *ini = NULL;
-    size_t ini_len = 0;
     int keep_dlc = find_ci(d, MP_DLC_INI) < 0 && carried_dlc(p, &have, &ini, &ini_len, &cc, &ce) == 0 && have.n > 0;
     if (!keep_dlc && !cc && ce.msg[0]) {   // the ini could not be read: not a reason to lose the DLC
         *e = ce;
@@ -230,16 +230,13 @@ int mp_grow_update(const char *p5z, const char *dump, const mp_grow_opts *o, mp_
         dlc = NULL;   // taken by the merge, with d
         int mr = mp_source_merge(d, parts, prefixes, 1, NULL, MP_DLC_INI, (const uint8_t *)ini, ini_len, mtime, &m, e);
         d = mr == 0 ? m : NULL;
-        if (mr != 0) {
-            free(ini);
-            goto done;
-        }
+        if (mr != 0) goto done;
     }
-    free(ini);
     rc = mp_grow_run(p5z, d, keep_dlc ? known_carried : NULL, &c, o, r, e);
     code = r->code;
 done:
     if (rc != 0 && code) r->code = code;
+    free(ini);
     mp_source_close(dlc);
     mp_source_close(d);
     mp_dlc_list_free(&have);

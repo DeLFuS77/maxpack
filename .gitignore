@@ -4,3 +4,7 @@ __pycache__/
 gui/out/
 !gui/build/
 gui/rsrc_*.syso
+# what `go build` makes in gui/ (the releases are built by the CI)
+/gui/gui
+/gui/gui.exe
+/gui/*.exe

@@ -13,7 +13,8 @@ All notable changes to MaxPack are listed here. The format follows
   written again with the DLC it had and the new ones). `maxpack update <game.p5z> <new dump>` makes it a
   new version of its game: it compares the new dump with the `.p5z`'s list by path, size and SHA-256,
   compresses only what is new or changed, drops what is gone and keeps the DLC; it must be the same game
-  in another version, and when more than half of the game changed it stops unless given `--force`. Both
+  in another version (a DLC given as the new dump is refused: `not_a_game`), and when more than half of
+  the game changed it stops unless given `--force`. Both
   only **append**: new regions, new volumes after the old ones (same `archive_id` and level), a new
   index and footer; nothing before the old end is written again. The new index is of **version 2**
   (`prev_size` and `grown` after version 1's fields), which readers of before refuse; a `.p5z` that never
@@ -23,7 +24,10 @@ All notable changes to MaxPack are listed here. The format follows
 - **Cut short, nothing lost.** Before appending, MaxPack writes `<name>.p5z.maxpack-append` (the size and
   footer the `.p5z` had). A failure or a cancel cuts the `.p5z` back exactly; after a power cut, every
   command that opens the `.p5z` (and so the window) does, and says so; a reader meanwhile sees the
-  `.p5z` as it was. Another MaxPack never undoes an append at work.
+  `.p5z` as it was. Another MaxPack never undoes an append at work. The journal's name is flushed to
+  disk before the first byte is appended; one that cannot be read is left alone with its `.p5z` (`add`,
+  `update` and `compact` stop saying so); an append that had ended before its journal could be deleted
+  is kept, and `add`/`update` say so (`journal_left`).
 - `maxpack compact <in.p5z> -o <out.p5z>`: a copy without the room `add` and `update` leave, copying
   what is stored and laying the chunks out again, nothing compressed again; it is of version 1, the
   `.p5z` packing that dump gives. `info` says how many times a `.p5z` grew and the room it does not use;

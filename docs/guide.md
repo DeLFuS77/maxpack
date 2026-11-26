@@ -672,9 +672,10 @@ maxpack compact "D:\games\MyGame [PPSA00000].p5z" -o "D:\games\MyGame compact.p5
   same checks as `pack --dlc`; a `.p5z` whose `dlc_emu.ini` MaxPack did not write (a game's own, written
   by hand) is refused (`dlc_has_ini`), and so is a DLC it has already. The game's files are not read
   again: only the DLC.
-- **`update`** makes the `.p5z` the new dump given (a folder, an image or a package). It must be the
-  same game, by the title ID of its `param.json` (`other_game`; none: `no_title_id`), in another version
-  (`same_version`). It reads the whole new dump to compare it with the `.p5z`'s list by path, size and
+- **`update`** makes the `.p5z` the new dump given (a folder, an image or a package). It must be a game,
+  with its `eboot.bin` (a DLC, as a folder or a package, is refused: `not_a_game`; DLC go in with `add`),
+  the same game, by the title ID of its `param.json` (`other_game`; none: `no_title_id`), in another
+  version (`same_version`). It reads the whole new dump to compare it with the `.p5z`'s list by path, size and
   SHA-256 (the `comparing` phase), compresses only what is new or changed, and drops what the dump no
   longer has. The DLC the `.p5z` carries stay, unless the new dump has a `dlc_emu.ini` of its own; a new
   dump with files where they are is refused (`dlc_refused`). When more than half of the game's bytes
@@ -690,12 +691,14 @@ maxpack compact "D:\games\MyGame [PPSA00000].p5z" -o "D:\games\MyGame compact.p5
 - They say what they did: the files the same, new, changed and removed, what was stored, what the
   `.p5z` grew by, its volumes and the room it no longer uses. The `--progress json` result line has
   `same_files`, `new_files`, `changed_files`, `removed_files`, `stored_bytes`, `added_bytes`, `p5z_size`,
-  `volumes`, `unused_bytes`, `grown`, `nothing` (nothing changed: nothing written), `par2`, `dlc_data`,
-  `dlc_license` and `dlc_bytes`.
+  `volumes`, `unused_bytes`, `grown`, `nothing` (nothing changed: nothing written), `par2`,
+  `journal_left`, `dlc_data`, `dlc_license` and `dlc_bytes`.
 - **Cut short:** before it appends, MaxPack writes `<name>.p5z.maxpack-append` with the size the `.p5z`
   had and its footer. A failure or a cancel cuts the `.p5z` back to that size and deletes it; after a
   power cut or a crash, the next command that opens the `.p5z` (and so the window) does, and says "an
-  interrupted change ... was undone". Leave that file where it is.
+  interrupted change ... was undone". When the append had already ended (only the file was left, say
+  because another program had it open: `journal_left`, and a warning), the next open keeps the `.p5z`
+  as it grew and deletes the file. Leave that file where it is, next to its `.p5z` and with its name.
 - **The console:** a `.p5z` that grew has an index of version 2, and its packs need ampr-emu-ng
   `v0.5.2-maxpack.1` or later (its p5z mode takes chunks in any order and room between them): play it
   from the `.p5z` with MaxPack for the console. The installer of the console refuses it (`grown_p5z`);
@@ -1157,6 +1160,17 @@ If the power went or MaxPack crashed while it added DLC to a `.p5z` or updated o
 longer than it was and a file `<name>.p5z.maxpack-append` is next to it. Do not delete that file: the
 next time MaxPack reads the `.p5z` (the window lists it, or any command opens it) it cuts the `.p5z`
 back to what it was, deletes that file and says so. Until then, MaxPack reads the `.p5z` as it was.
+If the add or the update had ended and only that file was left, MaxPack keeps the `.p5z` as it grew and
+deletes the file.
+
+Do not rename or move the `.p5z` (or that file) before MaxPack has opened it once: the file is found by
+the `.p5z`'s name, and a `.p5z` under another name is read as it is, with the half-written end that
+makes it fail to open. Give it back its name, or put the file next to it with the new name followed by
+`.maxpack-append`.
+
+If that file cannot be read (another program has it open, a USB drive that is waking up), MaxPack
+leaves it and the `.p5z` as they are: an add, an update or a compact stops saying so, and other commands
+warn. Try again once the file can be read.
 
 ### Copies left by a run that did not end
 

@@ -175,8 +175,9 @@ wrong. What else a reader checks for version 2:
 - The volume records are `ampr_zstd-000.pak`, `ampr_zstd-001.pak`... with the ids 0 to n-1, each once
   (the console's `maxpack.image` lists them by id), and there is at most one `ampr_zstd.index` and one
   `ampr_emu.index`.
-- The records come in the order a fresh pack writes them: loose files by path, volumes by id,
-  `ampr_emu.index`, the runtime, the originals by path, `ampr_zstd.index`.
+- MaxPack writes the records in the order a fresh pack writes them (loose files by path, volumes by id,
+  `ampr_emu.index`, the runtime, the originals by path, `ampr_zstd.index`), but no reader checks that
+  order, and a reader must not rely on it.
 - Its packs are checked by ampr-emu-ng's p5z rules: each chunk lies in `[64, size)` of its volume and
   none overlaps another, in any order and with room between them; a volume header has its id, the
   `archive_id` and its size, and counts at most the index's volumes. Codecs, sizes, the store-only flag,
@@ -211,7 +212,8 @@ volume limit and options), and one that never grew comes out the same.
 
 An append that stops (a cancel, a full disk, a crash, a power cut) must not leave half a `.p5z`. Before
 it writes anything at the end, MaxPack writes next to it `<name>.p5z.maxpack-append` (written as
-`<name>.p5z.maxpack-append.tmp`, flushed and renamed, so it is whole or not there), 64 bytes:
+`<name>.p5z.maxpack-append.tmp`, flushed and renamed, the rename flushed too: `MOVEFILE_WRITE_THROUGH`
+on Windows, the folder flushed elsewhere, `F_FULLFSYNC` on macOS), 64 bytes:
 
 | off | type | field |
 |---|---|---|
@@ -224,15 +226,29 @@ it writes anything at the end, MaxPack writes next to it `<name>.p5z.maxpack-app
 | 60 | u32 | CRC of bytes 0..60 |
 
 - The append holds the `.p5z` as its only writer (on Windows a write handle that others may only read;
-  elsewhere `flock`). When it ends, the `.p5z` is flushed to disk and only then the journal deleted.
+  elsewhere `flock`). What it adds is flushed to disk before its index and footer are written; then the
+  `.p5z` is flushed again and only then the journal deleted.
 - Any failure cuts the `.p5z` back to the size the journal says, flushes it and deletes the journal: it
   is exactly as it was.
 - After a power cut or a crash, the journal is still there: every command of MaxPack that opens a
-  `.p5z` (and so the window, which reads them with the engine) first takes it back to that size,
-  provided its last 32 bytes there are the footer the journal says, and deletes the journal. A journal
-  that is damaged, or does not match (another file in its place), is deleted and the `.p5z` left alone.
-  While another MaxPack holds the `.p5z` (an append at work), nothing is touched.
-- Meanwhile, a reader that finds a journal that matches reads the `.p5z` as it was before the append.
+  `.p5z` (and so the window, which reads them with the engine) first looks at it. The journal is
+  `<name>.p5z.maxpack-append` or, when that is not there whole, a whole `.tmp` (its rename did not reach
+  the disk); a `.tmp` cut short alone means no append began, and it is deleted.
+  - When the `.p5z` is longer than the journal says and its last 32 bytes there are the footer the
+    journal says, the append either had ended or not. It had ended when the `.p5z` ends with a whole
+    footer whose index lies past that size and is of version 2 with `prev_size` equal to it: the `.p5z`
+    is kept as it grew and only the journal deleted (a delete that failed after the append, or a power
+    cut right then). Else the `.p5z` is cut back to that size and the journal deleted.
+  - A journal that is damaged, or does not match (another file in its place), is deleted and the
+    `.p5z` left alone.
+  - A journal that is there and cannot be read (an I/O error, a drive waking up) is never taken for
+    damaged: it and the `.p5z` are left as they are; `add`, `update` and `compact` stop saying so, and
+    the other commands warn and read the `.p5z` as it is.
+  - While another MaxPack holds the `.p5z` (an append at work), nothing is touched.
+- Meanwhile, a reader that finds a journal that matches reads the `.p5z` as it was before the append,
+  or as it grew when that append had ended.
+- The journal is found by the `.p5z`'s name: a `.p5z` renamed after an append stopped is read as it is
+  (and fails to open, its end half written) until it gets its name back, or its journal the new name.
 - The repair data (PAR2) of a `.p5z` that grew no longer match it: MaxPack says so, and the window makes
   them again when the `.p5z` had them.
 

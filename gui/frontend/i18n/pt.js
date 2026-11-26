@@ -470,7 +470,7 @@ texts.pt = {
   detail_grown_unverified: "ele cresceu: o que é novo foi para o .p5z, mas a verificação dele foi cancelada (Verificar, no cartão dele, o confere)",
   detail_nothing_to_do: "ele já tinha tudo isso: nada foi adicionado",
   detail_repair_redone: "os dados de reparo dele foram feitos de novo",
-  detail_busy: "outro MaxPack está mudando este .p5z agora",
+  detail_busy: "outro programa está com este .p5z aberto (outro MaxPack mudando-o, o Explorador fazendo a capa dele ou um antivírus): tente de novo em um instante",
   detail_grow_no_space: "não há espaço na unidade dele para o que é adicionado: o .p5z está como estava",
   detail_grow_too_big: "o .p5z passaria de 4 GiB, que o FAT32 não aceita: ele está como estava",
   detail_too_many_volumes: "ele teria mais de 256 volumes, o máximo que o console aceita: comprima o jogo de novo do zero",

@@ -470,7 +470,7 @@ texts.ja = {
   detail_grown_unverified: ".p5z に新しい分は入りましたが、検証はキャンセルされました（カードの「検証」で確かめられます）",
   detail_nothing_to_do: "すべて入っていたため、何も追加していません",
   detail_repair_redone: "修復データを作り直しました",
-  detail_busy: "別の MaxPack がこの .p5z を変更中です",
+  detail_busy: "別のプログラムがこの .p5z を開いています（変更中の別の MaxPack、カバーを作成中のエクスプローラー、またはウイルス対策ソフト）。少し待ってからもう一度お試しください",
   detail_grow_no_space: "ドライブに追加分の空きがありません。.p5z は元のままです",
   detail_grow_too_big: ".p5z が FAT32 で扱えない 4 GiB を超えます。元のままです",
   detail_too_many_volumes: "ボリュームがコンソールの上限の 256 を超えます。ゲームを最初から圧縮し直してください",

@@ -208,7 +208,7 @@ int mp_grow_run(const char *p5z, mp_source *dump, mp_grow_known known, void *kct
     if (mp_p5z_recover(p5z, &what, e) != 0) return -1;
     if (what == MP_RECOVER_BUSY) {
         r->code = "busy";
-        mp_err_set(e, "another MaxPack is changing %s now", p5z);
+        mp_err_set(e, MP_P5Z_BUSY_TEXT, p5z);
         return -1;
     }
     if (mp_p5z_open(p5z, &p, e) != 0) return -1;
@@ -464,7 +464,7 @@ int mp_grow_run(const char *p5z, mp_source *dump, mp_grow_known known, void *kct
     if (mp_wfile_reopen_locked(p5z, &f, &busy, e) != 0) {
         if (busy) {
             r->code = "busy";
-            mp_err_set(e, "another MaxPack is changing %s now", p5z);
+            mp_err_set(e, MP_P5Z_BUSY_TEXT, p5z);
         }
         goto done;
     }

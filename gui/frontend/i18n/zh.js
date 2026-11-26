@@ -470,7 +470,7 @@ texts.zh = {
   detail_grown_unverified: "已扩充：新内容已进入 .p5z，但其校验已取消（可用其卡片上的“校验”检查）",
   detail_nothing_to_do: "它已包含所有这些内容：未添加任何东西",
   detail_repair_redone: "已重新生成其修复数据",
-  detail_busy: "另一个 MaxPack 正在更改此 .p5z",
+  detail_busy: "另一个程序打开了此 .p5z（正在更改它的另一个 MaxPack、正在生成封面的资源管理器或杀毒软件）：请稍后再试",
   detail_grow_no_space: "其所在驱动器没有空间容纳新增内容：.p5z 保持原样",
   detail_grow_too_big: ".p5z 将超过 4 GiB，而 FAT32 不支持：保持原样",
   detail_too_many_volumes: "它将超过 256 个卷，即主机支持的上限：请从头重新压缩游戏",

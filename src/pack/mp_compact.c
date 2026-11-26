@@ -22,7 +22,7 @@ int mp_compact(const char *in, const char *out, unsigned threads, uint64_t volum
     int what = 0;
     if (mp_p5z_recover(in, &what, e) != 0) return -1;
     if (what == MP_RECOVER_BUSY) {
-        mp_err_set(e, "another MaxPack is changing %s now", in);
+        mp_err_set(e, MP_P5Z_BUSY_TEXT, in);
         return -1;
     }
     mp_p5z *p = NULL;

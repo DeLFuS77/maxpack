@@ -57,7 +57,7 @@ static int open_recovered(const char *p5z, mp_p5z **p, mp_grow_result *r, mp_err
     if (mp_p5z_recover(p5z, &what, e) != 0) return -1;
     if (what == MP_RECOVER_BUSY) {
         r->code = "busy";
-        mp_err_set(e, "another MaxPack is changing %s now", p5z);
+        mp_err_set(e, MP_P5Z_BUSY_TEXT, p5z);
         return -1;
     }
     return mp_p5z_open(p5z, p, e);

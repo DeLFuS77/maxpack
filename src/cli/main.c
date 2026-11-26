@@ -2186,7 +2186,7 @@ static int run_send(int argc, char **argv) {
         }
         if (mp_p5z_recover(p5z, &what, NULL) == 0 && what == MP_RECOVER_BUSY) {
             fail_code = "p5z_busy";
-            mp_err_set(&e, "another MaxPack is changing %s now: send it when that ends", p5z);
+            mp_err_set(&e, MP_P5Z_BUSY_TEXT, p5z);
         } else if (journal && mp_path_kind(journal) != 0) {
             // a change of it stopped and could not be undone (a read-only file?): what it is cannot be told
             fail_code = "p5z_busy";

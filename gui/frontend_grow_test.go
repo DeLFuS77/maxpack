@@ -4,8 +4,11 @@ package main
 
 import (
 	"os/exec"
+	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/DeLFuS77/maxpack/gui/settings"
 )
 
 // growChecks runs in node over the folder of the page, as dlcChecks does, and prints one line for each
@@ -84,6 +87,21 @@ func TestPageGrow(t *testing.T) {
 	for _, problem := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 		if problem != "" {
 			t.Error(problem)
+		}
+	}
+}
+
+// TestPageBusySaysWho: a .p5z another program holds (Add DLC, Update, Send) says what may hold it: another
+// MaxPack, the Explorer making its cover or an antivirus, and to try again in a moment; in every language.
+func TestPageBusySaysWho(t *testing.T) {
+	runPage(t, `
+  if (!/another MaxPack/.test(t("detail_busy")) || !/Explorer/.test(t("detail_busy")) || !/antivirus/.test(t("detail_busy")) || !/moment/.test(t("detail_busy")))
+    say("detail_busy: " + t("detail_busy"));
+`)
+	for _, lang := range settings.Languages {
+		found := regexp.MustCompile(`(?m)^  detail_busy: "(.*)",\r?$`).FindStringSubmatch(readPage(t, "i18n/"+lang+".js"))
+		if found == nil || !strings.Contains(found[1], "MaxPack") || !strings.Contains(found[1], ".p5z") {
+			t.Errorf("%s: detail_busy %q", lang, found)
 		}
 	}
 }

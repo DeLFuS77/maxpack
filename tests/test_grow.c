@@ -912,6 +912,11 @@ MP_TEST(grow_refuses) {
     MP_CHECK(mp_wfile_reopen_locked(G_P5Z, &f, &busy, &e) == 0);
     MP_CHECK(grow_with(G_P5Z, V2, &o, &r, &e) != 0);
     MP_CHECK_STR(r.code, "busy");
+    // what may hold it is said, not only another MaxPack: the Explorer making its cover, an antivirus
+    MP_CHECK_CONTAINS(e.msg, "another MaxPack");
+    MP_CHECK_CONTAINS(e.msg, "Explorer");
+    MP_CHECK_CONTAINS(e.msg, "antivirus");
+    MP_CHECK_CONTAINS(e.msg, "try again in a moment");
     mp_wfile_close(f, NULL);
     MP_CHECK(starts_with(G_P5Z, orig, olen) && size_of(G_P5Z) == olen);
     free(orig);
@@ -1616,6 +1621,29 @@ static void release_unreadable(const char *path, int h) {
 }
 #endif
 
+#ifdef _WIN32
+// A program that reads the .p5z letting others only read it (the Explorer's stream while it makes the cover, an
+// antivirus) holds it as another MaxPack would: a grow is refused as busy, says so, and leaves it as it was.
+MP_TEST(grow_held_by_a_reader) {
+    mpt_clear(TMP);
+    make_versions();
+    if (mpt_pack(V1, G_P5Z, 1, NULL) != 0) return;
+    size_t olen = 0;
+    uint8_t *orig = mpt_slurp(G_P5Z, &olen);
+    int fd = -1;
+    MP_CHECK(_sopen_s(&fd, G_P5Z, _O_RDONLY | _O_BINARY, _SH_DENYWR, 0) == 0);
+    mp_grow_opts o = quiet_opts();
+    mp_grow_result r;
+    mp_err e = {{0}};
+    MP_CHECK(grow_with(G_P5Z, V2, &o, &r, &e) != 0);
+    MP_CHECK_STR(r.code, "busy");
+    MP_CHECK_CONTAINS(e.msg, "Explorer");
+    if (fd >= 0) _close(fd);
+    MP_CHECK(starts_with(G_P5Z, orig, olen) && size_of(G_P5Z) == olen);
+    free(orig);
+}
+#endif
+
 MP_TEST(recover_unreadable_journal_kept) {
     uint8_t *orig = NULL;
     size_t olen = 0;
@@ -1940,6 +1968,9 @@ int main(void) {
     MP_RUN(recover_lone_tmp_journal);
     MP_RUN(recover_keeps_committed);
     MP_RUN(recover_unreadable_journal_kept);
+#ifdef _WIN32
+    MP_RUN(grow_held_by_a_reader);
+#endif
     MP_RUN(update_refuses_non_game);
     MP_RUN(install_verify_after_growth);
     MP_RUN(grow_refuses_packed_without_packs);

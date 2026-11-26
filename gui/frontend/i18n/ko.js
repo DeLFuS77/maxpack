@@ -470,7 +470,7 @@ texts.ko = {
   detail_grown_unverified: ".p5z에 새로운 것은 들어갔지만 검증은 취소되었습니다(카드의 ‘검증’으로 확인할 수 있습니다)",
   detail_nothing_to_do: "이미 모두 들어 있어 아무것도 추가하지 않았습니다",
   detail_repair_redone: "복구 데이터를 다시 만들었습니다",
-  detail_busy: "다른 MaxPack이 지금 이 .p5z를 바꾸고 있습니다",
+  detail_busy: "다른 프로그램이 이 .p5z를 열고 있습니다(이것을 바꾸는 다른 MaxPack, 표지를 만드는 파일 탐색기, 또는 백신 프로그램): 잠시 후 다시 시도하세요",
   detail_grow_no_space: "드라이브에 추가할 공간이 없습니다. .p5z는 원래 그대로입니다",
   detail_grow_too_big: ".p5z가 FAT32에서 저장할 수 없는 4 GiB를 넘게 됩니다. 원래 그대로입니다",
   detail_too_many_volumes: "볼륨이 콘솔이 받는 최대 256개를 넘게 됩니다. 게임을 처음부터 다시 압축하세요",

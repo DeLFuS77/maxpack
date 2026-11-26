@@ -51,6 +51,12 @@ uint32_t mp_p5z_grown(const mp_p5z *p);   // how many times it grew (0 for versi
 // journal that matches it as it was before the append, or as it grew once that append had ended.
 #define MP_P5Z_JOURNAL ".maxpack-append"
 enum { MP_RECOVER_NONE = 0, MP_RECOVER_RESTORED, MP_RECOVER_BUSY, MP_RECOVER_STALE, MP_RECOVER_COMMITTED };
+// What a refusal says when another program holds the .p5z (%s, its path) so that it cannot be the only writer of
+// it: on Windows a reader that lets others only read it holds it too, as the Explorer does while it makes its
+// cover, or an antivirus.
+#define MP_P5Z_BUSY_TEXT                                                                                         \
+    "%s is held by another program (another MaxPack changing it, the Explorer making its cover, or an antivirus): " \
+    "try again in a moment"
 int mp_p5z_recover(const char *p5z, int *what, mp_err *e);
 const mp_pack_manifest *mp_p5z_manifest(const mp_p5z *p);
 int mp_p5z_info(const mp_p5z *p, FILE *out);

@@ -116,6 +116,7 @@ texts.ar = {
 
   nothing: "لا توجد ألعاب بعد",
   listed: (n, bytes) => arCount(n, "لعبة واحدة", "لعبتان", "ألعاب", "لعبة") + " · " + size(bytes),
+  listedDlc: (n, dlc, bytes) => (n === 0 ? "0 ألعاب" : arCount(n, "لعبة واحدة", "لعبتان", "ألعاب", "لعبة")) + "، و" + dlc + " DLC · " + size(bytes),
   working: (done, n, share) => `اكتمل ${done} من ${n} · ${share}%`,
   speed: rate => rate + "/ث",
   timeLeft: left => "المتبقي " + left,

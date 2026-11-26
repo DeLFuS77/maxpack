@@ -116,6 +116,7 @@ texts.ru = {
 
   nothing: "Игр пока нет",
   listed: (n, bytes) => n + " " + ruPlural(n, "игра", "игры", "игр") + " · " + size(bytes),
+  listedDlc: (n, dlc, bytes) => n + " " + ruPlural(n, "игра", "игры", "игр") + ", " + dlc + " DLC · " + size(bytes),
   working: (done, n, share) => `${done} из ${n} готово · ${share}%`,
   speed: rate => rate + "/с",
   timeLeft: left => "осталось " + left,

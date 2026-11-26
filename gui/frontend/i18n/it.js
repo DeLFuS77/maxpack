@@ -113,6 +113,7 @@ texts.it = {
 
   nothing: "Ancora nessun gioco",
   listed: (n, bytes) => (n === 1 ? "1 gioco" : n + " giochi") + " · " + size(bytes),
+  listedDlc: (n, dlc, bytes) => (n === 1 ? "1 gioco" : n + " giochi") + ", " + dlc + " DLC · " + size(bytes),
   working: (done, n, share) => `${done} di ${n} completat${done === 1 ? "o" : "i"} · ${share}%`,
   speed: rate => rate + "/s",
   timeLeft: left => left + " rimanenti",

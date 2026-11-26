@@ -113,6 +113,7 @@ texts.ja = {
 
   nothing: "ゲームはまだありません",
   listed: (n, bytes) => n + " 件のゲーム · " + size(bytes),
+  listedDlc: (n, dlc, bytes) => n + " 件のゲーム、DLC " + dlc + " 件 · " + size(bytes),
   working: (done, n, share) => `${n} 件中 ${done} 件完了 · ${share}%`,
   speed: rate => rate + "/秒",
   timeLeft: left => "残り " + left,

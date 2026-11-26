@@ -113,6 +113,7 @@ texts.de = {
 
   nothing: "Noch keine Spiele",
   listed: (n, bytes) => (n === 1 ? "1 Spiel" : n + " Spiele") + " · " + size(bytes),
+  listedDlc: (n, dlc, bytes) => (n === 1 ? "1 Spiel" : n + " Spiele") + ", " + dlc + " DLC · " + size(bytes),
   working: (done, n, share) => `${done} von ${n} fertig · ${share} %`,
   speed: rate => rate + "/s",
   timeLeft: left => "noch " + left,

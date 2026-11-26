@@ -113,6 +113,7 @@ texts.en = {
 
   nothing: "No games yet",
   listed: (n, bytes) => (n === 1 ? "1 game" : n + " games") + " · " + size(bytes),
+  listedDlc: (n, dlc, bytes) => (n === 1 ? "1 game" : n + " games") + ", " + dlc + " DLC · " + size(bytes),
   working: (done, n, share) => `${done} of ${n} done · ${share}%`,
   speed: rate => rate + "/s",
   timeLeft: left => left + " left",

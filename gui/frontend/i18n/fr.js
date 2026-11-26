@@ -113,6 +113,7 @@ texts.fr = {
 
   nothing: "Aucun jeu pour l'instant",
   listed: (n, bytes) => (n < 2 ? n + " jeu" : n + " jeux") + " · " + size(bytes),
+  listedDlc: (n, dlc, bytes) => (n < 2 ? n + " jeu" : n + " jeux") + ", " + dlc + " DLC · " + size(bytes),
   working: (done, n, share) => `${done} sur ${n} terminé${done < 2 ? "" : "s"} · ${share} %`,
   speed: rate => rate + "/s",
   timeLeft: left => left + " restantes",

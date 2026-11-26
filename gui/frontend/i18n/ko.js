@@ -113,6 +113,7 @@ texts.ko = {
 
   nothing: "아직 게임이 없습니다",
   listed: (n, bytes) => "게임 " + n + "개 · " + size(bytes),
+  listedDlc: (n, dlc, bytes) => "게임 " + n + "개, DLC " + dlc + "개 · " + size(bytes),
   working: (done, n, share) => `${n}개 중 ${done}개 완료 · ${share}%`,
   speed: rate => rate + "/초",
   timeLeft: left => left + " 남음",

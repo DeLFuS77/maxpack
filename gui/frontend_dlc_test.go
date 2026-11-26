@@ -133,6 +133,12 @@ console.log(vm.runInContext(` + "`" + `(() => {
   if (dlcErrorOf(dlcA) !== "" || dlcErrorOf(game1) !== "") say("errors where there are none: " + dlcErrorOf(dlcA) + " / " + dlcErrorOf(game1));
   if (dlcCountOf(game1) !== 1) say("the game counts " + dlcCountOf(game1));
   game1.game.ContentID = undefined;
+  // the foot of the list counts the DLC apart from the games: they go inside them
+  const counted = [game1, dlcA, dlcB, game3];
+  const bytes = counted.reduce((sum, r) => sum + r.game.OriginalSize, 0);
+  if (listedText(counted) !== t("listedDlc")(2, 2, bytes)) say("the foot of the list: " + listedText(counted));
+  if (listedText([game1, game3]) !== t("listed")(2, 20)) say("the foot of a list without DLC: " + listedText([game1, game3]));
+  if (listedText([]) !== t("nothing")) say("the foot of an empty list: " + listedText([]));
   // Compress waits for what is still being read: a DLC of the game may be among it, and must not be
   // left out; the reason is said
   const pending = row("D:/dlc/pending", null);

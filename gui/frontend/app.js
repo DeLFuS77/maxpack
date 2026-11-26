@@ -1120,6 +1120,14 @@ function paintStart() {
   $("clear").disabled = state.busy || list.length === 0;
 }
 
+// what a list holds, at its foot: its games and what they take, the DLC (which go inside them) apart
+function listedText(list) {
+  if (!list.length) return t("nothing");
+  const bytes = list.reduce((sum, row) => sum + (row.game ? row.game.OriginalSize : 0), 0);
+  const dlc = list.filter(row => isDlc(row.game)).length;
+  return dlc ? t("listedDlc")(list.length - dlc, dlc, bytes) : t("listed")(list.length, bytes);
+}
+
 function paintSummary() {
   const job = state.job, bar = $("total-bar");
   if (running()) {
@@ -1132,9 +1140,7 @@ function paintSummary() {
       : [job.rate > 0 ? t("speed")(size(job.rate)) : "", left >= 1 ? t("timeLeft")(time(Math.round(left))) : ""].filter(Boolean).join(" · ");
     return;
   }
-  const list = state.lists[state.section] || [];
-  const bytes = list.reduce((sum, row) => sum + (row.game ? row.game.OriginalSize : 0), 0);
-  $("summary-text").textContent = list.length ? t("listed")(list.length, bytes) : t("nothing");
+  $("summary-text").textContent = listedText(state.lists[state.section] || []);
   bar.hidden = true;
   // why Compress waits, else how the last queue of this section ended, in the language of now
   const last = job && job.summary && job.section === state.section;

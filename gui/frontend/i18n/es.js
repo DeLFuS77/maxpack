@@ -113,6 +113,7 @@ texts.es = {
 
   nothing: "Aún no hay juegos",
   listed: (n, bytes) => (n === 1 ? "1 juego" : n + " juegos") + " · " + size(bytes),
+  listedDlc: (n, dlc, bytes) => (n === 1 ? "1 juego" : n + " juegos") + ", " + dlc + " DLC · " + size(bytes),
   working: (done, n, share) => `${done} de ${n} hechos · ${share} %`,
   speed: rate => rate + "/s",
   timeLeft: left => "quedan " + left,

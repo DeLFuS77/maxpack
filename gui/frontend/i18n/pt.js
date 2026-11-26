@@ -113,6 +113,7 @@ texts.pt = {
 
   nothing: "Ainda não há jogos",
   listed: (n, bytes) => (n === 1 ? "1 jogo" : n + " jogos") + " · " + size(bytes),
+  listedDlc: (n, dlc, bytes) => (n === 1 ? "1 jogo" : n + " jogos") + ", " + dlc + " DLC · " + size(bytes),
   working: (done, n, share) => `${done} de ${n} concluído${done === 1 ? "" : "s"} · ${share}%`,
   speed: rate => rate + "/s",
   timeLeft: left => "faltam " + left,

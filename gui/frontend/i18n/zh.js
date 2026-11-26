@@ -113,6 +113,7 @@ texts.zh = {
 
   nothing: "还没有游戏",
   listed: (n, bytes) => n + " 个游戏 · " + size(bytes),
+  listedDlc: (n, dlc, bytes) => n + " 个游戏、" + dlc + " 个 DLC · " + size(bytes),
   working: (done, n, share) => `已完成 ${done}/${n} · ${share}%`,
   speed: rate => rate + "/秒",
   timeLeft: left => "剩余 " + left,

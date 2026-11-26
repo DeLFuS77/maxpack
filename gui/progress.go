@@ -89,7 +89,7 @@ type teller struct {
 // adds repair data to what is there).
 func writesOut(mode jobs.Mode) bool {
 	return mode != jobs.ModeVerify && mode != jobs.ModeRepair && mode != jobs.ModeProtect && mode != jobs.ModeAddDLC &&
-		mode != jobs.ModeUpdate
+		mode != jobs.ModeUpdate && mode != jobs.ModeSend
 }
 
 // setSize is what the repair data of a .p5z takes, 0 when it has none of its own.
@@ -195,6 +195,9 @@ func stepsOf(mode jobs.Mode, repair int) []string {
 			return []string{jobs.StateGrowing, jobs.StateVerifying, jobs.StateProtecting}
 		}
 		return []string{jobs.StateGrowing, jobs.StateVerifying}
+	case jobs.ModeSend:
+		// the bytes go to the console, which then verifies them
+		return []string{jobs.StateSending, jobs.StateVerifying}
 	}
 	return []string{jobs.StateUnpacking}
 }

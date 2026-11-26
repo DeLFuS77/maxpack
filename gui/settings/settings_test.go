@@ -5,6 +5,7 @@ package settings
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/DeLFuS77/maxpack/gui/internal/portable"
@@ -217,5 +218,37 @@ func TestSettingsRepairData(t *testing.T) {
 	os.WriteFile(filepath.Join(folder, "settings.json"), []byte(`{"Theme":"dark","Level":12}`), 0o644)
 	if got, _ := Load(); got.RepairData || got.RepairPercent != 5 || got.Level != 12 {
 		t.Errorf("1.0.3: %+v", got)
+	}
+}
+
+// The console a .p5z is sent to: its IP address (with a port, for a console that is not on 8095) and its
+// pairing code of 6 digits, both empty by default; what is not one goes back to empty.
+func TestSettingsConsole(t *testing.T) {
+	useFolder(t)
+	if got, _ := Load(); got.ConsoleIP != "" || got.ConsoleCode != "" {
+		t.Fatalf("defaults: %+v", got)
+	}
+	want := Defaults()
+	want.ConsoleIP, want.ConsoleCode = "192.168.1.20", "004213"
+	if err := Save(want); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := Load(); err != nil || got != want {
+		t.Fatalf("%+v, %v; expected %+v", got, err, want)
+	}
+	for ip, ok := range map[string]bool{"192.168.1.20": true, "10.0.0.5:8095": true, " 192.168.1.20 ": true, "": true, "192.168.1": false,
+		"256.1.1.1": false, "console.local": false, "192.168.1.20:0": false, "192.168.1.20:99999": false, "1.2.3.4/24": false} {
+		s := Defaults()
+		s.ConsoleIP = ip
+		if got := s.Normalize().ConsoleIP; (got != "") != (ok && ip != "") || (ok && got != strings.TrimSpace(ip)) {
+			t.Errorf("%q: %q", ip, got)
+		}
+	}
+	for code, ok := range map[string]bool{"482913": true, "000000": true, "12345": false, "1234567": false, "12a456": false, "": true} {
+		s := Defaults()
+		s.ConsoleCode = code
+		if got := s.Normalize().ConsoleCode; (got == code) != ok {
+			t.Errorf("%q: %q", code, got)
+		}
 	}
 }

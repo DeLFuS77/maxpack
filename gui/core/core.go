@@ -167,11 +167,16 @@ type RunOptions struct {
 	// Low runs it below the other programs, so the PC stays usable while it works: below normal on
 	// Windows (its threads go with it), nice 10 on macOS and Linux
 	Low bool
+	// Env are variables ("NAME=value") the engine gets in its environment as well as the window's
+	Env []string
 }
 
 // RunWith is Run with options.
 func RunWith(ctx context.Context, core string, args []string, options RunOptions, onEvent func(Event)) (Event, int, error) {
 	command, started := engineCommand(core, append(append([]string{}, args...), "--progress", "json", "--control", "stdin"), options.Low)
+	if len(options.Env) > 0 {
+		command.Env = append(os.Environ(), options.Env...)
+	}
 	stdin, err := command.StdinPipe()
 	if err != nil {
 		return Event{}, -1, err

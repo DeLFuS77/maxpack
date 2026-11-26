@@ -38,7 +38,9 @@ const (
 	StateProtecting = "protecting"
 	StateRepairing  = "repairing"
 	// adding to a .p5z (DLC, or what a new dump changes; see grow.go)
-	StateGrowing   = "growing"
+	StateGrowing = "growing"
+	// sending a .p5z to the console (see send.go); then verifying while the console verifies it
+	StateSending   = "sending"
 	StateOK        = "ok"
 	StateError     = "error"
 	StateSkipped   = "skipped"
@@ -122,7 +124,11 @@ func (r *Runner) forget(path string) {
 // engine runs one command of the engine; ok is whether it said so. onEvent, when given, sees
 // each line first.
 func (r *Runner) engine(ctx context.Context, i int, args []string, o Options, onEvent func(core.Event)) (result core.Event, ok bool, failure string) {
-	result, code, err := core.RunWith(ctx, r.Core, args, core.RunOptions{Low: o.LowPriority}, func(e core.Event) {
+	options := core.RunOptions{Low: o.LowPriority}
+	if len(args) > 0 && args[0] == "send" && o.ConsoleCode != "" {
+		options.Env = []string{SendCodeEnv + "=" + o.ConsoleCode}
+	}
+	result, code, err := core.RunWith(ctx, r.Core, args, options, func(e core.Event) {
 		if onEvent != nil {
 			onEvent(e)
 		}
@@ -260,6 +266,8 @@ func (r *Runner) one(ctx context.Context, i int, p Plan, o Options) outcome {
 		return r.protectOne(ctx, i, p, o)
 	case ModeAddDLC, ModeUpdate:
 		return r.growOne(ctx, i, p, o)
+	case ModeSend:
+		return r.sendOne(ctx, i, p, o)
 	}
 	// the drive may be gone (a USB taken out): say so instead of making its folders again
 	if info, err := os.Stat(o.Dest); err != nil || !info.IsDir() {

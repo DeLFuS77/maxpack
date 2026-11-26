@@ -149,7 +149,7 @@ func completenessLines(c *jobs.Completeness) []string {
 
 // detailCode keeps of a part of a detail its code ("files_bad:2", "tmp_not_deleted"): what comes
 // after it (a path, a message of the system or of the engine) can have the name of a game.
-var detailCode = regexp.MustCompile(`^[a-z][a-z_]*(?::\d+)?`)
+var detailCode = regexp.MustCompile(`^[a-z][a-z0-9_]*(?::\d+)?`)
 
 // codesOf are the codes of a detail, "a, b"; "other" for a part that is not one.
 func codesOf(detail string) string {
@@ -210,7 +210,7 @@ func kindWords(g ReportGame) string {
 
 var modeWords = map[string]string{
 	"p5z": "MaxPack installer (.p5z)", "folder": "Play from the USB (folder)",
-	"original": "original dump", "console": "folder for the PS5", "verify": "verify",
+	"original": "original dump", "console": "folder for the PS5", "verify": "verify", "send": "send to the console",
 }
 
 // row is the row of a game for the compatibility list, "" when the PC does not know its sizes as
@@ -304,6 +304,17 @@ func (a *App) reportText(r ReportRequest) string {
 		passcode = "given"
 	}
 	line("Settings: %s, level %d, threads %s, runtime %s, low priority %s, %s, names %s, repair data %s, FPKG passcode %s", modeText, saved.Level, threads, runtimeWords, priority, originals, saved.NameTemplate, repair, passcode)
+	// whether a console to send to was given, never its address nor its code
+	console := "no console address or code"
+	switch {
+	case saved.ConsoleIP != "" && saved.ConsoleCode != "":
+		console = "console address and code given"
+	case saved.ConsoleIP != "":
+		console = "console address given, no code"
+	case saved.ConsoleCode != "":
+		console = "console code given, no address"
+	}
+	line("Send to the console: %s", console)
 	if len(r.Games) > 0 && r.Section != "" {
 		line("Section: %s", r.Section)
 	}

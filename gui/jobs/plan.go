@@ -26,6 +26,7 @@ const (
 	ModeProtect  Mode = "protect"  // check a .p5z, then add repair data to it
 	ModeAddDLC   Mode = "add_dlc"  // put DLC into a .p5z already made, by appending to it
 	ModeUpdate   Mode = "update"   // a .p5z becomes a new dump of its game: only what it changes is added
+	ModeSend     Mode = "send"     // a .p5z goes to MaxPack for the console, which verifies it when it has it
 )
 
 // fat32Max is the most a file may have on FAT32 (4 GiB less one byte).
@@ -178,6 +179,12 @@ type Options struct {
 	// *.auth_info). Else the engine leaves it out (--leave-out-leftovers), and only when the game's
 	// own list of the original package's files proves it is not the game's: with no list, it stays
 	KeepLeftovers bool
+	// Console is the address of MaxPack for the console (its IP address, as Settings has it) and Drive the
+	// drive of it a .p5z goes to ("" for the engine's choice), for ModeSend. ConsoleCode, the pairing code,
+	// is taken from Settings by the window, never from the page, and goes to the engine in its environment
+	Console     string
+	Drive       string
+	ConsoleCode string `json:"-"`
 }
 
 // What becomes of the original of a game once its new one is checked (Options.Originals).

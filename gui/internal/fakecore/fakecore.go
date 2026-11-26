@@ -45,6 +45,10 @@ import (
 //   - "mostly": as "grows", but update refuses with error "mostly_changed" unless given --force.
 //   - "grows-verify-waits": as "grows", but verify tells some progress and waits for cancel, then ends
 //     as cancelled.
+//   - "sends": send --drives lists two drives, and send of a .p5z tells the progress of its bytes and of
+//     the console's verify and ends well (writing <p5z>.sent: see send.go), or with the refusal
+//     SendFailEnv names;
+//   - "sends-waits": as "sends", but it waits for cancel while it sends, then ends as cancelled.
 const Env = "MP_FAKE_CORE"
 
 // InfoEnv is the file of what "info" says of each game: {"<name>": {<info --json>}, ...}.
@@ -192,6 +196,12 @@ func run(mode string, args []string) int {
 		fmt.Println(`{"event":"result","ok":true,"same_files":3,"new_files":1,"changed_files":0,"removed_files":0,` +
 			`"added_bytes":6,"grown":1,"unused_bytes":0,"nothing":false,"par2":false}`)
 		return 0
+	case "sends", "sends-waits":
+		if len(args) > 0 && args[0] == "send" {
+			return send(mode, args)
+		}
+		fmt.Fprintln(os.Stderr, "error: not send:", args)
+		return 2
 	case "waits":
 		progress()
 		waitCancel()

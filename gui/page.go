@@ -287,9 +287,10 @@ func sectionOptions(section string, o jobs.Options) (jobs.Options, error) {
 			o.Mode = jobs.ModeVerify
 		}
 	case "details":
-		// the card of a .p5z adds DLC to it, or makes it a new dump of its game: nothing else
-		if o.Mode != jobs.ModeAddDLC && o.Mode != jobs.ModeUpdate {
-			return o, fmt.Errorf("the section %q only adds DLC to a .p5z and updates one", section)
+		// the card of a .p5z adds DLC to it, makes it a new dump of its game, or sends it to the console:
+		// nothing else
+		if o.Mode != jobs.ModeAddDLC && o.Mode != jobs.ModeUpdate && o.Mode != jobs.ModeSend {
+			return o, fmt.Errorf("the section %q only adds DLC to a .p5z, updates one and sends one", section)
 		}
 	default:
 		return o, fmt.Errorf("the section %q does not do jobs", section)
@@ -328,6 +329,11 @@ func (a *App) plans(section string, items []jobs.Item, choices Choices) ([]jobs.
 	}
 	saved, _ := settings.Load()
 	o.NameTemplate, o.LowPriority, o.KeepLeftovers = saved.NameTemplate, saved.LowPriority, saved.KeepLeftovers
+	// the console is the one of Settings, whatever the page sent; its drive is the page's choice
+	o.Console, o.ConsoleCode = "", ""
+	if o.Mode == jobs.ModeSend {
+		o.Console, o.ConsoleCode = saved.ConsoleIP, saved.ConsoleCode
+	}
 	// the threads a measure of this PC found, to compress and for par2 (0: all the CPU's)
 	o.Threads = 0
 	grows := o.Mode == jobs.ModeAddDLC || o.Mode == jobs.ModeUpdate
@@ -371,6 +377,8 @@ func planWith(items []jobs.Item, o jobs.Options, drives jobs.FS) []jobs.Plan {
 		return jobs.PlanDecompress(items, o, drives)
 	case jobs.ModeAddDLC, jobs.ModeUpdate:
 		return jobs.PlanGrow(items, o, drives)
+	case jobs.ModeSend:
+		return jobs.PlanSend(items, o)
 	}
 	return jobs.PlanCompress(items, o, drives)
 }

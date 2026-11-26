@@ -3,7 +3,7 @@
 // Package settings keeps what the user chose between runs: language, theme, mode, level, the
 // runtime of ampr-emu-ng, the last destination, what becomes of the originals, the priority of the
 // engine, the names of the files, the threads it compresses with, the repair data of a .p5z and the
-// passcode of PS5 packages.
+// passcode of PS5 packages, and the console a .p5z is sent to.
 package settings
 
 import (
@@ -11,6 +11,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/DeLFuS77/maxpack/gui/core"
@@ -80,6 +81,11 @@ type Settings struct {
 	// *.auth_info); off by default, so it is left out when the game's own list of the original
 	// package's files proves it is not the game's (jobs.Options.KeepLeftovers)
 	KeepLeftovers bool
+	// ConsoleIP is the address of MaxPack for the console a .p5z is sent to (an IPv4 address, with
+	// ":port" when it is not 8095) and ConsoleCode the pairing code it shows (6 digits); "" for none.
+	// The code goes only to the engine, in its environment: never into a log or a report
+	ConsoleIP   string
+	ConsoleCode string
 }
 
 const fileName = "settings.json"
@@ -139,7 +145,51 @@ func (s Settings) Normalize() Settings {
 	if s.Passcode != "" && !core.ValidPasscode(s.Passcode) {
 		s.Passcode = d.Passcode
 	}
+	s.ConsoleIP = strings.TrimSpace(s.ConsoleIP)
+	if !ValidConsoleIP(s.ConsoleIP) {
+		s.ConsoleIP = ""
+	}
+	if !ValidConsoleCode(s.ConsoleCode) {
+		s.ConsoleCode = ""
+	}
 	return s
+}
+
+// ValidConsoleIP tells whether ip is an address the engine sends to: four numbers of 0 to 255 with dots,
+// and maybe ":port" (1 to 65535). "" is valid: no console.
+func ValidConsoleIP(ip string) bool {
+	if ip == "" {
+		return true
+	}
+	host, port, hasPort := strings.Cut(ip, ":")
+	if hasPort {
+		n, err := strconv.Atoi(port)
+		if err != nil || n < 1 || n > 65535 || strings.TrimLeft(port, "0123456789") != "" {
+			return false
+		}
+	}
+	parts := strings.Split(host, ".")
+	if len(parts) != 4 {
+		return false
+	}
+	for _, part := range parts {
+		n, err := strconv.Atoi(part)
+		if err != nil || part == "" || len(part) > 3 || n < 0 || n > 255 || strings.TrimLeft(part, "0123456789") != "" {
+			return false
+		}
+	}
+	return true
+}
+
+// ValidConsoleCode tells whether code is a pairing code: 6 digits. "" is valid: none given.
+func ValidConsoleCode(code string) bool {
+	if code == "" {
+		return true
+	}
+	if len(code) != 6 {
+		return false
+	}
+	return strings.Trim(code, "0123456789") == ""
 }
 
 func path() (string, error) {
@@ -190,6 +240,8 @@ func Load() (Settings, error) {
 	read("RepairPercent", &s.RepairPercent)
 	read("Passcode", &s.Passcode)
 	read("KeepLeftovers", &s.KeepLeftovers)
+	read("ConsoleIP", &s.ConsoleIP)
+	read("ConsoleCode", &s.ConsoleCode)
 	return s.Normalize(), nil
 }
 

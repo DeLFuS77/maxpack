@@ -99,6 +99,9 @@ uint64_t mp_now_ns(void);
 // A clock that also runs while the PC sleeps (Windows: the tick count; Linux: CLOCK_BOOTTIME; macOS:
 // CLOCK_MONOTONIC, which goes on in sleep there), in ns, coarser than mp_now_ns: for what must tell a sleep.
 uint64_t mp_now_with_sleep_ns(void);
+// And one that does not run while the PC sleeps (Windows: the unbiased interrupt time; Linux: CLOCK_MONOTONIC;
+// macOS: CLOCK_UPTIME_RAW), in ns: what both have run apart is a sleep of the PC.
+uint64_t mp_now_awake_ns(void);
 unsigned mp_cpu_count(void);
 void mp_sleep_ms(unsigned ms);
 

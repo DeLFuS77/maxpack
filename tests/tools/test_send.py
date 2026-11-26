@@ -548,6 +548,8 @@ C.stuck = True
 t0 = time.time()
 rc, so, err = run("send", P5Z, ADDR, "--code", CODE, "--json", *SMALL)
 check("v2_no_progress_is_an_error", rc == 1 and result(events(so)).get("error") == "console_error" and time.time() - t0 < 30, "rc=%d %s" % (rc, err[-300:]))
+# every end after the receive began that is not a whole send tells the console the PC left (v3.1), once
+check("v31_an_error_says_it_left", C.leaves == [C.token], str(C.leaves))
 # a receive that does not move for --stall seconds: stopped, kept
 C.reset()
 C.verify_stuck = True
@@ -556,6 +558,33 @@ rc, so, err = run("send", P5Z, ADDR, "--code", CODE, "--json", "--stall", "2", *
 check("v2_stalled", rc == 16 and result(events(so)).get("error") == "stalled" and result(events(so)).get("slept") is False
       and "nothing moved" in err and not C.cancelled and time.time() - t0 < 30,
       "rc=%d %s %s" % (rc, so[-200:], err[-300:]))
+check("v31_a_stall_says_it_left", len(C.leaves) == 1, str(C.leaves))
+# the .p5z cannot be read here any more halfway (a USB disk pulled out): the console is told the PC left
+C.reset()
+C.slow_put = 0.2
+cut = os.path.join(TMP, "Cut Game [PPSA10003].p5z")
+shutil.copyfile(P5Z, cut)
+err_file = open(os.path.join(TMP, "cut.err"), "w+b")
+proc = subprocess.Popen([EXE, "send", cut, ADDR, "--code", CODE, "--json", *SMALL], stdin=subprocess.DEVNULL,
+                        stdout=subprocess.PIPE, stderr=err_file)
+got = []
+reader = threading.Thread(target=lambda: got.extend(iter(proc.stdout.readline, b"")), daemon=True)
+reader.start()
+deadline = time.time() + 30
+while time.time() < deadline and not any(b'"sending"' in line for line in got) and proc.poll() is None:
+    time.sleep(0.02)
+with open(cut, "r+b") as f:
+    f.truncate(SIZE // 3)
+try:
+    proc.wait(timeout=60)
+except subprocess.TimeoutExpired:
+    proc.kill()
+    proc.wait()
+reader.join(timeout=10)
+err_file.close()
+res = result(events(b"".join(got).decode("utf-8", "replace")))
+check("v31_unreadable_here_says_it_left", proc.returncode == 1 and res.get("error") == "io" and len(C.leaves) == 1,
+      "rc=%s %s %s" % (proc.returncode, res, C.leaves))
 # the PC slept while it sent: its clock jumped past the stall between two looks. Said so, not that nothing moved
 # on the console (the process stopped for 5 s stands for the sleep: from inside it, the clock jumps the same)
 

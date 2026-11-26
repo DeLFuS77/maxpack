@@ -110,11 +110,37 @@ typedef struct {
     int answered;           // the console answered something this run
     unsigned write_errors, pauses;
     int watching;           // the receive began: stalls count
-    uint64_t moved_ns, best_have, best_verify;
-    uint64_t look_ns;       // the last look for a stall
+    uint64_t best_have, best_verify;
+    mp_send_stall stall;    // when something moved, the last look, what the PC slept
     const char *token;      // the receive's token, once it began (to say the PC left)
+    int left;               // the console was told the PC left (once)
+    int deleted;            // the console was told to delete what it received (cancel with delete_on_cancel)
     uint64_t drive_total;   // the size of the drive it goes to, as the console lists it (0: not known)
 } sender;
+
+// ---- the stall -----------------------------------------------------------------------------------
+
+#define SLEPT_NS 1000000000ull   // the clocks running apart by more than this between two looks: the PC slept
+
+int mp_send_stall_look(mp_send_stall *st, uint64_t now, uint64_t awake, uint64_t stall) {
+    uint64_t gap = st->look && now > st->look ? now - st->look : 0;
+    uint64_t gap_awake = st->look_awake && awake > st->look_awake ? awake - st->look_awake : 0;
+    st->look = now;
+    st->look_awake = awake;
+    if (gap > gap_awake + SLEPT_NS) {   // the PC slept: that time is not the console's, the stall starts again
+        st->slept += gap - gap_awake;
+        st->moved = now;
+        return MP_STALL_NOT;
+    }
+    if (!stall || now - st->moved < stall) return MP_STALL_NOT;
+    if (gap >= stall) return MP_STALL_GAP;
+    return st->slept ? MP_STALL_AFTER_SLEEP : MP_STALL_NOTHING_MOVED;
+}
+
+void mp_send_stall_moved(mp_send_stall *st, uint64_t now) {
+    st->moved = now;
+    st->slept = 0;
+}
 
 static int fail(sender *s, const char *code, const char *fmt, const char *arg) {
     s->r->code = code;
@@ -149,7 +175,7 @@ static int u64_of(const mp_json *j, const char *key, uint64_t *v) { return mp_js
 
 // Something moved (what the console has, or its verify): the stall begins again.
 static void moved(sender *s, uint64_t have, uint64_t verify) {
-    if (have > s->best_have || verify > s->best_verify || !s->moved_ns) s->moved_ns = mp_now_with_sleep_ns();
+    if (have > s->best_have || verify > s->best_verify || !s->stall.moved) mp_send_stall_moved(&s->stall, mp_now_with_sleep_ns());
     if (have > s->best_have) s->best_have = have;
     if (verify > s->best_verify) s->best_verify = verify;
 }
@@ -158,16 +184,15 @@ static void have_text(sender *s, char *out, size_t cap) {
     snprintf(out, cap, "%llu of %llu bytes", (unsigned long long)s->best_have, (unsigned long long)s->r->size);
 }
 
-// -1 (and "stalled") once nothing moved for stall_ms since the receive began. When the clock jumped past
-// stall_ms since the last look (one before each request, and in each short wait), it is this PC that slept (or
-// this program was stopped), not the console that did nothing.
 static void post_cancel(sender *s, const char *id);
 static void query_id(char *out, size_t cap, const char *route, const char *id);
 
 // The PC stops and keeps what arrived (contract v3.1): one try to tell the console, which pauses the receive
 // ("left") so that it can be resumed or deleted at once. 2 s at most; whatever it answers, or not, is not read.
+// Once a run.
 static void post_leave(sender *s) {
-    if (!s->token || !*s->token) return;
+    if (!s->token || !*s->token || s->left) return;
+    s->left = 1;
     char path[256], headers[64];
     query_id(path, sizeof path, "/api/receive/leave", s->token);
     snprintf(headers, sizeof headers, "X-MaxPack-Code: %s\r\n", s->o->code);
@@ -186,20 +211,28 @@ static void keep_on_stop(sender *s, char *had, size_t cap) {
     post_leave(s);
 }
 
+// -1 (and "stalled") once nothing moved for stall_ms since the receive began, the PC awake (mp_send_stall_look:
+// what it slept is not the console's). One gap of the stall between two looks (one before each request, and in each
+// short wait) is said as a sleep of this PC (or this program was stopped), not as the console doing nothing.
 static int stalled(sender *s) {
     uint64_t now = mp_now_with_sleep_ns(), stall = (uint64_t)s->o->stall_ms * 1000000ull;
-    uint64_t gap = s->look_ns && now > s->look_ns ? now - s->look_ns : 0;
-    s->look_ns = now;
-    if (!s->watching || !s->o->stall_ms || now - s->moved_ns < stall) return 0;
+    uint64_t gap = s->stall.look && now > s->stall.look ? now - s->stall.look : 0;
+    int how = mp_send_stall_look(&s->stall, now, mp_now_awake_ns(), s->watching ? stall : 0);
+    if (how == MP_STALL_NOT) return 0;
     char what[600], had[96];
     keep_on_stop(s, had, sizeof had);
     char keeps[200];
     if (s->r->kept) snprintf(keeps, sizeof keeps, "the console keeps the %s that arrived; send it again to go on from there", had);
     else snprintf(keeps, sizeof keeps, "nothing of it had arrived; send it again");
-    if (gap >= stall) {
+    if (how == MP_STALL_GAP) {
         s->r->slept = 1;
         snprintf(what, sizeof what, "%llu s (%s)", (unsigned long long)(gap / 1000000000ull), keeps);
         return fail(s, "stalled", "this PC slept while it was sending, for %s", what);
+    }
+    if (how == MP_STALL_AFTER_SLEEP) {
+        s->r->slept = 1;
+        snprintf(what, sizeof what, "%u s after this PC woke up from a sleep (%s)", s->o->stall_ms / 1000, keeps);
+        return fail(s, "stalled", "nothing moved on the console for %s", what);
     }
     snprintf(what, sizeof what, "%u s (%s)", s->o->stall_ms / 1000, keeps);
     return fail(s, "stalled", "nothing moved on the console for %s", what);
@@ -212,6 +245,7 @@ static int stopped_here(sender *s, const char *id) {
     if (!how) return 0;
     if (how == 2 && s->o->delete_on_cancel && id && *id) {
         post_cancel(s, id);
+        s->deleted = 1;
         s->r->kept = 0;
         return fail(s, "cancelled", "cancelled: the console deletes what it received%s", NULL);
     }
@@ -684,7 +718,7 @@ int mp_send(const char *path, const mp_send_opts *o, const mp_send_hooks *h, mp_
     s.token = id;
     r->resumed_from = have;
     s.watching = 1;
-    s.moved_ns = mp_now_with_sleep_ns();
+    mp_send_stall_moved(&s.stall, mp_now_with_sleep_ns());
     if (h && h->started) h->started(h->ctx, r->name, r->drive, have, r->size);
     size_t chunk = o->chunk < MP_SEND_MIN_CHUNK ? MP_SEND_MIN_CHUNK : o->chunk > MP_SEND_MAX_CHUNK ? MP_SEND_MAX_CHUNK
                                                                                                     : o->chunk;
@@ -718,6 +752,10 @@ int mp_send(const char *path, const mp_send_opts *o, const mp_send_hooks *h, mp_
         break;
     }
 done:
+    // any end but a whole send, once the receive began (the .p5z unreadable here, an answer of the console that is
+    // not right, too many rounds...): the console is told the PC left, so that it lets go of the receive at once
+    // (it changes nothing on a receive that is not at work). Not after the console was told to delete it.
+    if (rc != 0 && s.watching && !s.deleted) post_leave(&s);
     r->have = have > s.best_have ? have : s.best_have;
     free(buf);
     mp_file_close(f);

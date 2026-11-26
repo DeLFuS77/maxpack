@@ -36,9 +36,11 @@ static int has_marker(const uint8_t *p, size_t n) {
     return 0;
 }
 
+// A .p5z by its name, or one under the name the window makes it with apart (<name>.p5z.maxpack-tmp), so that what
+// was made can be told before it takes its name.
 static int is_p5z_name(const char *path) {
     size_t n = strlen(path);
-    return n >= 4 && ieq(path + n - 4, ".p5z");
+    return (n >= 4 && ieq(path + n - 4, ".p5z")) || (n >= 16 && ieq(path + n - 16, ".p5z.maxpack-tmp"));
 }
 
 // ---- folder and image ---------------------------------------------------------------------

@@ -116,6 +116,20 @@ typedef struct {
     uint64_t free, total;
 } mp_console_drive;
 
+// The stall of a send, on two clocks (mp_now_with_sleep_ns, which counts the PC's sleep, and mp_now_awake_ns, which
+// does not): when something moved last, the last look, and what the PC slept since it moved. Apart for the tests.
+typedef struct {
+    uint64_t moved, look, look_awake, slept;
+} mp_send_stall;
+enum { MP_STALL_NOT = 0, MP_STALL_NOTHING_MOVED, MP_STALL_AFTER_SLEEP, MP_STALL_GAP };
+// A look at now (with sleep) and awake (without), for a stall of stall ns: what the PC slept since the last look
+// is never counted against the console (the stall starts again on waking). MP_STALL_NOT; MP_STALL_NOTHING_MOVED
+// (a whole stall passed awake); MP_STALL_AFTER_SLEEP (so, and the PC slept meanwhile); MP_STALL_GAP (one gap of at
+// least the stall between two looks on both clocks: this program was stopped, or the PC slept unseen).
+int mp_send_stall_look(mp_send_stall *st, uint64_t now, uint64_t awake, uint64_t stall);
+// Something moved at now: the stall starts again, and a sleep before it is forgotten.
+void mp_send_stall_moved(mp_send_stall *st, uint64_t now);
+
 // The drives the console scans, with their free space. 0 with *v (malloc'd) and *n; -1 with r->code.
 int mp_send_drives(const mp_send_opts *o, mp_console_drive **v, size_t *n, mp_send_result *r, mp_err *e);
 

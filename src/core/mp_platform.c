@@ -407,6 +407,13 @@ uint64_t mp_now_ns(void) {
 // the tick count counts the time in sleep and hibernation too
 uint64_t mp_now_with_sleep_ns(void) { return (uint64_t)GetTickCount64() * 1000000ULL; }
 
+// the unbiased interrupt time does not (it is in units of 100 ns)
+uint64_t mp_now_awake_ns(void) {
+    ULONGLONG t = 0;
+    if (!QueryUnbiasedInterruptTime(&t)) return mp_now_with_sleep_ns();
+    return (uint64_t)t * 100ULL;
+}
+
 unsigned mp_cpu_count(void) {
     DWORD n = GetActiveProcessorCount(ALL_PROCESSOR_GROUPS);
     return n ? (unsigned)n : 1;
@@ -1067,6 +1074,17 @@ uint64_t mp_now_with_sleep_ns(void) {
     struct timespec ts;
 #ifdef CLOCK_BOOTTIME
     if (clock_gettime(CLOCK_BOOTTIME, &ts) == 0)
+        return (uint64_t)ts.tv_sec * 1000000000ULL + (uint64_t)ts.tv_nsec;
+#endif
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000000000ULL + (uint64_t)ts.tv_nsec;
+}
+
+// macOS's CLOCK_UPTIME_RAW stops in sleep; Linux's CLOCK_MONOTONIC stops while suspended
+uint64_t mp_now_awake_ns(void) {
+    struct timespec ts;
+#ifdef CLOCK_UPTIME_RAW
+    if (clock_gettime(CLOCK_UPTIME_RAW, &ts) == 0)
         return (uint64_t)ts.tv_sec * 1000000000ULL + (uint64_t)ts.tv_nsec;
 #endif
     clock_gettime(CLOCK_MONOTONIC, &ts);

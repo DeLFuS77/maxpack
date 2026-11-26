@@ -821,6 +821,18 @@ try:
           and 0 < d["packed_files"] < d["files"] and d["volumes"] >= 1, so[-300:] + human)
 except Exception as ex:
     check("info_json_p5z", False, repr(ex) + so[-200:])
+# A .p5z under the name MaxPack writes it apart with while it is made (<name>.p5z.maxpack-tmp) is read as a
+# .p5z, so the window can tell what was made before it takes its name
+tmp_named = pj + ".maxpack-tmp"
+shutil.copyfile(pj, tmp_named)
+rc, so, err = run("info", "--json", tmp_named)
+try:
+    d = json.loads(so)
+    check("info_json_p5z_apart", rc == 0 and d["kind"] == "p5z" and d["title_id"] == "TEST00001" and d["version"] == "01.000.000",
+          so[-300:] + err[-200:])
+except Exception as ex:
+    check("info_json_p5z_apart", False, repr(ex) + so[-200:] + err[-200:])
+os.remove(tmp_named)
 # Name with quotes, backslashes, accents and control characters: valid JSON and intact bytes.
 nm = os.path.join(TMP, "nm_game")
 rmtree(nm)

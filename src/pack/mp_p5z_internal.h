@@ -20,9 +20,18 @@ typedef struct {
     uint32_t csize, usize;
 } p5z_frame;
 
+// Index version 2 (a .p5z that grew): the 56 bytes of version 1, then u64 prev_size (the size of the
+// .p5z before the append that wrote this index; its footer then is its last 32 bytes), u32 grown (how
+// many appends) and u32 0.
+#define P5Z_INDEX_HEADER_V2 72u
+// The most volumes maxpack.image takes (ampr-emu-ng's p5z mode): a .p5z grows only up to that many.
+#define P5Z_PLAY_MAX_VOLUMES 256u
+
 struct mp_p5z {
     mp_file *f;
-    uint64_t size, index_off;
+    uint64_t size, index_off, index_len;
+    uint32_t version, grown;
+    uint64_t prev_size;
     p5z_file *files;
     size_t nfiles;
     p5z_frame *frames;
@@ -34,5 +43,17 @@ struct mp_p5z {
 // Reads the contents of files[i] in chunks (decompressing if needed) and checks its SHA-256.
 typedef int (*p5z_sink)(void *ctx, const void *p, size_t n, mp_err *e);
 int p5z_read_file(mp_p5z *p, size_t i, p5z_sink sink, void *ctx, mp_err *e);
+
+// ---- the writer's extras (mp_p5z_write.c) ---------------------------------------------------------
+
+// A .p5z grown by appending to f (the caller's, open for writing as its only writer): the regions go at
+// its end; finish writes index version 2 (prev_size the size f had, grown as given) and a new footer,
+// with the records in a fixed order (loose files by path, volumes by id, ampr_emu.index, the runtime,
+// the originals by path, ampr_zstd.index). It never writes the header, nor closes or removes f.
+int p5z_out_append(mp_wfile *f, unsigned threads, uint64_t max_size, uint32_t grown, mp_pack_out *out, mp_err *e);
+// Record i of from, as it is stored (its region and frames stay where they are), with that mtime.
+int p5z_out_keep(mp_pack_out *out, const mp_p5z *from, size_t i, int64_t mtime, mp_err *e);
+// Record i of from with its stored bytes copied at the end (frames as they are, nothing compressed again).
+int p5z_out_copy(mp_pack_out *out, mp_p5z *from, size_t i, mp_err *e);
 
 #endif

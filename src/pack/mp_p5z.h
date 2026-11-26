@@ -31,6 +31,14 @@ int mp_pack_out_p5z_too_big(const mp_pack_out *out);
 
 typedef struct mp_p5z mp_p5z;
 int mp_p5z_open(const char *path, mp_p5z **out, mp_err *e);
+// mp_p5z_open with flags: MP_P5Z_OPEN_V1 refuses a .p5z that grew (index version 2), for a reader that
+// takes only what a fresh pack writes (the installer, which leaves the packs as a folder).
+#define MP_P5Z_OPEN_V1 1
+int mp_p5z_open_ex(const char *path, int flags, mp_p5z **out, mp_err *e);
+// 1 for a .p5z as packed; 2 for one that grew by appending (maxpack add or update), whose packs follow
+// ampr-emu-ng's p5z rules (mp_zpk_open_ex).
+uint32_t mp_p5z_version(const mp_p5z *p);
+uint32_t mp_p5z_grown(const mp_p5z *p);   // how many times it grew (0 for version 1)
 const mp_pack_manifest *mp_p5z_manifest(const mp_p5z *p);
 int mp_p5z_info(const mp_p5z *p, FILE *out);
 int mp_p5z_zpk(mp_p5z *p, mp_zpk **out, mp_err *e);

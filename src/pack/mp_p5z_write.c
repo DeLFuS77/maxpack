@@ -7,7 +7,7 @@
 #include <string.h>
 
 #include "mp_hash.h"
-#include "mp_p5z.h"
+#include "mp_p5z_internal.h"
 #include "mp_platform.h"
 
 typedef struct {
@@ -60,6 +60,10 @@ typedef struct {
     int created, finished;
     uint64_t max_size;         // cap on the .p5z (0 = no cap)
     int too_big;               // stopped because of the cap
+    // Appending to a .p5z that exists (p5z_out_append): f is the caller's, the index is version 2.
+    int append;
+    uint64_t prev_size;        // the size f had
+    uint32_t grown;
 } p5out;
 
 static void wr32(uint8_t *p, uint32_t v) {
@@ -96,19 +100,38 @@ static int ensure_open(p5out *o, mp_err *e) {
     return put(o, zero, sizeof zero, e);
 }
 
+static int files_room(p5out *o, mp_err *e) {
+    if (o->nfiles < o->cap) return 0;
+    size_t cap = o->cap ? o->cap * 2 : 256;
+    p5file *v = realloc(o->files, cap * sizeof *v);
+    if (!v) {
+        mp_err_set(e, "out of memory");
+        return -1;
+    }
+    o->files = v;
+    o->cap = cap;
+    return 0;
+}
+
+// Room for k more frames.
+static int frames_room(p5out *o, size_t k, mp_err *e) {
+    if (o->nframes + k <= o->fcap) return 0;
+    size_t cap = o->fcap ? o->fcap : 1024;
+    while (cap < o->nframes + k) cap *= 2;
+    p5frame *v = realloc(o->frames, cap * sizeof *v);
+    if (!v) {
+        mp_err_set(e, "out of memory");
+        return -1;
+    }
+    o->frames = v;
+    o->fcap = cap;
+    return 0;
+}
+
 static p5file *new_file(p5out *o, const char *rel, int role, int storage, uint64_t size, int64_t mtime,
                         mp_err *e) {
     if (ensure_open(o, e) != 0) return NULL;
-    if (o->nfiles == o->cap) {
-        size_t cap = o->cap ? o->cap * 2 : 256;
-        p5file *v = realloc(o->files, cap * sizeof *v);
-        if (!v) {
-            mp_err_set(e, "out of memory");
-            return NULL;
-        }
-        o->files = v;
-        o->cap = cap;
-    }
+    if (files_room(o, e) != 0) return NULL;
     p5file *f = &o->files[o->nfiles];
     memset(f, 0, sizeof *f);
     if (!(f->path = mp_strdup(rel))) {
@@ -231,16 +254,7 @@ static int write_piece(p5out *o, const fslot *sl, int rc, mp_err *e) {
             if (mp_cancel_check(e) == 0) mp_err_set(e, "error compressing for the .p5z");
             return -1;
         }
-        if (o->nframes == o->fcap) {
-            size_t cap = o->fcap ? o->fcap * 2 : 1024;
-            p5frame *v = realloc(o->frames, cap * sizeof *v);
-            if (!v) {
-                mp_err_set(e, "out of memory");
-                return -1;
-            }
-            o->frames = v;
-            o->fcap = cap;
-        }
+        if (frames_room(o, 1, e) != 0) return -1;
         p5frame *fr = &o->frames[o->nframes++];
         fr->off = mp_wfile_size(o->f);
         fr->csize = (uint32_t)sl->olen;
@@ -372,10 +386,59 @@ static int cmp_ref(const void *a, const void *b) {
     return strcmp(x->path, y->path);
 }
 
+// The order of the records of an index version 2: loose files by path, volumes by id, ampr_emu.index,
+// the runtime, the originals by path, ampr_zstd.index (a fresh pack's order, whatever was kept or new).
+static int rank_of(int role) {
+    static const int rank[] = {0, 1, 5, 2, 3, 4};   // by role: loose, volume, zpk index, idx3, runtime, original
+    return role >= 0 && role <= MP_ROLE_ORIGINAL ? rank[role] : 6;
+}
+
+static unsigned volume_id(const char *path) {
+    unsigned id = 0;
+    return sscanf(path, "ampr_zstd-%u.pak", &id) == 1 ? id : 0;
+}
+
+static int cmp_record(const void *a, const void *b) {
+    const p5file *x = a, *y = b;
+    int rx = rank_of(x->role), ry = rank_of(y->role);
+    if (rx != ry) return rx - ry;
+    if (x->role == MP_ROLE_VOLUME) {
+        unsigned ix = volume_id(x->path), iy = volume_id(y->path);
+        if (ix != iy) return ix < iy ? -1 : 1;
+    }
+    return strcmp(x->path, y->path);
+}
+
+// Sorts the records as an index version 2 has them, with their frames renumbered in that order.
+static int canonical_order(p5out *o, mp_err *e) {
+    qsort(o->files, o->nfiles, sizeof *o->files, cmp_record);
+    size_t cap = o->nframes ? o->nframes : 1;
+    p5frame *nf = malloc(cap * sizeof *nf);
+    if (!nf) {
+        mp_err_set(e, "out of memory");
+        return -1;
+    }
+    size_t at = 0;
+    for (size_t i = 0; i < o->nfiles; i++) {
+        p5file *f = &o->files[i];
+        if (f->storage != P5Z_STORE_FRAMES) continue;
+        memcpy(nf + at, o->frames + f->first_frame, f->nframes * sizeof *nf);
+        f->first_frame = (uint32_t)at;
+        at += f->nframes;
+    }
+    free(o->frames);
+    o->frames = nf;
+    o->fcap = cap;
+    o->nframes = at;
+    return 0;
+}
+
 static int f_finish(void *ctx, const mp_pack_manifest *m, mp_err *e) {
     p5out *o = ctx;
     if (drain(o, 1, e) != 0) return -1;
     frames_stop(o);
+    if (o->append && canonical_order(o, e) != 0) return -1;
+    const uint32_t hs = o->append ? P5Z_INDEX_HEADER_V2 : P5Z_INDEX_HEADER;
     // For each manifest record, the stored file that contains it.
     pathref *refs = malloc((o->nfiles ? o->nfiles : 1) * sizeof *refs);
     size_t nr = 0;
@@ -394,7 +457,7 @@ static int f_finish(void *ctx, const mp_pack_manifest *m, mp_err *e) {
     uint64_t strings = strlen(m->title_id) + strlen(m->content_version) + strlen(m->title_name);
     for (size_t i = 0; i < o->nfiles; i++) strings += strlen(o->files[i].path);
     for (size_t i = 0; i < m->n; i++) strings += strlen(m->v[i].path);
-    uint64_t size = P5Z_INDEX_HEADER + (uint64_t)P5Z_FILE_REC * o->nfiles + (uint64_t)P5Z_FRAME_REC * o->nframes +
+    uint64_t size = hs + (uint64_t)P5Z_FILE_REC * o->nfiles + (uint64_t)P5Z_FRAME_REC * o->nframes +
                     (uint64_t)P5Z_MANIFEST_REC * m->n + strings;
     uint8_t *ix = calloc(1, (size_t)size);
     if (!ix) {
@@ -413,7 +476,11 @@ static int f_finish(void *ctx, const mp_pack_manifest *m, mp_err *e) {
         soff += (uint32_t)l_;                                                                      \
     } while (0)
     memcpy(ix, "P5ZIDX01", 8);
-    wr32(ix + 8, 1);
+    wr32(ix + 8, o->append ? 2 : 1);
+    if (o->append) {
+        wr64(ix + 56, o->prev_size);
+        wr32(ix + 64, o->grown);
+    }
     wr32(ix + 12, (uint32_t)o->nfiles);
     wr32(ix + 16, (uint32_t)o->nframes);
     wr32(ix + 20, (uint32_t)m->n);
@@ -421,7 +488,7 @@ static int f_finish(void *ctx, const mp_pack_manifest *m, mp_err *e) {
     PUT_STR(m->title_id, ix + 32);
     PUT_STR(m->content_version, ix + 40);
     PUT_STR(m->title_name, ix + 48);
-    uint8_t *r = ix + P5Z_INDEX_HEADER;
+    uint8_t *r = ix + hs;
     for (size_t i = 0; i < o->nfiles; i++, r += P5Z_FILE_REC) {
         const p5file *f = &o->files[i];
         PUT_STR(f->path, r);
@@ -486,7 +553,7 @@ static int f_finish(void *ctx, const mp_pack_manifest *m, mp_err *e) {
         wr32(ft + 28, mp_crc32(ft, 28, 0));
         rc = put(o, ft, sizeof ft, e);
     }
-    if (!rc) {
+    if (!rc && !o->append) {   // a .p5z that grows keeps the header it has
         uint8_t h[P5Z_HEADER] = {0};
         memcpy(h, "MAXPKP5Z", 8);
         wr32(h + 8, 1);
@@ -498,7 +565,9 @@ static int f_finish(void *ctx, const mp_pack_manifest *m, mp_err *e) {
     }
     free(cz);
     free(ix);
-    if (!rc) {
+    if (!rc && o->append) {
+        o->finished = 1;   // f is the caller's: it syncs and closes it
+    } else if (!rc) {
         rc = mp_wfile_close(o->f, e);
         o->f = NULL;
         o->finished = rc == 0;
@@ -510,7 +579,7 @@ static void f_destroy(void *ctx) {
     p5out *o = ctx;
     if (!o) return;
     frames_stop(o);   // joins the pool before anything it uses is freed
-    if (o->f) mp_wfile_close(o->f, NULL);
+    if (o->f && !o->append) mp_wfile_close(o->f, NULL);
     if (o->created && !o->finished) mp_remove_file(o->path);   // half-written .p5z: useless
     free(o->path);
     for (size_t i = 0; i < o->nfiles; i++) free(o->files[i].path);
@@ -525,6 +594,130 @@ int mp_pack_out_p5z_too_big(const mp_pack_out *out) {
 
 int mp_pack_out_p5z(const char *path, unsigned threads, mp_pack_out *out, mp_err *e) {
     return mp_pack_out_p5z_ex(path, threads, 0, out, e);
+}
+
+static void set_out(p5out *o, mp_pack_out *out) {
+    out->zpk.vol_begin = v_begin;
+    out->zpk.vol_write = v_write;
+    out->zpk.vol_end = v_end;
+    out->zpk.vol_header = v_header;
+    out->zpk.ctx = o;
+    out->file_begin = f_begin;
+    out->file_write = f_write;
+    out->file_end = f_end;
+    out->packs_begin = f_packs_begin;
+    out->finish = f_finish;
+    out->destroy = f_destroy;
+    out->ctx = o;
+}
+
+int p5z_out_append(mp_wfile *f, unsigned threads, uint64_t max_size, uint32_t grown, mp_pack_out *out, mp_err *e) {
+    memset(out, 0, sizeof *out);
+    p5out *o = calloc(1, sizeof *o);
+    if (!o) {
+        mp_err_set(e, "out of memory");
+        return -1;
+    }
+    o->max_size = max_size;
+    o->threads = threads == 0 ? 1 : threads > MP_LONG_MAX_THREADS ? MP_LONG_MAX_THREADS : threads;
+    o->out_cap = ZSTD_compressBound(MP_LONG_FRAME);
+    o->cur = -1;
+    o->f = f;
+    o->append = 1;
+    o->prev_size = mp_wfile_size(f);
+    o->grown = grown;
+    set_out(o, out);
+    return 0;
+}
+
+static p5out *writer_of(mp_pack_out *out, mp_err *e) {
+    if (!out || out->destroy != f_destroy || !out->ctx) {
+        mp_err_set(e, "not a .p5z output");
+        return NULL;
+    }
+    return out->ctx;
+}
+
+int p5z_out_keep(mp_pack_out *out, const mp_p5z *from, size_t i, int64_t mtime, mp_err *e) {
+    p5out *o = writer_of(out, e);
+    if (!o) return -1;
+    const p5z_file *s = &from->files[i];
+    // what is still being compressed goes first, so that each file's frames stay together
+    if (drain(o, 1, e) != 0 || files_room(o, e) != 0 || frames_room(o, s->nframes, e) != 0) return -1;
+    p5file *f = &o->files[o->nfiles];
+    memset(f, 0, sizeof *f);
+    if (!(f->path = mp_strdup(s->path))) {
+        mp_err_set(e, "out of memory");
+        return -1;
+    }
+    f->role = s->role;
+    f->storage = s->storage;
+    f->size = s->size;
+    f->data_off = s->data_off;
+    f->data_len = s->data_len;
+    f->mtime = mtime;
+    memcpy(f->sha, s->sha, 32);
+    f->first_frame = (uint32_t)o->nframes;
+    f->nframes = s->storage == P5Z_STORE_FRAMES ? s->nframes : 0;
+    for (uint32_t k = 0; k < f->nframes; k++) {
+        const p5z_frame *fr = &from->frames[s->first_frame + k];
+        o->frames[o->nframes].off = fr->off;
+        o->frames[o->nframes].csize = fr->csize;
+        o->frames[o->nframes].usize = fr->usize;
+        o->nframes++;
+    }
+    o->nfiles++;
+    return 0;
+}
+
+#define COPY_PIECE (4u << 20)
+
+static int copy_range(p5out *o, mp_file *src, uint64_t off, uint64_t len, uint8_t *buf, mp_err *e) {
+    for (uint64_t at = 0; at < len; at += COPY_PIECE) {
+        size_t k = len - at < COPY_PIECE ? (size_t)(len - at) : COPY_PIECE, got = 0;
+        if (mp_cancel_check(e) != 0 || mp_file_pread(src, buf, k, off + at, &got, e) != 0) return -1;
+        if (got != k) {
+            mp_err_set(e, "truncated .p5z (data missing at %llu)", (unsigned long long)(off + at));
+            return -1;
+        }
+        if (put(o, buf, k, e) != 0) return -1;
+    }
+    return 0;
+}
+
+int p5z_out_copy(mp_pack_out *out, mp_p5z *from, size_t i, mp_err *e) {
+    p5out *o = writer_of(out, e);
+    if (!o) return -1;
+    const p5z_file *s = &from->files[i];
+    if (drain(o, 1, e) != 0) return -1;
+    p5file *f = new_file(o, s->path, s->role, s->storage, s->size, s->mtime, e);
+    if (!f) return -1;
+    size_t fi = o->nfiles - 1;
+    memcpy(f->sha, s->sha, 32);
+    uint8_t *buf = malloc(COPY_PIECE);
+    int rc = buf ? 0 : -1;
+    if (!buf) mp_err_set(e, "out of memory");
+    if (!rc && s->storage == P5Z_STORE_RAW) {
+        rc = copy_range(o, from->f, s->data_off, s->data_len, buf, e);
+    } else if (!rc) {
+        for (uint32_t k = 0; !rc && k < s->nframes; k++) {
+            const p5z_frame *fr = &from->frames[s->first_frame + k];
+            uint64_t at = mp_wfile_size(o->f);
+            rc = copy_range(o, from->f, fr->off, fr->csize, buf, e);
+            if (!rc) rc = frames_room(o, 1, e);
+            if (!rc) {
+                o->frames[o->nframes].off = at;
+                o->frames[o->nframes].csize = fr->csize;
+                o->frames[o->nframes].usize = fr->usize;
+                o->nframes++;
+            }
+        }
+    }
+    free(buf);
+    f = &o->files[fi];
+    f->nframes = (uint32_t)(o->nframes - f->first_frame);
+    f->data_len = mp_wfile_size(o->f) - f->data_off;
+    return rc;
 }
 
 int mp_pack_out_p5z_ex(const char *path, unsigned threads, uint64_t max_size, mp_pack_out *out, mp_err *e) {
@@ -548,17 +741,6 @@ int mp_pack_out_p5z_ex(const char *path, unsigned threads, uint64_t max_size, mp
         mp_err_set(e, "out of memory");
         return -1;
     }
-    out->zpk.vol_begin = v_begin;
-    out->zpk.vol_write = v_write;
-    out->zpk.vol_end = v_end;
-    out->zpk.vol_header = v_header;
-    out->zpk.ctx = o;
-    out->file_begin = f_begin;
-    out->file_write = f_write;
-    out->file_end = f_end;
-    out->packs_begin = f_packs_begin;
-    out->finish = f_finish;
-    out->destroy = f_destroy;
-    out->ctx = o;
+    set_out(o, out);
     return 0;
 }

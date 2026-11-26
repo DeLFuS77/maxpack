@@ -13,6 +13,7 @@
 #define HEADER 64u
 #define FOOTER 32u
 #define INDEX_HEADER 56u
+#define INDEX_HEADER_V2 72u   // index version 2: a .p5z that grew
 #define FILE_REC 88u
 #define FRAME_REC 16u
 #define MANIFEST_REC 64u
@@ -65,12 +66,13 @@ static int ieq(const uint8_t *a, const char *b, size_t n) {
 
 // The loose file sce_sys/icon0.png in the index: by its exact path, else in any case. NULL if there is
 // none; *bad if a path is outside the strings.
-static const uint8_t *find_icon(const uint8_t *ix, uint32_t nf, const uint8_t *strings, uint64_t slen, int *bad) {
+static const uint8_t *find_icon(const uint8_t *ix, uint64_t hs, uint32_t nf, const uint8_t *strings, uint64_t slen,
+                                int *bad) {
     const size_t want = sizeof ICON_PATH - 1;
     const uint8_t *any_case = NULL;
     *bad = 0;
     for (uint32_t i = 0; i < nf; i++) {
-        const uint8_t *r = ix + INDEX_HEADER + (size_t)FILE_REC * i;
+        const uint8_t *r = ix + hs + (size_t)FILE_REC * i;
         uint32_t off = rd32(r), len = rd32(r + 4);
         if ((uint64_t)off + len > slen) {
             *bad = 1;
@@ -139,18 +141,21 @@ int mp_p5z_icon_read(const mp_icon_src *src, uint8_t **png, size_t *len, char *e
     }
 
     size_t n = (size_t)us;
-    if (memcmp(ix, "P5ZIDX01", 8) != 0 || rd32(ix + 8) != 1) {
+    // version 1, or 2 for a .p5z that grew by appending: its header is 72 bytes, the records the same
+    uint32_t version = rd32(ix + 8);
+    uint64_t hs = version == 2 ? INDEX_HEADER_V2 : INDEX_HEADER;
+    if (memcmp(ix, "P5ZIDX01", 8) != 0 || (version != 1 && version != 2) || n < hs) {
         fail(err, errlen, "invalid .p5z: index");
         goto done;
     }
     uint64_t nf = rd32(ix + 12), nfr = rd32(ix + 16), nm = rd32(ix + 20), slen = rd64(ix + 24);
-    uint64_t fixed = INDEX_HEADER + FILE_REC * nf + FRAME_REC * nfr + MANIFEST_REC * nm;   // u32 counters: no wrap
+    uint64_t fixed = hs + FILE_REC * nf + FRAME_REC * nfr + MANIFEST_REC * nm;   // u32 counters: no wrap
     if (fixed > n || slen != n - fixed) {
         fail(err, errlen, "invalid .p5z: index size");
         goto done;
     }
     int bad = 0;
-    const uint8_t *r = find_icon(ix, (uint32_t)nf, ix + fixed, slen, &bad);
+    const uint8_t *r = find_icon(ix, hs, (uint32_t)nf, ix + fixed, slen, &bad);
     if (bad) {
         fail(err, errlen, "invalid .p5z: string outside the index");
         goto done;
@@ -177,7 +182,7 @@ int mp_p5z_icon_read(const mp_icon_src *src, uint8_t **png, size_t *len, char *e
         fail(err, errlen, "invalid .p5z: the icon's region");
         goto done;
     }
-    const uint8_t *frames = ix + INDEX_HEADER + FILE_REC * nf;
+    const uint8_t *frames = ix + hs + FILE_REC * nf;
     size_t in_cap = 0;
     if (storage == STORE_FRAMES) {
         if ((uint64_t)first + nframes > nfr) {

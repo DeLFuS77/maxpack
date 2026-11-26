@@ -64,11 +64,56 @@ static void copy_meta(char *dst, size_t cap, const char *src) {
     dst[n] = 0;
 }
 
-static int parse_index(mp_p5z *p, const uint8_t *ix, size_t n, mp_err *e) {
-    if (n < P5Z_INDEX_HEADER || memcmp(ix, "P5ZIDX01", 8) != 0 || rd32(ix + 8) != 1) return bad(e, "index");
+// Index version 2 only: the volumes are ampr_zstd-000.pak... with the ids 0..n-1, each once, and there
+// is at most one ampr_zstd.index and one ampr_emu.index (maxpack.image lists the volumes by id).
+static int check_v2_records(const mp_p5z *p, mp_err *e) {
+    size_t nvol = 0, nzpk = 0, nidx3 = 0;
+    for (size_t i = 0; i < p->nfiles; i++) {
+        nvol += p->files[i].role == MP_ROLE_VOLUME;
+        nzpk += p->files[i].role == MP_ROLE_ZPK_INDEX;
+        nidx3 += p->files[i].role == MP_ROLE_IDX3;
+    }
+    if (nzpk > 1 || nidx3 > 1) return bad(e, "an index twice");
+    if (nvol > MP_ZPK_MAX_VOLUMES) return bad(e, "too many volumes");
+    uint8_t *seen = calloc(nvol ? nvol : 1, 1);
+    if (!seen) {
+        mp_err_set(e, "out of memory");
+        return -1;
+    }
+    int rc = 0;
+    for (size_t i = 0; i < p->nfiles && !rc; i++) {
+        if (p->files[i].role != MP_ROLE_VOLUME) continue;
+        unsigned id = 0;
+        char name[32];
+        if (sscanf(p->files[i].path, "ampr_zstd-%u.pak", &id) != 1 || id >= nvol) {
+            rc = bad(e, "a volume that is not one of 0..n-1");
+            break;
+        }
+        snprintf(name, sizeof name, "ampr_zstd-%03u.pak", id);
+        if (strcmp(name, p->files[i].path) || seen[id]) rc = bad(e, "a volume that is not one of 0..n-1");
+        seen[id] = 1;
+    }
+    free(seen);
+    return rc;
+}
+
+static int parse_index(mp_p5z *p, const uint8_t *ix, size_t n, int flags, mp_err *e) {
+    if (n < P5Z_INDEX_HEADER || memcmp(ix, "P5ZIDX01", 8) != 0) return bad(e, "index");
+    p->version = rd32(ix + 8);
+    if (p->version == 2 && (flags & MP_P5Z_OPEN_V1))
+        return bad(e, "it grew (index version 2), and this reader takes only a .p5z as it was packed");
+    if (p->version != 1 && (p->version != 2 || n < P5Z_INDEX_HEADER_V2)) return bad(e, "index");
+    const uint64_t hs = p->version == 2 ? P5Z_INDEX_HEADER_V2 : P5Z_INDEX_HEADER;
+    if (p->version == 2) {
+        p->prev_size = rd64(ix + 56);
+        p->grown = rd32(ix + 64);
+        if (p->prev_size < P5Z_HEADER + P5Z_FOOTER || p->prev_size > p->index_off || p->grown == 0 ||
+            rd32(ix + 68) != 0)
+            return bad(e, "index version 2");
+    }
     uint64_t nf = rd32(ix + 12), nfr = rd32(ix + 16), nm = rd32(ix + 20), slen = rd64(ix + 24);
     // The counters are u32, so the fixed part cannot wrap around; the strings can.
-    uint64_t fixed = P5Z_INDEX_HEADER + P5Z_FILE_REC * nf + P5Z_FRAME_REC * nfr + P5Z_MANIFEST_REC * nm;
+    uint64_t fixed = hs + P5Z_FILE_REC * nf + P5Z_FRAME_REC * nfr + P5Z_MANIFEST_REC * nm;
     if (fixed > n || slen != n - fixed) return bad(e, "index size");
     const uint8_t *strings = ix + n - slen;
     p->nfiles = (size_t)nf;
@@ -93,7 +138,7 @@ static int parse_index(mp_p5z *p, const uint8_t *ix, size_t n, mp_err *e) {
     copy_meta(p->man.content_version, sizeof p->man.content_version, meta[1]);
     copy_meta(p->man.title_name, sizeof p->man.title_name, meta[2]);
     for (int k = 0; k < 3; k++) free(meta[k]);
-    const uint8_t *r = ix + P5Z_INDEX_HEADER;
+    const uint8_t *r = ix + hs;
     for (size_t i = 0; i < p->nfiles; i++, r += P5Z_FILE_REC) {
         p5z_file *f = &p->files[i];
         if (!(f->path = str_at(strings, slen, r, e))) return -1;
@@ -133,6 +178,7 @@ static int parse_index(mp_p5z *p, const uint8_t *ix, size_t n, mp_err *e) {
         }
         if (pos != f->data_off + f->data_len || total != f->size) return bad(e, "a file's frames");
     }
+    if (p->version == 2 && check_v2_records(p, e) != 0) return -1;
     p->man.n = (size_t)nm;
     for (size_t i = 0; i < p->man.n; i++, r += P5Z_MANIFEST_REC) {
         mp_manifest_entry *m = &p->man.v[i];
@@ -156,7 +202,12 @@ static int parse_index(mp_p5z *p, const uint8_t *ix, size_t n, mp_err *e) {
     return 0;
 }
 
-int mp_p5z_open(const char *path, mp_p5z **out, mp_err *e) {
+int mp_p5z_open(const char *path, mp_p5z **out, mp_err *e) { return mp_p5z_open_ex(path, 0, out, e); }
+
+uint32_t mp_p5z_version(const mp_p5z *p) { return p->version; }
+uint32_t mp_p5z_grown(const mp_p5z *p) { return p->grown; }
+
+int mp_p5z_open_ex(const char *path, int flags, mp_p5z **out, mp_err *e) {
     *out = NULL;
     mp_p5z *p = calloc(1, sizeof *p);
     if (!p) {
@@ -197,6 +248,7 @@ int mp_p5z_open(const char *path, mp_p5z **out, mp_err *e) {
         goto done;
     }
     p->index_off = ioff;
+    p->index_len = ilen;
     cz = malloc((size_t)ilen);
     if (!cz) {
         mp_err_set(e, "out of memory");
@@ -217,7 +269,7 @@ int mp_p5z_open(const char *path, mp_p5z **out, mp_err *e) {
         bad(e, "compressed index");
         goto done;
     }
-    if (parse_index(p, ix, (size_t)us, e) != 0) goto done;
+    if (parse_index(p, ix, (size_t)us, flags, e) != 0) goto done;
     p->man.level = h[20];
     memcpy(p->man.archive_id, h + 24, 16);
     rc = 0;
@@ -355,7 +407,8 @@ int mp_p5z_zpk(mp_p5z *p, mp_zpk **out, mp_err *e) {
         return -1;
     }
     mp_zpk_volsrc vs = {vread, vsize, p};
-    int rc = mp_zpk_open(m.buf, m.n, &vs, out, e);
+    // a .p5z that grew has its packs as ampr-emu-ng's p5z mode takes them
+    int rc = mp_zpk_open_ex(m.buf, m.n, &vs, p->version == 2 ? MP_ZPK_RULES_P5Z : MP_ZPK_RULES_PACK, out, e);
     free(m.buf);
     return rc;
 }

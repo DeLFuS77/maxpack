@@ -208,6 +208,10 @@ func TestInstallerScript(t *testing.T) {
 		`Rename "$INSTDIR\maxpack-thumbs.dll" "$TEMP\maxpack-thumbs-$0.old"`,
 		`Delete /REBOOTOK "$TEMP\maxpack-thumbs-$0.old"`,
 		`Delete /REBOOTOK "$INSTDIR\maxpack-thumbs-$0.old"`,
+		// and so does a copy an update set aside, which the Explorer may still have loaded too
+		`FindFirst $1 $2 "$INSTDIR\maxpack-thumbs-*.old"`,
+		`Rename "$INSTDIR\$2" "$TEMP\$2"`,
+		`Delete /REBOOTOK "$TEMP\$2"`,
 		`DeleteRegKey HKCU "Software\Classes\CLSID\{266D6364-17C0-4B3E-BB33-7EEB90C91837}"`,
 		// the finish page never offers to restart the PC
 		`!define MUI_FINISHPAGE_NOREBOOTSUPPORT`,

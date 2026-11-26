@@ -409,7 +409,17 @@ Section "Uninstall"
       Delete /REBOOTOK "$INSTDIR\maxpack-thumbs-$0.old"
     ${EndIf}
   ${EndIf}
-  Delete "$INSTDIR\maxpack-thumbs-*.old"
+  ; and so does each copy an update set aside, which the Explorer may still have loaded too
+  FindFirst $1 $2 "$INSTDIR\maxpack-thumbs-*.old"
+  ${DoWhile} $2 != ""
+    Delete "$INSTDIR\$2"
+    ${If} ${FileExists} "$INSTDIR\$2"
+      Rename "$INSTDIR\$2" "$TEMP\$2"
+      Delete /REBOOTOK "$TEMP\$2"
+    ${EndIf}
+    FindNext $1 $2
+  ${Loop}
+  FindClose $1
   Delete "$INSTDIR\LICENSE.txt"
   Delete "$INSTDIR\THIRD_PARTY_NOTICES.txt"
   Delete "$INSTDIR\uninstall.exe"

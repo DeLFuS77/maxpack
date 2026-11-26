@@ -386,6 +386,9 @@ The same engine, for scripts and for measuring a game before you pack it.
 | `maxpack analyze <dump> --levels` | Compares levels (3, 9, 15 and 19, or the ones given) on this PC: a sample packed with `pack`'s own code tells the `.p5z` and folder sizes and the time to pack the whole game. |
 | `maxpack pack <dump> -o <out>` | Packs into a folder (`--folder`, the default) or a single file (`--p5z`). Options for the level, threads, the runtime to put in `fakelib/`, files to keep loose, a size cap for FAT32 and the game's DLC to put inside (`--dlc`). |
 | `maxpack unpack <game.p5z>` | `--folder` gives the folder for the console; `--original` rebuilds the original dump bit for bit and checks every SHA-256. |
+| `maxpack add <game.p5z> --dlc <DLC>` | Puts DLC that come out later into a `.p5z` already made, by appending to it. |
+| `maxpack update <game.p5z> <new dump>` | Makes a `.p5z` a new version of its game: only the files that changed are compressed and appended; a cut leaves it as it was. |
+| `maxpack compact <in.p5z> -o <out.p5z>` | A copy without the room `add` and `update` leave, with nothing compressed again. |
 | `maxpack verify <game.p5z or folder>` | Checks every file; `--against <dump>` also compares a folder with the original. |
 | `maxpack info`, `info --json`, `icon` | Title, ID, version, files, packs and sizes, for people or as JSON (which also says the content ID, whether it is a DLC and the DLC a game carries); extracts the game's icon. |
 | `maxpack measure [<folder>]` | Measures this PC with no game: packing speed at 25, 50, 75 and 100 % of its threads, the threads to use, and the disk of a folder (a temporary file, deleted). |
@@ -403,8 +406,9 @@ The same engine, for scripts and for measuring a game before you pack it.
 One file per game: a 64-byte header, the zstd volumes **stored raw** (so installing them is copying,
 and the console can read them in place), the loose files and indexes in independent zstd frames, a
 compressed index with the **SHA-256 of every file** of the original dump, and a footer written last,
-so a truncated or damaged file is detected as soon as it is opened. Fully documented in
-[docs/p5z-format.md](docs/p5z-format.md).
+so a truncated or damaged file is detected as soon as it is opened. A `.p5z` can grow (a DLC that
+comes out later, a new version of the game) by appending to it, with a journal that undoes an append
+cut short. Fully documented in [docs/p5z-format.md](docs/p5z-format.md).
 
 ### What happens on the console
 

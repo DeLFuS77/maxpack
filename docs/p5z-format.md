@@ -1,4 +1,4 @@
-# `.p5z` format (version 1)
+# `.p5z` format (index versions 1 and 2)
 
 A `.p5z` is a PS5 game already packed into a single file to keep on the PC. It contains:
 - the folder that will go to the console: the zstd packs as they are, plus the loose files and the
@@ -6,8 +6,9 @@ A `.p5z` is a PS5 game already packed into a single file to keep on the PC. It c
 - the data to rebuild the original dump bit for bit: the manifest with the SHA-256 of every file and
   the originals that the folder replaces.
 
-It is written by `maxpack pack --p5z` and read by `unpack`, `verify` and `info`. All integers are
-little-endian and the CRC is CRC-32 IEEE (zlib's).
+It is written by `maxpack pack --p5z`, grown by `maxpack add` and `maxpack update` (see
+[A `.p5z` that grew](#a-p5z-that-grew-index-version-2)) and read by `unpack`, `verify` and `info`. All
+integers are little-endian and the CRC is CRC-32 IEEE (zlib's).
 
 ## Layout
 
@@ -116,7 +117,8 @@ It is followed, with no gaps, by `files`, `frames`, `manifest` and the strings.
 
 ## A game with its DLC
 
-`pack --dlc` changes nothing in the format: the `.p5z` is still of version 1. The DLC are files of the
+`pack --dlc` changes nothing in the format: the `.p5z` is still of version 1 (`maxpack add` puts DLC
+into a `.p5z` already made, which then grows: see the next section). The DLC are files of the
 dump it was made of, as if they had been put in it by hand: each DLC with files of its own in a folder
 `addcont0/`, `addcont1/`... at the root, and `dlc_emu.ini` at the root, which MaxPack writes (a `[PSAC]`
 section with `content_id` and `mount_point=/app0/addcontN` for each DLC with files, a `[PSAL]` one with
@@ -125,6 +127,114 @@ SHA-256, loose or packed by the same rules as any file (`dlc_emu.ini` is always 
 is, and so is each `addcontN/sce_sys/`, as the root `sce_sys/` is, so the folder exists among the loose
 files), in `ampr_emu.index`, and `unpack --original` gives them back. A reader that knows nothing of DLC
 reads such a `.p5z` as it reads any other; the console finds `dlc_emu.ini` among the loose files.
+
+## A `.p5z` that grew (index version 2)
+
+`maxpack add` (DLC that come out later) and `maxpack update` (only the files a new version of the game
+changes) never pack the game again: they **append** to the `.p5z`.
+
+```
+[everything it had][new regions][new index: one zstd frame][new footer 32 B]
+```
+
+- Nothing before the old end is written again: not the header (still version 1, with the same
+  `archive_id` and level), not the volumes, not the old index nor the old footer, which become room
+  that nothing uses.
+- The new regions are the new and changed files, stored as `pack` stores them: loose files in frames,
+  the rest in **new volumes**, numbered after the old ones (`ampr_zstd-NNN.pak` with the ids that
+  follow), with the header's `archive_id` and level. The headers of the new volumes count every
+  volume; the old ones keep the count they had when they were written.
+- `ampr_zstd.index` and `ampr_emu.index` are made again for the whole new dump (and kept as they are
+  when they come out the same): a file that did not change keeps its chunks where they were, in the
+  old volumes; a changed or new one points to the new volumes; a removed one is in neither. So the
+  chunks of a volume may no longer be in the index's order, room that no chunk uses is left in the old
+  volumes, and an old volume can end up with no chunk at all. That is what ampr-emu-ng's **p5z mode**
+  takes (its `docs/p5z-mode.md`, "Growing a `.p5z`"), from `v0.5.2-maxpack.1`.
+- The manifest is the new dump's: its files, sizes, dates and SHA-256. A file that did not change
+  keeps its record (only its date changes when the dump's did).
+
+### Index version 2
+
+The index is the one of version 1 with a longer header and the same tables. Its header (72 B):
+
+| off | type | field |
+|---|---|---|
+| 0 | [8] | `P5ZIDX01` |
+| 8 | u32 | version = 2 |
+| 12 .. 56 | | as in version 1: `n_files`, `n_frames`, `n_manifest`, the length of the strings, title ID, content version, title name |
+| 56 | u64 | `prev_size`: the size of the `.p5z` before the append that wrote this index; the footer it had then is its last 32 bytes |
+| 64 | u32 | `grown`: how many times the `.p5z` grew (1 after the first append) |
+| 68 | u32 | 0 |
+
+It is followed, with no gaps, by `files`, `frames`, `manifest` and the strings, as in version 1. A reader
+of version 1 refuses it at its version field (byte 8), the same place as always, instead of reading it
+wrong. What else a reader checks for version 2:
+
+- `prev_size` is at least 96 and at most where the new index starts; `grown` is at least 1; the
+  reserved field is 0.
+- The volume records are `ampr_zstd-000.pak`, `ampr_zstd-001.pak`... with the ids 0 to n-1, each once
+  (the console's `maxpack.image` lists them by id), and there is at most one `ampr_zstd.index` and one
+  `ampr_emu.index`.
+- The records come in the order a fresh pack writes them: loose files by path, volumes by id,
+  `ampr_emu.index`, the runtime, the originals by path, `ampr_zstd.index`.
+- Its packs are checked by ampr-emu-ng's p5z rules: each chunk lies in `[64, size)` of its volume and
+  none overlaps another, in any order and with room between them; a volume header has its id, the
+  `archive_id` and its size, and counts at most the index's volumes. Codecs, sizes, the store-only flag,
+  the sums and the CRCs are checked as for any pack. A `.p5z` of version 1 keeps the rules of every pack:
+  chunks back to back in the index's order and headers that count exactly the index's volumes.
+- At most **256 volumes**, the most `maxpack.image` takes: an append that would pass them stops (and the
+  `.p5z` stays as it was).
+
+Readers: `unpack --original`, `verify`, `info` and `info --play` read it as above. `unpack --folder`
+lays its volumes out again (no chunk is compressed again) as `pack --folder` lays them out, with the
+`ampr_zstd.index` that goes with them: the folder is the one packing the new dump gives, which
+ampr-emu-ng mounts outside p5z mode too. The installer of the console refuses it (`grown_p5z`), since it
+leaves the packs as a folder: play it from the `.p5z`, or make a compact copy on the PC.
+`info --play` ends its JSON with `"index_version":2,"grown":N` for a `.p5z` that grew (and says nothing
+new for one that did not), so the console can tell it needs an ampr-emu-ng with the p5z rules.
+
+### The room it does not use, and `compact`
+
+The bytes nothing uses are the old indexes and footers, the regions of the files an update changed or
+removed, and the room in the volumes no chunk uses: the size of the `.p5z` less its header, the regions
+of its records (of a volume, its 64-byte header and its chunks' stored bytes), its index and its footer.
+`maxpack info` says them, and `info --json` gives `grown` and `unused_bytes`.
+
+`maxpack compact <in.p5z> -o <out.p5z>` writes a new `.p5z` with what the old one uses and nothing
+else: the stored records are copied as they are, in a fresh pack's order, and the chunks go to new
+volumes back to back in the index's order, with a new `ampr_zstd.index` (its `archive_id` that of a
+fresh pack). Nothing is compressed again. What comes out is always of version 1; in the tests, an
+updated `.p5z` compacted is byte for byte the `.p5z` that packing the new dump gives (with the same
+volume limit and options), and one that never grew comes out the same.
+
+### The journal of an append
+
+An append that stops (a cancel, a full disk, a crash, a power cut) must not leave half a `.p5z`. Before
+it writes anything at the end, MaxPack writes next to it `<name>.p5z.maxpack-append` (written as
+`<name>.p5z.maxpack-append.tmp`, flushed and renamed, so it is whole or not there), 64 bytes:
+
+| off | type | field |
+|---|---|---|
+| 0 | [8] | `P5ZJRNL1` |
+| 8 | u32 | version = 1 |
+| 12 | u32 | size = 64 |
+| 16 | u64 | the size the `.p5z` had |
+| 24 | [32] | its last 32 bytes then (its footer) |
+| 56 | u32 | 0 |
+| 60 | u32 | CRC of bytes 0..60 |
+
+- The append holds the `.p5z` as its only writer (on Windows a write handle that others may only read;
+  elsewhere `flock`). When it ends, the `.p5z` is flushed to disk and only then the journal deleted.
+- Any failure cuts the `.p5z` back to the size the journal says, flushes it and deletes the journal: it
+  is exactly as it was.
+- After a power cut or a crash, the journal is still there: every command of MaxPack that opens a
+  `.p5z` (and so the window, which reads them with the engine) first takes it back to that size,
+  provided its last 32 bytes there are the footer the journal says, and deletes the journal. A journal
+  that is damaged, or does not match (another file in its place), is deleted and the `.p5z` left alone.
+  While another MaxPack holds the `.p5z` (an append at work), nothing is touched.
+- Meanwhile, a reader that finds a journal that matches reads the `.p5z` as it was before the append.
+- The repair data (PAR2) of a `.p5z` that grew no longer match it: MaxPack says so, and the window makes
+  them again when the `.p5z` had them.
 
 ## Playing without installing (console)
 

@@ -318,8 +318,20 @@ Afterwards:
   is (a container, also the image inside it) and what its file takes. **Copy report** under each game
   copies a text for an issue on GitHub (see
   [Copy report](#copy-report)). A `.p5z` shows as a card with what it saved against the original, its
-  volumes and its repair data (how much, or none), and two buttons: **Verify** and **Decompress** take it to those sections, where you start
-  them. A `.p5z` opened with a double click (see [Windows Explorer](#windows-explorer)) opens here.
+  volumes and its repair data (how much, or none), and four buttons: **Verify** and **Decompress** take it to those sections, where you start
+  them; **Add DLC…** and **Update with a new dump…** grow it in its place (below). A `.p5z` opened with a double click (see [Windows Explorer](#windows-explorer)) opens here.
+- **Add DLC…** asks for DLC packages (`.pkg`) or dumped DLC folders and puts them into the `.p5z` as
+  Compress would have (`maxpack add`); **Update with a new dump…** asks for the new version of the game
+  (a folder, or an image or package) and adds only the files it changes (`maxpack update`). Only what is
+  new is written, at the end of the `.p5z`; then it is verified and, when it had repair data of its own,
+  they are made again of the same share. Each runs with its bar (Adding, then Verifying), **Cancel** and
+  the end card, which says that a `.p5z` that grew plays from the `.p5z` with MaxPack for the console
+  and needs ampr-emu-ng v0.5.2-maxpack.1 or later. Cancelled, failed or cut by a power cut, the `.p5z`
+  stays as it was (the engine undoes the append; a power cut, the next time the `.p5z` is read, with a
+  notice). When more than half of the game changed, the update stops and says that compressing the new
+  dump again gives a smaller `.p5z`; **Update anyway** under it goes on. The card then says how many
+  times it grew and the space it does not use (the command line's `maxpack compact` makes a copy
+  without it). See [the guide](guide.md#add-update-and-compact-grow-a-p5z).
 - **Rename**, in Check, names `.p5z` files, dump folders, images and packages by what each one holds,
   with the template of Settings > File names. An image or a package keeps its extension, or gets the one of what it is when it
   was renamed, so its name says it (MaxPack for the console, for one, finds images by their extension).

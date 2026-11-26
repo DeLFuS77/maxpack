@@ -284,7 +284,9 @@ content ID and, for one with files, what they take and the folder they are in (`
 **Copy report** under a game copies a text for an issue on GitHub, without its name or ID (of its DLC,
 only how many). A `.p5z` is a
 card that also says what it saved and its repair data (how much, or none), with **Verify** and
-**Decompress**, which take it to those sections.
+**Decompress**, which take it to those sections, and **Add DLC…** and **Update with a new dump…**, which
+grow it in its place (see [Grow a `.p5z`](#add-update-and-compact-grow-a-p5z)). A `.p5z` that grew says
+how many times under **Grown**, and the room it does not use under **Space not in use**.
 A double click on a `.p5z` opens it here, when MaxPack opens `.p5z` files (see below).
 
 ### Rename
@@ -538,6 +540,9 @@ maxpack analyze <folder|image|package> [options]
 maxpack analyze <folder|image|package> --levels [L,L,...] [options]
 maxpack pack <folder|image|package> -o <output> [options]
 maxpack unpack <game.p5z> --folder|--original -o <folder> [--threads N]
+maxpack add <game.p5z> --dlc <DLC> [--dlc ...] [options]
+maxpack update <game.p5z> <new dump> [options]
+maxpack compact <in.p5z> -o <out.p5z> [--threads N]
 maxpack info <game.p5z>
 maxpack info --json <folder|image|package|game.p5z>
 maxpack info --play <game.p5z>
@@ -551,7 +556,7 @@ maxpack --capabilities
 An image is an `.exfat`, `.ffpkg`, `.ffpfs` or `.ffpfsc`, and a package a PS5 debug package (FPKG,
 `.pkg`); MaxPack tells which by its contents, so a renamed one works too. A package made with a
 passcode other than the default (32 zeros) needs `--passcode <its 32 characters>`, which `pack`,
-`analyze`, `info`, `icon` and `verify --against` take. A damaged image or package stops with the reason
+`analyze`, `info`, `icon`, `add`, `update` and `verify --against` take. A damaged image or package stops with the reason
 (see [source-images.md](source-images.md#what-stops-it)).
 
 Exit codes: 0 success, 1 error, 2 wrong usage and 130 cancelled.
@@ -647,7 +652,60 @@ maxpack pack "D:\dumps\MyGame" --dlc "D:\dlc\Bonus.pkg" --dlc "D:\dlc\SeasonPass
   content ID (it is the game), a game given as a DLC, a DLC
   folder without `param.json` or already packed, a game with no title ID, or a game that already has a
   folder where a DLC would go. A DLC package made with another passcode says so (`passcode`).
-- Not yet: adding a DLC to a `.p5z` made before, PS5 patches, and PS4 DLC.
+- A DLC that comes out later goes into a `.p5z` made before with `maxpack add` (next section). Not yet:
+  PS5 patches in `.pkg` form, and PS4 DLC.
+
+### `add`, `update` and `compact`: grow a `.p5z`
+
+A `.p5z` can take a DLC that comes out later, or a new version of its game, without packing it again:
+MaxPack **appends** to it what is new and leaves everything it had where it was. If it stops, or the
+power goes, the `.p5z` stays as it was (below).
+
+```
+maxpack add "D:\games\MyGame [PPSA00000].p5z" --dlc "D:\dlc\Chapter2.pkg"
+maxpack update "D:\games\MyGame [PPSA00000].p5z" "D:\dumps\MyGame v1.02"
+maxpack compact "D:\games\MyGame [PPSA00000].p5z" -o "D:\games\MyGame compact.p5z"
+```
+
+- **`add`** puts DLC in as `pack --dlc` would have: each one with files of its own in the `addcontN/`
+  after the last the game has, and `dlc_emu.ini` written again with the DLC it had and the new ones. The
+  same checks as `pack --dlc`; a `.p5z` whose `dlc_emu.ini` MaxPack did not write (a game's own, written
+  by hand) is refused (`dlc_has_ini`), and so is a DLC it has already. The game's files are not read
+  again: only the DLC.
+- **`update`** makes the `.p5z` the new dump given (a folder, an image or a package). It must be the
+  same game, by the title ID of its `param.json` (`other_game`; none: `no_title_id`), in another version
+  (`same_version`). It reads the whole new dump to compare it with the `.p5z`'s list by path, size and
+  SHA-256 (the `comparing` phase), compresses only what is new or changed, and drops what the dump no
+  longer has. The DLC the `.p5z` carries stay, unless the new dump has a `dlc_emu.ini` of its own; a new
+  dump with files where they are is refused (`dlc_refused`). When more than half of the game's bytes
+  changed it stops (`mostly_changed`): packing the new dump again gives a smaller `.p5z`; `--force` goes
+  on anyway. `--leave-out-leftovers` and `--keep-loose` are `pack`'s, for the new dump.
+- Both: `--threads N`; `--max-file-size N` (the whole `.p5z` may not pass it: on FAT32, 4294967295;
+  `too_big`); `--volume-limit N` (for testing); `--passcode`; `--progress json` and `--control stdin`.
+  Before writing anything they stop when the disk has not the room for the raw size of what they add
+  (plus 1 % and 64 MiB; `no_space`), when the `.p5z` would have more than 256 volumes, the most the
+  console takes (`too_many_volumes`), when another MaxPack is changing the same `.p5z` (`busy`), or
+  when the new dump is packed already (`already_packed`) or would leave the packs empty
+  (`no_packs_left`).
+- They say what they did: the files the same, new, changed and removed, what was stored, what the
+  `.p5z` grew by, its volumes and the room it no longer uses. The `--progress json` result line has
+  `same_files`, `new_files`, `changed_files`, `removed_files`, `stored_bytes`, `added_bytes`, `p5z_size`,
+  `volumes`, `unused_bytes`, `grown`, `nothing` (nothing changed: nothing written), `par2`, `dlc_data`,
+  `dlc_license` and `dlc_bytes`.
+- **Cut short:** before it appends, MaxPack writes `<name>.p5z.maxpack-append` with the size the `.p5z`
+  had and its footer. A failure or a cancel cuts the `.p5z` back to that size and deletes it; after a
+  power cut or a crash, the next command that opens the `.p5z` (and so the window) does, and says "an
+  interrupted change ... was undone". Leave that file where it is.
+- **The console:** a `.p5z` that grew has an index of version 2, and its packs need ampr-emu-ng
+  `v0.5.2-maxpack.1` or later (its p5z mode takes chunks in any order and room between them): play it
+  from the `.p5z` with MaxPack for the console. The installer of the console refuses it (`grown_p5z`);
+  `unpack --folder` lays its volumes out again, so the folder it gives works anywhere.
+- **Repair data:** the PAR2 data of a `.p5z` no longer match it once it grew: the command line says so,
+  and the window makes them again when the `.p5z` had them.
+- **`compact`** makes a new `.p5z` without the room `add` and `update` leave (old indexes, the files an
+  update replaced), copying what is stored as it is: nothing is compressed again. It is of version 1,
+  the same `.p5z` packing that dump gives. `info` says how much room a `.p5z` does not use. The format is
+  in [p5z-format.md](p5z-format.md#a-p5z-that-grew-index-version-2).
 
 ### `unpack`: decompress a `.p5z`
 
@@ -1093,6 +1151,13 @@ What you see: the window does not let you start any job.
 What to do: put next to MaxPack the `maxpack-core` that came with it. The easiest way is to reinstall
 MaxPack or to unzip the whole portable zip again.
 
+### An add or an update that stopped
+
+If the power went or MaxPack crashed while it added DLC to a `.p5z` or updated one, the `.p5z` is
+longer than it was and a file `<name>.p5z.maxpack-append` is next to it. Do not delete that file: the
+next time MaxPack reads the `.p5z` (the window lists it, or any command opens it) it cuts the `.p5z`
+back to what it was, deletes that file and says so. Until then, MaxPack reads the `.p5z` as it was.
+
 ### Copies left by a run that did not end
 
 If MaxPack was closed by a crash or a power cut while it worked, it left the copy it was making apart,
@@ -1206,6 +1271,11 @@ console repository, which identifies games only by these numbers.
 - **DLC inside a `.p5z`** (`pack --dlc`): that a game reads a DLC with files of its own from
   `/app0/addcont0` inside a `.p5z` has not been tried on a real PS5 yet; only licenses written by hand in
   a `dlc_emu.ini`.
+- **A `.p5z` that grew** (`add`, `update`): its packs need ampr-emu-ng `v0.5.2-maxpack.1` with the p5z
+  rules for chunks in any order, not released yet, and MaxPack for the console with it; neither has
+  played one on a real PS5. On the PC it is tested end to end: a grown `.p5z` decompresses bit for bit
+  and verifies, an update gives the files (and, compacted, the bytes) of packing the new dump, and an
+  append cut short at each of its steps leaves the `.p5z` exactly as it was.
 - A side-by-side timing of a `.p5z` against a packed folder, and more games, firmwares and drives.
 - The Windows installer with a double click and the on-screen wizard. If something does not work, use
   the portable zip and report it.

@@ -61,10 +61,16 @@ console.log(vm.runInContext(` + "`" + `(() => {
   if (itemOf(row("D:/w/G", game())).Watched !== true || itemOf(Object.assign(row("D:/w/G", game()), { section: "details" })).Watched !== false
     || itemOf(row("D:/w/G", game(), { watched: false })).Watched !== false) say("Watched in the item");
   for (const [st, detail, final] of [["ok", "", true], ["error", "verify_failed", true], ["skipped", "watch_exists", true],
-    ["cancelled", "", false], ["skipped", "fat32_too_big", false]])
+    ["skipped", "exists", true], ["cancelled", "", false], ["skipped", "fat32_too_big", false]])
     if (watchFinal({ state: st, detail }) !== final) say("final: " + st + " " + detail);
   if (typeof t("watchExisting")(3) !== "string" || t("watchExisting")(3).indexOf("3") < 0) say("watchExisting");
-  for (const code of ["original_kept_changed", "original_kept_unchecked"]) if (detailText(code) !== t("detail_" + code)) say("the detail " + code);
+  for (const code of ["original_kept_watched", "source_changed"]) if (detailText(code) !== t("detail_" + code)) say("the detail " + code);
+  // a game that failed (it changed while it was compressed) is never sent
+  const made = { section: "compress", mode: "p5z", rows: [{ state: "error", detail: "source_changed", out: "D:/a.p5z", watched: true }, { state: "ok", out: "D:/b.p5z", watched: true }] };
+  if (madeP5z(made).join() !== "D:/b.p5z") say("sent what failed: " + madeP5z(made));
+  // the wait for a destination or for room is said once, not on every try
+  state.watchSaid = "";
+  if (!watchSayOnce("nodest") || watchSayOnce("nodest") || !watchSayOnce("nospace")) say("said once");
   return problems.join("\\n");
 })()` + "`" + `, context));
 `

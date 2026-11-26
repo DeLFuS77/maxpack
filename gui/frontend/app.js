@@ -1409,12 +1409,13 @@ async function startQueue(kind, only, extra, auto) {
   const own = grows.includes(mode) && rows[0].repair && rows[0].repair.state === "match" ? Number(rows[0].repair.percent) || 0 : 0;
   const repair = mode === "p5z" ? repairOf() : mode === "protect" ? Number(state.settings.RepairPercent) || 5 : own;
   const opts = { Mode: mode, Dest: "", Level: Number(state.settings.Level) || 19, Runtime: state.settings.Runtime || "", ContinueFat32: false, Replace: [],
-    DeleteOriginals: section === "compress" && (auto ? !!state.settings.DeleteOriginals : state.deleteOriginals), DeleteNoBin: false, Repair: repair, Drive: "" };
+    // the watched folder never takes an original away (jobs/watched.go)
+    DeleteOriginals: section === "compress" && !auto && state.deleteOriginals, DeleteNoBin: false, Repair: repair, Drive: "" };
   Object.assign(opts, extra || {});
   if (writes.includes(section)) {
     // the watched folder asks nothing: without a destination it waits for one
     opts.Dest = state.settings.LastDest || (auto ? "" : await chooseDest());
-    if (!opts.Dest) { if (auto) toast(t("watchNoDest")); return; }
+    if (!opts.Dest) { if (auto && watchSayOnce("nodest")) toast(t("watchNoDest")); return; }
   }
   // nothing else starts while the questions are asked; once the window takes the queue, the page
   // stays busy until job:done (which may even come before Start answers)
@@ -1466,7 +1467,7 @@ async function startQueue(kind, only, extra, auto) {
     }
     // the space of the whole queue, by drive, before anything starts
     const short = await go.call("Space", section, going.map(n => rows[n]).map(itemOf), opts).catch(() => []);
-    if (short && short.length && auto) { toast(t("watchNoSpace")); return; }
+    if (short && short.length && auto) { if (watchSayOnce("nospace")) toast(t("watchNoSpace")); return; }
     if (short && short.length) {
       $("space-list").replaceChildren(...short.map(drive => line(ltr(drive.Root), t("spaceLine")(size(drive.Need), size(drive.Free)))));
       // a repair writes a whole copy next to the .p5z: without room for it, it does not start
@@ -1494,6 +1495,7 @@ async function startQueue(kind, only, extra, auto) {
     }
     job.running = true;
     state.job = job;
+    if (auto) state.watchSaid = "";
     state.cancelling = false;
     await go.call("Start", section, itemsOf(job.rows), opts);
     started = true;
@@ -1634,12 +1636,17 @@ async function sendRows(rows) {
   try {
     view = await Promise.race([go.call("ConsoleDrives").catch(error => ({ drives: [], error: "io", message: message(error) })), answer.then(() => null)]);
   } finally {
-    if (!view) go.call("CancelConsoleDrives").catch(() => {});
-    state.busy = false;
-    render();
+    if (!view) {
+      go.call("CancelConsoleDrives").catch(() => {});
+      state.busy = false;
+      render();
+    }
   }
   if (!view) return;
+  // busy until a drive is picked: nothing else starts under the dialog
+  const done = () => { state.busy = false; render(); };
   if (view.error || !view.drives || !view.drives.length) {
+    done();
     if ($("send-dialog").open) $("send-dialog").close("cancel");
     toast(sendErrorText(view.error || "no_drive", view.message));
     return;
@@ -1662,7 +1669,9 @@ async function sendRows(rows) {
     label.append(input, text);
     return label;
   }));
-  if (await answer !== "send") return;
+  const answered = await answer;
+  done();
+  if (answered !== "send") return;
   const picked = document.querySelector('input[name="send-drive"]:checked');
   const drive = picked ? picked.value : chosen;
   save("sendDrive", drive);
@@ -1742,7 +1751,13 @@ function watchReady(rows) {
 }
 // the window is told how a watched game ended: done (compressed, failed, in the destination already) until it
 // changes; anything else (cancelled, skipped for another reason) comes again in the next run
-const watchFinal = row => row.state === "ok" || row.state === "error" || (row.state === "skipped" && row.detail === "watch_exists");
+const watchFinal = row => row.state === "ok" || row.state === "error" || (row.state === "skipped" && /^(watch_)?exists$/.test(row.detail));
+// what keeps the watched folder waiting (no destination, no room) is said once per wait, not on every try
+function watchSayOnce(what) {
+  if (state.watchSaid === what) return false;
+  state.watchSaid = what;
+  return true;
+}
 function watchEnded(row) {
   if (!row.watched || !ended.includes(row.state) || row.watchTold === row.state) return;
   row.watchTold = row.state;
@@ -1750,10 +1765,10 @@ function watchEnded(row) {
 }
 // what was in the watched folder when it was turned on: compressed only when asked
 async function takeExisting() {
-  const paths = await go.call("WatchTakeExisting").catch(error => { toast(message(error)); return []; });
+  // they come as what arrives comes (watch:found), once whole
+  await go.call("WatchTakeExisting").catch(error => toast(message(error)));
   state.watch.existing = 0;
   render();
-  if (paths && paths.length) onWatchFound({ paths });
 }
 let watchTimer = 0;
 function watchSoon() {
@@ -2420,6 +2435,7 @@ async function main() {
   go.on("tool:level", onToolLevel);
   go.on("tool:trial", onToolTrial);
   go.on("watch:found", onWatchFound);
+  go.on("watch:skipped", event => { for (const path of (event && event.paths) || []) toast(t("watchSkipped")(baseName(path))); });
   go.on("watch:status", status => {
     const before = Number(state.watch.existing) || 0;
     state.watch = status || { folder: "", error: "", existing: 0 };

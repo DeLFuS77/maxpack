@@ -274,6 +274,10 @@ MP_TEST(pack_dlc_complete_and_folder) {
     MP_CHECK(k.rc == 0);
     MP_CHECK(mp_path_kind(TMP "/folder/dlc_emu.ini") == 1);
     MP_CHECK(mp_path_kind(TMP "/folder/addcont0/module/libdlc.prx") == 1);   // a module stays loose
+    // so does its sce_sys/, so addcont0/ is a real folder there, and in the console's cache of a .p5z
+    MP_CHECK(mp_path_kind(TMP "/folder/addcont0/sce_sys/param.json") == 1);
+    MP_CHECK(mp_path_kind(TMP "/folder/addcont0/sce_sys/icon0.png") == 1);
+    MP_CHECK(mp_path_kind(TMP "/folder/addcont0/data/dlc1.bin") == 0);   // packed
     mp_verify_result vr;
     mp_err e = {{0}};
     MP_CHECK(mp_verify_folder(TMP "/folder", NULL, 2, 0, &vr, &e) == 0);

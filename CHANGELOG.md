@@ -18,7 +18,8 @@ All notable changes to MaxPack are listed here. The format follows
   adds dlc_emu, which tells the game its DLC are installed where the file says, inside the `.p5z`: one
   file with the game and its DLC, nothing installed. The `.p5z` is still of format version 1, so MaxPack
   for the console 1.0.1 plays it; it verifies and unpacks as any other, and its original is the dump
-  with the `addcontN/` folders and the `dlc_emu.ini`. It stops before writing anything, with the reason
+  with the `addcontN/` folders and the `dlc_emu.ini`. A DLC's `sce_sys/` stays loose, as the game's
+  does, so its `addcontN/` folder is a real one in the console's cache too. It stops before writing anything, with the reason
   and an error code for `--progress json`, for a dump that has its own `dlc_emu.ini` (`dlc_has_ini`: two
   lists are not mixed), more than 100 DLC with files or an ini over the 32 KiB dlc_emu reads
   (`dlc_too_many`), and (`dlc_refused`) a DLC of another game, the same one twice, a content ID that is

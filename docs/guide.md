@@ -630,8 +630,10 @@ maxpack pack "D:\dumps\MyGame" --dlc "D:\dlc\Bonus.pkg" --dlc "D:\dlc\SeasonPass
   `.p5z`; MaxPack for the console finds the `dlc_emu.ini` loose in the `.p5z` and adds dlc_emu by
   itself. A game whose **Fakelib** setting on the console is **Off** gets no dlc_emu, so it sees none
   of its DLC.
-- Everything else is as always: the DLC are files of the game, loose or packed by the same rules, and
-  the `.p5z` is still of format version 1. It plays, verifies and decompresses as any other, and its
+- Everything else is as always: the DLC are files of the game, loose or packed by the same rules (a
+  DLC's `sce_sys/` stays loose, as the game's does, so its `addcontN/` folder is a real one on the disk
+  the game runs from, also in the console's cache of a `.p5z`), and the `.p5z` is still of format
+  version 1. It plays, verifies and decompresses as any other, and its
   original (`unpack --original`) is the dump with the `addcontN/` folders and the `dlc_emu.ini`, what you
   would make by hand to use dlc_emu with a game in a folder. `pack --folder` does the same in a folder.
 - `info --json` lists the DLC a game carries (`dlc`, below), and the check of whether a dump is

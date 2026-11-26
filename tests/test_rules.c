@@ -23,6 +23,24 @@ MP_TEST(classify_table) {
     mp_rules_free(r);
 }
 
+// The sce_sys/ of a DLC packed with its game (addcont0/ to addcont99/, mp_dlc.h) stays loose, as the
+// game's own does: so its folder is a real one in the console's cache, not only one of the packs.
+MP_TEST(classify_dlc_sce_sys) {
+    mp_rules *r = mp_rules_new();
+    static const char *loose[] = {"addcont0/sce_sys/param.json", "AddCont99/SCE_SYS/icon0.png",
+                                  "addcont10/sce_sys/trophy2/trophy00.ucp"};
+    static const char *packable[] = {"addcont0/data/x.bin", "addcont100/sce_sys/param.json",
+                                     "addcont01/sce_sys/param.json", "addcont/sce_sys/param.json",
+                                     "data/addcont0/sce_sys/param.json", "addcont0/data/sce_sys/x.bin",
+                                     "addcont0x/sce_sys/param.json"};
+    for (size_t i = 0; i < sizeof loose / sizeof *loose; i++)
+        if (mp_rules_classify(r, loose[i], 100) != MP_LOOSE) MP_FAIL_("should be loose: %s", loose[i]);
+    for (size_t i = 0; i < sizeof packable / sizeof *packable; i++)
+        if (mp_rules_classify(r, packable[i], 100) != MP_PACKABLE)
+            MP_FAIL_("should be packable: %s", packable[i]);
+    mp_rules_free(r);
+}
+
 MP_TEST(keep_loose) {
     mp_err e = {{0}};
     mp_rules *r = mp_rules_new();
@@ -53,6 +71,7 @@ MP_TEST(glob_semantics) {
 
 int main(void) {
     MP_RUN(classify_table);
+    MP_RUN(classify_dlc_sce_sys);
     MP_RUN(keep_loose);
     MP_RUN(glob_semantics);
     MP_TEST_MAIN_END();

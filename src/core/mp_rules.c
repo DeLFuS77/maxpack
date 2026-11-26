@@ -26,6 +26,18 @@ static int istarts_n(const char *a, size_t an, const char *prefix) {
     return an >= pn && ieq_n(a, pn, prefix);
 }
 
+// The sce_sys/ of a DLC packed with its game: in addcont0/ to addcont99/ at the root (fn is the length
+// of the first folder of path), as pack --dlc names them (mp_dlc.h). It stays loose as the game's own
+// does, so the DLC's folder is a real one on the disk the game runs from.
+static int dlc_sce_sys(const char *path, size_t fn) {
+    if (fn < 8 || fn > 9 || !istarts_n(path, fn, "addcont")) return 0;
+    for (size_t i = 7; i < fn; i++)
+        if (path[i] < '0' || path[i] > '9') return 0;
+    if (fn == 9 && path[7] == '0') return 0;   // no leading zeros: addcont01 is no DLC's folder
+    const char *rest = path + fn + 1, *slash = strchr(rest, '/');
+    return slash && ieq_n(rest, (size_t)(slash - rest), "sce_sys") && slash[1];
+}
+
 // A segment with '*' and '?' (no '/').
 static int seg_match(const char *p, const char *pe, const char *s, const char *se) {
     while (p < pe) {
@@ -105,7 +117,7 @@ mp_class mp_rules_classify(const mp_rules *r, const char *path, uint64_t size) {
     if (slash) {   // root folders the system loads
         size_t fn = (size_t)(slash - path);
         if (ieq_n(path, fn, "sce_sys") || ieq_n(path, fn, "sce_module") ||
-            istarts_n(path, fn, "fakelib") || istarts_n(path, fn, "ampr_assets"))
+            istarts_n(path, fn, "fakelib") || istarts_n(path, fn, "ampr_assets") || dlc_sce_sys(path, fn))
             return MP_LOOSE;
     } else {       // AMPR files in the root
         if (ieq_n(path, bn, "ampr_emu.index") || ieq_n(path, bn, "ampr_zstd.index") ||

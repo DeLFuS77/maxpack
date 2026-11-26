@@ -122,7 +122,8 @@ dump it was made of, as if they had been put in it by hand: each DLC with files 
 section with `content_id` and `mount_point=/app0/addcontN` for each DLC with files, a `[PSAL]` one with
 `content_id` and `download_status=NO_EXTRA_DATA` for each license). They are in the manifest with their
 SHA-256, loose or packed by the same rules as any file (`dlc_emu.ini` is always loose, as every `.ini`
-is), in `ampr_emu.index`, and `unpack --original` gives them back. A reader that knows nothing of DLC
+is, and so is each `addcontN/sce_sys/`, as the root `sce_sys/` is, so the folder exists among the loose
+files), in `ampr_emu.index`, and `unpack --original` gives them back. A reader that knows nothing of DLC
 reads such a `.p5z` as it reads any other; the console finds `dlc_emu.ini` among the loose files.
 
 ## Playing without installing (console)

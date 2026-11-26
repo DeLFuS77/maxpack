@@ -329,8 +329,9 @@ Afterwards:
   and needs ampr-emu-ng v0.5.1-maxpack.2 or later. Cancelled, failed or cut by a power cut, the `.p5z`
   stays as it was (the engine undoes the append; a power cut, the next time the `.p5z` is read, with a
   notice). Cancelled during the verification that follows, it has grown already: the row says so, and
-  that it was not verified (**Verify** on its card does it). When more than half of the game changed, the update stops and says that compressing the new
-  dump again gives a smaller `.p5z`; **Update anyway** under it goes on. The card then says how many
+  that it was not verified (**Verify** on its card does it). When more than half of the game changed,
+  the update stops and says that compressing the new dump again gives a smaller `.p5z`; **Update
+  anyway** under it goes on. The card then says how many
   times it grew and the space it does not use (the command line's `maxpack compact` makes a copy
   without it). See [the guide](guide.md#add-update-and-compact-grow-a-p5z).
 - **Rename**, in Check, names `.p5z` files, dump folders, images and packages by what each one holds,

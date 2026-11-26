@@ -206,6 +206,18 @@ LangString ExplorerFailed ${LANG_PORTUGUESEBR} "O MaxPack não conseguiu se adic
 LangString ExplorerFailed ${LANG_ITALIAN} "MaxPack non è riuscito ad aggiungersi a Esplora file: attivalo in Impostazioni › Esplora file di Windows."
 LangString ExplorerFailed ${LANG_KOREAN} "MaxPack을 파일 탐색기에 추가하지 못했습니다. 설정 › Windows 파일 탐색기에서 켜세요."
 LangString ExplorerFailed ${LANG_ARABIC} "تعذر على MaxPack إضافة نفسه إلى المستكشف: فعّله من الإعدادات › مستكشف ملفات Windows."
+
+LangString ThumbsKept ${LANG_ENGLISH} "The covers of MaxPack in the Explorer are in use (an antivirus may be checking them): the ones there stay until the next update."
+LangString ThumbsKept ${LANG_RUSSIAN} "Обложки MaxPack в Проводнике сейчас заняты (возможно, их проверяет антивирус): прежние останутся до следующего обновления."
+LangString ThumbsKept ${LANG_SIMPCHINESE} "资源管理器中 MaxPack 的封面正在使用（可能有杀毒软件在检查）：现有的会保留到下次更新。"
+LangString ThumbsKept ${LANG_GERMAN} "Die Cover von MaxPack im Explorer sind in Gebrauch (vielleicht prüft sie ein Virenscanner): Die vorhandenen bleiben bis zum nächsten Update."
+LangString ThumbsKept ${LANG_SPANISH} "Las portadas de MaxPack en el Explorador están en uso (quizá las revisa un antivirus): las que hay se quedan hasta la próxima actualización."
+LangString ThumbsKept ${LANG_FRENCH} "Les jaquettes de MaxPack dans l'Explorateur sont utilisées (un antivirus les vérifie peut-être) : celles en place restent jusqu'à la prochaine mise à jour."
+LangString ThumbsKept ${LANG_JAPANESE} "エクスプローラーの MaxPack のカバーは使用中です（ウイルス対策ソフトが確認しているのかもしれません）。今あるものが次の更新まで使われます。"
+LangString ThumbsKept ${LANG_PORTUGUESEBR} "As capas do MaxPack no Explorador estão em uso (talvez um antivírus as esteja verificando): as que existem ficam até a próxima atualização."
+LangString ThumbsKept ${LANG_ITALIAN} "Le copertine di MaxPack in Esplora file sono in uso (forse le sta controllando un antivirus): quelle presenti restano fino al prossimo aggiornamento."
+LangString ThumbsKept ${LANG_KOREAN} "파일 탐색기의 MaxPack 표지가 사용 중입니다(백신 프로그램이 검사 중일 수 있습니다): 지금 있는 것이 다음 업데이트까지 남습니다."
+LangString ThumbsKept ${LANG_ARABIC} "أغلفة MaxPack في المستكشف قيد الاستخدام (ربما يفحصها برنامج مكافحة فيروسات): تبقى الموجودة حتى التحديث القادم."
 ; the code of the language of the installer, as the window names it (frontend/i18n), in $1
 Function LangCode
   StrCpy $1 "en"
@@ -336,10 +348,26 @@ Section "MaxPack"
   Delete "$INSTDIR\maxpack-thumbs.dll"
   ${If} ${FileExists} "$INSTDIR\maxpack-thumbs.dll"
     System::Call "kernel32::GetTickCount() i .r0"
+    ClearErrors
     Rename "$INSTDIR\maxpack-thumbs.dll" "$INSTDIR\maxpack-thumbs-$0.old"
-    Delete "$INSTDIR\maxpack-thumbs-$0.old"
+    ${If} ${Errors}
+      ; held without delete sharing (an antivirus checking it): set aside in the temporary folder, as the
+      ; uninstall does, and deleted there if it can
+      ClearErrors
+      Rename "$INSTDIR\maxpack-thumbs.dll" "$TEMP\maxpack-thumbs-$0.old"
+      Delete "$TEMP\maxpack-thumbs-$0.old"
+    ${Else}
+      Delete "$INSTDIR\maxpack-thumbs-$0.old"
+    ${EndIf}
+  ${EndIf}
+  ; nothing could set it aside: the one there stays until the next update (the covers keep working), and NSIS asks
+  ; nothing (Abort/Retry/Ignore) for this file
+  ${If} ${FileExists} "$INSTDIR\maxpack-thumbs.dll"
+    DetailPrint "$(ThumbsKept)"
+    SetOverwrite off
   ${EndIf}
   File "/oname=maxpack-thumbs.dll" "${THUMBS}"
+  SetOverwrite on
   File "/oname=LICENSE.txt" "${LICENSE}"
   File "/oname=THIRD_PARTY_NOTICES.txt" "${NOTICES}"
   WriteUninstaller "$INSTDIR\uninstall.exe"

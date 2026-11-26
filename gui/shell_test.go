@@ -232,6 +232,18 @@ func TestInstallerScript(t *testing.T) {
 	if strings.Contains(install, "/REBOOTOK") || strings.Contains(install, "SetRebootFlag true") {
 		t.Error("the install may set the reboot flag")
 	}
+	// an update while the DLL is held without delete sharing (an antivirus checking it): the set-aside is checked,
+	// tried in the temporary folder as the uninstall does, and a DLL nothing could move stays as it is, with no
+	// Abort/Retry/Ignore question (SetOverwrite off for that File only)
+	thumbs := install[strings.Index(install, `Delete "$INSTDIR\maxpack-thumbs-*.old"`):]
+	thumbs = thumbs[:strings.Index(thumbs, `File "/oname=LICENSE.txt"`)]
+	for _, want := range []string{"ClearErrors\n    " + `Rename "$INSTDIR\maxpack-thumbs.dll" "$INSTDIR\maxpack-thumbs-$0.old"` + "\n    ${If} ${Errors}",
+		`Rename "$INSTDIR\maxpack-thumbs.dll" "$TEMP\maxpack-thumbs-$0.old"`, `DetailPrint "$(ThumbsKept)"`,
+		"SetOverwrite off\n  ${EndIf}\n  " + `File "/oname=maxpack-thumbs.dll" "${THUMBS}"` + "\n  SetOverwrite on"} {
+		if !strings.Contains(thumbs, want) {
+			t.Errorf("the update of the thumbnail provider does not have: %s", want)
+		}
+	}
 	if strings.Contains(script, `/REBOOTOK "$INSTDIR\maxpack-thumbs.dll"`) {
 		t.Error("a delete at the restart of the thumbnail provider's own path, which a later install would lose")
 	}
@@ -274,7 +286,7 @@ func TestInstallerScript(t *testing.T) {
 	if len(nsisLanguages) != len(settings.Languages) {
 		t.Fatal("the installer and the window have other languages")
 	}
-	for _, name := range []string{"ExplorerTitle", "ExplorerSub", "OptMenu", "OptMenuHint", "OptSendTo", "OptSendToHint", "OptFiles", "OptFilesHint", "ExplorerFailed"} {
+	for _, name := range []string{"ExplorerTitle", "ExplorerSub", "OptMenu", "OptMenuHint", "OptSendTo", "OptSendToHint", "OptFiles", "OptFilesHint", "ExplorerFailed", "ThumbsKept"} {
 		if !strings.Contains(script, "$("+name+")") {
 			t.Errorf("%s is not used", name)
 		}

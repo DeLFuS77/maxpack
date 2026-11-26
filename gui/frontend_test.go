@@ -53,7 +53,7 @@ func textKeys(t *testing.T, lang string) map[string]bool {
 // failed or was skipped), with the ones the page gives itself.
 func pageCodes() []string {
 	states := []string{jobs.StateWaiting, jobs.StateQueued, jobs.StatePacking, jobs.StateVerifying, jobs.StateUnpacking,
-		jobs.StateProtecting, jobs.StateRepairing, jobs.StateOK, jobs.StateError, jobs.StateSkipped, jobs.StateCancelled}
+		jobs.StateProtecting, jobs.StateRepairing, jobs.StateGrowing, jobs.StateOK, jobs.StateError, jobs.StateSkipped, jobs.StateCancelled}
 	warnings := []string{"fat32", "needs_runtime", "may_not_fit", "duplicate_target", "no_title_id"}
 	details := []string{
 		// blocks of a plan, which the Runner gives as the detail of a skip
@@ -76,9 +76,12 @@ func pageCodes() []string {
 		"repair_not_needed", "old_repair_data_not_deleted", "repair_not_possible",
 		// the page: skipped by the user, a game that cannot go, and anything else
 		"skipped_by_user", "already_packed", "not_packed", "other",
+		// a .p5z that grows (jobs/grow.go): how it ended, and what the engine says when it does not
+		"grown", "nothing_to_do", "repair_redone", "nothing_given", "busy", "grow_no_space", "grow_too_big", "too_many_volumes",
+		"mostly_changed", "no_packs_left", "other_game", "same_version", "no_title_id", "changed_meanwhile", "dump_packed",
 	}
 	// the phases of the progress of the engine (phase_code in src/cli/main.c), and of par2
-	phases := []string{"copying", "packing", "verifying", "unpacking", "working", "protecting", "repairing"}
+	phases := []string{"copying", "comparing", "packing", "verifying", "unpacking", "working", "protecting", "repairing"}
 	var keys []string
 	for _, s := range states {
 		keys = append(keys, "state_"+s)

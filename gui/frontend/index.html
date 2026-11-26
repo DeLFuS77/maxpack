@@ -263,12 +263,13 @@
           <div class="repair-line" hidden></div>
           <div class="list-warn" hidden></div>
           <dl class="facts" hidden></dl>
-          <div class="card-actions" hidden><button class="to-verify"></button><button class="to-decompress"></button></div>
+          <div class="card-actions" hidden><button class="to-verify"></button><button class="to-decompress"></button><button class="to-add-dlc"></button><button class="to-update"></button></div>
           <div class="note" hidden></div>
           <button class="link report" hidden></button>
           <button class="link compare" hidden></button>
           <button class="link add-dlc" hidden></button>
           <button class="link repair" hidden></button>
+          <button class="link grow-anyway" hidden></button>
         </div>
       </div>
     </td>
@@ -319,6 +320,14 @@
   <h2 id="warn-title"><svg class="warn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 2.8 19.5h18.4z"/><path d="M12 9.5v4.5M12 16.8v.2"/></svg><span data-t="warnTitle"></span></h2>
   <ul class="space-list" id="warn-list"></ul>
   <form method="dialog" class="dialog-actions"><button value="cancel" class="quiet" data-t="cancel" autofocus></button><button value="go" class="primary" data-t="startAnyway"></button></form>
+</dialog>
+
+<!-- what to add to a .p5z of Details: DLC packages or folders, or the new dump as a folder or as an
+     image or package; Escape adds nothing -->
+<dialog id="grow-dialog" class="warn-dialog" aria-labelledby="grow-title" aria-describedby="grow-text">
+  <h2 id="grow-title"><span id="grow-title-text"></span></h2>
+  <p class="muted" id="grow-text"></p>
+  <form method="dialog" class="dialog-actions"><button value="cancel" class="quiet" data-t="cancel"></button><button value="files" id="grow-files"></button><button value="folder" id="grow-folder" class="primary" autofocus></button></form>
 </dialog>
 
 <!-- the originals that go once checked: what each takes and where it goes; Escape starts nothing -->

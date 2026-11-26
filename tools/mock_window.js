@@ -42,6 +42,9 @@
 //   ?dlc=1              Compress with two DLC of Starfall Odyssey (a package with files of its own and a
 //                       license-only folder), the same package again and a DLC of a game not in the list;
 //                       a game's Add DLC gives two more; Details with a .p5z made with two DLC
+//   ?grow=1             Details with a .p5z that grew twice (by DLC and an update) and one that never did:
+//                       Add DLC… ends well, and Update with a new dump… stops because most of the game
+//                       changed until Update anyway
 // Start runs a queue made up here: each game packs and verifies in a few seconds (and gets its repair
 // data), the games added meanwhile join it, and the card of the end shows; in Verify the damaged
 // .p5z fails, and Repair and Add repair data run their own steps. Compare levels and Measure this PC tell made-up
@@ -147,6 +150,11 @@ const mock = `
   games[p5zDlc] = Object.assign({}, games[p5z], { OriginalSize: 10530000000, P5zSize: 5210000000, Files: 2299,
     DLC: [{ ContentID: "EP0001-PPSA10001_00-STARFALLBONUS001", Data: true, Folder: "addcont0", Size: 2140000000 },
       { ContentID: "EP0001-PPSA10001_00-STARFALLSEASON01", Data: false, Folder: "", Size: 0 }] });
+  // a .p5z that grew (?grow=1): DLC added to it, then an update
+  const p5zGrown = "E:\\\\Lost Signal [PPSA10004].p5z";
+  games[p5zGrown] = { TitleID: "PPSA10004", Name: "Lost Signal", Version: "01.002.000", ContentID: "JP0004-PPSA10004_00-LOSTSIGNAL000000", Kind: "p5z", OriginalSize: 41200000000,
+    HasZstdRuntime: true, Icon: "", Packed: true, InstallSize: 19400000000, P5zSize: 20100000000, Files: 3120, PackedFiles: 3075, Volumes: 6, HasRuntime: true,
+    Grown: 2, UnusedBytes: 412000000, DLC: [{ ContentID: "JP0004-PPSA10004_00-LOSTSIGNALCHAP02", Data: true, Folder: "addcont0", Size: 3900000000 }] };
   const completeShown = ["D:\\\\dumps\\\\Starfall.Odyssey-PPSA10001", "D:\\\\dumps\\\\Iron.Harbor-PPSA10002.exfat", "D:\\\\dumps\\\\Neon Meridian-PPSA10003",
     "D:\\\\more\\\\Lost Signal-PPSA10004", "D:\\\\dumps\\\\Quiet Tide [PPSA10005].ffpfsc", "D:\\\\more\\\\Glass Orbit.ffpkg",
     "D:\\\\pkgs\\\\Copper Vale-PPSA10007.pkg", good, damaged, foreign];
@@ -186,16 +194,32 @@ const mock = `
       if (q.at >= q.items.length) return finish();
       const i = q.at++, item = q.items[i], total = item.OriginalSize, mode = q.opts.Mode;
       // the steps of the game in this queue, as the window does them
+      const grows = mode === "add_dlc" || mode === "update";
       const steps = mode === "verify" ? ["verifying"] : mode === "repair" ? ["repairing", "verifying"] : mode === "protect" ? ["verifying", "protecting"]
+        : grows ? (q.opts.Repair ? ["growing", "verifying", "protecting"] : ["growing", "verifying"])
         : mode === "p5z" && q.opts.Repair ? ["packing", "verifying", "protecting"] : ["packing", "verifying"];
+      // an update of most of the game stops at once, until the user says to go on
+      if (mode === "update" && !item.Force) {
+        emit("job:item", { i, state: "growing", detail: "" });
+        setTimeout(() => { q.sum.Failed++; emit("job:item", { i, state: "error", detail: "mostly_changed" }); step(); }, 900);
+        return;
+      }
       let done = 0, at = 0;
       emit("job:item", { i, state: steps[0], detail: "" });
       const tick = setInterval(() => {
         done = Math.min(total, done + total / 12);
-        emit("job:progress", { i, phase: steps[at], done, total, rate: 310 * 1048576 });
+        emit("job:progress", { i, phase: steps[at] === "growing" ? (done < total / 2 ? "comparing" : "packing") : steps[at], done, total, rate: 310 * 1048576 });
         if (done < total) return;
         if (at + 1 < steps.length) { at++; done = 0; emit("job:item", { i, state: steps[at], detail: "" }); return; }
         clearInterval(tick);
+        if (grows) {
+          games[item.Path] = Object.assign({}, games[item.Path], { Grown: (games[item.Path] && games[item.Path].Grown || 0) + 1, UnusedBytes: 512000000 });
+          q.sum.Done++;
+          if (q.opts.Repair) { q.sum.Protected++; q.sum.ProtectedSize += 40000000; }
+          emit("job:item", { i, state: "ok", detail: q.opts.Repair ? "grown; repair_redone" : "grown" });
+          step();
+          return;
+        }
         if (mode === "verify" || mode === "repair" || mode === "protect") {
           const bad = mode === "verify" && item.Path === damaged && broken;
           if (mode === "repair") { broken = false; q.sum.Repaired++; }
@@ -282,6 +306,7 @@ const mock = `
     PendingFiles: async () => (query.get("opened") ? { compress: [], verify: [], details: [p5z], show: "details" } : query.get("empty") ? null
       : query.get("images") ? { compress: first, verify: [], details: imagesShown, show: "details" }
       : query.get("dlc") ? { compress: [dlcShown[0], ...first, "D:\\\\more\\\\Lost Signal-PPSA10004", ...dlcShown.slice(1)], verify: [], details: [p5zDlc, dlcShown[0]], show: "compress" }
+      : query.get("grow") ? { compress: [], verify: [], details: [p5zGrown, p5z], show: "details" }
       : query.get("complete") ? { compress: first.concat(["D:\\\\more\\\\Glass Orbit.ffpkg", "D:\\\\pkgs\\\\Copper Vale-PPSA10007.pkg"]), verify: [good, damaged, foreign], details: completeShown, show: "details" }
       : { compress: first, verify: query.get("verify") ? [good, damaged, foreign] : [], details: query.get("verify") ? [damaged] : [], show: query.get("verify") ? "verify" : "" }),
     RepairInfo: async file => repairs[file] || { state: /\\.p5z$/i.test(file) ? "none" : "", percent: 0, blocks: 0, blockSize: 0, capacity: 0, bytes: 0 },

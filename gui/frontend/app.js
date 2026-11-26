@@ -35,7 +35,9 @@ const go = {
 const queues = ["compress", "decompress", "verify"];
 const writes = ["compress", "decompress"];
 const ended = ["ok", "error", "skipped", "cancelled"];
-const working = ["packing", "verifying", "unpacking", "protecting", "repairing"];
+const working = ["packing", "verifying", "unpacking", "protecting", "repairing", "growing"];
+// what the card of a .p5z in Details does to it: DLC added, or a new dump of its game (see growRow)
+const grows = ["add_dlc", "update"];
 // the states of a game of a queue that did not start: there from the start, or added while it runs
 const notStarted = ["waiting", "queued"];
 // the shortcuts of the level, as in NXPress: the level each one sets, and the ones it covers
@@ -156,6 +158,9 @@ function newRow(path, section) {
   tr.querySelector(".to-verify").addEventListener("click", () => takeTo(row, "verify"));
   tr.querySelector(".to-decompress").addEventListener("click", () => takeTo(row, "decompress"));
   tr.querySelector(".repair").addEventListener("click", () => startQueue("repair", [row]));
+  tr.querySelector(".to-add-dlc").addEventListener("click", () => growRow(row, "add_dlc"));
+  tr.querySelector(".to-update").addEventListener("click", () => growRow(row, "update"));
+  tr.querySelector(".grow-anyway").addEventListener("click", () => growAnyway(row));
   // the entrance of a row and the pop of what it saved play once: a row put back in the list
   // (every render puts them all back) does not play them again
   tr.addEventListener("animationend", event => {
@@ -179,7 +184,12 @@ function nextDescribe() {
     if (!state.lists[row.section].includes(row)) continue;
     describing++;
     go.call(row.section === "details" ? "Details" : "Describe", row.path)
-      .then(game => { row.game = game; if (row.section === "details") row.repair = game.Repair || null; }, error => { row.error = message(error); })
+      .then(game => {
+        row.game = game;
+        if (row.section === "details") row.repair = game.Repair || null;
+        // the engine found a change of it that had stopped halfway (a power cut) and undid it
+        if (game && game.Recovered) toast(t("recoveredToast")(game.Name || baseName(row.path)));
+      }, error => { row.error = message(error); })
       .then(() => (row.section === "verify" && row.game && row.game.Kind === "p5z" ? readRepair(row) : null))
       .finally(() => {
         describing--;
@@ -323,6 +333,7 @@ function stepsOf(job) {
   if (mode === "verify") return ["verifying"];
   if (mode === "protect") return ["verifying", "protecting"];
   if (mode === "repair") return ["repairing", "verifying"];
+  if (grows.includes(mode)) return job.repair ? ["growing", "verifying", "protecting"] : ["growing", "verifying"];
   return ["unpacking"];
 }
 // how far the step at work is, from 0 to 1: the phases of a step follow one another (copying the
@@ -598,6 +609,48 @@ function dlcFacts(game) {
   return [[t("factDlc"), t("dlcCarried")(data, list.length - data)],
     ...list.map((d, n) => ["DLC " + (n + 1), d.ContentID + " · " + (d.Data ? t("dlcFactData")(size(d.Size), d.Folder) : t("dlcFactLicense"))])];
 }
+// ---- a .p5z of Details that grows: DLC added to it, or a new dump of its game ---------------------
+
+// Add DLC… and Update with a new dump… of the card of a .p5z: what to add is chosen (DLC packages or
+// folders; the new dump as a folder, or as an image or package), and then it grows in its place, a
+// queue of its own with its bar, its cancel and its end card
+async function growRow(row, kind) {
+  if (state.busy || !row.game || row.game.Kind !== "p5z") return;
+  const dlc = kind === "add_dlc";
+  $("grow-title-text").textContent = t(dlc ? "growDlcTitle" : "growDumpTitle");
+  $("grow-text").textContent = t(dlc ? "growDlcText" : "growDumpText");
+  $("grow-files").textContent = t(dlc ? "growPackages" : "growFile");
+  $("grow-folder").textContent = t("growFolder");
+  const answer = await ask($("grow-dialog"));
+  if (answer !== "files" && answer !== "folder") return;
+  const chosen = answer === "folder" ? go.call("ChooseFolder", "compress") : dlc ? go.call("ChooseDLC") : go.call("ChooseFiles", "compress");
+  const paths = await chosen.catch(error => { toast(message(error)); return []; });
+  if (!paths || !paths.length) return;
+  // the new dump is one: the first chosen
+  Object.assign(row, { grow: dlc ? paths : [paths[0]], growKind: kind, force: false });
+  startQueue(kind, [row]);
+}
+// an update that stopped because more than half of the game changed can go on, when the user says so
+const canGrowAnyway = row => row.section === "details" && row.state === "error" && row.growKind === "update" && !!row.grow
+  && /(^|; )mostly_changed($|; )/.test(row.detail);
+function growAnyway(row) {
+  if (!canGrowAnyway(row) || state.busy) return;
+  row.force = true;
+  startQueue("update", [row]);
+}
+// the facts of Details of a .p5z that grew: how many times, and the room it does not use
+function growFacts(game) {
+  if (!game || game.Kind !== "p5z" || !game.Grown) return [];
+  return [[t("factGrown"), t("grownTimes")(game.Grown)], [t("factUnused"), t("unusedFact")(size(game.UnusedBytes || 0))]];
+}
+// a row's note that is good news: a repair, or a .p5z grown with nothing else to say (its repair data
+// made again counts as good)
+function goodNote(row) {
+  if (row.state !== "ok") return false;
+  if (/^(repaired|repair_not_needed)$/.test(row.detail)) return true;
+  return /^(grown|nothing_to_do)(; repair_redone)?$/.test(row.detail);
+}
+
 // the row button: DLC packages chosen go to Compress, and each one inside the game of its title ID
 async function addDlcTo() {
   const paths = await go.call("ChooseDLC").catch(error => { toast(message(error)); return []; });
@@ -624,6 +677,7 @@ function paintFacts(row) {
   fact(facts, t("factFiles"), String(game.Files || 0));
   for (const [name, value] of completenessFacts(game)) fact(facts, name, value);
   for (const [name, value] of dlcFacts(game)) fact(facts, name, value);
+  for (const [name, value] of growFacts(game)) fact(facts, name, value);
   fact(facts, t("factOriginal"), size(game.OriginalSize));
   // an image: what its file takes, less than the game when it is PFSC-compressed; a package, its
   // file, Kraken-compressed or not
@@ -720,6 +774,16 @@ function paintRow(row) {
   card.hidden = !(row.section === "details" && game && game.Kind === "p5z");
   card.querySelector(".to-verify").textContent = t("verify");
   card.querySelector(".to-decompress").textContent = t("decompress");
+  // and what makes it grow: DLC added to it, or a new dump of its game
+  for (const [cls, key] of [[".to-add-dlc", "addDlcCard"], [".to-update", "updateCard"]]) {
+    const button = card.querySelector(cls);
+    button.textContent = t(key);
+    button.disabled = state.busy;
+  }
+  const anyway = tr.querySelector(".grow-anyway");
+  anyway.hidden = !canGrowAnyway(row);
+  anyway.textContent = t("growAnyway");
+  anyway.disabled = state.busy;
   const compare = tr.querySelector(".compare");
   compare.hidden = !canCompare(row) || (running() && state.job.rows.includes(row));
   compare.textContent = t("compareRow");
@@ -737,9 +801,8 @@ function paintRow(row) {
   const said = (row.error && errorText(row.error)) || dlcError || (row.detail && row.detail !== "cancelled" ? detailText(row.detail) : row.section === "rename" && row.renameBlock && row.state !== "ok" ? detailText(row.renameBlock) : "");
   note.hidden = !said;
   note.textContent = said;
-  // a repair that ended well says so as good news, not as a warning
-  const good = row.state === "ok" && /^(repaired|repair_not_needed)$/.test(row.detail);
-  note.className = "note " + (row.error || dlcError || row.state === "error" ? "bad" : good ? "good" : "warn");
+  // a repair, or a .p5z grown, that ended well says so as good news, not as a warning
+  note.className = "note " + (row.error || dlcError || row.state === "error" ? "bad" : goodNote(row) ? "good" : "warn");
   paintFacts(row);
   paintState(row);
 }
@@ -1198,7 +1261,9 @@ function itemOf(row) {
   const dlc = dlcRowsOf(row);
   // a license adds no files: only the ones with files of their own take room
   return Object.assign({}, row.game, { Icon: "", AddDLC: dlc.map(other => other.path),
-    AddDLCSize: dlc.filter(other => other.game.DLCData).reduce((sum, other) => sum + (Number(other.game.OriginalSize) || 0), 0) });
+    AddDLCSize: dlc.filter(other => other.game.DLCData).reduce((sum, other) => sum + (Number(other.game.OriginalSize) || 0), 0),
+    // a .p5z of Details that grows: the DLC to add, or the new dump, and whether to go on with most of it changed
+    Grow: row.section === "details" && row.grow ? row.grow.slice() : [], Force: row.section === "details" && !!row.force });
 }
 // the items of the games a queue starts with or takes, each game told which DLC went inside it and
 // what they took
@@ -1281,14 +1346,16 @@ async function plan(section, rows, opts) {
 // startQueue starts the queue of the section open; kind "protect" adds repair data to the .p5z of
 // Verify, and "repair" repairs the damaged ones with theirs (the ones given, or all that can be)
 async function startQueue(kind, only) {
-  const section = kind ? "verify" : state.section;
-  if (state.busy || !queues.includes(section)) return;
+  const section = grows.includes(kind) ? "details" : kind ? "verify" : state.section;
+  if (state.busy || !(queues.includes(section) || grows.includes(kind))) return;
   // a DLC still being read would be left out of its game
   if (section === "compress" && readingRows(section).length) { toast(t("readingWait")(readingRows(section).length)); return; }
   const rows = only || readyRows(section, kind);
   if (!rows.length) { toast(kind === "repair" ? t("repairNothing") : kind === "protect" ? t("protectNothing") : t("nothingToDo")); return; }
   const mode = kind || modeOf(section);
-  const repair = mode === "p5z" ? repairOf() : mode === "protect" ? Number(state.settings.RepairPercent) || 5 : 0;
+  // a .p5z that grows gets its repair data made again when it had some of its own: the bar counts that step
+  const own = grows.includes(mode) && rows[0].repair && rows[0].repair.state === "match" ? Number(rows[0].repair.percent) || 0 : 0;
+  const repair = mode === "p5z" ? repairOf() : mode === "protect" ? Number(state.settings.RepairPercent) || 5 : own;
   const opts = { Mode: mode, Dest: "", Level: Number(state.settings.Level) || 19, Runtime: state.settings.Runtime || "", ContinueFat32: false, Replace: [],
     DeleteOriginals: section === "compress" && state.deleteOriginals, DeleteNoBin: false, Repair: repair };
   if (writes.includes(section)) {
@@ -1481,7 +1548,9 @@ function onDone(summary) {
   if (!job) { render(); return; }
   job.summary = summary;
   render();
-  if (writes.includes(job.section) && summary.Done + summary.Failed > 0) showDone(job, summary);
+  if ((writes.includes(job.section) || grows.includes(job.mode)) && summary.Done + summary.Failed > 0) showDone(job, summary);
+  // a .p5z that grew is read again: its version, its DLC, how many times it grew, its repair data
+  if (grows.includes(job.mode)) for (const row of job.rows) if (row && row.state === "ok" && state.lists.details.includes(row)) describe(row);
   if (job.mode === "repair") toast(t("repairedCount")(summary.Repaired || 0));
   if (job.mode === "protect") toast(t("protectedCount")(summary.Protected || 0));
 }
@@ -1502,7 +1571,8 @@ function showDone(job, summary) {
   const seconds = Math.round((summary.Duration || 0) / 1e9);
   $("done-stats").textContent = summaryLine(summary);
   // the time it took, the games done, and how fast it went through them on average
-  const through = inQueue(job).filter(row => row.state === "ok" && row.game).reduce((sum, row) => sum + row.game.OriginalSize, 0);
+  // (a .p5z that grew went through what was added to it, not the whole game: no speed is claimed)
+  const through = grows.includes(job.mode) ? 0 : inQueue(job).filter(row => row.state === "ok" && row.game).reduce((sum, row) => sum + row.game.OriginalSize, 0);
   $("done-tile-time").textContent = time(seconds);
   $("done-tile-games").textContent = String(summary.Done || 0);
   $("done-tile-speed").textContent = seconds > 0 && through ? t("speed")(size(through / seconds)) : "—";
@@ -1606,6 +1676,7 @@ function burst() {
 // (homebrew in job:item); one made elsewhere has to be moved there
 function nextStep(job) {
   if (job.mode === "p5z") return t("nextP5z");
+  if (grows.includes(job.mode)) return t("nextGrow");
   if (job.mode === "original") return t("nextOriginal")(job.dest);
   const made = job.rows.filter(row => row.state === "ok" && row.out);
   const away = made.filter(row => !row.homebrew);

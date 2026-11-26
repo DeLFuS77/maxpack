@@ -70,7 +70,7 @@ type Item struct {
 	Grown                              uint32
 	UnusedBytes                        uint64
 	Recovered                          bool
-	// Watched: the watched folder brought it (see watched.go), and its original follows Options.WatchOriginals
+	// Watched: the watched folder brought it (see watched.go): its original always stays
 	Watched bool
 }
 
@@ -187,9 +187,6 @@ type Options struct {
 	Console     string
 	Drive       string
 	ConsoleCode string `json:"-"`
-	// WatchOriginals is what becomes of the original of what the watched folder brought (Item.Watched), from
-	// Settings, whatever Originals says: OriginalsKeep or OriginalsTrash (never for good; see watched.go)
-	WatchOriginals string
 }
 
 // What becomes of the original of a game once its new one is checked (Options.Originals).

@@ -16,8 +16,14 @@ import (
 // written), opened letting other programs only read it: a program that holds it open for writing makes that
 // fail with a sharing violation, and the file is held (still being written).
 func fileState(path string) (size, mtime int64, held bool, err error) {
-	if abs, e := filepath.Abs(path); e == nil && len(abs) >= 248 && !strings.HasPrefix(abs, `\\`) {
-		path = `\\?\` + abs
+	if abs, e := filepath.Abs(path); e == nil && len(abs) >= 248 {
+		switch {
+		case strings.HasPrefix(abs, `\\?\`):
+		case strings.HasPrefix(abs, `\\`):
+			path = `\\?\UNC\` + abs[2:] // a long path on a share
+		default:
+			path = `\\?\` + abs
+		}
 	}
 	name, err := windows.UTF16PtrFromString(path)
 	if err != nil {

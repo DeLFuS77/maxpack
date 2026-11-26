@@ -3,6 +3,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"sync"
@@ -84,13 +85,38 @@ func TestWatchSnapshotAndArrivals(t *testing.T) {
 	if status := events.lastStatus(); status.Existing != 1 || status.Folder != folder {
 		t.Fatalf("status: %+v", status)
 	}
-	if taken := a.WatchTakeExisting(); len(taken) != 1 || taken[0] != old {
-		t.Fatalf("taken: %v", taken)
+	// asked for, what was there goes as what arrives goes, by the watcher's next looks
+	if taken := a.WatchTakeExisting(); taken != 1 {
+		t.Fatalf("taken: %d", taken)
+	}
+	found := events.waitFound(t, 3*time.Second)
+	if len(found) != 1 || len(found[0]) != 1 || found[0][0] != old {
+		t.Fatalf("found: %v", found)
 	}
 	fresh := makeDump(t, folder, "New", "PPSA10002", "New")
-	found := events.waitFound(t, 3*time.Second)
-	if len(found) != 1 || len(found[0]) != 1 || found[0][0] != fresh {
+	for end := time.Now().Add(3 * time.Second); time.Now().Before(end) && len(events.waitFound(t, 0)) < 2; time.Sleep(10 * time.Millisecond) {
+	}
+	if found := events.waitFound(t, 0); len(found) != 2 || len(found[1]) != 1 || found[1][0] != fresh {
 		t.Fatalf("found: %v", found)
+	}
+}
+
+// A watched.json of an earlier build (with neither "done" nor "existing") counts as a snapshot: nothing that is
+// there becomes new.
+func TestWatchOldStateIsASnapshot(t *testing.T) {
+	useSettings(t, t.TempDir())
+	folder := t.TempDir()
+	makeDump(t, folder, "Old", "PPSA10001", "Old")
+	saveSettings(t, func(s *settings.Settings) { s.WatchOn, s.WatchFolder = true, folder })
+	old, _ := json.Marshal(map[string]any{"folder": folder, "handed": map[string]string{}})
+	os.WriteFile(filepath.Join(must(settings.Dir()), watchedFile), old, 0o644)
+	events := &watchEvents{}
+	a := watchApp(events)
+	a.StartWatch()
+	defer a.stopWatch()
+	time.Sleep(300 * time.Millisecond)
+	if found := events.waitFound(t, 0); len(found) != 0 || events.lastStatus().Existing != 1 {
+		t.Errorf("found %v, status %+v", found, events.lastStatus())
 	}
 }
 

@@ -61,8 +61,11 @@ func TestSnapshot(t *testing.T) {
 	if found, _ := w.Poll(); !slices.Equal(names(found), []string{"new.pkg"}) {
 		t.Fatalf("what arrived: %v", names(found))
 	}
-	if taken := w.TakeExisting(); !slices.Equal(names(taken), []string{"Old", "old.pkg"}) || len(w.Existing) != 0 {
-		t.Fatalf("taken: %v, left %v", names(taken), w.Existing)
+	if taken := w.TakeExisting(); taken != 2 || w.ExistingCount() != 0 {
+		t.Fatalf("taken: %d, left %d", taken, w.ExistingCount())
+	}
+	if found, _ := w.Poll(); !slices.Equal(names(found), []string{"Old", "old.pkg"}) {
+		t.Fatalf("taken, then handed: %v", names(found))
 	}
 	c.pass(10 * time.Minute)
 	if found, _ := w.Poll(); len(found) != 0 {
@@ -110,11 +113,11 @@ func TestOpenForWritingIsBusy(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.WriteString("being written")
-	if _, busy := Signature(path); !busy {
+	if _, busy, _ := Signature(path); !busy {
 		t.Error("a file open for writing is not busy")
 	}
 	f.Close()
-	if _, busy := Signature(path); busy {
+	if _, busy, _ := Signature(path); busy {
 		t.Error("a closed file is busy")
 	}
 	c := &clock{time.Unix(1700000000, 0)}
@@ -138,15 +141,15 @@ func TestSignature(t *testing.T) {
 	dir := t.TempDir()
 	game := filepath.Join(dir, "Game")
 	dump(t, game, true)
-	a, busy := Signature(game)
-	if busy || a == "" {
-		t.Fatalf("%q %v", a, busy)
+	a, busy, unreadable := Signature(game)
+	if busy || unreadable || a == "" {
+		t.Fatalf("%q %v %v", a, busy, unreadable)
 	}
-	if b, _ := Signature(game); b != a {
+	if b, _, _ := Signature(game); b != a {
 		t.Errorf("not stable: %q %q", a, b)
 	}
 	write(t, filepath.Join(game, "eboot.bin"), "another eboot")
-	if b, _ := Signature(game); b == a {
+	if b, _, _ := Signature(game); b == a {
 		t.Error("a change of size is the same")
 	}
 }

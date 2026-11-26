@@ -6,7 +6,7 @@
 // and Linux, on local drives and network shares alike. Before it hands something over it looks at each of its
 // files once more through the file itself (Signature): on Windows a listing may say a size and a date that are
 // not current while a program writes the file, and a file a program still holds open for writing is still
-// arriving.
+// arriving. What systems write into the folders they show (.DS_Store, Thumbs.db...) is never part of a dump.
 package watch
 
 import (
@@ -27,9 +27,9 @@ var exts = []string{".exfat", ".ffpkg", ".ffpfs", ".ffpfsc", ".pkg"}
 // What MaxPack writes apart while it works (jobs.TmpSuffix, jobs.OldSuffix) is never new.
 var apart = []string{".maxpack-tmp", ".maxpack-old"}
 
-// What browsers and downloaders write while they download (Firefox, Chrome and Edge, qBittorrent, µTorrent and
-// others): never a game, and a folder with one inside is still arriving.
-var downloading = []string{".part", ".crdownload", ".!qb", ".!ut", ".partial", ".download", ".opdownload"}
+// What browsers and downloaders write while they download (Firefox, Chrome and Edge, qBittorrent, µTorrent,
+// WinSCP and others): never a game, and a folder with one inside is still arriving.
+var downloading = []string{".part", ".crdownload", ".!qb", ".!ut", ".partial", ".download", ".opdownload", ".filepart"}
 
 func isDownloading(name string) bool {
 	name = strings.ToLower(name)
@@ -40,6 +40,22 @@ func isDownloading(name string) bool {
 	}
 	return false
 }
+
+// What systems write into the folders they show or index, and their recycle bins, as the engine leaves them out
+// of a dump (mp_complete.c): never part of one, so never what makes one new or changing.
+var junkNames = map[string]bool{".ds_store": true, "thumbs.db": true, "desktop.ini": true, "ehthumbs.db": true,
+	"ehthumbs_vista.db": true, ".spotlight-v100": true, ".trashes": true, ".fseventsd": true, ".temporaryitems": true,
+	".documentrevisions-v100": true, "$recycle.bin": true, "system volume information": true, "__macosx": true,
+	".appledouble": true, ".localized": true, "icon\r": true}
+
+func isJunk(name string) bool {
+	low := strings.ToLower(name)
+	return junkNames[low] || strings.HasPrefix(name, "._")
+}
+
+// unreadableTries is how many looks through its files an item gets while one of them cannot be opened (not
+// because a program writes it) before it is skipped, until it changes.
+const unreadableTries = 3
 
 // Watcher is a folder watched. Poll is called every few seconds; the rest may be called meanwhile from other
 // goroutines.
@@ -58,14 +74,16 @@ type Watcher struct {
 	Done, Existing map[string]string
 
 	mutex    sync.Mutex
-	paths    map[string]string // the path of each key, for TakeExisting
 	inflight map[string]string // handed over this run, not ended: not handed again while it stays so
+	skipped  map[string]string // could not be read: not tried again while it stays so
+	said     []string          // skipped, not yet told (TakeSkipped)
 	seen     map[string]seen
 }
 
 type seen struct {
 	sig, strong string
 	since       time.Time
+	tries       int // looks that found a file that could not be opened
 }
 
 func (w *Watcher) now() time.Time {
@@ -87,6 +105,9 @@ func key(path string) string {
 // (not one of 0 bytes, nor one a download is still writing next to it).
 func candidate(path string, entry fs.DirEntry) bool {
 	name := strings.ToLower(entry.Name())
+	if isJunk(entry.Name()) {
+		return false
+	}
 	for _, suffix := range apart {
 		if strings.HasSuffix(name, suffix) {
 			return false
@@ -121,8 +142,22 @@ func sigOf(count, size, newest int64) string {
 	return strconv.FormatInt(count, 10) + "/" + strconv.FormatInt(size, 10) + "/" + strconv.FormatInt(newest, 10)
 }
 
+// walk goes through a dump folder without what systems write into it (each entry once, with its listing).
+func walk(path string, each func(p string, d fs.DirEntry, err error)) {
+	filepath.WalkDir(path, func(p string, d fs.DirEntry, err error) error {
+		if p != path && d != nil && isJunk(d.Name()) {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		each(p, d, err)
+		return nil
+	})
+}
+
 // cheap is what an entry is by its listing: for a file its size and date, for a folder how many files and
-// folders it has, what they take and the newest date among them, and whether a download is at work in it.
+// folders it has, what they take and the newest date of its files, and whether a download is at work in it.
 func cheap(path string, entry fs.DirEntry) string {
 	if !entry.IsDir() {
 		info, err := entry.Info()
@@ -133,24 +168,24 @@ func cheap(path string, entry fs.DirEntry) string {
 	}
 	var count, size, newest int64
 	busy := false
-	filepath.WalkDir(path, func(p string, d fs.DirEntry, err error) error {
+	walk(path, func(p string, d fs.DirEntry, err error) {
 		if err != nil {
 			count++ // what cannot be read yet counts as there, and changes the signature when it can
-			return nil
+			return
 		}
 		busy = busy || (!d.IsDir() && isDownloading(d.Name()))
 		info, err := d.Info()
 		if err != nil {
-			return nil
+			return
 		}
 		count++
-		if !d.IsDir() {
-			size += info.Size()
+		if d.IsDir() {
+			return // a folder's own date changes when the system writes into it: only its files' dates count
 		}
+		size += info.Size()
 		if m := info.ModTime().UnixNano(); m > newest {
 			newest = m
 		}
-		return nil
 	})
 	if busy {
 		return "downloading/" + strconv.FormatInt(time.Now().UnixNano(), 10)
@@ -158,62 +193,57 @@ func cheap(path string, entry fs.DirEntry) string {
 	return sigOf(count, size, newest)
 }
 
+// stat is fileState (a variable so the tests stand in).
+var stat = fileState
+
 // Signature is what the file or folder at path is now, read through each of its files (not from listings), in
-// the form of the listing's: for a file its size and date; for a folder how many files and folders, what they
-// take and the newest date. busy is whether one of its files is still being written (on Windows: a program
-// holds it open for writing) or downloaded (.part and the like). Two signatures that differ are two contents.
-func Signature(path string) (sig string, busy bool) {
+// the form of the listing's, what systems write into folders left out: for a file its size and date; for a
+// folder how many files and folders, what they take and the newest date. busy is whether one of its files is
+// still being written (on Windows: a program holds it open for writing) or downloaded (.part and the like);
+// unreadable, whether one of its files could not be opened for another reason (then sig is "?").
+func Signature(path string) (sig string, busy, unreadable bool) {
 	info, err := os.Lstat(path)
 	if err != nil {
-		return "?", false
+		return "?", false, true
 	}
 	if !info.IsDir() {
-		size, mtime, held, err := fileState(path)
+		size, mtime, held, err := stat(path)
 		if err != nil {
-			return "?", false
+			return "?", false, true
 		}
-		return strconv.FormatInt(size, 10) + "/" + strconv.FormatInt(mtime, 10), held || isDownloading(info.Name())
+		return strconv.FormatInt(size, 10) + "/" + strconv.FormatInt(mtime, 10), held || isDownloading(info.Name()), false
 	}
 	var count, size, newest int64
-	filepath.WalkDir(path, func(p string, d fs.DirEntry, err error) error {
+	walk(path, func(p string, d fs.DirEntry, err error) {
 		if err != nil {
-			count++
-			return nil
+			unreadable = true
+			return
 		}
 		count++
-		var mtime int64
 		if d.IsDir() {
-			if info, err := d.Info(); err == nil {
-				mtime = info.ModTime().UnixNano()
-			}
-		} else {
-			s, m, held, err := fileState(p)
-			if err != nil {
-				busy = true // a file that cannot be opened now: try again later
-				return nil
-			}
-			busy = busy || held || isDownloading(d.Name())
-			size += s
-			mtime = m
+			return // as in cheap: only the files' dates count
 		}
+		s, mtime, held, err := stat(p)
+		if err != nil {
+			unreadable = true
+			return
+		}
+		busy = busy || held || isDownloading(d.Name())
+		size += s
 		if mtime > newest {
 			newest = mtime
 		}
-		return nil
 	})
-	return sigOf(count, size, newest), busy
+	if unreadable {
+		return "?", busy, true
+	}
+	return sigOf(count, size, newest), busy, false
 }
 
 // ErrGone is the error of Poll when the folder is not there (or is not a folder).
 var ErrGone = errors.New("the watched folder is not there")
 
-// Poll looks at the folder once. It gives what is new (not ended nor handed over this run as it is now, and not
-// there when the watcher was turned on), all of it at once, when none of it has changed for Quiet and a look
-// through its files finds none still being written: a dump and its DLC that arrive together go together. What
-// goes away is forgotten.
-func (w *Watcher) Poll() ([]string, error) {
-	w.mutex.Lock()
-	defer w.mutex.Unlock()
+func (w *Watcher) init() {
 	if w.Done == nil {
 		w.Done = map[string]string{}
 	}
@@ -221,8 +251,19 @@ func (w *Watcher) Poll() ([]string, error) {
 		w.Existing = map[string]string{}
 	}
 	if w.seen == nil {
-		w.seen, w.inflight, w.paths = map[string]seen{}, map[string]string{}, map[string]string{}
+		w.seen, w.inflight, w.skipped = map[string]seen{}, map[string]string{}, map[string]string{}
 	}
+}
+
+// Poll looks at the folder once. It gives what is new (not ended nor handed over this run as it is now, and not
+// there when the watcher was turned on), all of it at once, when none of it has changed for Quiet and a look
+// through its files finds none still being written: a dump and its DLC that arrive together go together. One
+// whose files cannot be opened is skipped after a few looks (TakeSkipped), and holds back nothing else. What goes
+// away is forgotten.
+func (w *Watcher) Poll() ([]string, error) {
+	w.mutex.Lock()
+	defer w.mutex.Unlock()
+	w.init()
 	if info, err := os.Stat(w.Folder); err != nil || !info.IsDir() {
 		return nil, ErrGone
 	}
@@ -240,7 +281,6 @@ func (w *Watcher) Poll() ([]string, error) {
 		}
 		k := key(path)
 		here[k] = true
-		w.paths[k] = path
 		sig := cheap(path, entry)
 		if s, ok := w.seen[k]; !ok || s.sig != sig {
 			w.seen[k] = seen{sig: sig, since: now}
@@ -249,7 +289,10 @@ func (w *Watcher) Poll() ([]string, error) {
 			w.Existing[k] = sig
 			continue
 		}
-		if w.Done[k] == sig || w.Existing[k] == sig || w.inflight[k] == sig {
+		if old, ok := w.Existing[k]; ok && old != sig {
+			delete(w.Existing, k) // it changed since it was turned on: new now
+		}
+		if w.Done[k] == sig || w.Existing[k] == sig || w.inflight[k] == sig || w.skipped[k] == sig {
 			continue
 		}
 		if strings.HasPrefix(sig, "downloading/") {
@@ -261,7 +304,7 @@ func (w *Watcher) Poll() ([]string, error) {
 		}
 	}
 	w.Snapshot = false
-	for _, m := range []map[string]string{w.Done, w.Existing, w.inflight, w.paths} {
+	for _, m := range []map[string]string{w.Done, w.Existing, w.inflight, w.skipped} {
 		for k := range m {
 			if !here[k] {
 				delete(m, k)
@@ -277,18 +320,25 @@ func (w *Watcher) Poll() ([]string, error) {
 		return nil, nil
 	}
 	// the last look, through the files: one still being written, or whose listing was not current, waits (a
-	// minute more); the others go
+	// minute more); one that cannot be opened is looked at again, then skipped; the others go
 	var whole []string
 	for _, path := range pending {
 		k := key(path)
 		s := w.seen[k]
-		strong, busy := Signature(path)
-		if busy || (strong != s.sig && strong != s.strong) {
+		strong, busy, unreadable := Signature(path)
+		switch {
+		case unreadable && !busy:
+			if s.tries++; s.tries >= unreadableTries {
+				w.skipped[k] = s.sig
+				w.said = append(w.said, path)
+			}
+			w.seen[k] = s
+		case busy || (strong != s.sig && strong != s.strong):
 			w.seen[k] = seen{sig: s.sig, strong: strong, since: now}
-			continue
+		default:
+			w.inflight[k] = s.sig
+			whole = append(whole, path)
 		}
-		w.inflight[k] = s.sig
-		whole = append(whole, path)
 	}
 	return whole, nil
 }
@@ -298,37 +348,43 @@ func (w *Watcher) Poll() ([]string, error) {
 func (w *Watcher) Ended(path string, final bool) {
 	w.mutex.Lock()
 	defer w.mutex.Unlock()
+	w.init()
 	k := key(path)
 	sig, ok := w.inflight[k]
 	if !ok || !final {
 		return
 	}
-	if w.Done == nil {
-		w.Done = map[string]string{}
-	}
 	w.Done[k] = sig
 	delete(w.inflight, k)
 }
 
-// TakeExisting gives what was there when the watcher was turned on and has not changed since (the user asked to
-// compress it): it is handed over now, and is no longer "existing".
-func (w *Watcher) TakeExisting() []string {
+// TakeExisting makes what was there when the watcher was turned on, and has not changed since, new (the user
+// asked to compress it): the next Polls hand it over as they hand over what arrives, once it has not changed for
+// Quiet and none of its files is being written. It gives how many.
+func (w *Watcher) TakeExisting() int {
 	w.mutex.Lock()
 	defer w.mutex.Unlock()
-	if w.inflight == nil {
-		w.seen, w.inflight, w.paths = map[string]seen{}, map[string]string{}, map[string]string{}
-	}
-	var taken []string
-	for k, sig := range w.Existing {
-		path := w.paths[k]
-		if path == "" {
-			continue
-		}
-		taken = append(taken, path)
-		w.inflight[k] = sig
-	}
+	w.init()
+	n := len(w.Existing)
 	w.Existing = map[string]string{}
-	return taken
+	return n
+}
+
+// TakeSkipped gives what was skipped since the last call, as its files could not be opened.
+func (w *Watcher) TakeSkipped() []string {
+	w.mutex.Lock()
+	defer w.mutex.Unlock()
+	said := w.said
+	w.said = nil
+	return said
+}
+
+// Restart forgets what was handed over this run and has not ended (the page that took it loaded again): it is
+// handed again.
+func (w *Watcher) Restart() {
+	w.mutex.Lock()
+	defer w.mutex.Unlock()
+	w.inflight = map[string]string{}
 }
 
 // Kept is what the window keeps of the watcher between runs: what ended and what was there when it was turned on.
@@ -345,7 +401,7 @@ func (w *Watcher) Kept() (done, existing map[string]string) {
 	return done, existing
 }
 
-// Existing counts what was there when the watcher was turned on and has not been taken.
+// ExistingCount counts what was there when the watcher was turned on, has not changed and has not been taken.
 func (w *Watcher) ExistingCount() int {
 	w.mutex.Lock()
 	defer w.mutex.Unlock()

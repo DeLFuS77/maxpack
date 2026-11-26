@@ -16,6 +16,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/DeLFuS77/maxpack/gui/internal/watch"
@@ -69,20 +70,33 @@ func watchedPath() (string, error) {
 	return filepath.Join(folder, watchedFile), nil
 }
 
-// keptOf is what was kept of folder in earlier runs; ok is false when nothing was (a folder never watched).
+// keptOf is what was kept of folder in earlier runs; ok is false when nothing was (a folder never watched, or
+// a file of an earlier build, with neither what ended nor what was there): then what is there is not new.
 func keptOf(folder string) (kept watchedJSON, ok bool) {
 	path, err := watchedPath()
 	if err != nil {
 		return kept, false
 	}
 	data, err := os.ReadFile(path)
-	if err != nil || json.Unmarshal(data, &kept) != nil || kept.Folder != folder {
+	var fields map[string]json.RawMessage
+	if err != nil || json.Unmarshal(data, &kept) != nil || json.Unmarshal(data, &fields) != nil || kept.Folder != folder {
 		return watchedJSON{}, false
+	}
+	if _, done := fields["done"]; !done {
+		if _, existing := fields["existing"]; !existing {
+			return watchedJSON{}, false
+		}
 	}
 	return kept, true
 }
 
+// keepMutex keeps two writers of watched.json (the watcher's looks, a game's end, Compress the N already there)
+// from writing it at once.
+var keepMutex sync.Mutex
+
 func keepWatched(folder string, w *watch.Watcher) {
+	keepMutex.Lock()
+	defer keepMutex.Unlock()
 	path, err := watchedPath()
 	if err != nil {
 		return
@@ -105,6 +119,9 @@ func keepWatched(folder string, w *watch.Watcher) {
 func (a *App) StartWatch() WatchStatus {
 	a.watchMutex.Lock()
 	a.watchListening = true
+	if a.watch != nil {
+		a.watch.watcher.Restart() // the page loaded again: what it had and did not end comes again
+	}
 	a.watchMutex.Unlock()
 	return a.rewatch(false)
 }
@@ -175,6 +192,10 @@ func (a *App) watchLoop(w *watching, every time.Duration) {
 		if len(found) > 0 {
 			a.send("watch:found", watchFound{Paths: found})
 		}
+		// what could not be read (a file it may not open): left alone until it changes, and said once
+		if skipped := w.watcher.TakeSkipped(); len(skipped) > 0 {
+			a.send("watch:skipped", watchFound{Paths: skipped})
+		}
 		select {
 		case <-w.stop:
 			return
@@ -201,18 +222,15 @@ func (a *App) WatchEnded(path string, final bool) {
 	}
 }
 
-// WatchTakeExisting gives the games that were in the watched folder when it was turned on (the page offers to
-// compress them): from now on they are new to it.
-func (a *App) WatchTakeExisting() []string {
+// WatchTakeExisting makes the games that were in the watched folder when it was turned on new to it (the page
+// offers to compress them): they come in "watch:found" as what arrives comes, once whole. It gives how many.
+func (a *App) WatchTakeExisting() int {
 	w := a.watcher()
 	if w == nil {
-		return []string{}
+		return 0
 	}
 	taken := w.watcher.TakeExisting()
 	keepWatched(w.folder, w.watcher)
-	if taken == nil {
-		taken = []string{}
-	}
 	return taken
 }
 

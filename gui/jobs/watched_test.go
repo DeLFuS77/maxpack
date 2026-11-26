@@ -10,71 +10,85 @@ import (
 	"testing"
 
 	"github.com/DeLFuS77/maxpack/gui/internal/fakecore"
-	"github.com/DeLFuS77/maxpack/gui/internal/trash"
 )
 
-// complete is what the engine says of a dump that has every file of its list, with its size.
-func complete() *Completeness {
-	return &Completeness{Checkable: true, Source: "dump_index", Listed: 3, Present: 3}
-}
-
-// What the watched folder brings follows its own rule for its original, from Settings (WatchOriginals), whatever
-// the queue it joined says: to the recycle bin at most, never for good, and the ones the bin cannot take stay.
-// And only when it is as it was when its compression began and its list says it is complete; else it stays, and
-// its detail says why.
-func TestWatchedOriginals(t *testing.T) {
+// What the watched folder brings keeps its original, always: it is only compressed, whatever the queue it joined
+// does with the others and whatever Settings says; its detail says so.
+func TestWatchedOriginalsStay(t *testing.T) {
 	t.Setenv(fakecore.Env, "writes")
 	for _, c := range []struct {
-		name, watchOriginals, noBin string
-		completeness                *Completeness
-		change                      bool
-		note                        string
-		trashed                     bool
-	}{
-		{"to the bin", OriginalsTrash, "", complete(), false, "original_trashed", true},
-		{"no bin: stays", OriginalsTrash, trash.NoBin, complete(), false, "original_kept_no_bin", false},
-		{"Settings keeps them", OriginalsKeep, "", complete(), false, "", false},
-		{"no list to check", OriginalsTrash, "", &Completeness{Checkable: false, Reason: "no_table"}, false, "original_kept_unchecked", false},
-		{"files missing", OriginalsTrash, "", &Completeness{Checkable: true, Source: "playgo", Missing: 2}, false, "original_kept_unchecked", false},
-		{"other sizes", OriginalsTrash, "", &Completeness{Checkable: true, Source: "dump_index", SizeMismatch: 1}, false, "original_kept_unchecked", false},
-		{"changed meanwhile", OriginalsTrash, "", complete(), true, "original_kept_changed", false},
-	} {
-		bin := &fakeBin{why: c.noBin}
+		originals string
+		noBin     bool
+	}{{OriginalsDelete, true}, {OriginalsTrash, false}, {OriginalsKeep, false}} {
+		bin := &fakeBin{}
 		useBin(t, bin)
 		it := source(t, "Starfall Odyssey", "PPSA10001")
-		it.Watched, it.Completeness = true, c.completeness
-		// the queue it joined deletes for good, those the bin cannot take too: not for this one
-		o := Options{Mode: ModeP5z, Dest: t.TempDir(), Originals: OriginalsDelete, OriginalsNoBin: true, WatchOriginals: c.watchOriginals}
-		plans := PlanCompress([]Item{it}, o, newFS())
+		it.Watched = true
+		o := Options{Mode: ModeP5z, Dest: t.TempDir(), Originals: c.originals, OriginalsNoBin: c.noBin}
 		var state, detail string
-		onItem := func(i int, s, d string) {
-			state, detail = s, d
-			if s == StateVerifying && c.change { // a file more arrives while it is compressed
-				os.WriteFile(filepath.Join(it.Path, "late.bin"), []byte("late"), 0o644)
-			}
+		sum := (&Runner{Core: os.Args[0], OnItem: func(i int, s, d string) { state, detail = s, d }}).Run(context.Background(), PlanCompress([]Item{it}, o, newFS()), o)
+		if state != StateOK || detail != "original_kept_watched" || sum.Done != 1 || sum.Trashed+sum.Deleted != 0 {
+			t.Errorf("%s: %s %q %+v", c.originals, state, detail, sum)
 		}
-		sum := (&Runner{Core: os.Args[0], OnItem: onItem}).Run(context.Background(), plans, o)
-		if state != StateOK || detail != c.note || sum.Done != 1 {
-			t.Errorf("%s: %s %q", c.name, state, detail)
+		if len(bin.trashed)+len(bin.deleted) != 0 {
+			t.Errorf("%s: the original went: %v %v", c.originals, bin.trashed, bin.deleted)
 		}
-		if len(bin.deleted) != 0 {
-			t.Errorf("%s: deleted for good: %v", c.name, bin.deleted)
-		}
-		if (len(bin.trashed) == 1) != c.trashed {
-			t.Errorf("%s: trashed %v", c.name, bin.trashed)
-		}
-		if _, err := os.Stat(it.Path); (err == nil) == c.trashed {
-			t.Errorf("%s: the original is there: %v", c.name, err == nil)
+		if _, err := os.Stat(it.Path); err != nil {
+			t.Errorf("%s: the original is gone", c.originals)
 		}
 	}
 	// one the user dropped follows the queue, as before
 	bin := &fakeBin{}
 	useBin(t, bin)
 	it := source(t, "Starfall Odyssey", "PPSA10001")
-	o := Options{Mode: ModeP5z, Dest: t.TempDir(), Originals: OriginalsDelete, WatchOriginals: OriginalsKeep}
+	o := Options{Mode: ModeP5z, Dest: t.TempDir(), Originals: OriginalsDelete}
 	var detail string
 	(&Runner{Core: os.Args[0], OnItem: func(i int, s, d string) { detail = d }}).Run(context.Background(), PlanCompress([]Item{it}, o, newFS()), o)
 	if !strings.Contains(detail, "original_deleted") || len(bin.deleted) != 1 {
 		t.Errorf("dropped: %q %v", detail, bin.deleted)
+	}
+}
+
+// A watched game whose files changed while it was compressed (it was still arriving) fails: what was made is
+// taken away, nothing takes its name, and the watched folder brings it again once it is whole.
+func TestWatchedChangedWhileCompressed(t *testing.T) {
+	t.Setenv(fakecore.Env, "writes")
+	it := source(t, "Starfall Odyssey", "PPSA10001")
+	it.Watched = true
+	dest := t.TempDir()
+	o := Options{Mode: ModeP5z, Dest: dest}
+	plans := PlanCompress([]Item{it}, o, newFS())
+	var state, detail string
+	onItem := func(i int, s, d string) {
+		state, detail = s, d
+		if s == StateVerifying { // a file more arrives while it is compressed
+			os.WriteFile(filepath.Join(it.Path, "late.bin"), []byte("late"), 0o644)
+		}
+	}
+	sum := (&Runner{Core: os.Args[0], OnItem: onItem}).Run(context.Background(), plans, o)
+	if state != StateError || detail != "source_changed" || sum.Failed != 1 {
+		t.Errorf("%s %q %+v", state, detail, sum)
+	}
+	if _, err := os.Stat(plans[0].Out); err == nil {
+		t.Error("what was made took its name")
+	}
+	if _, err := os.Stat(plans[0].Out + TmpSuffix); err == nil {
+		t.Error("what was made is left apart")
+	}
+	if _, err := os.Stat(it.Path); err != nil {
+		t.Error("the original is gone")
+	}
+	// one the user dropped is not checked: as before
+	plain := source(t, "Starfall Odyssey", "PPSA10001")
+	plans = PlanCompress([]Item{plain}, Options{Mode: ModeP5z, Dest: t.TempDir()}, newFS())
+	onItem = func(i int, s, d string) {
+		state = s
+		if s == StateVerifying {
+			os.WriteFile(filepath.Join(plain.Path, "late.bin"), []byte("late"), 0o644)
+		}
+	}
+	(&Runner{Core: os.Args[0], OnItem: onItem}).Run(context.Background(), plans, Options{Mode: ModeP5z, Dest: filepath.Dir(plans[0].Out)})
+	if state != StateOK {
+		t.Errorf("a dropped game: %s", state)
 	}
 }

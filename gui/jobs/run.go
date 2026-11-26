@@ -315,10 +315,10 @@ func (r *Runner) one(ctx context.Context, i int, p Plan, o Options) outcome {
 		working = StatePacking
 	}
 	r.item(i, working, "")
-	// what the watched folder brought: as it is now, to tell whether it changed before its original goes
-	ro, before := originalsFor(p, o), ""
-	if compress && p.Item.Watched && ro.Originals != OriginalsKeep {
-		before, _ = watch.Signature(p.Item.Path)
+	// what the watched folder brought: as it is now, to tell whether it changed while it was compressed
+	ro, before, beforeBusy := originalsFor(p, o), "", false
+	if compress && p.Item.Watched {
+		before, beforeBusy, _ = watch.Signature(p.Item.Path)
 	}
 	result, ok, failure := r.engine(ctx, i, p.Args, o, hide)
 	if !ok {
@@ -360,6 +360,11 @@ func (r *Runner) one(ctx context.Context, i int, p Plan, o Options) outcome {
 	if ctx.Err() != nil {
 		return fail(StateCancelled, discard("cancelled"))
 	}
+	// still arriving while it was compressed: what was made is not what will be there
+	if compress && p.Item.Watched && sourceChanged(p, before, beforeBusy) {
+		r.log("Changed while it was compressed, nothing made of it kept: %s", p.Item.Path)
+		return fail(StateError, discard("source_changed"))
+	}
 	system.SetHidden(p.Tmp, false)
 	if len(p.Replace) > 0 {
 		// the repair data of the old .p5z goes with it: it protected that one
@@ -386,15 +391,12 @@ func (r *Runner) one(ctx context.Context, i int, p Plan, o Options) outcome {
 		return fail(StateError, discard("io: "+err.Error()))
 	}
 	end := outcome{saved: saved, state: StateOK}
-	if compress && ro.Originals != OriginalsKeep && !p.KeepOriginal {
-		if keep := watchedKeepOf(p, before); keep != "" {
-			r.log("Kept (%s): %s", keep, p.Item.Path)
-			notes = append(notes, keep)
-		} else {
-			end.original = r.removeOriginal(p, ro)
-			if end.original.note != "" {
-				notes = append(notes, end.original.note)
-			}
+	if compress && p.Item.Watched {
+		notes = append(notes, "original_kept_watched") // the watched folder never takes an original away
+	} else if compress && ro.Originals != OriginalsKeep && !p.KeepOriginal {
+		end.original = r.removeOriginal(p, ro)
+		if end.original.note != "" {
+			notes = append(notes, end.original.note)
 		}
 	}
 	// the repair data comes last: the .p5z is done and good whatever becomes of it

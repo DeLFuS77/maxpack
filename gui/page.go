@@ -329,11 +329,6 @@ func (a *App) plans(section string, items []jobs.Item, choices Choices) ([]jobs.
 	}
 	saved, _ := settings.Load()
 	o.NameTemplate, o.LowPriority, o.KeepLeftovers = saved.NameTemplate, saved.LowPriority, saved.KeepLeftovers
-	// what the watched folder brings: its originals as Settings says, to the recycle bin at most (jobs/watched.go)
-	o.WatchOriginals = jobs.OriginalsKeep
-	if saved.DeleteOriginals {
-		o.WatchOriginals = jobs.OriginalsTrash
-	}
 	// the console is the one of Settings, whatever the page sent; its drive is the page's choice
 	o.Console, o.ConsoleCode = "", ""
 	if o.Mode == jobs.ModeSend {

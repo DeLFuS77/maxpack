@@ -7,19 +7,23 @@ package main
 // the page ("watch:found"), which compresses it as if it had been dropped on Compress (see app.js). Turning it
 // on (or choosing another folder) takes a snapshot: what is there then is not new, and the page offers to
 // compress it ("Compress the N already there", WatchTakeExisting). What the page says ended (WatchEnded: done
-// or failed) is kept in watched.json next to the settings, so a game is not handed over again as it is; what
-// never ran is handed again in the next run. Nothing runs with the window closed: what arrived meanwhile is
-// found when it opens.
+// or failed, and the .p5z made of what ended well) is kept in watched.json next to the settings, so a game is
+// not handed over again as it is; what never ran is handed again in the next run. A game that ended well and
+// changed afterwards (its copy had stalled) is made again in place of its .p5z while that is still the very file
+// the watched folder made (watchRedo); what the window itself puts in the folder is never new (watchOwn).
+// Nothing runs with the window closed: what arrived meanwhile is found when it opens.
 
 import (
 	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/DeLFuS77/maxpack/gui/internal/watch"
+	"github.com/DeLFuS77/maxpack/gui/jobs"
 	"github.com/DeLFuS77/maxpack/gui/settings"
 
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
@@ -58,9 +62,10 @@ type watching struct {
 }
 
 type watchedJSON struct {
-	Folder   string            `json:"folder"`
-	Done     map[string]string `json:"done"`
-	Existing map[string]string `json:"existing"`
+	Folder   string                `json:"folder"`
+	Done     map[string]string     `json:"done"`
+	Existing map[string]string     `json:"existing"`
+	Made     map[string]watch.Made `json:"made,omitempty"`
 }
 
 func watchedPath() (string, error) {
@@ -103,7 +108,7 @@ func keepWatched(w *watching) {
 		return
 	}
 	done, existing := w.watcher.Kept()
-	data, err := json.Marshal(watchedJSON{Folder: w.folder, Done: done, Existing: existing})
+	data, err := json.Marshal(watchedJSON{Folder: w.folder, Done: done, Existing: existing, Made: w.watcher.KeptMade()})
 	if err != nil {
 		return
 	}
@@ -156,7 +161,7 @@ func (a *App) rewatch(snapshot bool) WatchStatus {
 	}
 	watcher := &watch.Watcher{Folder: folder, Quiet: quiet}
 	if kept, ok := keptOf(folder); ok && !snapshot {
-		watcher.Done, watcher.Existing = kept.Done, kept.Existing
+		watcher.Done, watcher.Existing, watcher.Made = kept.Done, kept.Existing, kept.Made
 	} else {
 		watcher.Snapshot = true
 	}
@@ -234,12 +239,59 @@ func (a *App) watcher() *watching {
 
 // WatchEnded is how a game the watched folder brought ended: final (compressed, failed, or in the destination
 // already) makes it done until it changes; else (it never ran, or was cancelled) the next run brings it again.
-func (a *App) WatchEnded(path string, final bool) {
+// out is the .p5z made of one compressed well ("" else): it is kept with it, as it is now.
+func (a *App) WatchEnded(path string, final bool, out string) {
 	if w := a.watcher(); w != nil {
-		w.watcher.Ended(path, final)
+		w.watcher.EndedWith(path, final, out)
 		if final {
 			keepWatched(w)
 		}
+	}
+}
+
+// watchRedo gives, to each plan of a game the watched folder brought whose destination has the very .p5z the
+// watched folder made of it (it ended well, and changed since: a copy that had stalled), what that file must
+// still be when the new one takes its place (ReplaceIf). The page replaces it without asking; another file there
+// (not the one made) is never replaced by the watched folder.
+func (a *App) watchRedo(plans []jobs.Plan) {
+	w := a.watcher()
+	if w == nil {
+		return
+	}
+	for i, p := range plans {
+		if !p.Item.Watched || p.Block != "" || len(p.Replace) == 0 {
+			continue
+		}
+		if made, ok := w.watcher.MadeOf(p.Item.Path); ok && pathKey(made.Out) == pathKey(p.Out) && made.Matches() {
+			plans[i].ReplaceIf = &jobs.Fingerprint{Size: made.Size, Mtime: made.Mtime}
+		}
+	}
+}
+
+// otherVersion is, for a plan of a game the watched folder brought whose destination has a .p5z it did not make,
+// the version of that .p5z when it is the same game (title ID) in another version than the dump: an update, which
+// the page says goes in with Details › Update with a new dump… "" else (or when it cannot be read).
+func (a *App) otherVersion(p jobs.Plan) string {
+	if !p.Item.Watched || p.Block != "" || len(p.Replace) == 0 || p.ReplaceIf != nil || p.Item.TitleID == "" || p.Item.Version == "" ||
+		!strings.EqualFold(filepath.Ext(p.Out), ".p5z") {
+		return ""
+	}
+	engine, err := a.engine()
+	if err != nil {
+		return ""
+	}
+	there, err := jobs.Describe(engine, p.Out)
+	if err != nil || there.Kind != "p5z" || !strings.EqualFold(there.TitleID, p.Item.TitleID) || there.Version == "" || there.Version == p.Item.Version {
+		return ""
+	}
+	return there.Version
+}
+
+// watchOwn tells the watcher that the window put out there itself (what a queue made): if it is in the watched
+// folder, it is not new.
+func (a *App) watchOwn(out string) {
+	if w := a.watcher(); w != nil && out != "" {
+		w.watcher.Own(out)
 	}
 }
 

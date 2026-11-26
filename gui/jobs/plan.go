@@ -226,6 +226,20 @@ type Plan struct {
 	// KeepOriginal keeps the original of this game whatever Options.Originals says: a game added
 	// to a queue that runs, whose original the user said to keep
 	KeepOriginal bool
+	// ReplaceIf, for a game the watched folder brought again: what is in the way is replaced only while it is
+	// still the .p5z the watched folder made of it, of this size and date (see watched.go)
+	ReplaceIf *Fingerprint `json:",omitempty"`
+}
+
+// Fingerprint is a file as its size and date tell it.
+type Fingerprint struct {
+	Size, Mtime int64
+}
+
+// Matches tells whether the file at path is still so.
+func (f Fingerprint) Matches(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.Mode().IsRegular() && info.Size() == f.Size && info.ModTime().UnixNano() == f.Mtime
 }
 
 // FS is what the plans ask of the drives, so the tests can put their own.

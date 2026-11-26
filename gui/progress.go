@@ -109,6 +109,8 @@ func (t *teller) item(i int, state, detail string) {
 		if writesOut(t.mode) {
 			e.Out = p.Out
 			e.Size = jobs.SizeOf(e.Out)
+			// put in the watched folder by the window itself (Decompress there...): not new to it
+			t.app.watchOwn(e.Out)
 			if t.mode == jobs.ModeFolder || t.mode == jobs.ModeConsole {
 				e.Homebrew = inHomebrew(e.Out, t.drives)
 			}

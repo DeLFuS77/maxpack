@@ -6,7 +6,8 @@
 // and Linux, on local drives and network shares alike. Before it hands something over it looks at each of its
 // files once more through the file itself (Signature): on Windows a listing may say a size and a date that are
 // not current while a program writes the file, and a file a program still holds open for writing is still
-// arriving. What systems write into the folders they show (.DS_Store, Thumbs.db...) is never part of a dump.
+// arriving (on Windows the open says so; on Linux /proc does, for the user's own programs; macOS has no such
+// look). What systems write into the folders they show (.DS_Store, Thumbs.db...) is never part of a dump.
 package watch
 
 import (
@@ -69,9 +70,10 @@ type Watcher struct {
 	Snapshot bool
 	// Done is what ended (compressed, or failed, or in the destination already), by path, with what it was when
 	// it was handed over (its signature): it is handed again only once that changes. Existing is what was there
-	// when the watcher was turned on, by path and signature: not new while it stays so. The window keeps both
-	// between runs.
+	// when the watcher was turned on, by path and signature: not new while it stays so. Made is, for what ended
+	// well, what it was and the .p5z made of it (see Made). The window keeps them between runs.
 	Done, Existing map[string]string
+	Made           map[string]Made
 
 	mutex    sync.Mutex
 	inflight map[string]string // handed over this run, not ended: not handed again while it stays so
@@ -79,6 +81,22 @@ type Watcher struct {
 	said     []string          // skipped, not yet told (TakeSkipped)
 	seen     map[string]seen
 	missing  map[string]int // listings in a row that did not have it
+}
+
+// Made is what the watched folder made of an item that ended well: the item as it was then (its signature: how
+// many files, what they take, the newest date) and the .p5z, with its size and date when it was made. Once the
+// item changes, a .p5z still exactly so in the destination is the one made of it, and can be made again.
+type Made struct {
+	Sig   string `json:"sig"`
+	Out   string `json:"out"`
+	Size  int64  `json:"size"`
+	Mtime int64  `json:"mtime"`
+}
+
+// Matches tells whether the file at Out is still the one made: the same size and date.
+func (m Made) Matches() bool {
+	info, err := os.Stat(m.Out)
+	return err == nil && info.Mode().IsRegular() && info.Size() == m.Size && info.ModTime().UnixNano() == m.Mtime
 }
 
 type seen struct {
@@ -194,25 +212,29 @@ func cheap(path string, entry fs.DirEntry) string {
 	return sigOf(count, size, newest)
 }
 
-// stat is fileState (a variable so the tests stand in).
-var stat = fileState
+// stat is fileState, and held heldOpen (variables so the tests stand in).
+var (
+	stat = fileState
+	held = heldOpen
+)
 
 // Signature is what the file or folder at path is now, read through each of its files (not from listings), in
 // the form of the listing's, what systems write into folders left out: for a file its size and date; for a
 // folder how many files and folders, what they take and the newest date. busy is whether one of its files is
-// still being written (on Windows: a program holds it open for writing) or downloaded (.part and the like);
-// unreadable, whether one of its files could not be opened for another reason (then sig is "?").
+// still being written (a program holds it open for writing: on Windows, and on Linux for the user's own
+// programs) or downloaded (.part and the like); unreadable, whether one of its files could not be opened for
+// another reason (then sig is "?").
 func Signature(path string) (sig string, busy, unreadable bool) {
 	info, err := os.Lstat(path)
 	if err != nil {
 		return "?", false, true
 	}
 	if !info.IsDir() {
-		size, mtime, held, err := stat(path)
+		size, mtime, open, err := stat(path)
 		if err != nil {
 			return "?", false, true
 		}
-		return strconv.FormatInt(size, 10) + "/" + strconv.FormatInt(mtime, 10), held || isDownloading(info.Name()), false
+		return strconv.FormatInt(size, 10) + "/" + strconv.FormatInt(mtime, 10), open || isDownloading(info.Name()) || held(path), false
 	}
 	var count, size, newest int64
 	walk(path, func(p string, d fs.DirEntry, err error) {
@@ -224,12 +246,12 @@ func Signature(path string) (sig string, busy, unreadable bool) {
 		if d.IsDir() {
 			return // as in cheap: only the files' dates count
 		}
-		s, mtime, held, err := stat(p)
+		s, mtime, open, err := stat(p)
 		if err != nil {
 			unreadable = true
 			return
 		}
-		busy = busy || held || isDownloading(d.Name())
+		busy = busy || open || isDownloading(d.Name())
 		size += s
 		if mtime > newest {
 			newest = mtime
@@ -238,7 +260,7 @@ func Signature(path string) (sig string, busy, unreadable bool) {
 	if unreadable {
 		return "?", busy, true
 	}
-	return sigOf(count, size, newest), busy, false
+	return sigOf(count, size, newest), busy || held(path), false
 }
 
 // ErrGone is the error of Poll when the folder is not there (or is not a folder).
@@ -257,6 +279,9 @@ func (w *Watcher) init() {
 	}
 	if w.Existing == nil {
 		w.Existing = map[string]string{}
+	}
+	if w.Made == nil {
+		w.Made = map[string]Made{}
 	}
 	if w.seen == nil {
 		w.seen, w.inflight, w.skipped, w.missing = map[string]seen{}, map[string]string{}, map[string]string{}, map[string]int{}
@@ -370,6 +395,9 @@ func (w *Watcher) forgetMissing(here map[string]bool) {
 	for k := range w.seen {
 		known[k] = true
 	}
+	for k := range w.Made {
+		known[k] = true
+	}
 	for k := range w.missing {
 		if !known[k] {
 			delete(w.missing, k)
@@ -387,13 +415,18 @@ func (w *Watcher) forgetMissing(here map[string]bool) {
 			delete(m, k)
 		}
 		delete(w.seen, k)
+		delete(w.Made, k)
 		delete(w.missing, k)
 	}
 }
 
 // Ended says how what was handed over ended: final (compressed, failed, or in the destination already) makes it
 // done until it changes; else (it never ran, or it was cancelled) it is handed again in the next run.
-func (w *Watcher) Ended(path string, final bool) {
+func (w *Watcher) Ended(path string, final bool) { w.EndedWith(path, final, "") }
+
+// EndedWith is Ended, and for one compressed well, out is the .p5z made of it: kept with it (Made), as it is now.
+// An end with nothing made leaves what was made of it before as it was (that .p5z is still the one made of it).
+func (w *Watcher) EndedWith(path string, final bool, out string) {
 	w.mutex.Lock()
 	defer w.mutex.Unlock()
 	w.init()
@@ -403,6 +436,46 @@ func (w *Watcher) Ended(path string, final bool) {
 		return
 	}
 	w.Done[k] = sig
+	delete(w.inflight, k)
+	if out == "" {
+		return
+	}
+	if info, err := os.Stat(out); err == nil && info.Mode().IsRegular() {
+		w.Made[k] = Made{Sig: sig, Out: out, Size: info.Size(), Mtime: info.ModTime().UnixNano()}
+	}
+}
+
+// MadeOf is what was made of the item at path when it last ended well, if anything.
+func (w *Watcher) MadeOf(path string) (Made, bool) {
+	w.mutex.Lock()
+	defer w.mutex.Unlock()
+	made, ok := w.Made[key(path)]
+	return made, ok
+}
+
+// Own says that the window itself put something at path (what a queue made): the entry at the top of the folder
+// that holds it is done as it is now, never new. Outside the folder, nothing.
+func (w *Watcher) Own(path string) {
+	rel, err := filepath.Rel(w.Folder, path)
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return
+	}
+	top := filepath.Join(w.Folder, strings.Split(rel, string(filepath.Separator))[0])
+	info, err := os.Lstat(top)
+	if err != nil {
+		return
+	}
+	entry := fs.FileInfoToDirEntry(info)
+	if !candidate(top, entry) {
+		return
+	}
+	sig := cheap(top, entry)
+	w.mutex.Lock()
+	defer w.mutex.Unlock()
+	w.init()
+	k := key(top)
+	w.Done[k] = sig
+	delete(w.Existing, k)
 	delete(w.inflight, k)
 }
 
@@ -433,6 +506,17 @@ func (w *Watcher) Restart() {
 	w.mutex.Lock()
 	defer w.mutex.Unlock()
 	w.inflight = map[string]string{}
+}
+
+// KeptMade is what was made of what ended well (Made), which the window keeps between runs too.
+func (w *Watcher) KeptMade() map[string]Made {
+	w.mutex.Lock()
+	defer w.mutex.Unlock()
+	made := map[string]Made{}
+	for k, v := range w.Made {
+		made[k] = v
+	}
+	return made
 }
 
 // Kept is what the window keeps of the watcher between runs: what ended and what was there when it was turned on.

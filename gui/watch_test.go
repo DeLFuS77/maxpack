@@ -138,8 +138,8 @@ func TestWatchDoneOnlyWhenEnded(t *testing.T) {
 		a.stopWatchWait()
 		t.Fatalf("found: %v", found)
 	}
-	a.WatchEnded(ran, true)
-	a.WatchEnded(never, false)
+	a.WatchEnded(ran, true, "")
+	a.WatchEnded(never, false, "")
 	a.stopWatchWait()
 	if _, err := os.Stat(filepath.Join(must(settings.Dir()), watchedFile)); err != nil {
 		t.Errorf("what ended is not kept: %v", err)

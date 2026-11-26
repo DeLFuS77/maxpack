@@ -382,6 +382,15 @@ func (r *Runner) one(ctx context.Context, i int, p Plan, o Options) outcome {
 		return fail(StateError, discard("source_changed"))
 	}
 	system.SetHidden(p.Tmp, false)
+	// the .p5z the watched folder made of it is made again only while that very file is there: another file put
+	// there meanwhile stays, and the new one goes
+	if len(p.Replace) > 0 && p.ReplaceIf != nil && !p.ReplaceIf.Matches(p.Out) {
+		r.log("Not in its place, something else is there now: %s", p.Out)
+		return fail(StateError, discard("exists"))
+	}
+	if p.ReplaceIf != nil && len(p.Replace) > 0 {
+		notes = append(notes, "watch_redone") // it changed after it was compressed: compressed again
+	}
 	if len(p.Replace) > 0 {
 		// the repair data of the old .p5z goes with it: it protected that one
 		oldSet := o.Mode == ModeP5z && par2.Inspect(p.Out).State == par2.StateMatch

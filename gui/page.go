@@ -90,11 +90,17 @@ type Choices struct {
 // takes, to say it when asking whether to replace it; and, when the originals go once checked,
 // what the original takes and why it cannot go to the recycle bin ("no_bin", "too_big",
 // "too_long"; "" when it can, or when it is deleted for good).
+//
+// For a game the watched folder brought that is in the destination already: WatchRedo, the .p5z there is the one
+// the watched folder made of it, which it changed since (it is made again in its place); OtherVersion, the .p5z
+// there is the same game in that other version (an update: Details › Update with a new dump…).
 type PlanView struct {
 	jobs.Plan
-	ReplaceSize uint64
-	SourceSize  uint64
-	NoBin       string
+	ReplaceSize  uint64
+	SourceSize   uint64
+	NoBin        string
+	WatchRedo    bool
+	OtherVersion string
 }
 
 // takes are the games a section works on.
@@ -361,7 +367,11 @@ func (a *App) plans(section string, items []jobs.Item, choices Choices) ([]jobs.
 			o.Originals, o.OriginalsNoBin = jobs.OriginalsDelete, false
 		}
 	}
-	return planWith(items, o, a.drives()), o, nil
+	plans := planWith(items, o, a.drives())
+	if section == "compress" {
+		a.watchRedo(plans)
+	}
+	return plans, o, nil
 }
 
 // planWith plans games with the options of a queue.
@@ -393,7 +403,10 @@ func (a *App) Plan(section string, items []jobs.Item, opts Choices) ([]PlanView,
 	}
 	views := make([]PlanView, len(plans))
 	for i, p := range plans {
-		views[i] = PlanView{Plan: p}
+		views[i] = PlanView{Plan: p, WatchRedo: p.ReplaceIf != nil}
+		if section == "compress" {
+			views[i].OtherVersion = a.otherVersion(p)
+		}
 		for _, path := range p.Replace {
 			views[i].ReplaceSize += jobs.SizeOf(path)
 		}
@@ -504,6 +517,9 @@ func (a *App) Append(section string, items []jobs.Item, replace []string, keepOr
 		return 0, errors.New("no queue of this section is running")
 	}
 	plans := planWith(items, q.o, a.drives())
+	if section == "compress" {
+		a.watchRedo(plans)
+	}
 	consent(plans, replace)
 	q.mutex.Lock()
 	defer q.mutex.Unlock()

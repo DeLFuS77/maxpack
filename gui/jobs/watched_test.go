@@ -92,3 +92,41 @@ func TestWatchedChangedWhileCompressed(t *testing.T) {
 		t.Errorf("a dropped game: %s", state)
 	}
 }
+
+// The .p5z the watched folder made of a game that changed afterwards (its copy had stalled, and ended later) is
+// made again in its place, and only while it is still that very file (ReplaceIf, its size and date): the row
+// says so. Another file there by then (the user's) stays, and the new one goes.
+func TestWatchedMadeAgain(t *testing.T) {
+	t.Setenv(fakecore.Env, "writes")
+	for _, changed := range []bool{false, true} {
+		it := source(t, "Starfall Odyssey", "PPSA10001")
+		it.Watched = true
+		dest := t.TempDir()
+		o := Options{Mode: ModeP5z, Dest: dest}
+		os.WriteFile(PlanCompress([]Item{it}, o, newFS())[0].Out, []byte("what the watched folder made before"), 0o644)
+		plans := PlanCompress([]Item{it}, o, newFS())
+		info, _ := os.Stat(plans[0].Out)
+		if len(plans[0].Replace) != 1 {
+			t.Fatalf("nothing in the way: %+v", plans[0])
+		}
+		plans[0].ReplaceIf = &Fingerprint{Size: info.Size(), Mtime: info.ModTime().UnixNano()}
+		var state, detail string
+		onItem := func(i int, s, d string) {
+			state, detail = s, d
+			if s == StateVerifying && changed { // the user puts a file of their own there meanwhile
+				os.WriteFile(plans[0].Out, []byte("the user's own .p5z, put there meanwhile"), 0o644)
+			}
+		}
+		(&Runner{Core: os.Args[0], OnItem: onItem}).Run(context.Background(), plans, o)
+		data, _ := os.ReadFile(plans[0].Out)
+		_, leftover := os.Stat(plans[0].Out + TmpSuffix)
+		switch {
+		case !changed && (state != StateOK || !hasPart(detail, "watch_redone") || !strings.HasPrefix(string(data), "MAXPKP5Z")):
+			t.Errorf("made again: %s %q %q", state, detail, data[:min(len(data), 20)])
+		case changed && (state != StateError || detail != "exists" || string(data) != "the user's own .p5z, put there meanwhile"):
+			t.Errorf("another file there: %s %q %q", state, detail, data)
+		case leftover == nil:
+			t.Error("what was made is left apart")
+		}
+	}
+}

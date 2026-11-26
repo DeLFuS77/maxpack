@@ -17,6 +17,10 @@ import (
 // about 11 s for a console it never reaches).
 const drivesTimeout = 30 * time.Second
 
+// discardTimeout is how long Delete what arrived may take: the drives, up to 75 s while the console lets go of a
+// receive, and the requests around them; the engine is never stopped during such a wait.
+const discardTimeout = 5 * time.Minute
+
 // DrivesView is what the send dialog shows: the drives of the console with their free space, or why it
 // could not ask ("no_console" when Settings has no address or code, else a code of the engine: "bad_code",
 // "receive_off", "unreachable"...) and the engine's words (never the code).
@@ -101,7 +105,8 @@ func (a *App) DiscardOnConsole(path, drive string) DiscardView {
 	if err != nil {
 		return DiscardView{Error: "io", Message: err.Error()}
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	// the drives (a minute at most), the wait while the console lets go of it (75 s at most) and its requests
+	ctx, cancel := context.WithTimeout(context.Background(), discardTimeout)
 	defer cancel()
 	done, err := core.DiscardOnConsole(ctx, engine, saved.ConsoleIP, saved.ConsoleCode, path, drive, func(seconds int) {
 		a.send("discard:waiting", discardWaiting{Path: path, Seconds: seconds})

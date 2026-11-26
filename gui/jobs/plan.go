@@ -229,6 +229,9 @@ type Plan struct {
 	// ReplaceIf, for a game the watched folder brought again: what is in the way is replaced only while it is
 	// still the .p5z the watched folder made of it, of this size and date (see watched.go)
 	ReplaceIf *Fingerprint `json:",omitempty"`
+	// HandedSig, for such a game: what it was (its signature) when the watched folder handed it over: when its turn
+	// comes it must still be so, else it is not made again now (it comes again, as it is then)
+	HandedSig string `json:",omitempty"`
 	// WatchSkip, for a game the watched folder brought with something in its way that it does not make again:
 	// why, as the detail of its row ("watch_exists", "watch_other_version: <there> <dump>", "watch_older_version:
 	// <there> <dump>", "watch_dates_only", "watch_redo_limit")

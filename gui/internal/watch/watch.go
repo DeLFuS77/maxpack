@@ -81,6 +81,7 @@ type Watcher struct {
 	skipped  map[string]string // could not be read: not tried again while it stays so
 	said     []string          // skipped, not yet told (TakeSkipped)
 	seen     map[string]seen
+	strongAt map[string]string // what each in flight was, through its files, when it was handed over
 	pathOf   map[string]string // the path of each key seen
 	missing  map[string]int    // listings in a row that did not have it
 }
@@ -310,7 +311,7 @@ func (w *Watcher) init() {
 	}
 	if w.seen == nil {
 		w.seen, w.inflight, w.skipped, w.missing = map[string]seen{}, map[string]string{}, map[string]string{}, map[string]int{}
-		w.pathOf = map[string]string{}
+		w.pathOf, w.strongAt = map[string]string{}, map[string]string{}
 	}
 }
 
@@ -421,6 +422,7 @@ func (w *Watcher) Poll() ([]string, error) {
 			s.writing = time.Time{}
 			w.seen[k] = s
 			w.inflight[k] = s.sig
+			w.strongAt[k] = l.strong
 			whole = append(whole, path)
 		}
 	}
@@ -496,6 +498,7 @@ func (w *Watcher) forgetMissing(here map[string]bool) {
 			delete(m, k)
 		}
 		delete(w.seen, k)
+		delete(w.strongAt, k)
 		delete(w.pathOf, k)
 		delete(w.Made, k)
 		delete(w.missing, k)
@@ -520,6 +523,7 @@ func (w *Watcher) EndedAs(path string, end Ending) {
 	}
 	w.Done[k] = sig
 	delete(w.inflight, k)
+	delete(w.strongAt, k)
 	if end.Out == "" {
 		return
 	}
@@ -533,11 +537,19 @@ func (w *Watcher) EndedAs(path string, end Ending) {
 	}
 }
 
-// HandedSig is the signature the item at path was handed over with this run, "" when it is not in flight.
+// HandedSig is what the item at path was, through its files (as Signature says it), when it was handed over this
+// run; "" when it is not in flight.
 func (w *Watcher) HandedSig(path string) string {
 	w.mutex.Lock()
 	defer w.mutex.Unlock()
-	return w.inflight[key(path)]
+	k := key(path)
+	if _, ok := w.inflight[k]; !ok {
+		return ""
+	}
+	if strong := w.strongAt[k]; strong != "" {
+		return strong
+	}
+	return w.inflight[k]
 }
 
 // MadeOf is what was made of the item at path when it last ended well, if anything.
@@ -600,7 +612,7 @@ func (w *Watcher) TakeSkipped() []string {
 func (w *Watcher) Restart() {
 	w.mutex.Lock()
 	defer w.mutex.Unlock()
-	w.inflight = map[string]string{}
+	w.inflight, w.strongAt = map[string]string{}, map[string]string{}
 }
 
 // KeptMade is what was made of what ended well (Made), which the window keeps between runs too.

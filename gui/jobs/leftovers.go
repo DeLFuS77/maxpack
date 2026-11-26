@@ -114,6 +114,10 @@ func (l *Leftovers) write(paths []string) {
 		return
 	}
 	_, err = temp.Write(data)
+	// on the disk before it takes its name: what it says (an old one set apart) must outlive a power cut
+	if syncErr := temp.Sync(); err == nil {
+		err = syncErr
+	}
 	if closeErr := temp.Close(); err == nil {
 		err = closeErr
 	}

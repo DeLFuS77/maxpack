@@ -32,6 +32,7 @@ import (
 //   - "writes": pack and unpack write their output (in an empty folder that is there too), tell
 //     some progress and end well; verify ends well.
 //   - "bad-verify": as "writes", but verify finds a damaged file.
+//   - "writes-info": as "writes", and info --json as "info" (by the name of the file, its tmp name too).
 //   - "info": info --json says of a game what the JSON file InfoEnv has under the name of its file
 //     or folder, and fails for any other; icon finds none.
 //   - "levels": analyze --levels tells two levels (3 and 19) as it goes and in its result, with the
@@ -94,7 +95,10 @@ func run(mode string, args []string) int {
 	case "priority":
 		fmt.Printf("{\"event\":\"result\",\"ok\":true,\"files_bad\":0,\"priority\":%q}\n", priority())
 		return 0
-	case "info":
+	case "info", "writes-info":
+		if mode == "writes-info" && !(len(args) == 3 && args[0] == "info") {
+			return run("writes", args)
+		}
 		if len(args) == 3 && args[0] == "info" && args[1] == "--json" {
 			var infos map[string]json.RawMessage
 			data, _ := os.ReadFile(os.Getenv(InfoEnv))

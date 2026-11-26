@@ -18,7 +18,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -274,9 +273,18 @@ func writingNames(paths []string) string {
 
 // WatchEnded is how a game the watched folder brought ended: final (compressed, failed, or in the destination
 // already) makes it done until it changes; else (it never ran, or was cancelled) the next run brings it again.
-// For one compressed well, out is the .p5z made of it, titleID and version its game's, and redone that it was
-// made again in place of the one made before: they are kept with it, as it is now ("" else).
+// For one compressed well, out is the .p5z made of it and redone that it was made again in place of the one made
+// before: kept with it, as it is now, with the title ID and version that .p5z says it has (info --json), whatever
+// the page read when it was planned (titleID and version are not taken); none when it cannot be read.
 func (a *App) WatchEnded(path string, final bool, out, titleID, version string, redone bool) {
+	titleID, version = "", ""
+	if out != "" {
+		if engine, err := a.engine(); err == nil {
+			if made, err := jobs.Describe(engine, out); err == nil && made.Kind == "p5z" {
+				titleID, version = made.TitleID, made.Version
+			}
+		}
+	}
 	if w := a.watcher(); w != nil {
 		w.watcher.EndedAs(path, watch.Ending{Final: final, Out: out, TitleID: titleID, Version: version, Redone: redone})
 		if final {
@@ -305,8 +313,10 @@ func (a *App) watchRedo(plans []jobs.Plan) {
 		if !ok || pathKey(made.Out) != pathKey(p.Out) || !made.Matches() {
 			continue // not what it made: never replaced
 		}
-		if p.WatchSkip = redoSkip(made, p.Item, w.watcher.HandedSig(p.Item.Path)); p.WatchSkip == "" {
+		handed := w.watcher.HandedSig(p.Item.Path)
+		if p.WatchSkip = redoSkip(made, p.Item, handed); p.WatchSkip == "" {
 			p.ReplaceIf = &jobs.Fingerprint{Size: made.Size, Mtime: made.Mtime}
+			p.HandedSig = handed // what it must still be when its turn comes
 		}
 	}
 }
@@ -317,8 +327,10 @@ func redoSkip(made watch.Made, it jobs.Item, now string) string {
 	switch {
 	case made.TitleID == "" || !strings.EqualFold(made.TitleID, it.TitleID):
 		return "watch_exists"
+	case made.Version == "" || it.Version == "":
+		return "watch_exists" // a version not known is never the same one
 	case made.Version != it.Version:
-		return versionSkip(made.Version, it.Version) // never a .p5z of another version
+		return jobs.VersionSkip(made.Version, it.Version) // never a .p5z of another version
 	case now == "":
 		return "watch_exists"
 	case sameFiles(made.Sig, now):
@@ -329,49 +341,17 @@ func redoSkip(made watch.Made, it jobs.Item, now string) string {
 	return ""
 }
 
-// sameFiles tells whether two signatures (count/size/newest) have the same files and size: only dates changed.
+// sameFiles tells whether two signatures have the same files and size, only dates changed: a folder's
+// (count/size/newest) the same count and size, a file's (size/date) the same size.
 func sameFiles(a, b string) bool {
 	x, y := strings.Split(a, "/"), strings.Split(b, "/")
-	return len(x) == 3 && len(y) == 3 && x[0] == y[0] && x[1] == y[1]
-}
-
-// versionSkip is the detail of a dump of version dump whose game is in the destination in version there: a newer
-// dump points to Details › Update with a new dump…, an older one says the destination has a newer one, and one that
-// cannot be told apart says it is there.
-func versionSkip(there, dump string) string {
-	if strings.ContainsAny(there+dump, " \t") {
-		return "watch_exists"
+	switch {
+	case len(x) == 3 && len(y) == 3:
+		return x[0] == y[0] && x[1] == y[1]
+	case len(x) == 2 && len(y) == 2:
+		return x[0] == y[0]
 	}
-	switch c, ok := compareVersions(dump, there); {
-	case !ok || c == 0:
-		return "watch_exists"
-	case c > 0:
-		return "watch_other_version: " + there + " " + dump
-	}
-	return "watch_older_version: " + there + " " + dump
-}
-
-// compareVersions compares two versions of a game ("01.002.000"), part by part as numbers: -1, 0 or 1, and ok
-// false when either is not so written.
-func compareVersions(a, b string) (int, bool) {
-	x, y := strings.Split(a, "."), strings.Split(b, ".")
-	if a == "" || b == "" || len(x) != len(y) {
-		return 0, false
-	}
-	for i := range x {
-		m, errM := strconv.Atoi(x[i])
-		n, errN := strconv.Atoi(y[i])
-		if errM != nil || errN != nil {
-			return 0, false
-		}
-		if m != n {
-			if m < n {
-				return -1, true
-			}
-			return 1, true
-		}
-	}
-	return 0, true
+	return false
 }
 
 // watchVersions, for the plans of the page: a game the watched folder brought whose destination has a .p5z it did
@@ -388,7 +368,7 @@ func (a *App) watchVersions(plans []jobs.Plan) {
 			return
 		}
 		if there, err := jobs.Describe(engine, p.Out); err == nil && there.Kind == "p5z" && strings.EqualFold(there.TitleID, p.Item.TitleID) {
-			p.WatchSkip = versionSkip(there.Version, p.Item.Version)
+			p.WatchSkip = jobs.VersionSkip(there.Version, p.Item.Version)
 		}
 	}
 }

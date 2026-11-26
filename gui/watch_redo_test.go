@@ -83,6 +83,10 @@ func TestWatchRedoPlan(t *testing.T) {
 	if plans[0].ReplaceIf == nil || !plans[0].ReplaceIf.Matches(out) || a.redoStill(plans[0]) != "" {
 		t.Errorf("start: %+v %q", plans[0], a.redoStill(plans[0]))
 	}
+	// and what the game was when it was handed over, which it must still be when its turn comes
+	if sig, _, _ := watch.Signature(it.Path); plans[0].HandedSig == "" || plans[0].HandedSig != sig {
+		t.Errorf("handed over as %q, now %q", plans[0].HandedSig, sig)
+	}
 	dropped := it
 	dropped.Watched = false
 	if views, _ := a.Plan("compress", []jobs.Item{dropped}, choices); views[0].WatchRedo || views[0].ReplaceIf != nil {
@@ -176,15 +180,59 @@ func TestWatchRedoConsent(t *testing.T) {
 	}
 }
 
-// What the watched folder ended well keeps its game's title ID and version, and whether it was a redo.
+// What the watched folder ended well keeps the title ID and version of the .p5z it made, as that file says them
+// (info --json), not as the page read the game when it was planned; one that cannot be read keeps none, and is
+// never made again by itself.
 func TestWatchEndedKeepsTheGame(t *testing.T) {
 	useSettings(t, t.TempDir())
-	a := &App{}
+	infoOf(t, map[string]map[string]any{"Copper Vale [PPSA10001].p5z": {"kind": "p5z", "title_id": "PPSA10001", "version": "01.005.000"}})
+	a := &App{core: os.Args[0]}
 	it, out, w := watchedGame(t, a, "01.000.000")
 	os.WriteFile(out, []byte("made"), 0o644)
 	a.WatchEnded(it.Path, true, out, "PPSA10001", "01.000.000", false)
-	if made, ok := w.MadeOf(it.Path); !ok || made.TitleID != "PPSA10001" || made.Version != "01.000.000" || made.Redos != 0 {
+	if made, ok := w.MadeOf(it.Path); !ok || made.TitleID != "PPSA10001" || made.Version != "01.005.000" || made.Redos != 0 {
 		t.Errorf("%+v %v", made, ok)
+	}
+	b := &App{core: os.Args[0]}
+	other, out2, w2 := watchedGame(t, b, "01.000.000")
+	unreadable := filepath.Join(filepath.Dir(out2), "Other [PPSA10002].p5z")
+	os.WriteFile(unreadable, []byte("made"), 0o644)
+	b.WatchEnded(other.Path, true, unreadable, "PPSA10002", "01.000.000", false)
+	if made, ok := w2.MadeOf(other.Path); !ok || made.TitleID != "" || made.Version != "" {
+		t.Errorf("unreadable: %+v %v", made, ok)
+	}
+}
+
+// No redo when its version is not known on either side (a param.json without one), nor when only the date of a
+// game of one file (an image, a package) changed.
+func TestWatchRedoNeedsAKnownVersionAndAChange(t *testing.T) {
+	useSettings(t, t.TempDir())
+	infoOf(t, map[string]map[string]any{})
+	a := &App{core: os.Args[0], fs: realFS{}}
+	it, out, w := watchedGame(t, a, "")
+	madeThenChanged(t, w, it, out, "", more(t, it, "late.bin"))
+	choices := Choices{Options: jobs.Options{Mode: jobs.ModeP5z, Dest: filepath.Dir(out)}}
+	if views, _ := a.Plan("compress", []jobs.Item{it}, choices); views[0].WatchRedo || views[0].WatchSkip != "watch_exists" {
+		t.Errorf("no version: %+v", views[0])
+	}
+	// an image: one file
+	folder, dest := t.TempDir(), t.TempDir()
+	image := touch(t, folder, "Copper Vale.exfat", 4096)
+	img := jobs.Item{Path: image, Kind: "exfat", Name: "Copper Vale", TitleID: "PPSA10001", Version: "01.000.000", OriginalSize: 4096,
+		HasZstdRuntime: true, Watched: true}
+	imgOut := jobs.PlanCompress([]jobs.Item{img}, jobs.Options{Mode: jobs.ModeP5z, Dest: dest}, realFS{})[0].Out
+	iw := &watch.Watcher{Folder: folder}
+	if found, _ := iw.Poll(); len(found) != 1 {
+		t.Fatalf("not handed over: %v", found)
+	}
+	b := &App{core: os.Args[0], fs: realFS{}}
+	b.watch = &watching{stop: make(chan struct{}), folder: folder, watcher: iw}
+	madeThenChanged(t, iw, img, imgOut, "01.000.000", func() {
+		later := time.Now().Add(time.Hour)
+		os.Chtimes(image, later, later)
+	})
+	if views, _ := b.Plan("compress", []jobs.Item{img}, Choices{Options: jobs.Options{Mode: jobs.ModeP5z, Dest: dest}}); views[0].WatchRedo || views[0].WatchSkip != "watch_dates_only" {
+		t.Errorf("an image whose date changed: %+v", views[0])
 	}
 }
 
@@ -266,6 +314,8 @@ func TestWatchMadeKept(t *testing.T) {
 		t.Fatalf("found: %v", found)
 	}
 	out := touch(t, t.TempDir(), "Ran [PPSA10001].p5z", 10)
+	infoOf(t, map[string]map[string]any{"Ran [PPSA10001].p5z": {"kind": "p5z", "title_id": "PPSA10001", "version": "01.000.000"}})
+	a.core = os.Args[0]
 	a.WatchEnded(game, true, out, "PPSA10001", "01.000.000", false)
 	a.stopWatchWait()
 	b := watchApp(&watchEvents{})

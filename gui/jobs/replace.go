@@ -51,27 +51,35 @@ func swap(out, tmp string) (leftover bool, err error) { return swapIf(out, tmp, 
 // one gets its name back and nothing is replaced (errNotTheOne). Each rename waits a few seconds for a program
 // that holds the file (renameWaiting).
 func swapIf(out, tmp string, check func(old string) bool) (leftover bool, err error) {
+	if err := swapKeeping(out, tmp, check); err != nil {
+		return false, err
+	}
+	return os.RemoveAll(out+OldSuffix) != nil, nil
+}
+
+// swapKeeping is swapIf, but the old one stays apart at <out>.maxpack-old for the caller.
+func swapKeeping(out, tmp string, check func(old string) bool) error {
 	old := out + OldSuffix
 	// a leftover of an earlier run that was cut short
 	if err := os.RemoveAll(old); err != nil {
-		return false, err
+		return err
 	}
 	if err := renameWaiting(out, old); err != nil {
-		return false, err
+		return err
 	}
 	if check != nil && !check(old) {
 		if back := renameWaiting(old, out); back != nil {
-			return false, back
+			return back
 		}
-		return false, errNotTheOne
+		return errNotTheOne
 	}
 	if err := renameWaiting(tmp, out); err != nil {
 		if back := renameWaiting(old, out); back != nil {
-			return false, back
+			return back
 		}
-		return false, err
+		return err
 	}
-	return os.RemoveAll(old) != nil, nil
+	return nil
 }
 
 // renameWaiting is os.Rename, tried again for up to 5 s while another program holds the file (the Explorer making

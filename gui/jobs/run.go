@@ -104,6 +104,43 @@ type Runner struct {
 	Redo func(p Plan) string
 }
 
+// redoMadeOf is why what was made of p (its .p5z apart) may not replace the .p5z there, "" when it may: both say
+// (info --json) they are the game and the version planned. An unknown version is never the same.
+func (r *Runner) redoMadeOf(p Plan) string {
+	made, errMade := Describe(r.Core, p.Tmp)
+	old, errOld := Describe(r.Core, p.Out)
+	switch {
+	case errMade != nil || errOld != nil || made.Kind != "p5z" || old.Kind != "p5z" || made.TitleID == "" ||
+		!strings.EqualFold(made.TitleID, old.TitleID) || !strings.EqualFold(made.TitleID, p.Item.TitleID):
+		return "watch_redo_refused"
+	case made.Version == "" || old.Version == "" || made.Version != old.Version || made.Version != p.Item.Version:
+		if skip := VersionSkip(old.Version, made.Version); skip != "watch_exists" {
+			return skip
+		}
+		return "watch_redo_refused"
+	}
+	return ""
+}
+
+// putAside is what becomes of the .p5z a redo replaced, set apart at <out>.maxpack-old: under a dated name
+// (<out>.maxpack-old-<date>), to the recycle bin; where there is none, it stays beside it under that name. Never
+// deleted for good. It gives the note of the row.
+func (r *Runner) putAside(out string) string {
+	old := out + OldSuffix
+	dated := old + "-" + time.Now().Format("20060102-150405")
+	if err := os.Rename(old, dated); err != nil {
+		r.keep(old)
+		return "old_not_deleted: " + old
+	}
+	r.forget(old)
+	if err := moveToTrash(dated); err == nil {
+		r.log("The .p5z made before, to the recycle bin: %s", dated)
+		return "watch_old_in_bin"
+	}
+	r.log("The .p5z made before, kept beside it (no recycle bin there): %s", dated)
+	return "watch_old_kept: " + dated
+}
+
 // redoRefused is why the .p5z the watched folder made of p may not be replaced now, "" when it may: the window's
 // record says so, and the file there is still that one.
 func (r *Runner) redoRefused(p Plan) string {
@@ -310,9 +347,17 @@ func (r *Runner) one(ctx context.Context, i int, p Plan, o Options) outcome {
 	// the .p5z the watched folder made of it, made again: only while the window's record still says so (fail
 	// closed), decided now before anything is made, and again before the swap
 	redo := len(p.Replace) > 0 && p.ReplaceIf != nil
+	var before string
+	var beforeBusy bool
 	if redo {
 		if why := r.redoRefused(p); why != "" {
 			return fail(StateSkipped, why)
+		}
+		// the source must still be what was handed over and planned: else (a copy that went on meanwhile, another
+		// version written over it) it is not compressed now, and comes again as it is then
+		if before, beforeBusy, _ = watch.Signature(p.Item.Path); beforeBusy || p.HandedSig == "" || before != p.HandedSig {
+			r.log("Not made again now, it changed since it was planned: %s", p.Item.Path)
+			return fail(StateSkipped, "watch_redo_changed")
 		}
 	}
 	if p.Tmp == "" {
@@ -357,8 +402,8 @@ func (r *Runner) one(ctx context.Context, i int, p Plan, o Options) outcome {
 	}
 	r.item(i, working, "")
 	// what the watched folder brought: as it is now, to tell whether it changed while it was compressed
-	ro, before, beforeBusy := originalsFor(p, o), "", false
-	if compress && p.Item.Watched {
+	ro := originalsFor(p, o)
+	if compress && p.Item.Watched && !redo {
 		before, beforeBusy, _ = watch.Signature(p.Item.Path)
 	}
 	result, ok, failure := r.engine(ctx, i, p.Args, o, hide)
@@ -415,6 +460,11 @@ func (r *Runner) one(ctx context.Context, i int, p Plan, o Options) outcome {
 			r.log("Not made again in its place, its record or the file there no longer says so: %s", p.Out)
 			return fail(StateSkipped, discard(why))
 		}
+		// what was made, and what it would replace, as they say themselves: the game and the version planned, both
+		if why := r.redoMadeOf(p); why != "" {
+			r.log("Not made again in its place, what was made or what is there is another game or version: %s", p.Out)
+			return fail(StateSkipped, discard(why))
+		}
 		check = p.ReplaceIf.Matches           // once set aside too (a rename keeps size and date)
 		notes = append(notes, "watch_redone") // it changed after it was compressed: compressed again
 	}
@@ -423,15 +473,26 @@ func (r *Runner) one(ctx context.Context, i int, p Plan, o Options) outcome {
 		oldSet := o.Mode == ModeP5z && par2.Inspect(p.Out).State == par2.StateMatch
 		// the old one is in the journal while it is apart: a cut between the renames puts it back (Clean)
 		r.keep(p.Out + OldSuffix)
-		leftover, err := swapIf(p.Out, p.Tmp, check)
-		if !leftover {
+		var leftover bool
+		var err error
+		if redo {
+			err = swapKeeping(p.Out, p.Tmp, check) // the old one stays apart: it is never deleted for good
+		} else {
+			leftover, err = swapIf(p.Out, p.Tmp, check)
+		}
+		if !leftover && !redo {
 			r.forget(p.Out + OldSuffix)
 		}
 		if errors.Is(err, errNotTheOne) {
+			r.forget(p.Out + OldSuffix)
 			return fail(StateSkipped, discard("watch_redo_refused"))
 		}
 		if err != nil {
+			r.forget(p.Out + OldSuffix)
 			return fail(StateError, discard("swap_failed: "+err.Error()))
+		}
+		if redo {
+			notes = append(notes, r.putAside(p.Out))
 		}
 		if leftover {
 			r.keep(p.Out + OldSuffix)

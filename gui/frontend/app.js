@@ -1265,11 +1265,12 @@ function itemOf(row) {
     // a .p5z of Details that grows: the DLC to add, or the new dump, and whether to go on with most of it changed
     Grow: row.section === "details" && row.grow ? row.grow.slice() : [], Force: row.section === "details" && !!row.force });
 }
-// the items of the games a queue starts with or takes, each game told which DLC went inside it and
-// what they took
+// the items of the games a queue starts with or takes, each game told which DLC went inside it, what
+// they took and how many of them had files of their own
 function itemsOf(rows) {
   const items = rows.map(itemOf);
-  rows.forEach((row, n) => Object.assign(row, { dlcSent: items[n].AddDLC, dlcSentSize: items[n].AddDLCSize }));
+  rows.forEach((row, n) => Object.assign(row, { dlcSent: items[n].AddDLC, dlcSentSize: items[n].AddDLCSize,
+    dlcSentData: dlcRowsOf(row).filter(other => other.game.DLCData).length }));
   return items;
 }
 
@@ -1703,10 +1704,13 @@ function gameReport(row) {
     HasZstdRuntime: !!game.HasZstdRuntime, HasRuntime: !!game.HasRuntime, State: ran.state || "", Detail: ran.detail || "", Out: ran.out || "",
     Completeness: completenessCounts(game.Completeness), ...dlcCounts(row) };
 }
-// how many DLC a game goes with (in Compress) or carries (a .p5z), and how many of them have files of
-// their own: counts only, never their content IDs
+// how many DLC a game goes with (in Compress: the ones that went, once it is made or in the queue that
+// runs) or carries (a .p5z), and how many of them have files of their own: counts only, never their
+// content IDs
 function dlcCounts(row) {
-  const going = dlcRowsOf(row);
+  const set = !!row.dlcSent && setRow(row);
+  if (set && row.dlcSent.length) return { DLC: row.dlcSent.length, DLCData: Number(row.dlcSentData) || 0 };
+  const going = set ? [] : dlcRowsOf(row);
   if (going.length) return { DLC: going.length, DLCData: going.filter(other => other.game.DLCData).length };
   const carried = (row.game && row.game.DLC) || [];
   return { DLC: carried.length, DLCData: carried.filter(d => d.Data).length };

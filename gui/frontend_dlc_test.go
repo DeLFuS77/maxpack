@@ -97,6 +97,18 @@ console.log(vm.runInContext(` + "`" + `(() => {
   const p5z = { Kind: "p5z", Name: "X", DLC: [{ ContentID: A, Data: true, Folder: "addcont0", Size: 2048 }, { ContentID: B, Data: false, Folder: "", Size: 0 }] };
   const carried = gameReport({ section: "details", game: p5z, state: "", detail: "", path: "D:/x.p5z" });
   if (carried.DLC !== 2 || carried.DLCData !== 1 || JSON.stringify(carried).includes("AAAA")) say("the report of a .p5z with DLC: " + JSON.stringify(carried));
+  // once the game is made, its report counts the DLC that went inside it, not the rows the list has now
+  state.lists.compress = [dlcA, game1, dlcB];
+  itemsOf([game1]);
+  game1.state = "ok";
+  const later = row("D:/dlc/later", { Content: "dlc", DLCData: true, ContentID: "UP0000-PPSA00000_00-LATERLATERLATER1" });
+  state.lists.compress = [dlcA, game1, dlcB, later];
+  let made = gameReport(game1);
+  if (made.DLC !== 2 || made.DLCData !== 1) say("the report of a game made, with a DLC added after it: " + JSON.stringify(made));
+  state.lists.compress = [game1];
+  made = gameReport(game1);
+  if (made.DLC !== 2 || made.DLCData !== 1) say("the report of a game made, its DLC rows taken away: " + JSON.stringify(made));
+  Object.assign(game1, { state: "", dlcSent: undefined, dlcSentSize: undefined, dlcSentData: undefined });
   // Details lists what a .p5z carries, and says what a DLC is
   const facts = dlcFacts(p5z).map(f => f.join(": ")).join(" | ");
   if (facts !== [t("factDlc") + ": " + t("dlcCarried")(1, 1), "DLC 1: " + A + " · " + t("dlcFactData")(size(2048), "addcont0"),

@@ -399,7 +399,9 @@ breaks it goes on from what the console has. **Cancel**, or closing the window, 
 keeps what arrived: the next send goes on from there. **Delete what arrived on the console**, on the row,
 deletes it there, once you say so; it shows too when a drive of the console has no room for it while part of
 it is there already from before (that part takes room: delete it, or choose another drive), and says so when
-nothing of it was there. A send this PC slept through says the PC slept, not that the console did nothing.
+nothing of it was there. While the console lets go of that receive it waits (up to 75 s) and says so: a stop on
+the PC tells the console at once that the PC left, and one it could not tell is let go of a minute after its
+last data. A send this PC slept through says the PC slept, not that the console did nothing.
 The code goes only to `maxpack-core`, in its environment: never into a log nor into **Copy report**.
 
 ### Watched folder ([details](pc-window.md#watched-folder))
@@ -413,13 +415,16 @@ level and the repair data. **Its originals are always kept**: the watched folder
 sends, when asked), whatever Settings says of originals. A game whose files changed while it was compressed
 (it was still arriving) fails ("it changed while it was being compressed"): nothing made of it is kept, it is not
 sent, and it is compressed again once it is whole. It never replaces what is in the destination already:
-that game is skipped. But the `.p5z` it made itself is made again when its game changed after it was
-compressed (a copy that stalled for a minute and ended later): while the destination still has that very file
-(the size and date it had when it was made, which MaxPack keeps), the new one takes its place, written apart
-and checked as always, and the row says "it changed after it was compressed: compressed again". Sent to the
-console too, a console that has the older copy says so: delete it there first. A new version of a game (an
-update dump) whose `.p5z` is in the destination is skipped with both versions on its row: put it in with
-Details › **Update with a new dump…**; nothing is updated by itself. A game that lacks files of its list
+that game is skipped. But the `.p5z` it made itself is made again when its game grew or lost files after it was
+compressed (a copy that stalled for a minute and went on): while the destination still has that very file (the
+size and date it had when it was made, which MaxPack keeps), of the same game in the same version, the new one
+takes its place, written apart and checked as always, and the row says "it changed after it was compressed:
+compressed again". It does so at most twice in a row ("compress it by hand"), never for a change of dates alone,
+and the window decides it again before anything is made and right before the swap: if that file is no longer
+the one it made, or the watched folder was turned off, nothing is replaced. Sent to the console too, a console
+that has the older copy says so: delete it there first. A new version of a game (an update dump) whose `.p5z`
+is in the destination is skipped with both versions on its row: put it in with Details › **Update with a new
+dump…**; an older dump is said to be older, and left. Nothing is updated by itself. A game that lacks files of its list
 stays in the list with its warning instead. Turning it on, or
 choosing another folder, takes what is there as not new: Settings offers to compress it, and those go as what
 arrives goes, once whole. What ended (compressed, failed or skipped as there) is not handed over again until it
@@ -428,9 +433,11 @@ the window closed) comes again the next time. A file another program still has o
 arriving: Windows says so when MaxPack opens it, and on Linux MaxPack looks in `/proc` for the programs of
 your own user (not those of other users, nor a writer on another machine of a share); macOS has no such look,
 only the quiet minute. So is a `.part`, `.crdownload`, `.!qB` or `.filepart` download, or an empty
-placeholder. What the window itself puts in the folder (Decompress there, a folder for the console made
-there) is never new. On a share that drops, closing the window or choosing another folder does not wait for a
-look at work, and what one listing misses is forgotten only once it is missing from 3 in a row; what systems
+placeholder. A game a program keeps writing into waits, and after a couple of minutes Settings says which one.
+What the window itself puts in the folder (Decompress there, a folder for the console made there) is never new.
+On a share that drops, closing the window or choosing another folder does not wait for a look at work, and what
+one listing misses is forgotten only once it is missing from 3 in a row (an empty listing, or one that lists it
+but cannot check it, forgets nothing); what systems
 write into folders (`.DS_Store`, `._*`, `Thumbs.db`, `desktop.ini`, `.Spotlight-V100`, `$RECYCLE.BIN`...) never
 counts; one whose file cannot be opened is left alone, and said, until it changes. With **Send them to the console too**, each `.p5z` made goes on to the console, to the drive
 chosen last. The subfolders are not looked into, and nothing runs with the window closed: what arrived
@@ -823,8 +830,11 @@ one stopped on the console's page is not (exit code 15), and goes on when you se
 or `--delete-on-cancel` with a cancel, makes the console delete what it received. When a drive has no room for
 it and part of it is there already (from a send that stopped, or a resume after a write error), the refusal
 says how much is there (exit code 9, `kept` and `have` in the JSON): delete it with `--discard`, or send it to
-another drive. When this PC slept while it was sending (its clock jumped past `--stall` between two looks), it
-says the PC slept, not that nothing moved on the console (exit code 16, `slept` in the JSON).
+another drive. When this PC slept while it was sending (its clock jumped past `--stall` between two looks: the
+tick count on Windows, `CLOCK_BOOTTIME` on Linux and `CLOCK_MONOTONIC` on macOS, which all count the sleep), it
+says the PC slept, not that nothing moved on the console (exit code 16, `slept` in the JSON). A stop here (Ctrl+C,
+`cancel`, the end of the input, a stall) tells the console the PC left (`/leave`), so that it lets go of the
+receive at once; "kept" is said only when something arrived.
 
 On the console, turn on Settings > **Receive games from the PC**: its page then shows a 6-digit pairing
 code. Without it the console takes nothing: anyone on the home network could write to its drives. The code
@@ -835,7 +845,7 @@ travels in clear on the home network (there is no encryption), so another device
 | `send <game.p5z> <ps5-ip> --code C` | Sends it to the console's internal storage (or its first drive). | `maxpack send "D:\games\MyGame [PPSA00000].p5z" 192.168.1.20 --code 482913` |
 | `--drive ID` | To another drive of the console: `internal`, `usb0`... | `--drive usb0` |
 | `send --drives <ps5-ip> --code C` | Lists the console's drives with their free space (`--json`: as JSON). | `maxpack send --drives 192.168.1.20 --code 482913` |
-| `send --discard <game.p5z> <ps5-ip> --code C` | Deletes what the console received of it (its `.maxpack-recv`) on that drive (`--drive`), with the console's own request for it: never a new receive, so a full drive does not refuse it. Only its name is used (the `.p5z` need not be on the PC any more). It says when nothing of it was there; a `.p5z` that is there whole is never touched. A receive of it still at work on the console is refused (exit code 8): one this PC stopped is paused by the console after 10 minutes without data. | `maxpack send --discard "D:\games\MyGame [PPSA00000].p5z" 192.168.1.20 --code 482913` |
+| `send --discard <game.p5z> <ps5-ip> --code C` | Deletes what the console received of it (its `.maxpack-recv`) on that drive (`--drive`), with the console's own request for it: never a new receive, so a full drive does not refuse it. Only its name is used (the `.p5z` need not be on the PC any more). It says when nothing of it was there; a `.p5z` that is there whole is never touched. While the console lets go of a receive of it (409 `busy` with `retry_after`), it waits and asks again, up to 75 s (`--json`: `{"event":"waiting","seconds":N}` lines); still busy then, exit code 8. A console without that request: `discard_unsupported` (exit code 1). | `maxpack send --discard "D:\games\MyGame [PPSA00000].p5z" 192.168.1.20 --code 482913` |
 | `<ps5-ip>` | The console's IP address, as its page shows it (no leading zeros); `a.b.c.d:port` when it is not on port 8095. | `192.168.1.20` |
 | `MAXPACK_SEND_CODE` | The code can come in this environment variable instead of `--code`, so other programs of the PC do not see it on the command line (the window does that). | |
 | `--json` | One JSON line per event on stdout, as `--progress json`: `started` (the drive, and what the console had already), `progress` of the phases `sending` (with `rate` in bytes a second and `eta` in seconds) and `verifying` (the console's), `retry`, `paused`, and the `result` (with `kept` and `have` when it did not end: whether the console keeps what arrived, and how much; `slept` when this PC slept through it). With `--discard`, one line: `ok`, `deleted` (whether there was anything) and `had` (its bytes). | `--json` |
@@ -882,7 +892,8 @@ request with the header `X-MaxPack-Code: <6 digits>`; refusals are JSON `{"error
 | `GET /api/receive/status?id=` | `{"have","size","state":"receiving|verifying|done|failed|cancelled|paused","reason":"idle|write_error|stopped","verify":{"bytes","total","bad":[...]}}` |
 | `POST /api/receive/finish?id=` | 202: the console verifies it; `done` once it has its name, `failed` with what did not match |
 | `POST /api/receive/cancel?id=` | The partial file goes; `cancelled` |
-| `POST /api/receive/discard` with `{"name","drive"}` | Deletes `<name>.maxpack-recv` on that drive if it is there, whatever its size and with no space check, and ends a paused receive of it: `{"deleted":true,"bytes":N}`, or `{"deleted":false}` when nothing is there. Never a `.p5z`. 409 `busy` while a receive of it is at work, 400 `bad_name`, 404 `no_drive`, 500 `delete_failed` |
+| `POST /api/receive/leave?id=` | The PC stopped and keeps what arrived: the console pauses that receive (`reason: left`, resumed by `start` as an idle one) and answers `{"have":N}`; on one that is not receiving, it changes nothing. The PC tries once, 2 s, and reads nothing back |
+| `POST /api/receive/discard` with `{"name","drive"}` | Deletes `<name>.maxpack-recv` on that drive if it is there, whatever its size and with no space check, and ends a paused receive of it (one receiving with no request for 60 s is paused first): `{"deleted":true,"bytes":N}`, or `{"deleted":false}` when nothing is there. Never a `.p5z`. 409 `busy` while a receive of it is at work (`retry_after`: seconds until it lets go of it; none while it verifies), 400 `bad_name`, 404 `no_drive`, 500 `delete_failed` with the system's words in `detail` |
 
 Every route answers 403 `receive_off` while receiving is off, 401 `bad_code` without the right code, and
 429 `locked` for a minute after 5 wrong codes in a row from one address. A paused receive (idle, a write error,
@@ -1172,8 +1183,7 @@ loose files plus 256 MiB; if you free it, the game mounts by itself. Or put the 
 - **"Not enough free space, and what arrived of it before is still there":** a send that stopped (or a drive
   that filled up while it wrote) left part of the `.p5z` there, and it takes room. **Delete what arrived on
   the console** (or `maxpack send --discard`) frees it; or send it to another drive. While the console is
-  still at work on that receive it refuses the delete: a receive the PC stopped is paused after 10 minutes
-  without data, and can be deleted then.
+  still at work on that receive, the delete waits for it to let go (up to 75 s), and says so.
 - **"This PC slept while it was sending":** the console keeps what arrived; send it again to go on.
 - **"The console has the older copy of it":** the watched folder made the `.p5z` again (its game changed
   after it was compressed), and the console has the one made before. Delete that one on the console, then

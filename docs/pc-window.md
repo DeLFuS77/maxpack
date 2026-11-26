@@ -536,8 +536,9 @@ made `.p5z` files (they are added to Details, read, and sent from there).
   no room on the drive while part of it is there from before (that part takes room): it asks first, then the
   console deletes what it received of it, and the next send starts from nothing. It is the console's own
   request for it, which a full drive does not refuse; when nothing of it was there, the row says so. While the
-  console is still at work on that receive it refuses: a receive the PC stopped is paused by the console
-  after 10 minutes without data.
+  console lets go of that receive it waits, up to 75 s, and says so; a stop here (Cancel, closing the window)
+  tells the console at once that the PC left. An engine that had to be killed after a cancel says the console
+  may keep some. A console without that request says to update it; one that could not delete says why.
 - **Asking for the drives** opens the card at once with "Asking the console for its drives…": **Cancel**
   stops the question, and it gives up after 30 s (a console never reached says "no answer" in about 11 s).
 - **The end card** says how many went and how fast. A row that ended well says that the console
@@ -566,13 +567,16 @@ minimized too: no service stays in the system.
   compressed (read through each file before and after) fails, nothing made of it is kept or sent, and it comes
   again once it is whole. Without a destination it waits for one. What
   is in the destination already is skipped ("it is in the destination already"), and nothing is
-  replaced, but for one case: a game it compressed well that changed afterwards (its copy stalled for a
-  minute, and ended later) is compressed again in place of the `.p5z` it made, while the destination still
-  has that very file (the size and date it had, kept in `watched.json`); written apart and checked as always,
-  only that `.p5z` is replaced, and the row says "it changed after it was compressed: compressed again".
-  Another file there by then stays. A new version of a game (an update dump) whose `.p5z` is in the
-  destination is skipped with both versions on its row: **Update with a new dump…** on its card in Details
-  puts it in; nothing is updated by itself. A game that lacks files of its list (the 1.0.6 check) stays in
+  replaced, but for one case: a game it compressed well that grew or lost files afterwards (its copy stalled
+  for a minute, and went on) is compressed again in place of the `.p5z` it made, while the destination still
+  has that very file (the size and date it had, kept in `watched.json`), of the same game in the same version;
+  written apart and checked as always, only that `.p5z` is replaced, and the row says "it changed after it
+  was compressed: compressed again". At most twice in a row (then "compress it by hand"), never for a change
+  of dates alone; the page asks for it apart and the window decides it again before anything is made and right
+  before the swap, so another file there by then, or the watched folder turned off, means nothing is replaced
+  (the row says so). A new version of a game (an update dump) whose `.p5z` is in the destination is skipped
+  with both versions on its row: **Update with a new dump…** on its card in Details puts it in; an older dump
+  is said to be older. Nothing is updated by itself. A game that lacks files of its list (the 1.0.6 check) stays in
   the list with its warning. When a queue of Compress is running, what arrives joins it, with the same
   rules.
 - **Never twice:** what ended (compressed, failed, or skipped as in the destination already) is kept in
@@ -583,7 +587,9 @@ minimized too: no service stays in the system.
   written), and one another program still holds open for writing is still arriving. On Linux, MaxPack looks
   in `/proc` for a file of it that a program of your own user holds open for writing (not the programs of
   other users, nor a writer on another machine of a network share). macOS has no such look: there only the
-  quiet minute and the names of downloads tell a file still arriving. A `.part`, `.crdownload`,
+  quiet minute and the names of downloads tell a file still arriving. All that is pending is looked for in
+  `/proc` at once, once per look. A game that waits a couple of minutes for a program writing into it is named
+  in Settings ("Waiting for a program that still writes into…"). A `.part`, `.crdownload`,
   `.!qB`, `.!ut` or `.filepart` download, or an empty file in place of a download, is never a game. What systems
   write into folders (`.DS_Store`, `._*`, `Thumbs.db`, `desktop.ini`, `.Spotlight-V100`, `$RECYCLE.BIN`,
   `System Volume Information`...) never makes a dump new or changing. One whose file cannot be opened (not
@@ -596,8 +602,9 @@ minimized too: no service stays in the system.
   has already, says the console has the older copy: delete it there first, then send it again.
 - **The folder gone** (a USB drive taken out) is said in Settings, and watching goes on when it is back.
 - **A share that drops:** the looks hold nothing else, so closing the window or choosing another folder does
-  not wait for a slow listing; what one listing misses is forgotten only once it is missing from 3 in a row,
-  and a listing that fails forgets nothing.
+  not wait for a slow listing, and once it is stopped nothing more of it is told; what one listing misses is
+  forgotten only once it is missing from 3 in a row, and a listing that fails, an empty one (a share that went
+  from its mount point) or one that lists an entry it cannot check forgets nothing.
 
 ## 5. Repair data
 

@@ -55,17 +55,24 @@ All notable changes to MaxPack are listed here. The format follows
   busy, no space, FAT32, file name, no such drive, arrived damaged). `send --discard` deletes what a send
   left with the console's own request for it (`POST /api/receive/discard`), never a new receive, so a drive
   that is full does not refuse it; it uses only the name of the `.p5z`, never touches one whole there, and
-  says when nothing of it was there (`"deleted":false`); exit code 18 when the console could not delete it.
-  A drive with no room where part of it is already (a send that stopped, or a resume after a write error)
-  says how much is there (`kept`, `have`). A send this PC slept through (its clock jumped past `--stall`
-  between two looks) says the PC slept, not that nothing moved on the console (`slept`). `send --drives` lists the console's
+  says when nothing of it was there (`"deleted":false`); exit code 18 when the console could not delete it (with its words), and its own code
+  (`discard_unsupported`) for a console that has no such request. While the console lets go of a receive of it
+  at work (`409 busy` with `retry_after`) it waits and asks again, for up to 75 s, saying so. A stop here
+  (Cancel, the window closed, Ctrl+C, `--control stdin` cancel, a stall) tells the console the PC left
+  (`POST /api/receive/leave`), so that it lets go of the receive at once; a receive paused that way (`left`) is
+  resumed as an idle one. A drive with no room where part of it is already (a send that stopped, a resume after
+  a write error, or an earlier and bigger copy of it) says how much is there (`kept`, `have`); "kept" is said
+  only when something arrived. A send this PC slept through (its clock, one that counts sleep on Windows, Linux
+  and macOS, jumped past `--stall` between two looks) says the PC slept, not that nothing moved on the console
+  (`slept`). `send --drives` lists the console's
   drives with their free space; `--json` gives progress lines for a front end. In the window: Settings
   > MaxPack for the console (its IP address and pairing code; the code goes only to `maxpack-core`, in
   its environment, never into a log or a report), and **Send to the console** on the card of a `.p5z`
   in Details and on the end card of Compress, with the drive and its free space, the bar, Cancel and
   the end card; several `.p5z` go one after another. **Delete what arrived on the console**, on the row,
   shows after a send that stopped or did not end, also one that found no room while part of it was there,
-  or whose engine had to be killed after a cancel. The send card says the console checks every volume and
+  or whose engine had to be killed after a cancel (the console may keep some then); it says while the console
+  lets go of the receive. The send card says the console checks every volume and
   loose file. Needs MaxPack for the console with Settings > Receive games from the PC.
 - **Quick verify:** `maxpack verify --quick <game.p5z>` (text and `--json`) checks a `.p5z`'s header,
   footer and index, each volume's SHA-256 and header, and each stored file's SHA-256, without
@@ -78,13 +85,17 @@ All notable changes to MaxPack are listed here. The format follows
   writing: on Windows, and on Linux for the user's own programs, by `/proc`; macOS has no such look;
   downloads at work are left alone), its DLC with it; what is in the destination already is skipped, a game
   that lacks files of its list stays in the list with its warning, and what ended is not handed over again
-  until it changes. A game it compressed well that changes afterwards (a copy that stalled for a minute and
-  ended later) is compressed again in place of the `.p5z` it made, while that very file (its size and date,
-  kept) is still there, and its row says so; anything else there stays. A new version of a game whose `.p5z`
-  is in the destination is skipped with both versions on its row, pointing to Details › Update with a new
-  dump…; nothing is updated by itself. What the window puts in the folder (Decompress there, a folder for the
-  console made there) is never new. On a share that drops, closing the window or choosing another folder does
-  not wait for a look at work, and what a listing misses is forgotten only after 3 listings in a row. What is
+  until it changes. A game it compressed well that grows or loses files afterwards (a copy that stalled for a
+  minute and went on) is compressed again in place of the `.p5z` it made, only while that very file (its size
+  and date, kept) is still there and the game is the same in the same version, at most twice in a row, and its
+  row says so; the window decides it again before anything is made and right before the swap, and anything
+  else there stays (a change of dates alone is no reason). A new version of a game whose `.p5z` is in the
+  destination is skipped with both versions on its row, pointing to Details › Update with a new dump…; an
+  older dump is said to be older; nothing is updated by itself. What the window puts in the folder (Decompress
+  there, a folder for the console made there) is never new. On a share that drops, closing the window or
+  choosing another folder does not wait for a look at work, and what a listing misses is forgotten only after
+  3 listings in a row (an empty listing, or one that cannot check an entry, forgets nothing). A game a program
+  keeps writing into waits, and Settings says which one after a couple of minutes. What is
   there when it is turned on is offered, not compressed. Its originals are always kept, whatever Settings
   says (a queue started with its games in it does not list them as going): it only compresses (and sends),
   and a game that changed while it was compressed fails and comes again once whole. **Send them to the
@@ -133,8 +144,12 @@ All notable changes to MaxPack are listed here. The format follows
   for a second MaxPack. They now say what may hold it (another MaxPack, the Explorer making its cover, an
   antivirus) and to try again in a moment. MaxPack's cover provider only reads the stream the Explorer opens.
 - **Update:** while an antivirus held the thumbnail provider without delete sharing, the installer showed
-  NSIS's "Error opening file for writing" with Abort/Retry/Ignore. It now sets the DLL aside in the temporary
-  folder, as the uninstaller does, or keeps the one there until the next update, and says so.
+  NSIS's "Error opening file for writing" with Abort/Retry/Ignore. It now keeps the one there until the next
+  update, asks nothing, and a line in the install's details says so.
+- **A swap held for a moment:** replacing a `.p5z` (Replace, or the watched folder making its own again) waits
+  a few seconds for a program that holds the old one (the Explorer making its cover, an antivirus) instead of
+  failing and throwing the verified new one away; a power cut between its two renames leaves the old one
+  journaled, and **Clean** puts it back.
 - The choice of what to add to a `.p5z` (Add DLC, Update) is no longer drawn as a warning.
 
 ## [1.0.7] - 2026-11-26

@@ -645,6 +645,55 @@ MP_TEST(play_refuses_volumes_not_its_packs) {
     }
 }
 
+// The same for a .p5z as packed (version 1): one volume record more than its packs have, a copy of the
+// first one's record, with its CRCs right.
+MP_TEST(play_refuses_v1_volume_not_its_packs) {
+    mpt_clear(TMP);
+    if (mpt_pack(GAME, TMP "/v1.p5z", 1, NULL) != 0) return;
+    size_t n = 0;
+    uint64_t ioff = 0;
+    uint8_t *ix = read_index(TMP "/v1.p5z", &n, &ioff);
+    if (!ix) return;
+    uint32_t nf = rd32(ix + 12), nvol = 0;
+    uint64_t slen = rd64(ix + 24);
+    const uint8_t *first = NULL;
+    for (uint32_t i = 0; i < nf; i++) {
+        const uint8_t *rec = ix + 56 + 88 * i;
+        if (rec[8] != MP_ROLE_VOLUME) continue;
+        if (!first) first = rec;
+        nvol++;
+    }
+    MP_CHECK(rd32(ix + 8) == 1 && first);
+    if (!first) {
+        free(ix);
+        return;
+    }
+    // the record goes after the others, its name after the other strings: no other offset moves
+    char name[32];
+    size_t nl = (size_t)snprintf(name, sizeof name, "ampr_zstd-%03u.pak", nvol), end = 56 + 88ull * nf;
+    uint8_t *out = malloc(n + 88 + nl);
+    memcpy(out, ix, end);
+    memcpy(out + end, first, 88);
+    memcpy(out + end + 88, ix + end, n - end);
+    memcpy(out + n + 88, name, nl);
+    wr32(out + 12, nf + 1);
+    wr64(out + 24, slen + nl);
+    wr32(out + end, (uint32_t)slen);
+    wr32(out + end + 4, (uint32_t)nl);
+    put_index(TMP "/v1.p5z", TMP "/v1_extra.p5z", out, n + 88 + nl);
+    free(out);
+    free(ix);
+    mp_err e = {{0}};
+    mp_p5z *p = NULL;
+    MP_CHECK(mp_p5z_open(TMP "/v1_extra.p5z", &p, &e) == 0);   // the engine reads it
+    mp_p5z_close(p);
+    char err[256] = "";
+    mp_play *pl = mp_play_open(TMP "/v1_extra.p5z", err, sizeof err);
+    if (pl) MP_FAIL_("played");
+    MP_CHECK_CONTAINS(err, "volumes are not those of its packs");
+    mp_play_close(pl);
+}
+
 // A .p5z with more volumes than the console takes, all of them its packs' (pack with a small volume
 // limit): the engine plays it, so that the console can say what is wrong with it (too many volumes, not
 // damaged), and info --play refuses it (test_cli).
@@ -1898,6 +1947,7 @@ int main(void) {
     MP_RUN(sums_grown);
     MP_RUN(sums_lines_and_json);
     MP_RUN(play_refuses_volumes_not_its_packs);
+    MP_RUN(play_refuses_v1_volume_not_its_packs);
     MP_RUN(play_opens_more_volumes_than_the_console_takes);
     MP_RUN(grow_refuses_packs_not_of_its_header);
     MP_RUN(compact_refuses_volumes_without_packs);

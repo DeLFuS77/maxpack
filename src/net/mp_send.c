@@ -112,6 +112,8 @@ typedef struct {
     int watching;           // the receive began: stalls count
     uint64_t moved_ns, best_have, best_verify;
     uint64_t look_ns;       // the last look for a stall
+    const char *token;      // the receive's token, once it began (to say the PC left)
+    uint64_t drive_total;   // the size of the drive it goes to, as the console lists it (0: not known)
 } sender;
 
 static int fail(sender *s, const char *code, const char *fmt, const char *arg) {
@@ -147,7 +149,7 @@ static int u64_of(const mp_json *j, const char *key, uint64_t *v) { return mp_js
 
 // Something moved (what the console has, or its verify): the stall begins again.
 static void moved(sender *s, uint64_t have, uint64_t verify) {
-    if (have > s->best_have || verify > s->best_verify || !s->moved_ns) s->moved_ns = mp_now_ns();
+    if (have > s->best_have || verify > s->best_verify || !s->moved_ns) s->moved_ns = mp_now_with_sleep_ns();
     if (have > s->best_have) s->best_have = have;
     if (verify > s->best_verify) s->best_verify = verify;
 }
@@ -159,29 +161,52 @@ static void have_text(sender *s, char *out, size_t cap) {
 // -1 (and "stalled") once nothing moved for stall_ms since the receive began. When the clock jumped past
 // stall_ms since the last look (one before each request, and in each short wait), it is this PC that slept (or
 // this program was stopped), not the console that did nothing.
+static void post_cancel(sender *s, const char *id);
+static void query_id(char *out, size_t cap, const char *route, const char *id);
+
+// The PC stops and keeps what arrived (contract v3.1): one try to tell the console, which pauses the receive
+// ("left") so that it can be resumed or deleted at once. 2 s at most; whatever it answers, or not, is not read.
+static void post_leave(sender *s) {
+    if (!s->token || !*s->token) return;
+    char path[256], headers[64];
+    query_id(path, sizeof path, "/api/receive/leave", s->token);
+    snprintf(headers, sizeof headers, "X-MaxPack-Code: %s\r\n", s->o->code);
+    mp_http_opts ho = {NULL, headers, 2000, 2000};
+    char *resp = NULL;
+    size_t rl = 0;
+    int st = 0;
+    mp_http_request_ex(s->o->host, s->o->port, "POST", path, NULL, 0, &ho, &st, &resp, &rl, NULL);
+    free(resp);
+}
+
+// How a stop keeps what arrived: kept only when something did; the console is told the PC left.
+static void keep_on_stop(sender *s, char *had, size_t cap) {
+    have_text(s, had, cap);
+    s->r->kept = s->best_have > 0;
+    post_leave(s);
+}
+
 static int stalled(sender *s) {
-    uint64_t now = mp_now_ns(), stall = (uint64_t)s->o->stall_ms * 1000000ull;
+    uint64_t now = mp_now_with_sleep_ns(), stall = (uint64_t)s->o->stall_ms * 1000000ull;
     uint64_t gap = s->look_ns && now > s->look_ns ? now - s->look_ns : 0;
     s->look_ns = now;
     if (!s->watching || !s->o->stall_ms || now - s->moved_ns < stall) return 0;
     char what[600], had[96];
-    have_text(s, had, sizeof had);
-    s->r->kept = 1;
+    keep_on_stop(s, had, sizeof had);
+    char keeps[200];
+    if (s->r->kept) snprintf(keeps, sizeof keeps, "the console keeps the %s that arrived; send it again to go on from there", had);
+    else snprintf(keeps, sizeof keeps, "nothing of it had arrived; send it again");
     if (gap >= stall) {
         s->r->slept = 1;
-        snprintf(what, sizeof what, "%llu s (the console keeps the %s that arrived; send it again to go on from there)",
-                 (unsigned long long)(gap / 1000000000ull), had);
+        snprintf(what, sizeof what, "%llu s (%s)", (unsigned long long)(gap / 1000000000ull), keeps);
         return fail(s, "stalled", "this PC slept while it was sending, for %s", what);
     }
-    snprintf(what, sizeof what, "%u s (it keeps the %s that arrived; send it again to go on from there)",
-             s->o->stall_ms / 1000, had);
+    snprintf(what, sizeof what, "%u s (%s)", s->o->stall_ms / 1000, keeps);
     return fail(s, "stalled", "nothing moved on the console for %s", what);
 }
 
-static void post_cancel(sender *s, const char *id);
-
-// -1 once hooks.cancelled asks to stop: what arrived stays on the console, or (2, with delete_on_cancel and a
-// token) the console deletes it.
+// -1 once hooks.cancelled asks to stop: what arrived stays on the console (which is told the PC left), or (2,
+// with delete_on_cancel and a token) the console deletes it.
 static int stopped_here(sender *s, const char *id) {
     int how = s->h && s->h->cancelled ? s->h->cancelled(s->h->ctx) : 0;
     if (!how) return 0;
@@ -195,8 +220,8 @@ static int stopped_here(sender *s, const char *id) {
         return fail(s, "cancelled", "stopped before anything was sent%s", NULL);
     }
     char had[96];
-    have_text(s, had, sizeof had);
-    s->r->kept = 1;
+    keep_on_stop(s, had, sizeof had);
+    if (!s->r->kept) return fail(s, "cancelled", "stopped before any of it arrived on the console%s", NULL);
     return fail(s, "cancelled", "stopped: the console keeps the %s that arrived; send it again to go on from there", had);
 }
 
@@ -237,12 +262,18 @@ static int refused(sender *s, int status, const mp_json *j) {
         // this run) takes room there: it is kept, and said, to be deleted
         uint64_t had = 0, need = 0;
         if (u64_of(j, "have", &had) != 0) had = s->watching ? s->best_have : 0;
-        if (had > s->r->size) had = 0;
+        if (had > (s->drive_total ? s->drive_total : UINT64_MAX / 2)) had = 0;   // not a file that drive can hold
         if (u64_of(j, "need", &need) != 0) need = 0;
         s->r->need = need;
         char what[400] = "";
         if (need) snprintf(what, sizeof what, "; the drive lacks %llu bytes", (unsigned long long)need);
-        if (had) {
+        if (had > s->r->size) {
+            // an earlier copy of it, bigger than this one (the game was made smaller since): it takes the room
+            if (had > s->best_have) s->best_have = had;
+            s->r->kept = 1;
+            snprintf(what + strlen(what), sizeof what - strlen(what), "): part of an earlier copy of it, %llu bytes, "
+                     "is there, taking room; delete it (send --discard) to free it", (unsigned long long)had);
+        } else if (had) {
             if (had > s->best_have) s->best_have = had;
             s->r->kept = 1;
             snprintf(what + strlen(what), sizeof what - strlen(what), "): the %llu of %llu bytes of it that arrived "
@@ -272,7 +303,7 @@ static int wait_retry(sender *s, const char *id, uint64_t have) {
     if (s->attempt >= limit) {
         char where[96];
         snprintf(where, sizeof where, "%s:%u", s->o->host, (unsigned)s->o->port);
-        if (s->watching) s->r->kept = 1;
+        s->r->kept = s->watching && s->best_have > 0;
         return fail(s, "unreachable", "no answer from the console at %s (is MaxPack for the console open there, on "
                                       "the same network?)", where);
     }
@@ -463,12 +494,12 @@ static int on_pause(sender *s, const char *reason, char *id, size_t cap, uint64_
     char had[96];
     have_text(s, had, sizeof had);
     if (!strcmp(reason, "stopped")) {
-        s->r->kept = 1;
+        s->r->kept = s->best_have > 0;
         return fail(s, "console_stopped", "it was stopped on the console, which keeps the %s that arrived; send it "
                                           "again to go on from there", had);
     }
     if (!strcmp(reason, "write_error") && ++s->write_errors > s->o->retries) {
-        s->r->kept = 1;
+        s->r->kept = s->best_have > 0;
         return fail(s, "write_error", "the console could not write it to that drive, again and again (it keeps the %s "
                                       "that arrived): is the drive full, read-only or failing?", had);
     }
@@ -614,8 +645,14 @@ static int prepare(sender *s, const char *path, mp_file **f) {
     if (get_drives(s, &dv, &nd) != 0) return -1;
     const char *want = s->o->drive ? s->o->drive : "internal";
     for (size_t i = 0; i < nd && !r->drive[0]; i++)
-        if (!strcmp(dv[i].id, want)) snprintf(r->drive, sizeof r->drive, "%s", dv[i].id);
-    if (!r->drive[0] && !s->o->drive && nd) snprintf(r->drive, sizeof r->drive, "%s", dv[0].id);
+        if (!strcmp(dv[i].id, want)) {
+            snprintf(r->drive, sizeof r->drive, "%s", dv[i].id);
+            s->drive_total = dv[i].total;
+        }
+    if (!r->drive[0] && !s->o->drive && nd) {
+        snprintf(r->drive, sizeof r->drive, "%s", dv[0].id);
+        s->drive_total = dv[0].total;
+    }
     int rc = 0;
     if (!r->drive[0]) {
         snprintf(r->drive, sizeof r->drive, "%s", want);
@@ -644,9 +681,10 @@ int mp_send(const char *path, const mp_send_opts *o, const mp_send_hooks *h, mp_
     char id[128] = "";
     uint64_t have = 0;
     if (prepare(&s, path, &f) != 0 || start(&s, id, sizeof id, &have) != 0) goto done;
+    s.token = id;
     r->resumed_from = have;
     s.watching = 1;
-    s.moved_ns = mp_now_ns();
+    s.moved_ns = mp_now_with_sleep_ns();
     if (h && h->started) h->started(h->ctx, r->name, r->drive, have, r->size);
     size_t chunk = o->chunk < MP_SEND_MIN_CHUNK ? MP_SEND_MIN_CHUNK : o->chunk > MP_SEND_MAX_CHUNK ? MP_SEND_MAX_CHUNK
                                                                                                     : o->chunk;
@@ -686,11 +724,12 @@ done:
     return rc;
 }
 
-int mp_send_discard(const char *path, const mp_send_opts *o, mp_send_result *r, mp_err *e) {
+int mp_send_discard(const char *path, const mp_send_opts *o, const mp_send_hooks *h, mp_send_result *r, mp_err *e) {
     memset(r, 0, sizeof *r);
     sender s;
     memset(&s, 0, sizeof s);
     s.o = o;
+    s.h = h;
     s.r = r;
     s.e = e;
     if (prepare(&s, path, NULL) != 0) return -1;
@@ -706,11 +745,28 @@ int mp_send_discard(const char *path, const mp_send_opts *o, mp_send_result *r, 
     }
     int st = 0, rc = -1, deleted = 0;
     mp_json *j = NULL;
-    int sent = call_retry(&s, NULL, "POST", "/api/receive/discard", NULL, b.p, b.n, 0, &st, &j);
-    mp_jbuf_free(&b);
-    if (sent != 0) return -1;
     char err[32];
-    clean(err, sizeof err, str_of(j, "error"));
+    // a receive of it that took a request a moment ago (a PC that could not say it left): the console says when it
+    // lets go of it (retry_after), and it is asked again, for MP_SEND_DISCARD_WAIT_S in all
+    for (unsigned waited = 0;;) {
+        int sent = call_retry(&s, NULL, "POST", "/api/receive/discard", NULL, b.p, b.n, 0, &st, &j);
+        if (sent != 0) {
+            mp_jbuf_free(&b);
+            return -1;
+        }
+        clean(err, sizeof err, str_of(j, "error"));
+        uint64_t after = 0;
+        if (st != 409 || strcmp(err, "busy") != 0 || u64_of(j, "retry_after", &after) != 0 || waited >= MP_SEND_DISCARD_WAIT_S)
+            break;
+        unsigned wait = after < 1 ? 1 : after > MP_SEND_DISCARD_WAIT_S ? MP_SEND_DISCARD_WAIT_S : (unsigned)after;
+        if (wait > MP_SEND_DISCARD_WAIT_S - waited) wait = MP_SEND_DISCARD_WAIT_S - waited;
+        if (h && h->waiting) h->waiting(h->ctx, wait);
+        mp_json_free(j);
+        j = NULL;
+        mp_sleep_ms(wait * 1000u);
+        waited += wait;
+    }
+    mp_jbuf_free(&b);
     if (st == 200 && mp_json_bool(mp_json_get(j, "deleted"), &deleted) == 0) {
         r->deleted = deleted != 0;
         if (!r->deleted || u64_of(j, "bytes", &r->have) != 0) r->have = 0;
@@ -718,10 +774,12 @@ int mp_send_discard(const char *path, const mp_send_opts *o, mp_send_result *r, 
     } else if (st == 200) {
         fail(&s, "console_error", "the console's answer to deleting it cannot be read%s", NULL);
     } else if (st == 409 && !strcmp(err, "busy")) {
-        fail(&s, "busy", "the console is receiving or verifying %s right now (a send stopped here is paused by the "
-                         "console once no data came for 10 minutes): delete it once it stops", r->name);
+        clean(r->detail, sizeof r->detail, str_of(j, "detail"));
+        fail(&s, "busy", "the console is still receiving or verifying %s (it lets go of a receive a minute after its "
+                         "last data): delete it once that ends", r->name);
     } else if (st == 404 && strcmp(err, "no_drive") != 0) {
-        fail(&s, "console_error", "this MaxPack for the console cannot delete what a send left there (update it)%s", NULL);
+        fail(&s, "discard_unsupported", "this MaxPack for the console cannot delete what a send left there: update it "
+                                        "(or delete <name>.maxpack-recv in its homebrew folder by FTP)%s", NULL);
     } else {
         refused(&s, st, j);
     }

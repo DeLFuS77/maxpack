@@ -58,7 +58,8 @@ static void usage(FILE *out) {
             "                     the console, which verifies it when it arrives (verify --quick)\n"
             "  maxpack send --drives <ps5-ip> --code <6 digits> [--json]   the console's drives, free space\n"
             "  maxpack send --discard <game.p5z> <ps5-ip> --code <6 digits> [--drive <id>]   delete what the\n"
-            "                     console received of it (only its name is used; a .p5z whole there stays)\n"
+            "                     console received of it (only its name is used; a .p5z whole there stays;\n"
+            "                     it waits up to 75 s while the console lets go of a receive of it at work)\n"
             "  maxpack --version\n"
             "  maxpack --capabilities   what this version can do, as JSON (for a front end)\n"
             "\n"
@@ -131,7 +132,8 @@ static void usage(FILE *out) {
             "  --retry-wait MS    the wait after the first one, 1 to 30000 (default 1000; it doubles, up to 30 s)\n"
             "  --stall S          nothing moving on the console for S seconds stops it (default 300)\n"
             "  --control stdin    \"cancel\" stops it, and the console keeps what arrived (so does the end of\n"
-            "                     the input); \"pause\" is not taken (the console would stop the receive)\n"
+            "                     the input); a stop here tells the console the PC left, so that it lets go of\n"
+            "                     the receive at once; \"pause\" is not taken (the console would stop the receive)\n"
             "  --delete-on-cancel with --control stdin: \"cancel\" makes the console delete what it received\n"
             "  Exit codes: 0 sent and verified, 1 error, 2 usage, 3 no answer from the console, 4 receiving\n"
             "  is off there, 5 wrong code, 6 too many wrong codes, 7 already there, 8 the console is busy,\n"
@@ -2049,16 +2051,32 @@ static int run_send_drives(const mp_send_opts *o, int json) {
     return 0;
 }
 
+// The console is letting go of the receive (v3.1): said, and with --json a line {"event":"waiting","seconds":N}.
+static void discard_waiting(void *ctx, unsigned seconds) {
+    int json = *(const int *)ctx;
+    fprintf(stderr, "The console is letting go of it: asking again in %u s\n", seconds);
+    if (json) {
+        printf("{\"event\":\"waiting\",\"seconds\":%u}\n", seconds);
+        fflush(stdout);
+    }
+}
+
 static int run_send_discard(const char *p5z, const mp_send_opts *o, int json) {
     mp_send_result r;
     mp_err e = {{0}};
-    int rc = mp_send_discard(p5z, o, &r, &e);
+    mp_send_hooks h;
+    memset(&h, 0, sizeof h);
+    h.waiting = discard_waiting;
+    h.ctx = &json;
+    int rc = mp_send_discard(p5z, o, &h, &r, &e);
     g_result_done = 1;
     if (rc != 0) {
         fprintf(stderr, "error: %s\n", e.msg);
         if (json) {
             printf("{\"ok\":false,\"error\":\"%s\",\"message\":", r.code ? r.code : "io");
             print_json_string(e.msg);
+            printf(",\"detail\":");
+            print_json_string(r.detail);
             printf("}\n");
         }
         return send_exit(r.code ? r.code : "io");

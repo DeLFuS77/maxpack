@@ -404,6 +404,9 @@ uint64_t mp_now_ns(void) {
     return (v / f) * 1000000000ULL + (v % f) * 1000000000ULL / f;
 }
 
+// the tick count counts the time in sleep and hibernation too
+uint64_t mp_now_with_sleep_ns(void) { return (uint64_t)GetTickCount64() * 1000000ULL; }
+
 unsigned mp_cpu_count(void) {
     DWORD n = GetActiveProcessorCount(ALL_PROCESSOR_GROUPS);
     return n ? (unsigned)n : 1;
@@ -1050,6 +1053,22 @@ void mp_cond_free(mp_cond *c) {
 
 uint64_t mp_now_ns(void) {
     struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000000000ULL + (uint64_t)ts.tv_nsec;
+}
+
+#if defined(__linux__) && !defined(CLOCK_BOOTTIME)
+#define CLOCK_BOOTTIME 7   // Linux's own number for it, when the headers hide its name
+#endif
+
+// Linux's CLOCK_MONOTONIC stops while the PC is suspended, CLOCK_BOOTTIME does not; macOS's CLOCK_MONOTONIC
+// goes on in sleep
+uint64_t mp_now_with_sleep_ns(void) {
+    struct timespec ts;
+#ifdef CLOCK_BOOTTIME
+    if (clock_gettime(CLOCK_BOOTTIME, &ts) == 0)
+        return (uint64_t)ts.tv_sec * 1000000000ULL + (uint64_t)ts.tv_nsec;
+#endif
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (uint64_t)ts.tv_sec * 1000000000ULL + (uint64_t)ts.tv_nsec;
 }

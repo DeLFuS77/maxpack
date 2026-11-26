@@ -96,6 +96,9 @@ void mp_cond_broadcast(mp_cond *c);   // wakes all of them
 void mp_cond_free(mp_cond *c);
 
 uint64_t mp_now_ns(void);
+// A clock that also runs while the PC sleeps (Windows: the tick count; Linux: CLOCK_BOOTTIME; macOS:
+// CLOCK_MONOTONIC, which goes on in sleep there), in ns, coarser than mp_now_ns: for what must tell a sleep.
+uint64_t mp_now_with_sleep_ns(void);
 unsigned mp_cpu_count(void);
 void mp_sleep_ms(unsigned ms);
 

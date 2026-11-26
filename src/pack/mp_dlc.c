@@ -103,32 +103,39 @@ static void title_of(const char *cid, char out[16]) {
     }
 }
 
-// The game's title ID: its param.json's titleId, else the title part of its content ID.
-static void game_title(mp_source *game, char out[16]) {
+// The game's title ID (its param.json's titleId, else the title part of its content ID) and its content
+// ID (its param.json's contentId, else its package's; "" when it has none).
+static void game_ids(mp_source *game, char title[16], char cid[48]) {
     size_t len = 0;
-    char *pj = read_param(game, &len), id[16] = "", ver[16], name[128], cid[48] = "";
+    char *pj = read_param(game, &len), id[16] = "", ver[16], name[128];
+    cid[0] = 0;
     if (pj) {
         mp_param_read(pj, len, id, ver, name);
         mp_param_content_id(pj, len, cid);
         free(pj);
     }
-    if (!cid[0]) snprintf(cid, sizeof cid, "%s", mp_source_package_id(game));
+    if (!cid[0]) snprintf(cid, 48, "%s", mp_source_package_id(game));
     if (id[0])
-        snprintf(out, 16, "%s", id);
+        snprintf(title, 16, "%s", id);
     else
-        title_of(cid, out);
+        title_of(cid, title);
 }
+
+// What dump tools leave behind and the OS's files (mp_complete.h) are no files of a DLC: they are left
+// out of what goes inside the game, and make no license a DLC with data.
+static int not_of_dlc(const char *path) { return mp_complete_is_junk(path) || mp_complete_is_leftover(path); }
 
 int mp_dlc_has_data(mp_source *s) {
     for (size_t i = 0; i < mp_source_count(s); i++) {
         const char *p = mp_source_entry(s, i)->path;
-        if (!in_folder(p, "sce_sys") && !mp_complete_is_junk(p)) return 1;
+        if (!in_folder(p, "sce_sys") && !not_of_dlc(p)) return 1;
     }
     return 0;
 }
 
 // Checks one DLC and gives its content ID (cid) and whether it has data: 0, or -1 with e set.
-static int check_dlc(mp_source *s, const char *path, const char *title, char cid[37], int *data, mp_err *e) {
+static int check_dlc(mp_source *s, const char *path, const char *title, const char *game_cid, char cid[37], int *data,
+                     mp_err *e) {
     if (!mp_source_is_dlc_package(s)) {
         if (find_ci(s, PARAM_PATH) < 0) {
             mp_err_set(e, "%s: not a DLC: it has no sce_sys/param.json", path);
@@ -163,6 +170,11 @@ static int check_dlc(mp_source *s, const char *path, const char *title, char cid
         mp_err_set(e, "%s: its content ID \"%s\" is not one dlc_emu takes: 36 characters, as "
                       "UP0000-PPSA00000_00-ABCDEFGHIJKLMNOP",
                    path, found);
+        return -1;
+    }
+    if (!strcmp(found, game_cid)) {
+        mp_err_set(e, "%s: its content ID %s is the game's own content ID: it is the game, not a DLC of it", path,
+                   found);
         return -1;
     }
     char dt[16];
@@ -315,8 +327,8 @@ int mp_dlc_attach(mp_source **game, const char *const *paths, size_t n, mp_dlc_l
                           "dump, or pack it without --dlc");
             goto done;
         }
-    char title[16];
-    game_title(g, title);
+    char title[16], game_cid[48];
+    game_ids(g, title, game_cid);
     if (!title[0]) {
         mp_err_set(e, "the game gives no title ID (its sce_sys/param.json has neither titleId nor contentId), so "
                       "its DLC cannot be told");
@@ -325,7 +337,7 @@ int mp_dlc_attach(mp_source **game, const char *const *paths, size_t n, mp_dlc_l
     size_t ndata = 0;
     for (size_t k = 0; k < n; k++) {
         if (mp_source_open_as(paths[k], MP_OPEN_DLC, &src[k], e) != 0) goto done;
-        if (check_dlc(src[k], paths[k], title, v[k].content_id, &v[k].data, e) != 0) goto done;
+        if (check_dlc(src[k], paths[k], title, game_cid, v[k].content_id, &v[k].data, e) != 0) goto done;
         for (size_t j = 0; j < k; j++) {
             if (!strcmp(v[j].content_id, v[k].content_id)) {
                 mp_err_set(e, "%s and %s: the same content ID (%s): give each DLC once", paths[j], paths[k], v[k].content_id);
@@ -346,6 +358,7 @@ int mp_dlc_attach(mp_source **game, const char *const *paths, size_t n, mp_dlc_l
             }
             snprintf(v[k].folder, sizeof v[k].folder, "addcont%u", (unsigned)ndata);
             for (size_t i = 0; i < mp_source_count(src[k]); i++) {
+                if (not_of_dlc(mp_source_entry(src[k], i)->path)) continue;
                 v[k].files++;
                 v[k].bytes += mp_source_entry(src[k], i)->size;
             }
@@ -379,7 +392,8 @@ int mp_dlc_attach(mp_source **game, const char *const *paths, size_t n, mp_dlc_l
         if (mp_source_entry(g, i)->mtime > mtime) mtime = mp_source_entry(g, i)->mtime;
     for (size_t k = 0; k < n; k++)
         for (size_t i = 0; i < mp_source_count(src[k]); i++)
-            if (mp_source_entry(src[k], i)->mtime > mtime) mtime = mp_source_entry(src[k], i)->mtime;
+            if (!not_of_dlc(mp_source_entry(src[k], i)->path) && mp_source_entry(src[k], i)->mtime > mtime)
+                mtime = mp_source_entry(src[k], i)->mtime;
     for (size_t k = 0; k < n; k++) {
         if (v[k].data) {
             memcpy(folders[nparts], v[k].folder, sizeof folders[nparts]);
@@ -391,7 +405,8 @@ int mp_dlc_attach(mp_source **game, const char *const *paths, size_t n, mp_dlc_l
         src[k] = NULL;
     }
     mp_source *m = NULL;
-    rc = mp_source_merge(g, parts, prefixes, nparts, MP_DLC_INI, (const uint8_t *)ini, ini_len, mtime, &m, e);
+    rc = mp_source_merge(g, parts, prefixes, nparts, not_of_dlc, MP_DLC_INI, (const uint8_t *)ini, ini_len, mtime, &m,
+                         e);
     g = NULL;   // taken, with the parts
     nparts = 0;
     if (rc == 0) {

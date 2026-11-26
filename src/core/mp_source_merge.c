@@ -48,7 +48,7 @@ static void merged_close(mp_source *s) { merged_free(s->impl); }
 static const char *merged_id(const mp_source *s) { return mp_source_package_id(((const merged *)s->impl)->src[0]); }
 
 int mp_source_merge(mp_source *base, mp_source *const *parts, const char *const *prefixes, size_t nparts,
-                    const char *extra_path, const uint8_t *extra, size_t extra_len, int64_t extra_mtime,
+                    int (*skip)(const char *path), const char *extra_path, const uint8_t *extra, size_t extra_len, int64_t extra_mtime,
                     mp_source **out, mp_err *e) {
     *out = NULL;
     merged *m = calloc(1, sizeof *m);
@@ -77,6 +77,7 @@ int mp_source_merge(mp_source *base, mp_source *const *parts, const char *const 
         size_t pl = strlen(prefix);
         for (size_t i = 0; rc == 0 && i < m->src[k]->n; i++) {
             const mp_entry *en = &m->src[k]->entries[i];
+            if (k && skip && skip(en->path)) continue;
             size_t len = strlen(en->path);
             char *path = malloc(pl + 1 + len + 1);
             if (!path) {

@@ -22,8 +22,9 @@ All notable changes to MaxPack are listed here. The format follows
   and an error code for `--progress json`, for a dump that has its own `dlc_emu.ini` (`dlc_has_ini`: two
   lists are not mixed), more than 100 DLC with files or an ini over the 32 KiB dlc_emu reads
   (`dlc_too_many`), and (`dlc_refused`) a DLC of another game, the same one twice, a content ID that is
-  not 36 characters, a game given as a DLC, a DLC folder without `param.json` or already packed, or a
-  game with no title ID. The result line has `dlc_data`, `dlc_license` and `dlc_bytes`. A game whose
+  not 36 characters, a "DLC" with the game's own content ID, a game given as a DLC, a DLC folder
+  without `param.json` or already packed, or a game with no title ID. What dump tools leave behind and
+  the OS's files are left out of a DLC, and make no license a DLC with files. The result line has `dlc_data`, `dlc_license` and `dlc_bytes`. A game whose
   **Fakelib** setting on the console is **Off** gets no dlc_emu and sees none of its DLC. That a game
   reads a DLC with files of its own from inside a `.p5z` has not been tried on a real PS5 yet.
 - `info --json` says `content` (`game` or `dlc`), `dlc_data` (a DLC with files of its own, not a license

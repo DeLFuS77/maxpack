@@ -620,7 +620,9 @@ maxpack pack "D:\dumps\MyGame" --dlc "D:\dlc\Bonus.pkg" --dlc "D:\dlc\SeasonPass
   `param.json`'s `titleId`, else the one in its content ID).
 - A DLC with files of its own goes, all its files, to `addcont0/`, `addcont1/`... inside the game, in
   the order given (at most 100: `addcont0` to `addcont99`). A DLC whose files are all in `sce_sys/` is a
-  license only and adds no folder.
+  license only and adds no folder. What dump tools leave behind (`decrypted/`, `*.auth_info`,
+  `entitlements.txt`, `entitlement_key.dat`) and the OS's files (`Thumbs.db`, `.DS_Store`...) are no
+  files of a DLC: they are left out, and make no license a DLC with files.
 - MaxPack writes `dlc_emu.ini` at the game's root: a `[PSAC]` section with the `content_id` and
   `mount_point=/app0/addcontN` of each DLC with files, and a `[PSAL]` one with the `content_id` and
   `download_status=NO_EXTRA_DATA` of each license. On the console, dlc_emu (drakmor's) reads it and
@@ -639,7 +641,8 @@ maxpack pack "D:\dumps\MyGame" --dlc "D:\dlc\Bonus.pkg" --dlc "D:\dlc\SeasonPass
   dlc_emu only shows the DLC of its file; more than 100 DLC with files, or so many that the
   `dlc_emu.ini` would pass the 32 KiB dlc_emu reads (`dlc_too_many`); and (`dlc_refused`) a DLC of
   another game, the same DLC twice (by content ID, or by its last 16 characters, the label dlc_emu
-  shows it by), a content ID that is not the 36 characters dlc_emu takes, a game given as a DLC, a DLC
+  shows it by), a content ID that is not the 36 characters dlc_emu takes, a "DLC" with the game's own
+  content ID (it is the game), a game given as a DLC, a DLC
   folder without `param.json` or already packed, a game with no title ID, or a game that already has a
   folder where a DLC would go. A DLC package made with another passcode says so (`passcode`).
 - Not yet: adding a DLC to a `.p5z` made before, PS5 patches, and PS4 DLC.

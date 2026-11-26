@@ -54,7 +54,7 @@ MP_TEST(merge_basic) {
     mp_source *m = NULL;
     mp_err e = {{0}};
     static const uint8_t ini[] = "x\n";
-    MP_CHECK(mp_source_merge(game, parts, prefixes, 1, "dlc_emu.ini", ini, 2, 1700000000, &m, &e) == 0);
+    MP_CHECK(mp_source_merge(game, parts, prefixes, 1, NULL, "dlc_emu.ini", ini, 2, 1700000000, &m, &e) == 0);
     if (!m) {
         MP_FAIL_("%s", e.msg);
         mp_source_close(ref);
@@ -108,7 +108,7 @@ MP_TEST(merge_twice) {
     if (!game) return;
     mp_source *m = NULL;
     mp_err e = {{0}};
-    MP_CHECK(mp_source_merge(game, NULL, NULL, 0, "eboot.bin", (const uint8_t *)"x", 1, 0, &m, &e) == -1);
+    MP_CHECK(mp_source_merge(game, NULL, NULL, 0, NULL, "eboot.bin", (const uint8_t *)"x", 1, 0, &m, &e) == -1);
     MP_CHECK(m == NULL);
     MP_CHECK_CONTAINS(e.msg, "eboot.bin is twice");
     // two parts under the same prefix
@@ -122,13 +122,13 @@ MP_TEST(merge_twice) {
     }
     mp_source *parts[] = {a, b};
     const char *prefixes[] = {"addcont0", "addcont0"};
-    MP_CHECK(mp_source_merge(game, parts, prefixes, 2, NULL, NULL, 0, 0, &m, &e) == -1);
+    MP_CHECK(mp_source_merge(game, parts, prefixes, 2, NULL, NULL, NULL, 0, 0, &m, &e) == -1);
     MP_CHECK_CONTAINS(e.msg, "is twice");
     // without anything to add, the game's files as they are
     game = open_or_fail(FX "/mini", MP_OPEN_GAME);
     if (!game) return;
     size_t n = mp_source_count(game);
-    MP_CHECK(mp_source_merge(game, NULL, NULL, 0, NULL, NULL, 0, 0, &m, &e) == 0);
+    MP_CHECK(mp_source_merge(game, NULL, NULL, 0, NULL, NULL, NULL, 0, 0, &m, &e) == 0);
     MP_CHECK(m && mp_source_count(m) == n && !strcmp(mp_source_kind_name(m), "folder") && !strcmp(mp_source_package_id(m), ""));
     mp_source_close(m);
 }
@@ -379,6 +379,59 @@ MP_TEST(dlc_refusals) {
     for (size_t i = 0; i < 400; i++) free(many[i]);
 }
 
+static int describe_ok(const char *path, mp_describe *d, mp_dlc_list *l);
+
+// A "DLC" with the game's own content ID is the game (dlc.pkg is the mini game as a package of
+// additional content), not a DLC of it.
+MP_TEST(dlc_is_the_game) {
+    const char *self[] = {FX "/dlc.pkg"};
+    refused("the game's own content ID", FX "/mini", self, 1, "dlc_refused", "is the game's own content ID");
+    refused("the game's own content ID, of a package", FX "/mini.pkg", self, 1, "dlc_refused",
+            "is the game's own content ID");
+}
+
+// What dump tools leave behind and the OS's files are no files of a DLC: a license dumped with them is
+// still a license, and a DLC with files of its own goes in without them.
+MP_TEST(dlc_leftovers_left_out) {
+    mpt_clear(TMP "/lic_left");
+    mpt_put_text(TMP "/lic_left/sce_sys/param.json", "{\"contentId\": \"" LICENSE_CID "\"}");
+    mpt_put_text(TMP "/lic_left/entitlements.txt", "x");
+    mpt_put_text(TMP "/lic_left/entitlement_key.dat", "x");
+    mpt_put_text(TMP "/lic_left/decrypted/x.bin", "x");
+    mpt_put_text(TMP "/lic_left/some.prx.auth_info", "x");
+    mpt_put_text(TMP "/lic_left/Thumbs.db", "x");
+    mpt_clear(TMP "/data_left");
+    mpt_put_text(TMP "/data_left/sce_sys/param.json", "{\"contentId\": \"" DATA_CID "\"}");
+    mpt_put_text(TMP "/data_left/data/x.bin", "data of its own");
+    mpt_put_text(TMP "/data_left/entitlement_key.dat", "x");
+    mpt_put_text(TMP "/data_left/decrypted/data/x.bin", "x");
+    mpt_put_text(TMP "/data_left/data/.DS_Store", "x");
+    const char *dlc[] = {TMP "/lic_left", TMP "/data_left"};
+    packed k = pack_dlc(FX "/mini", dlc, 2, TMP "/left.p5z", 1);
+    MP_CHECK(k.rc == 0);
+    MP_CHECK_EQ_U64(k.r.dlc_license, 1);
+    MP_CHECK_EQ_U64(k.r.dlc_data, 1);
+    MP_CHECK_EQ_U64(k.r.dlc_bytes, strlen("{\"contentId\": \"" DATA_CID "\"}") + strlen("data of its own"));
+    mp_p5z *p = NULL;
+    mp_err e = {{0}};
+    if (k.rc == 0 && mp_p5z_open(TMP "/left.p5z", &p, &e) == 0) {
+        MP_CHECK(manifest_find(p, "addcont0/data/x.bin") != NULL);
+        MP_CHECK(manifest_find(p, "addcont0/sce_sys/param.json") != NULL);
+        MP_CHECK(manifest_find(p, "addcont0/entitlement_key.dat") == NULL);
+        MP_CHECK(manifest_find(p, "addcont0/decrypted/data/x.bin") == NULL);
+        MP_CHECK(manifest_find(p, "addcont0/data/.DS_Store") == NULL);
+        MP_CHECK(manifest_find(p, "addcont1/entitlements.txt") == NULL);
+        mp_p5z_close(p);
+    }
+    // describe says the same of each
+    mp_describe d;
+    mp_dlc_list l;
+    if (describe_ok(TMP "/lic_left", &d, &l)) {
+        MP_CHECK(d.dlc && !d.dlc_data);
+        mp_dlc_list_free(&l);
+    }
+}
+
 // 100 with data is the most, and goes: addcont0 to addcont99.
 MP_TEST(dlc_hundred) {
     char *many[100];
@@ -540,6 +593,8 @@ int main(void) {
     MP_RUN(pack_with_dlc);
     MP_RUN(pack_dlc_complete_and_folder);
     MP_RUN(dlc_refusals);
+    MP_RUN(dlc_is_the_game);
+    MP_RUN(dlc_leftovers_left_out);
     MP_RUN(dlc_hundred);
     MP_RUN(describe_dlc);
     MP_RUN(describe_carried);

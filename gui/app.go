@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/DeLFuS77/maxpack/gui/bundled"
 	"github.com/DeLFuS77/maxpack/gui/core"
@@ -68,6 +69,13 @@ type App struct {
 	// builtInRuntime): its path, "" when it could not be written
 	runtimeOnce sync.Once
 	runtimePath string
+
+	// the watched folder (see watch.go): the watcher at work, whether the page listens, and how often and how
+	// long when not the ones of watch.go (the tests)
+	watchMutex             sync.Mutex
+	watch                  *watching
+	watchListening         bool
+	watchEvery, watchQuiet time.Duration
 }
 
 // Setup is what the page shows before anything is chosen.
@@ -180,10 +188,15 @@ func (a *App) GetSettings() settings.Settings {
 }
 
 // SetSettings keeps what the user chose; what is not valid goes back to its default. The passcode
-// of PS5 packages goes to the engine's runs from now on.
+// of PS5 packages goes to the engine's runs from now on, and the watched folder is the one it says.
 func (a *App) SetSettings(s settings.Settings) error {
 	core.SetPasscode(s.Normalize().Passcode)
-	return settings.Save(s)
+	if err := settings.Save(s); err != nil {
+		return err
+	}
+	// the watched folder of Settings from now on
+	a.rewatch()
+	return nil
 }
 
 // bringToFront puts this window in front of the others (a variable, for the tests).

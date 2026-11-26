@@ -107,6 +107,7 @@ func (a *App) closed(context.Context) {
 	a.mutex.Unlock()
 	a.stop(core.ErrClosing)
 	a.stopTool(core.ErrClosing)
+	a.stopWatch()
 	if q == nil {
 		return
 	}

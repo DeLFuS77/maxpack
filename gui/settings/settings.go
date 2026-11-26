@@ -3,7 +3,7 @@
 // Package settings keeps what the user chose between runs: language, theme, mode, level, the
 // runtime of ampr-emu-ng, the last destination, what becomes of the originals, the priority of the
 // engine, the names of the files, the threads it compresses with, the repair data of a .p5z and the
-// passcode of PS5 packages, and the console a .p5z is sent to.
+// passcode of PS5 packages, the console a .p5z is sent to and the folder watched.
 package settings
 
 import (
@@ -86,6 +86,11 @@ type Settings struct {
 	// The code goes only to the engine, in its environment: never into a log or a report
 	ConsoleIP   string
 	ConsoleCode string
+	// WatchOn watches WatchFolder while the window is open: what arrives in it is compressed with the
+	// settings of Compress, and with WatchSend each .p5z made goes to the console too. Off by default
+	WatchOn     bool
+	WatchFolder string
+	WatchSend   bool
 }
 
 const fileName = "settings.json"
@@ -151,6 +156,9 @@ func (s Settings) Normalize() Settings {
 	}
 	if !ValidConsoleCode(s.ConsoleCode) {
 		s.ConsoleCode = ""
+	}
+	if s.WatchFolder = strings.TrimSpace(s.WatchFolder); s.WatchFolder == "" {
+		s.WatchOn = false
 	}
 	return s
 }
@@ -242,6 +250,9 @@ func Load() (Settings, error) {
 	read("KeepLeftovers", &s.KeepLeftovers)
 	read("ConsoleIP", &s.ConsoleIP)
 	read("ConsoleCode", &s.ConsoleCode)
+	read("WatchOn", &s.WatchOn)
+	read("WatchFolder", &s.WatchFolder)
+	read("WatchSend", &s.WatchSend)
 	return s.Normalize(), nil
 }
 

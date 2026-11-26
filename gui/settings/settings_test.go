@@ -252,3 +252,25 @@ func TestSettingsConsole(t *testing.T) {
 		}
 	}
 }
+
+// The watched folder is off by default, with no folder; on, it keeps its folder and whether what it
+// makes goes to the console too.
+func TestSettingsWatch(t *testing.T) {
+	useFolder(t)
+	if got, _ := Load(); got.WatchOn || got.WatchFolder != "" || got.WatchSend {
+		t.Fatalf("defaults: %+v", got)
+	}
+	want := Defaults()
+	want.WatchOn, want.WatchFolder, want.WatchSend = true, `D:\Dumps`, true
+	if err := Save(want); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := Load(); err != nil || got != want {
+		t.Fatalf("%+v, %v; expected %+v", got, err, want)
+	}
+	// on with no folder is off
+	want.WatchFolder = "  "
+	if got := want.Normalize(); got.WatchOn || got.WatchFolder != "" {
+		t.Errorf("no folder: %+v", got)
+	}
+}

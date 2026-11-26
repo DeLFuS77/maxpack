@@ -4,10 +4,12 @@ package main
 
 // The watched folder (Settings › Watched folder): while the window is open (minimized too), one folder is
 // looked at every few seconds, and what arrives in it, once it has stopped changing for a minute, goes to
-// the page ("watch:found"), which compresses it as if it had been dropped on Compress (see app.js). Nothing
-// runs with the window closed: what arrived meanwhile is found when it opens. What was handed over is kept
-// in watched.json next to the settings, so a game is never handed over twice as it is (one that failed is
-// tried again only once it changes).
+// the page ("watch:found"), which compresses it as if it had been dropped on Compress (see app.js). Turning it
+// on (or choosing another folder) takes a snapshot: what is there then is not new, and the page offers to
+// compress it ("Compress the N already there", WatchTakeExisting). What the page says ended (WatchEnded: done
+// or failed) is kept in watched.json next to the settings, so a game is not handed over again as it is; what
+// never ran is handed again in the next run. Nothing runs with the window closed: what arrived meanwhile is
+// found when it opens.
 
 import (
 	"encoding/json"
@@ -28,15 +30,16 @@ const (
 	watchQuiet = time.Minute
 )
 
-// watchedFile keeps what was handed over, of which folder.
+// watchedFile keeps, of the folder watched, what ended and what was there when it was turned on.
 const watchedFile = "watched.json"
 
 // WatchStatus is what the page is told of the watched folder ("watch:status", and StartWatch): the folder
-// watched ("" when none is) and why it cannot be looked at: "gone" (not there, or not a folder) or
-// "unreadable"; "" when it can.
+// watched ("" when none is), why it cannot be looked at ("gone": not there, or not a folder; "unreadable"; ""
+// when it can), and how many games were there when it was turned on and have not been compressed.
 type WatchStatus struct {
-	Folder string `json:"folder"`
-	Error  string `json:"error"`
+	Folder   string `json:"folder"`
+	Error    string `json:"error"`
+	Existing int    `json:"existing"`
 }
 
 // watchFound is "watch:found": what arrived, whole.
@@ -44,16 +47,18 @@ type watchFound struct {
 	Paths []string `json:"paths"`
 }
 
-// watching is the watcher at work: how to stop it, when it stopped, and what it watches.
+// watching is the watcher at work: how to stop it, when it stopped, what it watches and its state.
 type watching struct {
-	stop   chan struct{}
-	done   chan struct{}
-	folder string
+	stop    chan struct{}
+	done    chan struct{}
+	folder  string
+	watcher *watch.Watcher
 }
 
 type watchedJSON struct {
-	Folder string            `json:"folder"`
-	Handed map[string]string `json:"handed"`
+	Folder   string            `json:"folder"`
+	Done     map[string]string `json:"done"`
+	Existing map[string]string `json:"existing"`
 }
 
 func watchedPath() (string, error) {
@@ -64,29 +69,26 @@ func watchedPath() (string, error) {
 	return filepath.Join(folder, watchedFile), nil
 }
 
-// handedOf is what was handed over of folder in earlier runs.
-func handedOf(folder string) map[string]string {
+// keptOf is what was kept of folder in earlier runs; ok is false when nothing was (a folder never watched).
+func keptOf(folder string) (kept watchedJSON, ok bool) {
 	path, err := watchedPath()
 	if err != nil {
-		return nil
+		return kept, false
 	}
 	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil
+	if err != nil || json.Unmarshal(data, &kept) != nil || kept.Folder != folder {
+		return watchedJSON{}, false
 	}
-	var kept watchedJSON
-	if json.Unmarshal(data, &kept) != nil || kept.Folder != folder {
-		return nil
-	}
-	return kept.Handed
+	return kept, true
 }
 
-func keepHanded(folder string, handed map[string]string) {
+func keepWatched(folder string, w *watch.Watcher) {
 	path, err := watchedPath()
 	if err != nil {
 		return
 	}
-	data, err := json.Marshal(watchedJSON{Folder: folder, Handed: handed})
+	done, existing := w.Kept()
+	data, err := json.Marshal(watchedJSON{Folder: folder, Done: done, Existing: existing})
 	if err != nil {
 		return
 	}
@@ -98,16 +100,18 @@ func keepHanded(folder string, handed map[string]string) {
 }
 
 // StartWatch is called by the page once it listens: from now on the watched folder of Settings is looked
-// at (and again with what SetSettings keeps). It says what is watched.
+// at (and again with what SetSettings keeps). A folder never watched before is looked at as if it was just
+// turned on: what is there is not new. It says what is watched.
 func (a *App) StartWatch() WatchStatus {
 	a.watchMutex.Lock()
 	a.watchListening = true
 	a.watchMutex.Unlock()
-	return a.rewatch()
+	return a.rewatch(false)
 }
 
-// rewatch watches what Settings says, if it is not what is watched already.
-func (a *App) rewatch() WatchStatus {
+// rewatch watches what Settings says, if it is not what is watched already; snapshot (it was just turned on, or
+// its folder changed) takes what is there as not new.
+func (a *App) rewatch(snapshot bool) WatchStatus {
 	saved, _ := settings.Load()
 	folder := ""
 	if saved.WatchOn {
@@ -118,8 +122,8 @@ func (a *App) rewatch() WatchStatus {
 	if !a.watchListening {
 		return WatchStatus{}
 	}
-	if a.watch != nil && a.watch.folder == folder {
-		return WatchStatus{Folder: folder}
+	if a.watch != nil && a.watch.folder == folder && !snapshot {
+		return WatchStatus{Folder: folder, Existing: a.watch.watcher.ExistingCount()}
 	}
 	a.stopWatchLocked()
 	if folder == "" {
@@ -132,34 +136,41 @@ func (a *App) rewatch() WatchStatus {
 	if quiet == 0 {
 		quiet = watchQuiet
 	}
-	w := &watching{stop: make(chan struct{}), done: make(chan struct{}), folder: folder}
+	watcher := &watch.Watcher{Folder: folder, Quiet: quiet}
+	if kept, ok := keptOf(folder); ok && !snapshot {
+		watcher.Done, watcher.Existing = kept.Done, kept.Existing
+	} else {
+		watcher.Snapshot = true
+	}
+	w := &watching{stop: make(chan struct{}), done: make(chan struct{}), folder: folder, watcher: watcher}
 	a.watch = w
-	go a.watchLoop(w, every, quiet)
+	go a.watchLoop(w, every)
 	return WatchStatus{Folder: folder}
 }
 
-func (a *App) watchLoop(w *watching, every, quiet time.Duration) {
+func (a *App) watchLoop(w *watching, every time.Duration) {
 	defer close(w.done)
-	watcher := &watch.Watcher{Folder: w.folder, Quiet: quiet, Handed: handedOf(w.folder)}
 	tick := time.NewTicker(every)
 	defer tick.Stop()
-	told, kept := "-", len(watcher.Handed)
+	told, existing := WatchStatus{Error: "-"}, -1
+	done, _ := w.watcher.Kept()
+	kept := len(done)
 	for {
-		found, err := watcher.Poll()
-		why := ""
+		found, err := w.watcher.Poll()
+		status := WatchStatus{Folder: w.folder, Existing: w.watcher.ExistingCount()}
 		switch {
 		case errors.Is(err, watch.ErrGone):
-			why = "gone"
+			status.Error = "gone"
 		case err != nil:
-			why = "unreadable"
+			status.Error = "unreadable"
 		}
-		if why != told {
-			a.send("watch:status", WatchStatus{Folder: w.folder, Error: why})
-			told = why
+		if status != told {
+			a.send("watch:status", status)
+			told = status
 		}
-		if len(found) > 0 || len(watcher.Handed) != kept {
-			keepHanded(w.folder, watcher.Handed)
-			kept = len(watcher.Handed)
+		if done, _ := w.watcher.Kept(); len(done) != kept || status.Existing != existing {
+			keepWatched(w.folder, w.watcher)
+			kept, existing = len(done), status.Existing
 		}
 		if len(found) > 0 {
 			a.send("watch:found", watchFound{Paths: found})
@@ -170,6 +181,39 @@ func (a *App) watchLoop(w *watching, every, quiet time.Duration) {
 		case <-tick.C:
 		}
 	}
+}
+
+// watcher is the watcher at work, nil when none is.
+func (a *App) watcher() *watching {
+	a.watchMutex.Lock()
+	defer a.watchMutex.Unlock()
+	return a.watch
+}
+
+// WatchEnded is how a game the watched folder brought ended: final (compressed, failed, or in the destination
+// already) makes it done until it changes; else (it never ran, or was cancelled) the next run brings it again.
+func (a *App) WatchEnded(path string, final bool) {
+	if w := a.watcher(); w != nil {
+		w.watcher.Ended(path, final)
+		if final {
+			keepWatched(w.folder, w.watcher)
+		}
+	}
+}
+
+// WatchTakeExisting gives the games that were in the watched folder when it was turned on (the page offers to
+// compress them): from now on they are new to it.
+func (a *App) WatchTakeExisting() []string {
+	w := a.watcher()
+	if w == nil {
+		return []string{}
+	}
+	taken := w.watcher.TakeExisting()
+	keepWatched(w.folder, w.watcher)
+	if taken == nil {
+		taken = []string{}
+	}
+	return taken
 }
 
 // stopWatch stops the watcher, and waits for it.

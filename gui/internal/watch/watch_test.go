@@ -119,8 +119,8 @@ func TestWaitsUntilQuiet(t *testing.T) {
 	}
 }
 
-// What was handed over is remembered (Handed, which the window keeps between runs): the same, unchanged,
-// is not handed again; one that went away and came back is.
+// What ended is remembered (Done, which the window keeps between runs): the same, unchanged, is not handed
+// again; one that went away and came back is.
 func TestHandedIsRemembered(t *testing.T) {
 	dir := t.TempDir()
 	write(t, filepath.Join(dir, "a.pkg"), "x")
@@ -128,11 +128,13 @@ func TestHandedIsRemembered(t *testing.T) {
 	w := newWatcher(dir, c)
 	w.Poll()
 	c.pass(61 * time.Second)
-	if found, _ := w.Poll(); len(found) != 1 {
+	found, _ := w.Poll()
+	if len(found) != 1 {
 		t.Fatalf("%v", found)
 	}
+	w.Ended(found[0], true)
 	again := newWatcher(dir, c)
-	again.Handed = w.Handed
+	again.Done = w.Done
 	again.Poll()
 	c.pass(61 * time.Second)
 	if found, _ := again.Poll(); len(found) != 0 {
@@ -140,8 +142,8 @@ func TestHandedIsRemembered(t *testing.T) {
 	}
 	os.Remove(filepath.Join(dir, "a.pkg"))
 	again.Poll()
-	if len(again.Handed) != 0 {
-		t.Errorf("gone, still remembered: %v", again.Handed)
+	if len(again.Done) != 0 {
+		t.Errorf("gone, still remembered: %v", again.Done)
 	}
 	write(t, filepath.Join(dir, "a.pkg"), "x")
 	again.Poll()

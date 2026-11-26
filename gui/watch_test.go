@@ -45,49 +45,85 @@ func (w *watchEvents) waitFound(t *testing.T, within time.Duration) [][]string {
 	return append([][]string{}, w.found...)
 }
 
+func (w *watchEvents) lastStatus() WatchStatus {
+	w.mutex.Lock()
+	defer w.mutex.Unlock()
+	if len(w.status) == 0 {
+		return WatchStatus{}
+	}
+	return w.status[len(w.status)-1]
+}
+
 func watchApp(events *watchEvents) *App {
 	return &App{emit: events.emit, watchEvery: 10 * time.Millisecond, watchQuiet: 60 * time.Millisecond}
 }
 
-// On, the watched folder of Settings is looked at while the window is open: what arrives in it, once it
-// stops changing, goes to the page, once; the next run remembers it. Off, nothing is looked at.
-func TestWatchHandsOver(t *testing.T) {
+// Turning the watched folder on takes a snapshot: what is there already is not new, and the page is told how
+// many there are, which it compresses only when asked (WatchTakeExisting). What arrives afterwards goes, once it
+// stops changing. Off, nothing is looked at.
+func TestWatchSnapshotAndArrivals(t *testing.T) {
 	useSettings(t, t.TempDir())
 	folder := t.TempDir()
-	game := makeDump(t, folder, "Game", "PPSA10001", "Game")
+	old := makeDump(t, folder, "Old", "PPSA10001", "Old")
 	saveSettings(t, func(s *settings.Settings) { s.WatchFolder = folder })
 	events := &watchEvents{}
 	a := watchApp(events)
+	defer a.stopWatch()
 	if status := a.StartWatch(); status.Folder != "" {
 		t.Fatalf("off: %+v", status)
-	}
-	time.Sleep(150 * time.Millisecond)
-	if found := events.waitFound(t, 0); len(found) != 0 {
-		t.Fatalf("off, it looked: %v", found)
 	}
 	s, _ := settings.Load()
 	s.WatchOn = true
 	if err := a.SetSettings(s); err != nil {
 		t.Fatal(err)
 	}
+	time.Sleep(300 * time.Millisecond)
+	if found := events.waitFound(t, 0); len(found) != 0 {
+		t.Fatalf("what was there is new: %v", found)
+	}
+	if status := events.lastStatus(); status.Existing != 1 || status.Folder != folder {
+		t.Fatalf("status: %+v", status)
+	}
+	if taken := a.WatchTakeExisting(); len(taken) != 1 || taken[0] != old {
+		t.Fatalf("taken: %v", taken)
+	}
+	fresh := makeDump(t, folder, "New", "PPSA10002", "New")
 	found := events.waitFound(t, 3*time.Second)
-	if len(found) != 1 || len(found[0]) != 1 || found[0][0] != game {
+	if len(found) != 1 || len(found[0]) != 1 || found[0][0] != fresh {
 		t.Fatalf("found: %v", found)
 	}
+}
+
+// What was handed over counts as done only once the page says its compression ended: the next run hands again
+// what never ran, not what ended.
+func TestWatchDoneOnlyWhenEnded(t *testing.T) {
+	useSettings(t, t.TempDir())
+	folder := t.TempDir()
+	saveSettings(t, func(s *settings.Settings) { s.WatchOn, s.WatchFolder = true, folder })
+	events := &watchEvents{}
+	a := watchApp(events)
+	a.StartWatch() // a folder never watched: what is there (nothing) is not new
+	time.Sleep(100 * time.Millisecond)
+	ran := makeDump(t, folder, "Ran", "PPSA10001", "Ran")
+	never := makeDump(t, folder, "Never", "PPSA10002", "Never")
+	found := events.waitFound(t, 3*time.Second)
+	if len(found) != 1 || len(found[0]) != 2 {
+		a.stopWatch()
+		t.Fatalf("found: %v", found)
+	}
+	a.WatchEnded(ran, true)
+	a.WatchEnded(never, false)
 	a.stopWatch()
 	if _, err := os.Stat(filepath.Join(must(settings.Dir()), watchedFile)); err != nil {
-		t.Errorf("what was handed over is not kept: %v", err)
+		t.Errorf("what ended is not kept: %v", err)
 	}
-	// a new run: it was handed over already
 	again := &watchEvents{}
 	b := watchApp(again)
-	if status := b.StartWatch(); status.Folder != folder {
-		t.Fatalf("%+v", status)
-	}
-	time.Sleep(300 * time.Millisecond)
-	b.stopWatch()
-	if found := again.waitFound(t, 0); len(found) != 0 {
-		t.Errorf("handed over again: %v", found)
+	b.StartWatch()
+	defer b.stopWatch()
+	found = again.waitFound(t, 3*time.Second)
+	if len(found) != 1 || len(found[0]) != 1 || found[0][0] != never {
+		t.Errorf("the next run: %v", found)
 	}
 }
 

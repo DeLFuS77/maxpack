@@ -16,6 +16,7 @@ import (
 	"github.com/DeLFuS77/maxpack/gui/core"
 	"github.com/DeLFuS77/maxpack/gui/internal/par2"
 	"github.com/DeLFuS77/maxpack/gui/internal/system"
+	"github.com/DeLFuS77/maxpack/gui/internal/watch"
 )
 
 // removeAll is how leftovers are deleted (a variable so the tests can make it fail).
@@ -314,6 +315,11 @@ func (r *Runner) one(ctx context.Context, i int, p Plan, o Options) outcome {
 		working = StatePacking
 	}
 	r.item(i, working, "")
+	// what the watched folder brought: as it is now, to tell whether it changed before its original goes
+	ro, before := originalsFor(p, o), ""
+	if compress && p.Item.Watched && ro.Originals != OriginalsKeep {
+		before, _ = watch.Signature(p.Item.Path)
+	}
 	result, ok, failure := r.engine(ctx, i, p.Args, o, hide)
 	if !ok {
 		return fail(endState(false, failure), discard(failure))
@@ -380,10 +386,15 @@ func (r *Runner) one(ctx context.Context, i int, p Plan, o Options) outcome {
 		return fail(StateError, discard("io: "+err.Error()))
 	}
 	end := outcome{saved: saved, state: StateOK}
-	if compress && o.Originals != OriginalsKeep && !p.KeepOriginal {
-		end.original = r.removeOriginal(p, o)
-		if end.original.note != "" {
-			notes = append(notes, end.original.note)
+	if compress && ro.Originals != OriginalsKeep && !p.KeepOriginal {
+		if keep := watchedKeepOf(p, before); keep != "" {
+			r.log("Kept (%s): %s", keep, p.Item.Path)
+			notes = append(notes, keep)
+		} else {
+			end.original = r.removeOriginal(p, ro)
+			if end.original.note != "" {
+				notes = append(notes, end.original.note)
+			}
 		}
 	}
 	// the repair data comes last: the .p5z is done and good whatever becomes of it

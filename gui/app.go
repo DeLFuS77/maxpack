@@ -195,11 +195,13 @@ func (a *App) GetSettings() settings.Settings {
 // of PS5 packages goes to the engine's runs from now on, and the watched folder is the one it says.
 func (a *App) SetSettings(s settings.Settings) error {
 	core.SetPasscode(s.Normalize().Passcode)
+	before, _ := settings.Load()
 	if err := settings.Save(s); err != nil {
 		return err
 	}
-	// the watched folder of Settings from now on
-	a.rewatch()
+	// the watched folder of Settings from now on: turned on, or another folder, it takes what is there as not new
+	now := s.Normalize()
+	a.rewatch(now.WatchOn && (!before.WatchOn || before.WatchFolder != now.WatchFolder))
 	return nil
 }
 

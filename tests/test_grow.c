@@ -872,6 +872,38 @@ MP_TEST(grown_unpack_folder_equals_pack_dir) {
     MP_CHECK_EQ_U64(vr.files_bad, 0);
 }
 
+// The progress of unpack --folder of a .p5z that grew (what the window's bar shows): it counts what is
+// written, the chunks laid out again and not the room between them, so it ends at its total.
+static uint64_t folder_done, folder_total;
+static int folder_calls;
+static void folder_progress(void *ctx, const char *phase, uint64_t done, uint64_t total) {
+    (void)ctx;
+    if (strcmp(phase, "Extracting the folder")) return;
+    folder_done = done;
+    folder_total = total;
+    folder_calls++;
+}
+
+MP_TEST(grown_unpack_folder_progress_ends_at_total) {
+    if (grown_v2(262208, NULL, NULL) != 0) return;
+    mp_err e = {{0}};
+    mp_p5z *p = NULL;
+    uint64_t unused = 0;
+    MP_CHECK(mp_p5z_open(G_P5Z, &p, &e) == 0 && mp_p5z_unused(p, &unused, &e) == 0);
+    if (!p) return;
+    MP_CHECK(unused > 0);   // it has room between its chunks
+    folder_done = folder_total = 0;
+    folder_calls = 0;
+    mp_progress_hook h = {folder_progress, NULL};
+    mp_progress_set_hook(&h);
+    MP_CHECK(mp_unpack_folder_ex(p, TMP "/progress_folder", 262208, 2, 0, &e) == 0);
+    mp_progress_set_hook(NULL);
+    mp_p5z_close(p);
+    MP_CHECK(folder_calls > 0);
+    MP_CHECK(folder_total > 0);
+    MP_CHECK_EQ_U64(folder_done, folder_total);
+}
+
 MP_TEST(grown_verify_catches_damage) {
     if (grown_v2(262208, NULL, NULL) != 0) return;
     mp_err e = {{0}};
@@ -1813,5 +1845,6 @@ int main(void) {
     MP_RUN(play_refuses_volumes_not_its_packs);
     MP_RUN(grow_refuses_packs_not_of_its_header);
     MP_RUN(compact_refuses_volumes_without_packs);
+    MP_RUN(grown_unpack_folder_progress_ends_at_total);
     MP_TEST_MAIN_END();
 }

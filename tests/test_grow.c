@@ -1147,6 +1147,75 @@ MP_TEST(update_refusals) {
     free(orig);
 }
 
+// ---- compact ---------------------------------------------------------------------------------------
+
+static int compact_to(const char *in, const char *out, uint64_t limit) {
+    mp_err e = {{0}};
+    mpt_clear(out);
+    uint64_t size = 0;
+    int rc = mp_compact(in, out, 2, limit, 0, &size, &e);
+    if (rc) MP_FAIL_("compact: %s", e.msg);
+    else MP_CHECK_EQ_U64(size, size_of(out));
+    return rc;
+}
+
+// A .p5z as packed, compacted, is the same file: nothing is compressed again, and the order is a fresh pack's.
+MP_TEST(compact_v1_is_identical) {
+    mpt_clear(TMP);
+    if (mpt_pack(GAME, TMP "/x.p5z", 1, NULL) != 0) return;
+    if (compact_to(TMP "/x.p5z", TMP "/y.p5z", MP_ZPK_VOLUME_LIMIT) != 0) return;
+    MP_CHECK(same_bytes(TMP "/x.p5z", TMP "/y.p5z"));
+    if (mpt_pack_vol(GAME, TMP "/xs.p5z", 1, NULL, 262208) != 0) return;
+    if (compact_to(TMP "/xs.p5z", TMP "/ys.p5z", 262208) != 0) return;
+    MP_CHECK(same_bytes(TMP "/xs.p5z", TMP "/ys.p5z"));
+}
+
+// An updated .p5z, compacted, is the .p5z packing the new dump from scratch gives, byte for byte.
+MP_TEST(compact_update_is_fresh) {
+    mpt_clear(TMP);
+    make_versions();
+    if (mpt_pack_vol(V1, G_P5Z, 1, NULL, 262208) != 0 || mpt_pack_vol(V2, TMP "/fresh.p5z", 1, NULL, 262208) != 0)
+        return;
+    mp_grow_opts o = quiet_opts();
+    o.volume_limit = 262208;
+    mp_grow_result r;
+    mp_err e = {{0}};
+    MP_CHECK(mp_grow_update(G_P5Z, V2, &o, &r, &e) == 0);
+    MP_CHECK(r.unused_bytes > 0);
+    if (compact_to(G_P5Z, TMP "/c.p5z", 262208) != 0) return;
+    MP_CHECK(same_bytes(TMP "/fresh.p5z", TMP "/c.p5z"));
+    mp_p5z *p = NULL;
+    uint64_t u = 1;
+    MP_CHECK(mp_p5z_open(TMP "/c.p5z", &p, &e) == 0);
+    if (p) MP_CHECK(mp_p5z_version(p) == 1 && mp_p5z_unused(p, &u, &e) == 0 && u == 0);
+    mp_p5z_close(p);
+}
+
+MP_TEST(compact_add_is_fresh) {
+    mpt_clear(TMP);
+    const char *dlc[] = {DLC_DATA, DLC_LICENSE};
+    if (mpt_pack(GAME, A_P5Z, 1, NULL) != 0 || pack_dlc_p5z(GAME, dlc, 2, TMP "/fresh.p5z", MP_ZPK_VOLUME_LIMIT) != 0)
+        return;
+    mp_grow_opts o = quiet_opts();
+    mp_grow_result r;
+    mp_err e = {{0}};
+    MP_CHECK(mp_grow_add(A_P5Z, dlc, 2, &o, &r, &e) == 0);
+    if (compact_to(A_P5Z, TMP "/c.p5z", MP_ZPK_VOLUME_LIMIT) != 0) return;
+    MP_CHECK(same_bytes(TMP "/fresh.p5z", TMP "/c.p5z"));
+}
+
+MP_TEST(compact_refusals) {
+    mpt_clear(TMP);
+    if (mpt_pack(GAME, TMP "/x.p5z", 1, NULL) != 0) return;
+    mpt_put(TMP "/there.p5z", "x", 1);
+    mp_err e = {{0}};
+    uint64_t size = 0;
+    MP_CHECK(mp_compact(TMP "/x.p5z", TMP "/there.p5z", 2, MP_ZPK_VOLUME_LIMIT, 0, &size, &e) != 0);
+    MP_CHECK(mp_compact(TMP "/x.p5z", TMP "/x.p5z", 2, MP_ZPK_VOLUME_LIMIT, 0, &size, &e) != 0);
+    MP_CHECK(mp_compact(TMP "/none.p5z", TMP "/new.p5z", 2, MP_ZPK_VOLUME_LIMIT, 0, &size, &e) != 0);
+    MP_CHECK(mp_path_kind(TMP "/new.p5z") == 0);
+}
+
 int main(void) {
     MP_RUN(p5z_append_one_file);
     MP_RUN(p5z_copy_all_is_identical);
@@ -1174,5 +1243,9 @@ int main(void) {
     MP_RUN(update_same_as_fresh_pack);
     MP_RUN(update_keeps_dlc);
     MP_RUN(update_refusals);
+    MP_RUN(compact_v1_is_identical);
+    MP_RUN(compact_update_is_fresh);
+    MP_RUN(compact_add_is_fresh);
+    MP_RUN(compact_refusals);
     MP_TEST_MAIN_END();
 }

@@ -72,6 +72,13 @@ int mp_grow_add(const char *p5z, const char *const *dlc, size_t n, const mp_grow
 // More than half of the game's bytes to store stops it ("mostly_changed") unless o->force.
 int mp_grow_update(const char *p5z, const char *dump, const mp_grow_opts *o, mp_grow_result *r, mp_err *e);
 
+// compact: a new .p5z at out (which must not exist) with what in uses and nothing else: the room an update
+// left goes. Nothing is compressed again: the stored records are copied as they are and the chunks of the
+// packs go to new volumes of at most volume_limit bytes, back to back. It is always of version 1, the .p5z a
+// fresh pack of the same dump writes (with that volume limit). *out_size gets its size.
+int mp_compact(const char *in, const char *out, unsigned threads, uint64_t volume_limit, int progress, uint64_t *out_size,
+               mp_err *e);
+
 // Tests only: called at every step of an append; 0 goes on, 1 fails there as an error would (the .p5z is
 // taken back), 2 stops there as a power cut would (nothing is undone, the journal stays). Nothing but the
 // tests sets it.

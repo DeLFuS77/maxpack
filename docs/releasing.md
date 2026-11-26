@@ -1,8 +1,8 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # Releasing MaxPack for the PC
 
-What the owner does for each release, and once for the key that signs them. The CI builds and drafts; the
-signature is made by hand, offline, with a key the CI never has.
+What the owner does for each release. The CI builds and drafts; the signature is made by hand, on the
+owner's computer, with a key the CI never has.
 
 ## Each release
 
@@ -12,47 +12,52 @@ signature is made by hand, offline, with a key the CI never has.
    `git tag -a vX.Y.Z -m "MaxPack X.Y.Z"`, then `git push origin refs/tags/vX.Y.Z` (never `--tags`).
 3. **The draft.** The CI (`.github/workflows/build.yml`, job `release`) builds the seven packages, writes
    their `SHA256SUMS`, attests each file and leaves everything in a **draft** release.
-4. **Check the draft.** Download `SHA256SUMS` and the packages, then:
-   - `sha256sum -c SHA256SUMS`;
-   - `gh attestation verify <file> -R DeLFuS77/maxpack` for each file.
-5. **Sign `SHA256SUMS`, offline.** On the computer that holds the secret key (not the CI, and not a
-   machine that builds), in the folder of the `SHA256SUMS` just checked, with the version in the trusted
-   comment, exactly `MaxPack` and the version without the `v` (here for v1.2.3):
+4. **Sign the draft, and publish it.** From the `gui` folder of this repository (the one the tag was made
+   in), with `gh` signed in:
 
    ```
-   minisign -Sm SHA256SUMS -t "MaxPack 1.2.3"
+   go run ./tools/releasesign X.Y.Z
    ```
 
-   It asks for the key's password and writes `SHA256SUMS.minisig`. Check it with the public key:
-   `minisign -Vm SHA256SUMS -P <the public key>`, which prints `Trusted comment: MaxPack 1.2.3`. The window
-   refuses a signature whose trusted comment is not exactly `MaxPack <the version of the tag>`: that is what
-   keeps the signed list of an old release from being offered under a newer tag. A plain
-   `minisign -Sm SHA256SUMS` (whose trusted comment is a timestamp and the file name) is refused too.
-6. **Upload the signature to the draft**, before publishing it:
-   `gh release upload vX.Y.Z SHA256SUMS.minisig -R DeLFuS77/maxpack`. Do not upload a `SHA256SUMS` of your
-   own: the signed one must be the one in the draft, byte for byte.
-7. **Publish.** `gh release edit vX.Y.Z -R DeLFuS77/maxpack --notes-file <notes> --draft=false --latest`.
+   It does, in this order, and stops at the first thing that does not hold (nothing is signed then):
+   - checks that the tag `vX.Y.Z` here and on GitHub point to the same commit;
+   - downloads the files of the draft and checks each against `SHA256SUMS`, and that the list and the
+     release name the same files;
+   - checks with `gh attestation verify` that each was built by `.github/workflows/build.yml` from the
+     commit of the tag, on GitHub's runners;
+   - asks for the private release key, which is not shown as it is typed or pasted, and is never printed,
+     written nor kept;
+   - signs `SHA256SUMS` as minisign does (`ED`), with the trusted comment exactly `MaxPack X.Y.Z`, and
+     checks the signature with the release keys the window is built with;
+   - adds `SHA256SUMS.minisig` to the draft and asks whether to publish it (`-publish` publishes without
+     asking; otherwise it stays a draft until you publish it).
+
+   `-published` signs a release that was published unsigned, and `-replace` puts a new signature in place
+   of the one a release has. Anyone can check a release with the minisign command and either public key:
+   `minisign -Vm SHA256SUMS -P <key>`, which prints `Trusted comment: MaxPack X.Y.Z`.
+5. **Before a release needs it:** `go run ./tools/releasesign -check` asks for a private key and says
+   whether it is one the window is built with (and which), without signing or sending anything.
 
 What the window does with it (Settings › Internet › **Look for new versions**, off by default): it offers a
 release newer than itself only when the release has `SHA256SUMS` and `SHA256SUMS.minisig`, the signature
-is valid for the key built into it (both the signature and its trusted comment), and the trusted comment is
-`MaxPack` and the version of the release's tag. On Windows it then downloads the installer and checks its
-SHA-256 against that list before it offers **Update**; the installer stays in the settings folder
-(`updates/`), is used again at the next start while it is whole, and goes once the window is up to date. A release
-published without `SHA256SUMS.minisig`, or signed with another key, is never offered: users would update by
-hand. Signing a release after it was published works too (the window looks once each time it starts), but
-the signature should be there before it is.
+is valid for one of the release keys built into it (both the signature and its trusted comment), and the
+trusted comment is `MaxPack` and the version of the release's tag, so the signed list of an older release is
+never offered under a newer tag. On Windows it then downloads the installer and checks its SHA-256 against
+that list before it offers **Update**; the installer stays in the settings folder (`updates/`), is used
+again at the next start while it is whole, and goes once the window is up to date. A release published
+without `SHA256SUMS.minisig`, or signed with another key or without the version, is never offered: users
+would update by hand.
 
-## Once: the key
+## The release keys
 
-1. **Make it** on the offline computer: `minisign -G -p maxpack.pub -s maxpack.key`, with a password. Keep
-   `maxpack.key` there, with a backup on another offline medium. It never goes into the repository, a
-   CI secret or any other online place.
-2. **Build it into the window:** the second line of `maxpack.pub` (it starts with `RW`) goes into
-   `updateKey` in `gui/update.go`. A build with `updateKey` empty, as the ones before it, says in Settings
-   that looking for new versions is not available in that build, and never goes on the internet. Add it
-   to the README too, so anyone can check a `SHA256SUMS` by hand with `minisign -Vm SHA256SUMS -P <key>`.
-3. **Changing the key** later: a window checks with the key it was built with. Sign the release that
-   brings the new key with the old one; the releases after it, with the new one.
-4. **If the key is lost**, the windows already out cannot be offered anything newer: say so in the release
-   notes of the version with a new key, which users install by hand.
+- They are the author's release keys, the same that sign the releases of NXPress: their public keys are in
+  `gui/internal/update/release.pub`, built into the window, as minisign writes them.
+  - **`64300306F44900F2`**, the main key, signs every release.
+  - **`7090921881F567B0`**, the spare key, is kept apart from the first. It signs the releases if the first
+    is lost; the window takes either.
+- The private keys are kept in a password manager, each as its key ID and Ed25519 seed in base64 (the form
+  `tools/releasesign` asks for). They never go into the repository, a CI secret, a file or a log.
+- **Changing a key:** a window checks with the keys it was built with. Put the new public key in
+  `release.pub` and ship that version signed with a key the windows already out know; the releases after it
+  can use the new key. If both keys were lost, the windows already out cannot be offered anything newer:
+  say so in the notes of the version with new keys, which users install by hand.

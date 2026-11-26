@@ -182,3 +182,29 @@ func TestSeveralKeys(t *testing.T) {
 		t.Errorf("the name of a key: %s", name)
 	}
 }
+
+// The release key as the author keeps it (its ID and seed, in base64) signs as minisign does ("ED", with the
+// trusted comment), and nothing else is taken for it.
+func TestSignWithTheReleaseKey(t *testing.T) {
+	public, private, _ := ed25519.GenerateKey(nil)
+	id := [8]byte{7, 6, 5, 4, 3, 2, 1, 0}
+	text := minisign.PrivateKeyText(private, id)
+	got, gotID, err := minisign.ParsePrivateKey(" " + text + "\r\n")
+	if err != nil || gotID != id || !got.Equal(private) {
+		t.Fatalf("the key read back: %v", err)
+	}
+	sums := []byte("0000  maxpack-linux-x64.tar.gz\n")
+	sig := minisign.Sign(got, gotID, sums, "MaxPack 1.2.3")
+	keys := []minisign.PublicKey{{ID: id, Key: public}}
+	if trusted, err := minisign.VerifyAny(keys, sums, sig); err != nil || trusted != "MaxPack 1.2.3" {
+		t.Fatalf("%q, %v", trusted, err)
+	}
+	if !strings.HasPrefix(strings.Split(string(sig), "\n")[1], "RUQ") {
+		t.Errorf("not prehashed (ED): %s", sig)
+	}
+	for _, bad := range []string{"", "hello", text[:20], text + "AAAA"} {
+		if _, _, err := minisign.ParsePrivateKey(bad); err == nil {
+			t.Errorf("taken as a key: %q", bad)
+		}
+	}
+}

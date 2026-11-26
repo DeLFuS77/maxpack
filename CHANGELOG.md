@@ -20,6 +20,11 @@ All notable changes to MaxPack are listed here. The format follows
   GitHub's hosts over HTTPS. The keys (`gui/internal/update/release.pub`) are the author's release keys,
   the main one (`64300306F44900F2`) and a spare (`7090921881F567B0`), the same that sign NXPress's releases;
   a signature by either is taken. `docs/releasing.md` says how each release is signed.
+- **`tools/releasesign`** (in `gui/`, ported from NXPress, by the same author): `go run ./tools/releasesign
+  X.Y.Z` checks the draft of `vX.Y.Z` (each file against `SHA256SUMS`, and `gh attestation verify` against the
+  commit of the tag), asks for the private release key without showing it, signs `SHA256SUMS` with the
+  trusted comment `MaxPack X.Y.Z`, checks it with the keys of `release.pub`, uploads `SHA256SUMS.minisig`
+  and publishes when told; `-check` tells whether a stored key is one of them.
 - **Keyboard shortcuts** in the window: Ctrl+O adds files, Ctrl+Shift+O a folder, Ctrl+Enter starts, Esc
   cancels the queue once asked, Ctrl+P pauses or resumes, Ctrl+1 to Ctrl+5 open the sections (⌘ on macOS),
   with any keyboard layout (Russian and Arabic ones too). Settings › Keyboard lists them.

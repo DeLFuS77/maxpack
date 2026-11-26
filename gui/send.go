@@ -71,10 +71,11 @@ func (a *App) CancelConsoleDrives() {
 	}
 }
 
-// DiscardView is what Delete what arrived on the console did: what the console had of it, or why it did nothing
-// ("no_console", "exists": it has it whole and keeps it, or a code of the engine).
+// DiscardView is what Delete what arrived on the console did: whether the console had anything of it, and what,
+// or why it did nothing ("no_console", "discard_busy": a receive of it is at work there, or a code of the engine).
 type DiscardView struct {
 	Had     uint64 `json:"had"`
+	Deleted bool   `json:"deleted"`
 	Error   string `json:"error"`
 	Message string `json:"message"`
 }
@@ -92,9 +93,12 @@ func (a *App) DiscardOnConsole(path, drive string) DiscardView {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	had, code, err := core.DiscardOnConsole(ctx, engine, saved.ConsoleIP, saved.ConsoleCode, path, drive)
+	had, deleted, code, err := core.DiscardOnConsole(ctx, engine, saved.ConsoleIP, saved.ConsoleCode, path, drive)
+	if code == "busy" {
+		code = "discard_busy" // the console is at work on that very receive, not on another one
+	}
 	if err != nil {
 		return DiscardView{Error: code, Message: err.Error()}
 	}
-	return DiscardView{Had: had}
+	return DiscardView{Had: had, Deleted: deleted}
 }

@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -113,16 +114,18 @@ func TestReportHasNoConsole(t *testing.T) {
 	}
 }
 
-// A fake MaxPack for the console, as much of it as a send needs: its drives, and a .p5z received whole and
-// verified at once.
+// A fake MaxPack for the console, as much of it as a send needs: its drives, a .p5z received whole and
+// verified at once, and the delete of what a send left (contract v3: discard, never start then cancel).
 type fakeConsole struct {
-	mu      sync.Mutex
-	got     bytes.Buffer
-	size    int64
-	name    string
-	drive   string
-	state   string
-	badCode int
+	mu        sync.Mutex
+	got       bytes.Buffer
+	size      int64
+	name      string
+	drive     string
+	state     string
+	badCode   int
+	routes    []string
+	discarded string
 }
 
 func (c *fakeConsole) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -138,7 +141,19 @@ func (c *fakeConsole) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		answer(401, map[string]string{"error": "bad_code"})
 		return
 	}
+	c.routes = append(c.routes, r.URL.Path)
 	switch r.URL.Path {
+	case "/api/receive/discard":
+		var req struct{ Name, Drive string }
+		json.NewDecoder(r.Body).Decode(&req)
+		c.discarded = req.Name + " on " + req.Drive
+		if c.got.Len() == 0 {
+			answer(200, map[string]any{"deleted": false})
+			return
+		}
+		had := c.got.Len()
+		c.got.Reset()
+		answer(200, map[string]any{"deleted": true, "bytes": had})
 	case "/api/receive/drives":
 		answer(200, map[string]any{"drives": []map[string]any{{"id": "internal", "free": 600e9, "total": 825e9, "fs": "ufs"}}})
 	case "/api/receive/start":
@@ -199,6 +214,31 @@ func TestSendReal(t *testing.T) {
 	}
 }
 
+// The real engine deletes what a send left on a console whose drive is full: with the console's own request for
+// it (no start, which the console would refuse for space), and says when there was nothing.
+func TestDiscardReal(t *testing.T) {
+	engine, _ := needCore(t)
+	console := &fakeConsole{}
+	console.got.Write(make([]byte, 5000))
+	server := httptest.NewServer(console)
+	defer server.Close()
+	withConsole(t, strings.TrimPrefix(server.URL, "http://"))
+	p5z := filepath.Join(t.TempDir(), "Game [PPSA00000].p5z")
+	a := &App{core: engine}
+	if view := a.DiscardOnConsole(p5z, "internal"); view.Error != "" || !view.Deleted || view.Had != 5000 {
+		t.Fatalf("%+v", view)
+	}
+	if view := a.DiscardOnConsole(p5z, "internal"); view.Error != "" || view.Deleted || view.Had != 0 {
+		t.Errorf("nothing there: %+v", view)
+	}
+	console.mu.Lock()
+	defer console.mu.Unlock()
+	if console.discarded != filepath.Base(p5z)+" on internal" || slices.Contains(console.routes, "/api/receive/start") ||
+		slices.Contains(console.routes, "/api/receive/cancel") {
+		t.Errorf("%q %v", console.discarded, console.routes)
+	}
+}
+
 // Delete what arrived on the console: the engine is asked (send --discard) with the code in its environment;
 // what the console says goes back to the page.
 func TestDiscardOnConsole(t *testing.T) {
@@ -207,15 +247,25 @@ func TestDiscardOnConsole(t *testing.T) {
 	p5z := touch(t, t.TempDir(), "Game [PPSA10001].p5z", 100)
 	a := &App{core: os.Args[0]}
 	view := a.DiscardOnConsole(p5z, "usb0")
-	if view.Error != "" || view.Had != 4096 {
+	if view.Error != "" || view.Had != 4096 || !view.Deleted {
 		t.Fatalf("%+v", view)
 	}
 	if said, _ := os.ReadFile(p5z + ".discarded"); string(said) != "drive usb0 code "+consoleCode {
 		t.Errorf("the engine was given %q", said)
 	}
-	t.Setenv(fakecore.SendFailEnv, "exists")
-	if view := a.DiscardOnConsole(p5z, "usb0"); view.Error != "exists" {
-		t.Errorf("there whole: %+v", view)
+	// nothing of it there: no error, and nothing said deleted
+	t.Setenv(fakecore.SendFailEnv, "nothing")
+	if view := a.DiscardOnConsole(p5z, "usb0"); view.Error != "" || view.Deleted || view.Had != 0 {
+		t.Errorf("nothing there: %+v", view)
+	}
+	// a receive of it at work on the console: a code of its own, not the "busy" of a send
+	t.Setenv(fakecore.SendFailEnv, "busy")
+	if view := a.DiscardOnConsole(p5z, "usb0"); view.Error != "discard_busy" {
+		t.Errorf("at work: %+v", view)
+	}
+	t.Setenv(fakecore.SendFailEnv, "delete_failed")
+	if view := a.DiscardOnConsole(p5z, "usb0"); view.Error != "delete_failed" {
+		t.Errorf("not deleted: %+v", view)
 	}
 	saveSettings(t, func(s *settings.Settings) {})
 	if view := a.DiscardOnConsole(p5z, ""); view.Error != "no_console" {

@@ -46,13 +46,25 @@ func PlanSend(items []Item, o Options) []Plan {
 // says of them get send_ codes, which the page says in words of their own (a "busy" console is not a .p5z
 // another MaxPack is changing); a .p5z that arrived damaged says what the console found wrong.
 func sendFailure(code string, result core.Event) string {
+	kept, _ := result.Raw["kept"].(bool)
 	switch code {
 	case "cancelled":
-		// stopped here: the console keeps what arrived (the window never tells the engine to delete it)
-		if kept, _ := result.Raw["kept"].(bool); kept {
+		// stopped here: the console keeps what arrived (the window never tells the engine to delete it), also when
+		// the engine had to be killed (core.CancelGrace), which says nothing of it
+		if killed, _ := result.Raw["killed"].(bool); kept || killed {
 			return "send_kept"
 		}
 		return code
+	case "no_space":
+		// the drive has no room, and part of it is there already, taking some: it can be deleted
+		if kept {
+			return "send_no_space_kept"
+		}
+	case "stalled":
+		// this PC slept through it, not the console
+		if slept, _ := result.Raw["slept"].(bool); slept {
+			return "send_slept"
+		}
 	case "io", "bad_input":
 		return code
 	case "p5z_busy":

@@ -1772,9 +1772,10 @@ async function sendRows(rows) {
 }
 
 // a send that did not end with the game on the console, where what arrived stays (stopped here or on the
-// console, cut off, stalled, a write error, or arrived damaged): it can be deleted there
+// console, cut off, stalled or slept through, a write error, arrived damaged, or a drive that filled up with
+// part of it there): it can be deleted there
 const leftOnConsole = row => row.section === "details" && !!row.game && row.game.Kind === "p5z"
-  && /^send_(kept|console_stopped|stalled|write_error|unreachable|verify_failed)(:|$)/.test(row.detail || "");
+  && /^send_(kept|console_stopped|stalled|slept|write_error|unreachable|verify_failed|no_space_kept)(:|$)/.test(row.detail || "");
 // Delete what arrived on the console: asked first, as it cannot be undone (the next send starts from nothing)
 async function discardOnConsole(row) {
   if (!leftOnConsole(row)) return;
@@ -1786,8 +1787,9 @@ async function discardOnConsole(row) {
   try {
     const view = await go.call("DiscardOnConsole", row.path, row.sentDrive || load("sendDrive", "")).catch(error => ({ error: "io", message: message(error) }));
     if (view.error) { toast(sendErrorText(view.error, view.message)); return; }
-    row.detail = "send_discarded";
-    toast(t("discardDone")(row.game.Name || baseName(row.path)));
+    // nothing of it was there (the console had deleted it, or it never came): said so, not "deleted"
+    row.detail = view.deleted === false ? "send_nothing_left" : "send_discarded";
+    toast(t(view.deleted === false ? "discardNothing" : "discardDone")(row.game.Name || baseName(row.path)));
   } finally {
     state.busy = false;
     render();

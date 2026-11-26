@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DeLFuS77/maxpack/gui/core"
 	"github.com/DeLFuS77/maxpack/gui/internal/fakecore"
 )
 
@@ -88,7 +89,10 @@ func TestSendFailures(t *testing.T) {
 	for code, want := range map[string]string{"bad_code": "send_bad_code", "receive_off": "send_receive_off", "no_space": "send_no_space",
 		"exists": "send_exists", "busy": "send_busy", "unreachable": "send_unreachable", "console_cancelled": "send_console_cancelled",
 		"verify_failed": "send_verify_failed: ampr_zstd-001.pak", "p5z_busy": "busy", "invalid": "send_invalid", "fat32": "send_fat32",
-		"console_stopped": "send_console_stopped", "stalled": "send_stalled", "write_error": "send_write_error"} {
+		"console_stopped": "send_console_stopped", "stalled": "send_stalled", "write_error": "send_write_error",
+		// a drive with no room where part of it is already (contract v3): kept there, to be deleted; a send this PC
+		// slept through says so, not that nothing moved on the console
+		"no_space+kept": "send_no_space_kept", "stalled+slept": "send_slept"} {
 		t.Setenv(fakecore.SendFailEnv, code)
 		rec := newRecorder()
 		sum := (&Runner{Core: os.Args[0], OnItem: rec.item}).Run(context.Background(), PlanSend(items, o), o)
@@ -119,5 +123,29 @@ func TestSendCancelled(t *testing.T) {
 	}
 	if args, _ := os.ReadFile(items[0].Path + ".args"); strings.Contains(string(args), "--delete-on-cancel") {
 		t.Errorf("the window asked the engine to delete on a cancel: %s", args)
+	}
+}
+
+// An engine that does not stop when the send is cancelled is killed after core.CancelGrace: what arrived stays on
+// the console as with any stop here (the window never asks it to delete), so the row says so and can delete it.
+func TestSendKilledKeeps(t *testing.T) {
+	t.Setenv(fakecore.Env, "stubborn")
+	grace := core.CancelGrace
+	core.CancelGrace = 300 * time.Millisecond
+	defer func() { core.CancelGrace = grace }()
+	dir := t.TempDir()
+	items := existing(t, dir, 1)
+	o := sendOptions()
+	ctx, cancel := context.WithCancel(context.Background())
+	rec := newRecorder()
+	onItem := func(i int, state, detail string) {
+		rec.item(i, state, detail)
+		if state == StateSending {
+			time.AfterFunc(200*time.Millisecond, cancel)
+		}
+	}
+	sum := (&Runner{Core: os.Args[0], OnItem: onItem}).Run(ctx, PlanSend(items, o), o)
+	if state, detail := rec.last(0); state != StateCancelled || detail != "send_kept" || sum.Cancelled != 1 {
+		t.Errorf("%v %q %+v", rec.states[0], detail, sum)
 	}
 }

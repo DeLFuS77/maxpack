@@ -63,9 +63,10 @@ func ConsoleDrives(ctx context.Context, core, address, code string) ([]ConsoleDr
 }
 
 // DiscardOnConsole deletes what the console at address received of the .p5z at path on that drive (send
-// --discard): it gives what there was, or an error with its code ("exists": the console has it whole, and keeps
-// it). The code goes to the engine in its environment.
-func DiscardOnConsole(ctx context.Context, core, address, code, path, drive string) (uint64, string, error) {
+// --discard, which never touches a .p5z whole there): it gives whether there was anything, and what, or an error
+// with its code ("busy": a receive of it is at work there; "delete_failed"). The code goes to the engine in its
+// environment.
+func DiscardOnConsole(ctx context.Context, core, address, code, path, drive string) (had uint64, deleted bool, failure string, err error) {
 	var stderr bytes.Buffer
 	args := []string{"send", "--discard", path, address, "--json"}
 	if drive != "" {
@@ -77,18 +78,19 @@ func DiscardOnConsole(ctx context.Context, core, address, code, path, drive stri
 	out, err := command.Output()
 	var answer struct {
 		OK      bool   `json:"ok"`
+		Deleted bool   `json:"deleted"`
 		Had     uint64 `json:"had"`
 		Error   string `json:"error"`
 		Message string `json:"message"`
 	}
 	if json.Unmarshal(bytes.TrimSpace(out), &answer) != nil {
-		return 0, "io", fmt.Errorf("deleting on the console: %v: %s", err, strings.TrimSpace(stderr.String()))
+		return 0, false, "io", fmt.Errorf("deleting on the console: %v: %s", err, strings.TrimSpace(stderr.String()))
 	}
 	if !answer.OK {
 		if answer.Error == "" {
 			answer.Error = "io"
 		}
-		return 0, answer.Error, fmt.Errorf("%s", answer.Message)
+		return 0, false, answer.Error, fmt.Errorf("%s", answer.Message)
 	}
-	return answer.Had, "", nil
+	return answer.Had, answer.Deleted, "", nil
 }

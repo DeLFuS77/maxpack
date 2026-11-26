@@ -12,7 +12,9 @@ import (
 )
 
 // SendFailEnv makes "send" of the modes "sends" end with that code, as the real one ends with each refusal
-// of the console (and "verify_failed" with what the console found wrong).
+// of the console (and "verify_failed" with what the console found wrong). "<code>+kept" says the console keeps
+// what arrived (4096 bytes), "<code>+slept" that this PC slept meanwhile. For "send --discard", "nothing" says
+// there was nothing to delete, and any other code refuses it.
 const SendFailEnv = "MP_FAKE_SEND_FAIL"
 
 // DrivesWaitEnv makes "send --drives" wait that many milliseconds before it answers (a console far away).
@@ -21,7 +23,7 @@ const DrivesWaitEnv = "MP_FAKE_DRIVES_WAIT"
 // sendExit is the exit code of the real one for each code (maxpack send's usage).
 var sendExit = map[string]int{"unreachable": 3, "receive_off": 4, "bad_code": 5, "locked": 6, "exists": 7, "busy": 8,
 	"no_space": 9, "fat32": 10, "bad_name": 11, "no_drive": 12, "verify_failed": 13, "console_cancelled": 14,
-	"console_stopped": 15, "stalled": 16, "write_error": 17}
+	"console_stopped": 15, "stalled": 16, "write_error": 17, "delete_failed": 18}
 
 // send is "send" of the modes "sends" and "sends-waits": --drives lists two drives; a .p5z is "sent" (the
 // engine writes <p5z>.sent with the address, drive and code it was given), with the progress of the bytes
@@ -35,7 +37,7 @@ func send(mode string, args []string) int {
 			return 2
 		}
 	}
-	fail := os.Getenv(SendFailEnv)
+	fail, extra, _ := strings.Cut(os.Getenv(SendFailEnv), "+")
 	if code == "" {
 		fail = "bad_code"
 	}
@@ -58,7 +60,7 @@ func send(mode string, args []string) int {
 				rest = append(rest, a)
 			}
 		}
-		if fail != "" || len(rest) < 2 {
+		if (fail != "" && fail != "nothing") || len(rest) < 2 {
 			fmt.Printf("{\"ok\":false,\"error\":%q,\"message\":\"no\"}\n", fail)
 			return sendExit[fail]
 		}
@@ -69,7 +71,11 @@ func send(mode string, args []string) int {
 			}
 		}
 		os.WriteFile(rest[0]+".discarded", []byte("drive "+drive+" code "+code), 0o644)
-		fmt.Println(`{"ok":true,"name":"x.p5z","drive":"` + drive + `","had":4096}`)
+		if fail == "nothing" {
+			fmt.Println(`{"ok":true,"name":"x.p5z","drive":"` + drive + `","deleted":false,"had":0}`)
+			return 0
+		}
+		fmt.Println(`{"ok":true,"name":"x.p5z","drive":"` + drive + `","deleted":true,"had":4096}`)
 		return 0
 	}
 	if len(args) < 3 {
@@ -103,7 +109,12 @@ func send(mode string, args []string) int {
 		fmt.Printf("{\"event\":\"result\",\"ok\":false,\"error\":\"verify_failed\",\"bad\":%s}\n", bad)
 		return 13
 	default:
-		fmt.Printf("{\"event\":\"result\",\"ok\":false,\"error\":%q,\"message\":\"no\"}\n", fail)
+		have := 0
+		if extra != "" {
+			have = 4096
+		}
+		fmt.Printf("{\"event\":\"result\",\"ok\":false,\"error\":%q,\"message\":\"no\",\"kept\":%v,\"slept\":%v,\"have\":%d}\n",
+			fail, extra != "", extra == "slept", have)
 		if n, ok := sendExit[fail]; ok {
 			return n
 		}

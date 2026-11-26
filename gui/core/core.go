@@ -278,7 +278,8 @@ func RunWith(ctx context.Context, core string, args []string, options RunOptions
 	<-stopped
 
 	if killed.Load() {
-		return Event{Kind: "result", Raw: map[string]any{"event": "result", "ok": false, "error": "cancelled"}}, 130, nil
+		// "killed": it said nothing of how it ended (what a send leaves on the console stays there)
+		return Event{Kind: "result", Raw: map[string]any{"event": "result", "ok": false, "error": "cancelled", "killed": true}}, 130, nil
 	}
 	code := command.ProcessState.ExitCode()
 	var exit *exec.ExitError

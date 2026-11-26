@@ -90,3 +90,33 @@ func TestPageSend(t *testing.T) {
 		}
 	}
 }
+
+// TestPageSendLeftOnConsole: what a send that filled a drive of the console, or that this PC slept through, left
+// there can be deleted (contract v3), and Delete what arrived says when there was nothing of it there.
+func TestPageSendLeftOnConsole(t *testing.T) {
+	runPage(t, `
+  const left = d => ({ section: "details", path: "D:/g.p5z", game: { Kind: "p5z", Name: "Copper Vale" }, detail: d, state: "error", warnings: [] });
+  for (const d of ["send_no_space_kept", "send_slept"]) if (!leftOnConsole(left(d))) say("not left on the console: " + d);
+  for (const d of ["send_nothing_left", "send_no_space", "send_exists_older"]) if (leftOnConsole(left(d))) say("left on the console: " + d);
+  for (const code of ["no_space_kept", "slept", "nothing_left", "discard_busy", "delete_failed"])
+    if (detailText("send_" + code) !== t("detail_send_" + code)) say("the detail send_" + code + ": " + detailText("send_" + code));
+  for (const code of ["discard_busy", "delete_failed"]) if (sendErrorText(code) !== t("detail_send_" + code)) say("the error " + code);
+  // the send dialog says what the console checks: every volume, and the loose files
+  if (!/loose file/.test(t("sendText"))) say("sendText: " + t("sendText"));
+  // nothing of it there: said so, not "deleted"
+  render = () => {};
+  const toasts = [];
+  ask = async () => "delete";
+  toast = text => toasts.push(text);
+  const row = left("send_no_space_kept");
+  window.answers = { DiscardOnConsole: { deleted: false, had: 0, error: "" } };
+  await discardOnConsole(row);
+  if (row.detail !== "send_nothing_left" || toasts.join() !== t("discardNothing")("Copper Vale")) say("nothing there: " + row.detail + " " + toasts);
+  toasts.length = 0;
+  row.detail = "send_slept";
+  window.answers = { DiscardOnConsole: { deleted: true, had: 4096, error: "" } };
+  await discardOnConsole(row);
+  if (row.detail !== "send_discarded" || toasts.join() !== t("discardDone")("Copper Vale")) say("deleted: " + row.detail + " " + toasts);
+  if (!calls.some(call => call.startsWith("DiscardOnConsole"))) say("the window was not asked");
+`)
+}

@@ -1095,8 +1095,8 @@ such as `sce_sys/keystone`, fail in ASCII mode.
 ### FAT32 and the 4 GiB limit
 
 What you see in the window:
-- "The destination is FAT32", before starting, if the destination is FAT32 and the original game is
-  over 4 GiB.
+- "The destination is FAT32", before starting, if the destination is FAT32 and the original game (with
+  the DLC that go inside it) is over 4 GiB.
 - "the .p5z reached 4 GiB, which FAT32 does not take: it stopped and was deleted", if you went on and
   it did not fit.
 

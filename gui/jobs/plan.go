@@ -340,10 +340,12 @@ func plan(items []Item, o Options, fs FS, out func(Item) string, args func(it It
 	plans := make([]Plan, len(items))
 	committed := map[string]uint64{}
 	for i, it := range items {
-		p := Plan{Item: it, Out: out(it), Need: it.OriginalSize}
+		// what is compressed into it: the game, and its DLC
+		made := it.OriginalSize
 		if o.Mode == ModeP5z || o.Mode == ModeFolder {
-			p.Need += it.AddDLCSize // the DLC compressed into it
+			made += it.AddDLCSize
 		}
+		p := Plan{Item: it, Out: out(it), Need: made}
 		if o.Mode == ModeP5z && o.Repair > 0 {
 			p.Need += par2.SetSize(p.Need, o.Repair)
 		}
@@ -359,7 +361,7 @@ func plan(items []Item, o Options, fs FS, out func(Item) string, args func(it It
 		}
 		p.Args = args(it, p.Tmp)
 		if fat32 {
-			if kind, err := fs.Type(o.Dest); err == nil && strings.EqualFold(kind, "fat32") && it.OriginalSize > fat32Max {
+			if kind, err := fs.Type(o.Dest); err == nil && strings.EqualFold(kind, "fat32") && made > fat32Max {
 				p.Warnings = append(p.Warnings, "fat32")
 				if o.ContinueFat32 {
 					p.Args = append(p.Args, "--max-file-size", strconv.FormatUint(fat32Max, 10))

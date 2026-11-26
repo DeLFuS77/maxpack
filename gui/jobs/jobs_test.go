@@ -184,6 +184,17 @@ func TestFat32Rules(t *testing.T) {
 	if len(p.Warnings) != 0 || p.Block != "" || hasArg(p.Args, "--max-file-size") {
 		t.Errorf("3 GiB: warnings %v, Block %q, args %v", p.Warnings, p.Block, p.Args)
 	}
+	// the DLC that go inside it count too: 3 GiB with 2 GiB of DLC passes 4 GiB
+	withDLC := small
+	withDLC.AddDLC, withDLC.AddDLCSize = []string{`D:\dlc\a.pkg`}, 2*gib
+	p = PlanCompress([]Item{withDLC}, Options{Mode: "p5z", Dest: dest}, f)[0]
+	if !hasWarning(p, "fat32") || p.Block != "fat32_too_big" {
+		t.Errorf("3 GiB with 2 GiB of DLC: warnings %v, Block %q", p.Warnings, p.Block)
+	}
+	p = PlanCompress([]Item{withDLC}, Options{Mode: "p5z", Dest: dest, ContinueFat32: true}, f)[0]
+	if !hasWarning(p, "fat32") || p.Block != "" || !hasArg(p.Args, "--max-file-size") {
+		t.Errorf("3 GiB with 2 GiB of DLC, continuing: warnings %v, Block %q, args %v", p.Warnings, p.Block, p.Args)
+	}
 	p = PlanCompress([]Item{big}, Options{Mode: "folder", Dest: dest}, f)[0]
 	if hasWarning(p, "fat32") || p.Block != "" {
 		t.Errorf("folder on FAT32: warnings %v, Block %q", p.Warnings, p.Block)

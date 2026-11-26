@@ -507,7 +507,8 @@ why.
 ## 6. Warnings
 
 - **FAT32.** FAT32 does not take files over 4 GiB, and a `.p5z` can go over that. If the destination is
-  FAT32 and the original game is over 4 GiB, MaxPack tells you before starting:
+  FAT32 and the original game, with the DLC that go inside it, is over 4 GiB, MaxPack tells you before
+  starting:
   - **Use a folder** switches to "Play from the USB", whose parts fit in FAT32;
   - **Go on anyway** tries it. MaxPack never writes more to the `.p5z` than fits in FAT32 (4 GiB minus
     one byte): before going over, it stops, deletes what it wrote and tells you it does not fit.

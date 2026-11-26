@@ -57,22 +57,25 @@ All notable changes to MaxPack are listed here. The format follows
   that is full does not refuse it; it uses only the name of the `.p5z`, never touches one whole there, and
   says when nothing of it was there (`"deleted":false`); exit code 18 when the console could not delete it (with its words), and its own code
   (`discard_unsupported`) for a console that has no such request. While the console lets go of a receive of it
-  at work (`409 busy` with `retry_after`) it waits and asks again, for up to 75 s, saying so. A stop here
-  (Cancel, the window closed, Ctrl+C, `--control stdin` cancel, a stall) tells the console the PC left
-  (`POST /api/receive/leave`), so that it lets go of the receive at once; a receive paused that way (`left`) is
-  resumed as an idle one. A drive with no room where part of it is already (a send that stopped, a resume after
+  at work (`409 busy` with `retry_after`) it waits and asks again, for up to 75 s, saying so. Every end of a
+  send after its receive began that is not a whole send (Cancel, the window closed, Ctrl+C, `--control stdin`
+  cancel, a stall, the `.p5z` unreadable here, an answer of the console that is not right) tells the console the
+  PC left (`POST /api/receive/leave`), so that it lets go of the receive at once; a receive paused that way
+  (`left`) is resumed as an idle one. A drive with no room where part of it is already (a send that stopped, a resume after
   a write error, or an earlier and bigger copy of it) says how much is there (`kept`, `have`); "kept" is said
-  only when something arrived. A send this PC slept through (its clock, one that counts sleep on Windows, Linux
-  and macOS, jumped past `--stall` between two looks) says the PC slept, not that nothing moved on the console
-  (`slept`). `send --drives` lists the console's
+  only when something arrived. What this PC slept during a send is never counted against the console: two clocks
+  tell it (one that counts sleep and one that does not, on Windows, Linux and macOS), and the stall starts again
+  on waking; a stall that comes after says the PC slept meanwhile, and one gap of `--stall` between two looks
+  says the PC slept (`slept`), not that nothing moved on the console. `info --json` reads a `.p5z` under the
+  name it is made apart with (`<name>.p5z.maxpack-tmp`). `send --drives` lists the console's
   drives with their free space; `--json` gives progress lines for a front end. In the window: Settings
   > MaxPack for the console (its IP address and pairing code; the code goes only to `maxpack-core`, in
   its environment, never into a log or a report), and **Send to the console** on the card of a `.p5z`
   in Details and on the end card of Compress, with the drive and its free space, the bar, Cancel and
   the end card; several `.p5z` go one after another. **Delete what arrived on the console**, on the row,
   shows after a send that stopped or did not end, also one that found no room while part of it was there,
-  or whose engine had to be killed after a cancel (the console may keep some then); it says while the console
-  lets go of the receive. The send card says the console checks every volume and
+  or whose engine had to be killed after a cancel (the console may keep some then); its row says, for the whole
+  wait, that the console is letting go of the receive (and the window waits up to 5 minutes for it). The send card says the console checks every volume and
   loose file. Needs MaxPack for the console with Settings > Receive games from the PC.
 - **Quick verify:** `maxpack verify --quick <game.p5z>` (text and `--json`) checks a `.p5z`'s header,
   footer and index, each volume's SHA-256 and header, and each stored file's SHA-256, without
@@ -88,8 +91,12 @@ All notable changes to MaxPack are listed here. The format follows
   until it changes. A game it compressed well that grows or loses files afterwards (a copy that stalled for a
   minute and went on) is compressed again in place of the `.p5z` it made, only while that very file (its size
   and date, kept) is still there and the game is the same in the same version, at most twice in a row, and its
-  row says so; the window decides it again before anything is made and right before the swap, and anything
-  else there stays (a change of dates alone is no reason). A new version of a game whose `.p5z` is in the
+  row says so; the window decides it again before anything is made (the source must still be what was handed
+  over) and right before the swap, where it reads what was made and what it would replace (`info --json`): both
+  must be the game and version planned, and the version kept for next time is the one the made `.p5z` says. The
+  `.p5z` it replaces goes to the recycle bin under a dated name (`<name>.p5z.maxpack-old-<date>`), or stays
+  beside it under that name where there is no bin, and the row says which: never deleted for good. Anything
+  else there stays (a change of dates alone is no reason, nor is a version not known on either side). A new version of a game whose `.p5z` is in the
   destination is skipped with both versions on its row, pointing to Details › Update with a new dump…; an
   older dump is said to be older; nothing is updated by itself. What the window puts in the folder (Decompress
   there, a folder for the console made there) is never new. On a share that drops, closing the window or

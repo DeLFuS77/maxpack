@@ -399,9 +399,9 @@ breaks it goes on from what the console has. **Cancel**, or closing the window, 
 keeps what arrived: the next send goes on from there. **Delete what arrived on the console**, on the row,
 deletes it there, once you say so; it shows too when a drive of the console has no room for it while part of
 it is there already from before (that part takes room: delete it, or choose another drive), and says so when
-nothing of it was there. While the console lets go of that receive it waits (up to 75 s) and says so: a stop on
-the PC tells the console at once that the PC left, and one it could not tell is let go of a minute after its
-last data. A send this PC slept through says the PC slept, not that the console did nothing.
+nothing of it was there. While the console lets go of that receive it waits (up to 75 s) and its row says so
+for the whole wait: a stop on the PC tells the console at once that the PC left, and one it could not tell is
+let go of a minute after its last data. What this PC slept during a send is never counted against the console.
 The code goes only to `maxpack-core`, in its environment: never into a log nor into **Copy report**.
 
 ### Watched folder ([details](pc-window.md#watched-folder))
@@ -419,9 +419,12 @@ that game is skipped. But the `.p5z` it made itself is made again when its game 
 compressed (a copy that stalled for a minute and went on): while the destination still has that very file (the
 size and date it had when it was made, which MaxPack keeps), of the same game in the same version, the new one
 takes its place, written apart and checked as always, and the row says "it changed after it was compressed:
-compressed again". It does so at most twice in a row ("compress it by hand"), never for a change of dates alone,
-and the window decides it again before anything is made and right before the swap: if that file is no longer
-the one it made, or the watched folder was turned off, nothing is replaced. Sent to the console too, a console
+compressed again". It does so at most twice in a row ("compress it by hand"), never for a change of dates alone
+nor for a version that is not known, and the window decides it again before anything is made (the game must
+still be what was handed over) and right before the swap, where it reads what was made and what it would
+replace: unless both are the game and version planned, and that file is still the one it made with the watched
+folder on, nothing is replaced. The `.p5z` replaced goes to the recycle bin as `<name>.p5z.maxpack-old-<date>`;
+on a drive without one it stays beside it under that name, and the row says which. Sent to the console too, a console
 that has the older copy says so: delete it there first. A new version of a game (an update dump) whose `.p5z`
 is in the destination is skipped with both versions on its row: put it in with Details › **Update with a new
 dump…**; an older dump is said to be older, and left. Nothing is updated by itself. A game that lacks files of its list
@@ -830,11 +833,14 @@ one stopped on the console's page is not (exit code 15), and goes on when you se
 or `--delete-on-cancel` with a cancel, makes the console delete what it received. When a drive has no room for
 it and part of it is there already (from a send that stopped, or a resume after a write error), the refusal
 says how much is there (exit code 9, `kept` and `have` in the JSON): delete it with `--discard`, or send it to
-another drive. When this PC slept while it was sending (its clock jumped past `--stall` between two looks: the
-tick count on Windows, `CLOCK_BOOTTIME` on Linux and `CLOCK_MONOTONIC` on macOS, which all count the sleep), it
-says the PC slept, not that nothing moved on the console (exit code 16, `slept` in the JSON). A stop here (Ctrl+C,
-`cancel`, the end of the input, a stall) tells the console the PC left (`/leave`), so that it lets go of the
-receive at once; "kept" is said only when something arrived.
+another drive. What this PC sleeps during a send is never counted against the console: it compares a clock that
+counts the sleep (the tick count on Windows, `CLOCK_BOOTTIME` on Linux, `CLOCK_MONOTONIC` on macOS) with one that
+does not (the unbiased interrupt time, `CLOCK_MONOTONIC`, `CLOCK_UPTIME_RAW`), and on waking the stall starts
+again; a stall after that says the PC slept meanwhile, and one gap of `--stall` between two looks (the program
+stopped) says the PC slept (exit code 16, `slept` in the JSON). Every end after the receive began that is not a
+whole send (Ctrl+C, `cancel`, the end of the input, a stall, the `.p5z` unreadable here, an answer that is not
+right) tells the console the PC left (`/leave`), so that it lets go of the receive at once; "kept" is said only
+when something arrived.
 
 On the console, turn on Settings > **Receive games from the PC**: its page then shows a 6-digit pairing
 code. Without it the console takes nothing: anyone on the home network could write to its drives. The code

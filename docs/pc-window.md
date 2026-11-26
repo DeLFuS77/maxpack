@@ -536,8 +536,8 @@ made `.p5z` files (they are added to Details, read, and sent from there).
   no room on the drive while part of it is there from before (that part takes room): it asks first, then the
   console deletes what it received of it, and the next send starts from nothing. It is the console's own
   request for it, which a full drive does not refuse; when nothing of it was there, the row says so. While the
-  console lets go of that receive it waits, up to 75 s, and says so; a stop here (Cancel, closing the window)
-  tells the console at once that the PC left. An engine that had to be killed after a cancel says the console
+  console lets go of that receive it waits, up to 75 s, and its row says so (with the seconds) for the whole
+  wait; a stop here (Cancel, closing the window) tells the console at once that the PC left. An engine that had to be killed after a cancel says the console
   may keep some. A console without that request says to update it; one that could not delete says why.
 - **Asking for the drives** opens the card at once with "Asking the console for its drives…": **Cancel**
   stops the question, and it gives up after 30 s (a console never reached says "no answer" in about 11 s).
@@ -572,9 +572,12 @@ minimized too: no service stays in the system.
   has that very file (the size and date it had, kept in `watched.json`), of the same game in the same version;
   written apart and checked as always, only that `.p5z` is replaced, and the row says "it changed after it
   was compressed: compressed again". At most twice in a row (then "compress it by hand"), never for a change
-  of dates alone; the page asks for it apart and the window decides it again before anything is made and right
-  before the swap, so another file there by then, or the watched folder turned off, means nothing is replaced
-  (the row says so). A new version of a game (an update dump) whose `.p5z` is in the destination is skipped
+  of dates alone (nor of a game of one file), nor when its version is not known; the page asks for it apart and
+  the window decides it again before anything is made (the game must still be as it was handed over, else it
+  comes again) and right before the swap, where it reads what was made and what it would replace: both must be
+  the game and version planned, that file still the one it made, the watched folder on; else nothing is
+  replaced (the row says so). The `.p5z` replaced goes to the recycle bin as `<name>.p5z.maxpack-old-<date>`, or,
+  on a drive without one, stays beside it under that name: never deleted for good. A new version of a game (an update dump) whose `.p5z` is in the destination is skipped
   with both versions on its row: **Update with a new dump…** on its card in Details puts it in; an older dump
   is said to be older. Nothing is updated by itself. A game that lacks files of its list (the 1.0.6 check) stays in
   the list with its warning. When a queue of Compress is running, what arrives joins it, with the same

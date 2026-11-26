@@ -164,7 +164,7 @@ func (s Settings) Normalize() Settings {
 }
 
 // ValidConsoleIP tells whether ip is an address the engine sends to: four numbers of 0 to 255 with dots,
-// and maybe ":port" (1 to 65535). "" is valid: no console.
+// and maybe ":port" (1 to 65535), none with a leading zero (the engine refuses them). "" is valid: no console.
 func ValidConsoleIP(ip string) bool {
 	if ip == "" {
 		return true
@@ -172,7 +172,7 @@ func ValidConsoleIP(ip string) bool {
 	host, port, hasPort := strings.Cut(ip, ":")
 	if hasPort {
 		n, err := strconv.Atoi(port)
-		if err != nil || n < 1 || n > 65535 || strings.TrimLeft(port, "0123456789") != "" {
+		if err != nil || n < 1 || n > 65535 || strings.TrimLeft(port, "0123456789") != "" || port[0] == '0' {
 			return false
 		}
 	}
@@ -182,7 +182,8 @@ func ValidConsoleIP(ip string) bool {
 	}
 	for _, part := range parts {
 		n, err := strconv.Atoi(part)
-		if err != nil || part == "" || len(part) > 3 || n < 0 || n > 255 || strings.TrimLeft(part, "0123456789") != "" {
+		if err != nil || part == "" || len(part) > 3 || n < 0 || n > 255 || strings.TrimLeft(part, "0123456789") != "" ||
+			(len(part) > 1 && part[0] == '0') {
 			return false
 		}
 	}

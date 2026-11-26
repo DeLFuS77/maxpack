@@ -1580,7 +1580,9 @@ async function joinQueue() {
 // code it shows (6 digits); the window checks them again (settings.go)
 const validConsoleIp = ip => {
   const found = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?::(\d{1,5}))?$/.exec(String(ip));
-  return !!found && found.slice(1, 5).every(n => Number(n) <= 255) && (found[5] === undefined || (Number(found[5]) >= 1 && Number(found[5]) <= 65535));
+  // no leading zeros (the engine refuses them)
+  return !!found && found.slice(1, 6).every(n => n === undefined || !/^0\d/.test(n)) && found.slice(1, 5).every(n => Number(n) <= 255)
+    && (found[5] === undefined || (Number(found[5]) >= 1 && Number(found[5]) <= 65535));
 };
 const validConsoleCode = code => /^\d{6}$/.test(String(code));
 // what a .p5z of Details takes to send

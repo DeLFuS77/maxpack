@@ -33,7 +33,7 @@ console.log(vm.runInContext(` + "`" + `(() => {
   if (sendSize(row) !== 3000) say("the size sent: " + sendSize(row));
   // the console of Settings
   for (const ip of ["192.168.1.20", "10.0.0.5:8095", "0.0.0.0"]) if (!validConsoleIp(ip)) say("refused: " + ip);
-  for (const ip of ["", "192.168.1", "256.1.1.1", "console.local", "1.2.3.4:0", "1.2.3.4:70000", "1.2.3.4/24", " 1.2.3.4"]) if (validConsoleIp(ip)) say("taken: " + ip);
+  for (const ip of ["", "192.168.1", "256.1.1.1", "console.local", "1.2.3.4:0", "1.2.3.4:70000", "1.2.3.4/24", " 1.2.3.4", "010.0.0.5", "10.0.0.5:08095"]) if (validConsoleIp(ip)) say("taken: " + ip);
   if (!validConsoleCode("004213") || validConsoleCode("12345") || validConsoleCode("12a456") || validConsoleCode("1234567")) say("the code");
   // its drives, with their free space, and whether the .p5z fit with the console's margin
   const internal = { id: "internal", free: 600e9, total: 825e9, fs: "ufs" }, usb = { id: "usb1", free: 3000, total: 64e9, fs: "exfat" };

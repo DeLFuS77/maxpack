@@ -237,7 +237,8 @@ func TestSettingsConsole(t *testing.T) {
 		t.Fatalf("%+v, %v; expected %+v", got, err, want)
 	}
 	for ip, ok := range map[string]bool{"192.168.1.20": true, "10.0.0.5:8095": true, " 192.168.1.20 ": true, "": true, "192.168.1": false,
-		"256.1.1.1": false, "console.local": false, "192.168.1.20:0": false, "192.168.1.20:99999": false, "1.2.3.4/24": false} {
+		"256.1.1.1": false, "console.local": false, "192.168.1.20:0": false, "192.168.1.20:99999": false, "1.2.3.4/24": false,
+		"010.0.0.5": false, "192.168.01.20": false, "10.0.0.5:08095": false, "10.0.0.0": true} {
 		s := Defaults()
 		s.ConsoleIP = ip
 		if got := s.Normalize().ConsoleIP; (got != "") != (ok && ip != "") || (ok && got != strings.TrimSpace(ip)) {

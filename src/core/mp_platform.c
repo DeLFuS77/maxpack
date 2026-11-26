@@ -501,6 +501,52 @@ int mp_wfile_reopen(const char *path, mp_wfile **out, mp_err *e) {
     return 0;
 }
 
+int mp_wfile_reopen_locked(const char *path, mp_wfile **out, int *busy, mp_err *e) {
+    *out = NULL;
+    *busy = 0;
+    wchar_t *w = long_path(path);
+    if (!w) {
+        mp_err_set(e, "invalid path: %s", path);
+        return -1;
+    }
+    // GENERIC_WRITE shared only for reading: a second writer meets a sharing violation
+    HANDLE h = CreateFileW(w, GENERIC_WRITE, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    free(w);
+    if (h == INVALID_HANDLE_VALUE) {
+        DWORD code = GetLastError();
+        *busy = code == ERROR_SHARING_VIOLATION || code == ERROR_LOCK_VIOLATION;
+        if (*busy)
+            mp_err_set(e, "another program is writing %s", path);
+        else
+            win_err(e, "cannot open for writing", path, code);
+        return -1;
+    }
+    LARGE_INTEGER li;
+    mp_wfile *f = calloc(1, sizeof *f);
+    if (!f || !(f->path = mp_strdup(path)) || !GetFileSizeEx(h, &li)) {
+        if (f) free(f->path);
+        free(f);
+        CloseHandle(h);
+        mp_err_set(e, "cannot open %s", path);
+        return -1;
+    }
+    f->h = h;
+    f->size = (uint64_t)li.QuadPart;
+    *out = f;
+    return 0;
+}
+
+int mp_wfile_truncate(mp_wfile *f, uint64_t size, mp_err *e) {
+    LARGE_INTEGER li;
+    li.QuadPart = (LONGLONG)size;
+    if (!SetFilePointerEx(f->h, li, NULL, FILE_BEGIN) || !SetEndOfFile(f->h)) {
+        win_err(e, "cannot cut", f->path, GetLastError());
+        return -1;
+    }
+    f->size = size;
+    return 0;
+}
+
 int mp_wfile_pwrite(mp_wfile *f, const void *p, size_t n, uint64_t off, mp_err *e) {
     size_t done = 0;
     while (done < n) {
@@ -767,6 +813,7 @@ void mp_args_utf8(int *argc, char ***argv) {
 #include <errno.h>
 #include <fcntl.h>
 #include <pthread.h>
+#include <sys/file.h>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
 #include <time.h>
@@ -1081,6 +1128,48 @@ int mp_wfile_reopen(const char *path, mp_wfile **out, mp_err *e) {
     f->fd = fd;
     f->size = (uint64_t)st.st_size;
     *out = f;
+    return 0;
+}
+
+int mp_wfile_reopen_locked(const char *path, mp_wfile **out, int *busy, mp_err *e) {
+    *out = NULL;
+    *busy = 0;
+    int fd = open(path, O_WRONLY | O_CLOEXEC);
+    struct stat st;
+    if (fd < 0 || fstat(fd, &st) != 0) {
+        mp_err_set(e, "cannot open %s for writing: %s", path, strerror(errno));
+        if (fd >= 0) close(fd);
+        return -1;
+    }
+    // flock locks the open file, not the process: a second open in the same process is refused too
+    if (flock(fd, LOCK_EX | LOCK_NB) != 0) {
+        *busy = errno == EWOULDBLOCK || errno == EAGAIN;
+        if (*busy)
+            mp_err_set(e, "another program is writing %s", path);
+        else
+            mp_err_set(e, "cannot lock %s: %s", path, strerror(errno));
+        close(fd);
+        return -1;
+    }
+    mp_wfile *f = calloc(1, sizeof *f);
+    if (!f || !(f->path = mp_strdup(path))) {
+        free(f);
+        close(fd);
+        mp_err_set(e, "out of memory");
+        return -1;
+    }
+    f->fd = fd;
+    f->size = (uint64_t)st.st_size;
+    *out = f;
+    return 0;
+}
+
+int mp_wfile_truncate(mp_wfile *f, uint64_t size, mp_err *e) {
+    if (ftruncate(f->fd, (off_t)size) != 0) {
+        mp_err_set(e, "cannot cut %s: %s", f->path, strerror(errno));
+        return -1;
+    }
+    f->size = size;
     return 0;
 }
 

@@ -29,6 +29,11 @@ int mp_write_file(const char *utf8_path, const void *data, size_t len, mp_err *e
 typedef struct mp_wfile mp_wfile;
 int mp_wfile_create(const char *utf8_path, mp_wfile **out, mp_err *e);
 int mp_wfile_reopen(const char *utf8_path, mp_wfile **out, mp_err *e);   // existing, not truncated
+// The same as the only writer of the file: others may still read it, but no one else writes it while f is
+// open (another MaxPack asking gets -1 with *busy = 1; any other failure, *busy = 0).
+int mp_wfile_reopen_locked(const char *utf8_path, mp_wfile **out, int *busy, mp_err *e);
+// Cuts the file to size bytes (or makes it that long); what is written next goes there.
+int mp_wfile_truncate(mp_wfile *f, uint64_t size, mp_err *e);
 int mp_wfile_write(mp_wfile *f, const void *p, size_t n, mp_err *e);
 int mp_wfile_pwrite(mp_wfile *f, const void *p, size_t n, uint64_t off, mp_err *e);
 uint64_t mp_wfile_size(const mp_wfile *f);

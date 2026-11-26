@@ -466,6 +466,7 @@ texts.en = {
   recoveredToast: name => name + ": a change that stopped halfway was undone, and it is as it was",
   nextGrow: "Play it from the .p5z with MaxPack for the console: a .p5z that grew needs ampr-emu-ng v0.5.1-maxpack.2 or later.",
   detail_grown: "done: only what is new went into the .p5z, and it verifies",
+  detail_grown_unverified: "it grew: what is new went into the .p5z, but its verification was cancelled (Verify, on its card, checks it)",
   detail_nothing_to_do: "it had all of that already: nothing was added",
   detail_repair_redone: "its repair data was made again",
   detail_busy: "another MaxPack is changing this .p5z right now",

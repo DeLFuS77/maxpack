@@ -466,6 +466,7 @@ texts.fr = {
   recoveredToast: name => name + " : une modification arrêtée à mi-chemin a été annulée, il est comme avant",
   nextGrow: "Lancez-le depuis le .p5z avec MaxPack pour la console : un .p5z agrandi a besoin d'ampr-emu-ng v0.5.1-maxpack.2 ou plus récent.",
   detail_grown: "terminé : seul le nouveau est entré dans le .p5z, et il se vérifie",
+  detail_grown_unverified: "il a grandi : le nouveau est entré dans le .p5z, mais sa vérification a été annulée (Vérifier, sur sa carte, le vérifie)",
   detail_nothing_to_do: "il avait déjà tout cela : rien n'a été ajouté",
   detail_repair_redone: "ses données de réparation ont été refaites",
   detail_busy: "un autre MaxPack modifie ce .p5z en ce moment",

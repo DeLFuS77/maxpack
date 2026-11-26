@@ -43,6 +43,8 @@ import (
 //   - "grows": add and update append "+grown" to the .p5z they are given, tell some progress and end
 //     well, saying what a real one says; verify ends well.
 //   - "mostly": as "grows", but update refuses with error "mostly_changed" unless given --force.
+//   - "grows-verify-waits": as "grows", but verify tells some progress and waits for cancel, then ends
+//     as cancelled.
 const Env = "MP_FAKE_CORE"
 
 // InfoEnv is the file of what "info" says of each game: {"<name>": {<info --json>}, ...}.
@@ -157,8 +159,14 @@ func run(mode string, args []string) int {
 		fmt.Printf("{\"event\":\"result\",\"ok\":true,\"cpu_threads\":8,\"level\":%s,\"trials\":[%s],\"recommended_threads\":6,"+
 			"\"fastest_threads\":8,\"disk\":%s}\n", level, trials, disk)
 		return 0
-	case "grows", "mostly":
+	case "grows", "mostly", "grows-verify-waits":
 		if len(args) > 0 && args[0] == "verify" {
+			if mode == "grows-verify-waits" {
+				progress()
+				waitCancel()
+				fmt.Println(`{"event":"result","ok":false,"error":"cancelled"}`)
+				return 130
+			}
 			fmt.Println(`{"event":"result","ok":true,"files_bad":0}`)
 			return 0
 		}

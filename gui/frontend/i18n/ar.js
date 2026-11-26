@@ -469,6 +469,7 @@ texts.ar = {
   recoveredToast: name => name + ": أُلغي تغيير توقف في منتصفه، وهو كما كان",
   nextGrow: "شغّله من ملف ‎.p5z‎ باستخدام MaxPack لجهاز اللعب: يحتاج ملف ‎.p5z‎ الموسَّع إلى ampr-emu-ng v0.5.1-maxpack.2 أو أحدث.",
   detail_grown: "تم: لم يدخل ملف ‎.p5z‎ إلا الجديد، ويجتاز التحقق",
+  detail_grown_unverified: "كبر: دخل الجديد ملف ‎.p5z‎، لكن أُلغي التحقق منه (يتحقق منه زر «تحقق» في بطاقته)",
   detail_nothing_to_do: "كان يحتوي على كل ذلك بالفعل: لم يُضف شيء",
   detail_repair_redone: "أُعيد إنشاء بيانات الإصلاح الخاصة به",
   detail_busy: "نسخة أخرى من MaxPack تغيّر ملف ‎.p5z‎ هذا الآن",

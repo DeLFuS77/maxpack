@@ -88,7 +88,8 @@ func growFailure(code string) string {
 
 // growOne grows a .p5z in its place, verifies it and, when it had repair data of its own, makes them
 // again. It ends "grown" (or "nothing_to_do": it had all of that already), with "repair_redone" when it
-// got its repair data again.
+// got its repair data again. Cancelled during that verification, it has grown all the same (the engine
+// had ended): it ends done, "grown_unverified", with its repair data as they were.
 func (r *Runner) growOne(ctx context.Context, i int, p Plan, o Options) outcome {
 	fail := func(state, detail string) outcome { return outcome{state: state, detail: detail} }
 	// the repair data it has now protect it as it is: the share is kept for the ones made after
@@ -105,11 +106,13 @@ func (r *Runner) growOne(ctx context.Context, i int, p Plan, o Options) outcome 
 	}
 	r.item(i, StateVerifying, "")
 	if _, ok, failure = r.engine(ctx, i, []string{"verify", p.Out}, o, nil); !ok {
-		state := endState(false, failure)
-		if failure != "cancelled" {
-			failure = "verify_failed: " + failure
+		if failure == "cancelled" {
+			if nothing {
+				return outcome{state: StateOK, detail: notes[0]} // nothing changed: nothing to verify
+			}
+			return outcome{state: StateOK, detail: "grown_unverified"}
 		}
-		return fail(state, failure)
+		return fail(StateError, "verify_failed: "+failure)
 	}
 	end := outcome{state: StateOK}
 	if before.State == par2.StateMatch && !nothing {

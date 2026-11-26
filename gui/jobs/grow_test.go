@@ -143,6 +143,39 @@ func TestGrowRun(t *testing.T) {
 	}
 }
 
+// Cancelled while it grows, the engine leaves the .p5z as it was and the row says cancelled. Cancelled
+// during the verification after it grew, the append is the engine's already: the row says it grew and was
+// not verified, as done, so Details reads it again (an update tried again would be the same version).
+func TestGrowCancelled(t *testing.T) {
+	dir := t.TempDir()
+	items := existing(t, dir, 1)
+	items[0].Grow = []string{filepath.Join(dir, "dlc.pkg")}
+	o := Options{Mode: ModeAddDLC}
+	for at, mode := range map[string]string{StateGrowing: "waits", StateVerifying: "grows-verify-waits"} {
+		t.Setenv(fakecore.Env, mode)
+		before, _ := os.ReadFile(items[0].Path)
+		ctx, cancel := context.WithCancel(context.Background())
+		rec := newRecorder()
+		r := &Runner{Core: os.Args[0], OnItem: func(i int, state, detail string) {
+			rec.item(i, state, detail)
+			if state == at {
+				cancel()
+			}
+		}}
+		sum := r.Run(ctx, PlanGrow(items, o, newFS()), o)
+		cancel()
+		state, detail := rec.last(0)
+		after, _ := os.ReadFile(items[0].Path)
+		grew := len(after) > len(before) && strings.HasSuffix(string(after), "+grown")
+		if at == StateGrowing && (state != StateCancelled || sum.Cancelled != 1 || sum.Done != 0 || grew) {
+			t.Errorf("cancelled while growing: %s %q %+v, grew %v", state, detail, sum, grew)
+		}
+		if at == StateVerifying && (state != StateOK || detail != "grown_unverified" || sum.Done != 1 || sum.Cancelled != 0 || !grew) {
+			t.Errorf("cancelled while verifying: %s %q %+v, grew %v", state, detail, sum, grew)
+		}
+	}
+}
+
 // With the real engine: DLC added to a .p5z, then a new dump of it, both verified; a second time the
 // same dump is refused (the same version).
 func TestGrowReal(t *testing.T) {

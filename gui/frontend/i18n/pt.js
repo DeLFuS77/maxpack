@@ -466,6 +466,7 @@ texts.pt = {
   recoveredToast: name => name + ": uma mudança que parou no meio foi desfeita, e ele está como estava",
   nextGrow: "Jogue-o a partir do .p5z com o MaxPack para o console: um .p5z ampliado precisa do ampr-emu-ng v0.5.1-maxpack.2 ou posterior.",
   detail_grown: "pronto: só o que é novo foi para o .p5z, e ele é verificado",
+  detail_grown_unverified: "ele cresceu: o que é novo foi para o .p5z, mas a verificação dele foi cancelada (Verificar, no cartão dele, o confere)",
   detail_nothing_to_do: "ele já tinha tudo isso: nada foi adicionado",
   detail_repair_redone: "os dados de reparo dele foram feitos de novo",
   detail_busy: "outro MaxPack está mudando este .p5z agora",

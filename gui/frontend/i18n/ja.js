@@ -466,6 +466,7 @@ texts.ja = {
   recoveredToast: name => name + ": 途中で止まった変更を元に戻しました。元のままです",
   nextGrow: "コンソール版 MaxPack で .p5z からそのままプレイしてください。追記した .p5z には ampr-emu-ng v0.5.1-maxpack.2 以降が必要です。",
   detail_grown: "完了: .p5z に入ったのは新しい分だけで、検証にも通りました",
+  detail_grown_unverified: ".p5z に新しい分は入りましたが、検証はキャンセルされました（カードの「検証」で確かめられます）",
   detail_nothing_to_do: "すべて入っていたため、何も追加していません",
   detail_repair_redone: "修復データを作り直しました",
   detail_busy: "別の MaxPack がこの .p5z を変更中です",

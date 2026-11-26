@@ -466,6 +466,7 @@ texts.zh = {
   recoveredToast: name => name + "：一次中途停止的更改已撤销，它保持原样",
   nextGrow: "请用主机版 MaxPack 直接从 .p5z 运行：追加过的 .p5z 需要 ampr-emu-ng v0.5.1-maxpack.2 或更高版本。",
   detail_grown: "完成：只有新内容进入了 .p5z，且校验通过",
+  detail_grown_unverified: "已扩充：新内容已进入 .p5z，但其校验已取消（可用其卡片上的“校验”检查）",
   detail_nothing_to_do: "它已包含所有这些内容：未添加任何东西",
   detail_repair_redone: "已重新生成其修复数据",
   detail_busy: "另一个 MaxPack 正在更改此 .p5z",

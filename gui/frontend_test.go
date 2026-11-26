@@ -77,7 +77,7 @@ func pageCodes() []string {
 		// the page: skipped by the user, a game that cannot go, and anything else
 		"skipped_by_user", "already_packed", "not_packed", "other",
 		// a .p5z that grows (jobs/grow.go): how it ended, and what the engine says when it does not
-		"grown", "nothing_to_do", "repair_redone", "nothing_given", "busy", "grow_no_space", "grow_too_big", "too_many_volumes",
+		"grown", "grown_unverified", "nothing_to_do", "repair_redone", "nothing_given", "busy", "grow_no_space", "grow_too_big", "too_many_volumes",
 		"mostly_changed", "no_packs_left", "other_game", "same_version", "no_title_id", "not_a_game", "changed_meanwhile",
 		"dump_packed",
 	}

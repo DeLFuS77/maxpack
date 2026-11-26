@@ -487,6 +487,8 @@ function partText(part) {
   if (found) return t("detail_repair_not_possible")(+found[1]);
   found = /^exit_(-?\d+)$/.exec(part);
   if (found) return t("detail_exit")(+found[1]);
+  found = /^send_letting_go: (\d+)$/.exec(part);
+  if (found) return t("detail_send_letting_go")(+found[1]);
   found = /^watch_(other|older)_version: (\S+) (\S+)$/.exec(part);
   if (found) return t("detail_watch_" + found[1] + "_version")(found[2], found[3]);
   found = /^([a-z][a-z0-9_]*)(?:: ([\s\S]*))?$/.exec(part);
@@ -1810,8 +1812,11 @@ async function discardOnConsole(row) {
   if (await ask($("discard-dialog")) !== "delete") return;
   state.busy = true;
   render();
+  // while the console lets go of it, the row says so (onDiscardWaiting); refused, it is as it was, to try again
+  const was = row.detail;
   try {
     const view = await go.call("DiscardOnConsole", row.path, row.sentDrive || load("sendDrive", "")).catch(error => ({ error: "io", message: message(error) }));
+    if (view.error) row.detail = was;
     // the console could not delete it: its own words go with the text
     if (view.error === "delete_failed" && view.detail) { toast(t("detail_send_delete_failed") + ": " + view.detail); return; }
     if (view.error) { toast(sendErrorText(view.error, view.message)); return; }
@@ -1824,10 +1829,13 @@ async function discardOnConsole(row) {
   }
 }
 
-// the console is letting go of a receive of a .p5z to delete (discard:waiting): said, as it asks again shortly
+// the console is letting go of a receive of a .p5z to delete (discard:waiting): its row says so, with the seconds
+// until it is asked again, for the whole wait (Delete what arrived then says what came of it)
 function onDiscardWaiting(event) {
   const row = state.lists.details.find(r => event && pathKey(r.path) === pathKey(event.path || ""));
-  toast(t("discardWaiting")(row && row.game ? row.game.Name || baseName(row.path) : baseName((event && event.path) || "")));
+  if (!row) return;
+  row.detail = "send_letting_go: " + Math.max(1, Math.round(Number(event.seconds) || 1));
+  paintRow(row);
 }
 
 // the end card of Compress: the .p5z it made go to Details, and from there to the console once read
@@ -1889,6 +1897,7 @@ function watchReady(rows) {
 // the window is told how a watched game ended: done (compressed, failed, in the destination already, and every
 // reason the watched folder gives for not making it again) until it changes; anything else (cancelled, skipped for
 // another reason, a swap that a program held too long) comes again in the next run
+// (a redo whose game changed again before its turn comes again too: watch_redo_changed)
 const watchFinal = row => row.state === "ok" || (row.state === "error" && !/^swap_failed/.test(row.detail))
   || (row.state === "skipped" && /^((watch_)?exists|watch_(other|older)_version: .*|watch_dates_only|watch_redo_limit|watch_redo_refused)$/.test(row.detail));
 // what keeps the watched folder waiting (no destination, no room) is said once per wait, not on every try
@@ -2783,7 +2792,10 @@ async function offerLeftovers() {
   // a folder that may have a copy of a .p5z that is in its place stays
   const about = item => [size(item.Size), item.Restore ? t("leftoverRestore")(ltr(item.Restore)) : "", item.Keep ? t("leftoverKeep") : ""].filter(Boolean).join(" · ");
   $("leftover-list").replaceChildren(...left.map(item => line(ltr(item.Path), about(item))));
-  $("leftover-repair").hidden = !left.some(item => item.Restore || item.Keep);
+  // an old .p5z a replace cut short set apart goes back to its name; a repair cut short has words of its own
+  const swapped = item => /\.maxpack-old$/i.test(item.Path || "");
+  $("leftover-swap").hidden = !left.some(item => item.Restore && swapped(item));
+  $("leftover-repair").hidden = !left.some(item => (item.Restore || item.Keep) && !swapped(item));
   if (await ask($("leftover-dialog")) !== "delete") return;
   const failed = await go.call("CleanLeftovers").catch(error => [message(error)]);
   toast(failed && failed.length ? t("leftoverFailed")(failed.length) + " " + failed.join("; ") : t("leftoverDone"));

@@ -105,6 +105,7 @@ func TestPageSendLeftOnConsole(t *testing.T) {
   if (!/loose file/.test(t("sendText"))) say("sendText: " + t("sendText"));
   // nothing of it there: said so, not "deleted"
   render = () => {};
+  paintRow = () => {};
   const toasts = [];
   ask = async () => "delete";
   toast = text => toasts.push(text);
@@ -130,10 +131,42 @@ func TestPageSendLeftOnConsole(t *testing.T) {
   window.answers = { DiscardOnConsole: { error: "discard_unsupported", message: "x" } };
   await discardOnConsole(row);
   if (toasts.join() !== t("detail_send_discard_unsupported")) say("an older console: " + toasts);
-  // while the console lets go of a receive of it, the page says so
-  toasts.length = 0;
+  // while the console lets go of a receive of it, its row says so for the whole wait (with the seconds), and then
+  // what came of it
   state.lists.details = [row];
-  onDiscardWaiting({ path: "D:/g.p5z", seconds: 3 });
-  if (toasts.join() !== t("discardWaiting")("Copper Vale")) say("waiting: " + toasts);
+  row.detail = "send_kept";
+  let release;
+  window.answers = { DiscardOnConsole: new Promise(done => { release = done; }) };
+  const going = discardOnConsole(row);
+  await Promise.resolve();
+  onDiscardWaiting({ path: "D:/g.p5z", seconds: 60 });
+  if (row.detail !== "send_letting_go: 60" || detailText(row.detail) !== t("detail_send_letting_go")(60)) say("waiting: " + row.detail);
+  release({ deleted: true, had: 1, error: "" });
+  await going;
+  if (row.detail !== "send_discarded") say("after the wait: " + row.detail);
+  // a wait that ends refused puts the row back as it was, to try again
+  row.detail = "send_kept";
+  window.answers = { DiscardOnConsole: new Promise(done => { release = done; }) };
+  const again = discardOnConsole(row);
+  await Promise.resolve();
+  onDiscardWaiting({ path: "D:/g.p5z", seconds: 60 });
+  release({ error: "discard_busy", message: "" });
+  await again;
+  if (row.detail !== "send_kept") say("refused after the wait: " + row.detail);
+`)
+}
+
+// TestPageLeftoverSwap: an old .p5z set apart by a replace that was cut short goes back to its name, and the
+// question says that, not the words of a repair cut short.
+func TestPageLeftoverSwap(t *testing.T) {
+	runPage(t, `
+  window.answers = { Leftovers: [{ Path: "D:/d/g.p5z.maxpack-old", Restore: "D:/d/g.p5z", Size: 4096 }] };
+  ask = async () => "later";
+  await offerLeftovers();
+  if ($("leftover-swap").hidden || !$("leftover-repair").hidden) say("the swap: swap note " + !$("leftover-swap").hidden + ", repair note " + !$("leftover-repair").hidden);
+  window.answers = { Leftovers: [{ Path: "D:/d/g.p5z.maxpack-repair", Restore: "D:/d/g.p5z", Size: 4096 }] };
+  await offerLeftovers();
+  if (!$("leftover-swap").hidden || $("leftover-repair").hidden) say("the repair: swap note " + !$("leftover-swap").hidden + ", repair note " + !$("leftover-repair").hidden);
+  if (typeof t("leftoverSwapNote") !== "string" || !t("leftoverSwapNote")) say("leftoverSwapNote");
 `)
 }

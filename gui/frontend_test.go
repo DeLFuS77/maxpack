@@ -89,6 +89,7 @@ func pageCodes() []string {
 		// what the watched folder does not compress (app.js)
 		"watch_exists", "watch_incomplete", "watch_redone", "watch_other_version", "send_exists_older",
 		"watch_older_version", "watch_dates_only", "watch_redo_limit", "watch_redo_refused",
+		"watch_redo_changed", "watch_old_in_bin", "watch_old_kept", "send_letting_go",
 	}
 	// the phases of the progress of the engine (phase_code in src/cli/main.c), and of par2
 	phases := []string{"copying", "comparing", "packing", "verifying", "unpacking", "working", "protecting", "repairing", "sending"}

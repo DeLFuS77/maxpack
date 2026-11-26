@@ -33,6 +33,10 @@ const watchRedoChecks = `
     if (detailText(code) !== t("detail_" + code)) say("the detail " + code);
     if (!watchFinal({ state: "skipped", detail: code })) say("not final: " + code);
   }
+  // a redo whose game changed again before its turn comes again; the old .p5z went to the bin, or was kept beside
+  if (detailText("watch_redo_changed") !== t("detail_watch_redo_changed") || watchFinal({ state: "skipped", detail: "watch_redo_changed" })) say("watch_redo_changed");
+  if (detailText("watch_redone; watch_old_in_bin") !== t("detail_watch_redone") + "; " + t("detail_watch_old_in_bin")) say("in the bin");
+  if (detailText("watch_old_kept: D:/d/A.p5z.maxpack-old-20261126-101500") !== t("detail_watch_old_kept") + ": D:/d/A.p5z.maxpack-old-20261126-101500") say("kept beside");
   // a swap a program held too long is not final: the game comes again in the next run
   if (watchFinal({ state: "error", detail: "swap_failed: in use" }) || !watchFinal({ state: "error", detail: "verify_failed" })) say("swap_failed is final");
   for (const name of ["B", "C"]) if (!calls.some(call => call.startsWith("WatchEnded ") && call.includes("D:/w/" + name) && call.includes("true"))) say("not final: " + name);

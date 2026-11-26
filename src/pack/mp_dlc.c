@@ -302,6 +302,11 @@ void mp_dlc_sizes(mp_dlc_list *l, const mp_cfile *files, size_t n) {
 
 int mp_dlc_attach(mp_source **game, const char *const *paths, size_t n, mp_dlc_list *out, const char **code,
                   mp_err *e) {
+    return mp_dlc_attach_ex(game, NULL, 0, paths, n, out, code, e);
+}
+
+int mp_dlc_attach_ex(mp_source **game, const mp_dlc *have, size_t nhave, const char *const *paths, size_t n,
+                     mp_dlc_list *out, const char **code, mp_err *e) {
     *code = "dlc_refused";
     if (out) memset(out, 0, sizeof *out);
     mp_source *g = *game;
@@ -311,10 +316,11 @@ int mp_dlc_attach(mp_source **game, const char *const *paths, size_t n, mp_dlc_l
     mp_source **parts = calloc(n ? n : 1, sizeof *parts);
     char (*folders)[16] = calloc(n ? n : 1, sizeof *folders);
     const char **prefixes = calloc(n ? n : 1, sizeof *prefixes);
+    mp_dlc *all = calloc(nhave + n ? nhave + n : 1, sizeof *all);
     char *ini = NULL;
     size_t ini_len = 0, nparts = 0;
     int rc = -1;
-    if (!src || !v || !parts || !folders || !prefixes) {
+    if (!src || !v || !parts || !folders || !prefixes || !all) {
         mp_err_set(e, "out of memory");
         goto done;
     }
@@ -334,10 +340,27 @@ int mp_dlc_attach(mp_source **game, const char *const *paths, size_t n, mp_dlc_l
                       "its DLC cannot be told");
         goto done;
     }
+    // the DLC the game carries already keep their folders: the new ones go after the last of them
     size_t ndata = 0;
+    for (size_t j = 0; j < nhave; j++) {
+        unsigned id = 0;
+        if (have[j].data && sscanf(have[j].folder, "addcont%u", &id) == 1 && id + 1 > ndata) ndata = id + 1;
+    }
     for (size_t k = 0; k < n; k++) {
         if (mp_source_open_as(paths[k], MP_OPEN_DLC, &src[k], e) != 0) goto done;
         if (check_dlc(src[k], paths[k], title, game_cid, v[k].content_id, &v[k].data, e) != 0) goto done;
+        for (size_t j = 0; j < nhave; j++) {
+            if (!strcmp(have[j].content_id, v[k].content_id)) {
+                mp_err_set(e, "%s: the game has this DLC already (%s)", paths[k], v[k].content_id);
+                goto done;
+            }
+            if (!strcmp(have[j].content_id + 20, v[k].content_id + 20)) {
+                mp_err_set(e, "%s: the game has a DLC with its label %s already (the end of its content ID), which "
+                              "dlc_emu takes once",
+                           paths[k], v[k].content_id + 20);
+                goto done;
+            }
+        }
         for (size_t j = 0; j < k; j++) {
             if (!strcmp(v[j].content_id, v[k].content_id)) {
                 mp_err_set(e, "%s and %s: the same content ID (%s): give each DLC once", paths[j], paths[k], v[k].content_id);
@@ -365,13 +388,17 @@ int mp_dlc_attach(mp_source **game, const char *const *paths, size_t n, mp_dlc_l
             ndata++;
         }
     }
-    if (n > MP_DLC_MAX_ENTRIES || !(ini = mp_dlc_ini(v, n, &ini_len)) || ini_len > MP_DLC_INI_MAX) {
-        if (n <= MP_DLC_MAX_ENTRIES && !ini) {
+    // the ini lists the DLC it had and then the new ones
+    if (nhave) memcpy(all, have, nhave * sizeof *all);
+    if (n) memcpy(all + nhave, v, n * sizeof *all);
+    size_t nall = nhave + n;
+    if (nall > MP_DLC_MAX_ENTRIES || !(ini = mp_dlc_ini(all, nall, &ini_len)) || ini_len > MP_DLC_INI_MAX) {
+        if (nall <= MP_DLC_MAX_ENTRIES && !ini) {
             mp_err_set(e, "out of memory");
         } else {
             *code = "dlc_too_many";
             mp_err_set(e, "too many DLC: their dlc_emu.ini would take %zu bytes, and dlc_emu reads at most 32 KiB",
-                       n > MP_DLC_MAX_ENTRIES ? n * 80 : ini_len);
+                       nall > MP_DLC_MAX_ENTRIES ? nall * 80 : ini_len);
         }
         goto done;
     }
@@ -426,6 +453,7 @@ done:
     free(parts);
     free(folders);
     free(prefixes);
+    free(all);
     free(ini);
     return rc;
 }

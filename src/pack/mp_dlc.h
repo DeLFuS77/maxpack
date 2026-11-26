@@ -47,6 +47,11 @@ void mp_dlc_list_free(mp_dlc_list *l);
 // in the order given.
 int mp_dlc_attach(mp_source **game, const char *const *paths, size_t n, mp_dlc_list *out, const char **code,
                   mp_err *e);
+// The same for a game that carries have[0..nhave) already (a .p5z made with them): its dlc_emu.ini must not
+// be in game, since it is written again with those first and then the new ones; the new DLC with data go to
+// the folders after the last of theirs, and one of them (or its label) again is refused. out gets the new ones.
+int mp_dlc_attach_ex(mp_source **game, const mp_dlc *have, size_t nhave, const char *const *paths, size_t n,
+                     mp_dlc_list *out, const char **code, mp_err *e);
 
 // The dlc_emu.ini of v[0..n) (malloc, NUL-terminated; *len its bytes); NULL out of memory.
 char *mp_dlc_ini(const mp_dlc *v, size_t n, size_t *len);

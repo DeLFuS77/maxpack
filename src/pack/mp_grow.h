@@ -57,6 +57,13 @@ typedef int (*mp_grow_known)(void *ctx, const char *path, uint64_t size, uint8_t
 int mp_grow_run(const char *p5z, mp_source *dump, mp_grow_known known, void *kctx, const mp_grow_opts *o,
                 mp_grow_result *r, mp_err *e);
 
+// add: the DLC at dlc[0..n) (packages with mp_source_set_passcode's passcode, folders or images) go into the
+// .p5z as pack --dlc would have put them: each one with files of its own in the addcontN/ after the last
+// the game has, and dlc_emu.ini written again with the DLC it had and the new ones. A dlc_emu.ini that
+// MaxPack did not write stops it ("dlc_has_ini"), as pack --dlc stops; so does a DLC the game has already.
+int mp_grow_add(const char *p5z, const char *const *dlc, size_t n, const mp_grow_opts *o, mp_grow_result *r,
+                mp_err *e);
+
 // Tests only: called at every step of an append; 0 goes on, 1 fails there as an error would (the .p5z is
 // taken back), 2 stops there as a power cut would (nothing is undone, the journal stays). Nothing but the
 // tests sets it.

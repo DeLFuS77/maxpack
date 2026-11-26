@@ -917,6 +917,140 @@ MP_TEST(install_refuses_grown) {
     mp_inst_result_free(&r);
 }
 
+// ---- add: DLC into a .p5z already made ------------------------------------------------------------
+
+#define DLC_DATA MP_FIXTURES_DIR "/dlc_data"
+#define DLC_LICENSE MP_FIXTURES_DIR "/dlc_license"
+#define DLC2 TMP "/dlc2"
+
+// Packs game with the DLC dlc[0..n) into a .p5z at out (level 19, as mpt_pack).
+static int pack_dlc_p5z(const char *game, const char *const *dlc, size_t n, const char *out, uint64_t limit) {
+    mp_err e = {{0}};
+    mpt_clear(out);
+    mpt_parent_dirs(out);
+    mp_pack_opts o;
+    mp_pack_opts_default(&o);
+    o.threads = 4;
+    o.progress = 0;
+    o.dlc = dlc;
+    o.ndlc = n;
+    o.volume_limit = limit;
+    mp_pack_out po;
+    mp_pack_result r;
+    if (mp_pack_out_p5z(out, 4, &po, &e) != 0) return -1;
+    int rc = mp_pack_run(game, &po, &o, &r, &e);
+    po.destroy(po.ctx);
+    if (rc) MP_FAIL_("pack --dlc: %s", e.msg);
+    return rc;
+}
+
+static int unpack_original_to(const char *p5z, const char *dir) {
+    mp_err e = {{0}};
+    mp_p5z *p = NULL;
+    mpt_clear(dir);
+    int rc = mp_p5z_open(p5z, &p, &e);
+    if (!rc) rc = mp_unpack_original(p, dir, 2, 0, &e);
+    if (rc) MP_FAIL_("unpack --original %s: %s", p5z, e.msg);
+    mp_p5z_close(p);
+    return rc;
+}
+
+// A second DLC with files of its own: dlc_data with another content ID.
+static void make_dlc2(void) {
+    copy_tree(DLC_DATA, DLC2);
+    const char *pj = "{\"contentId\": \"UP0000-PPSA00000_00-MAXPACKDLCDATA02\", \"contentVersion\": \"01.000.000\", "
+                     "\"localizedParameters\": {\"defaultLanguage\": \"en-US\", \"en-US\": {\"titleName\": \"Two\"}}}";
+    put_dated(DLC2 "/sce_sys/param.json", pj, strlen(pj), 1700400000);
+    put_dated(DLC2 "/data/two.bin", "the second DLC's own file\n", 26, 1700400001);
+}
+
+static char *read_text(const char *path) {
+    size_t n = 0;
+    char *t = (char *)mpt_slurp(path, &n);
+    if (t) t[n] = 0;
+    return t;
+}
+
+MP_TEST(add_dlc_unpack_original) {
+    mpt_clear(TMP);
+    if (mpt_pack(GAME, A_P5Z, 1, NULL) != 0) return;
+    size_t olen = 0;
+    uint8_t *orig = mpt_slurp(A_P5Z, &olen);
+    const char *dlc[] = {DLC_DATA, DLC_LICENSE};
+    mp_grow_opts o = quiet_opts();
+    o.force = 0;   // add never asks, however much the DLC take
+    mp_grow_result r;
+    mp_err e = {{0}};
+    MP_CHECK(mp_grow_add(A_P5Z, dlc, 2, &o, &r, &e) == 0);
+    if (e.msg[0]) fprintf(stderr, "  %s\n", e.msg);
+    MP_CHECK(starts_with(A_P5Z, orig, olen));
+    MP_CHECK_EQ_U64(r.dlc_data, 1);
+    MP_CHECK_EQ_U64(r.dlc_license, 1);
+    MP_CHECK(r.dlc_bytes > 0 && r.new_files > 3 && r.changed_files == 0 && r.removed_files == 0);
+    if (pack_dlc_p5z(GAME, dlc, 2, TMP "/fresh.p5z", MP_ZPK_VOLUME_LIMIT) != 0) return;
+    if (unpack_original_to(A_P5Z, TMP "/a_orig") != 0 || unpack_original_to(TMP "/fresh.p5z", TMP "/f_orig") != 0)
+        return;
+    MP_CHECK(mpt_dirs_equal(TMP "/f_orig", TMP "/a_orig", NULL));
+    char *ini = read_text(TMP "/a_orig/dlc_emu.ini");
+    MP_CHECK_STR(ini, "[PSAC]\ncontent_id=UP0000-PPSA00000_00-MAXPACKDLCDATA01\nmount_point=/app0/addcont0\n\n[PSAL]\n"
+                      "content_id=UP0000-PPSA00000_00-MAXPACKLICENSE01\ndownload_status=NO_EXTRA_DATA\n");
+    free(ini);
+    mp_verify_result vr;
+    MP_CHECK(mp_verify_p5z(A_P5Z, 2, 0, &vr, &e) == 0 && vr.files_bad == 0);
+    free(orig);
+}
+
+MP_TEST(add_second_dlc_numbering) {
+    mpt_clear(TMP);
+    make_dlc2();
+    const char *one[] = {DLC_DATA}, *both[] = {DLC_DATA, DLC2}, *two[] = {DLC2};
+    if (pack_dlc_p5z(GAME, one, 1, A_P5Z, MP_ZPK_VOLUME_LIMIT) != 0) return;
+    mp_grow_opts o = quiet_opts();
+    mp_grow_result r;
+    mp_err e = {{0}};
+    MP_CHECK(mp_grow_add(A_P5Z, two, 1, &o, &r, &e) == 0);
+    if (e.msg[0]) fprintf(stderr, "  %s\n", e.msg);
+    MP_CHECK_EQ_U64(r.dlc_data, 1);
+    if (pack_dlc_p5z(GAME, both, 2, TMP "/fresh.p5z", MP_ZPK_VOLUME_LIMIT) != 0) return;
+    if (unpack_original_to(A_P5Z, TMP "/a_orig") != 0 || unpack_original_to(TMP "/fresh.p5z", TMP "/f_orig") != 0)
+        return;
+    MP_CHECK(mpt_dirs_equal(TMP "/f_orig", TMP "/a_orig", NULL));
+    MP_CHECK(mp_path_kind(TMP "/a_orig/addcont1/data/two.bin") == 1);
+    char *ini = read_text(TMP "/a_orig/dlc_emu.ini");
+    MP_CHECK_STR(ini, "[PSAC]\ncontent_id=UP0000-PPSA00000_00-MAXPACKDLCDATA01\nmount_point=/app0/addcont0\n\n[PSAC]\n"
+                      "content_id=UP0000-PPSA00000_00-MAXPACKDLCDATA02\nmount_point=/app0/addcont1\n");
+    free(ini);
+}
+
+MP_TEST(add_refusals) {
+    mpt_clear(TMP);
+    const char *one[] = {DLC_DATA};
+    if (pack_dlc_p5z(GAME, one, 1, A_P5Z, MP_ZPK_VOLUME_LIMIT) != 0) return;
+    size_t olen = 0;
+    uint8_t *orig = mpt_slurp(A_P5Z, &olen);
+    mp_grow_opts o = quiet_opts();
+    mp_grow_result r;
+    mp_err e = {{0}};
+    // the same DLC again
+    MP_CHECK(mp_grow_add(A_P5Z, one, 1, &o, &r, &e) != 0);
+    MP_CHECK_STR(r.code, "dlc_refused");
+    MP_CHECK_CONTAINS(e.msg, "already");
+    // another game's DLC
+    const char *other[] = {MP_FIXTURES_DIR "/dlc_other.pkg"};
+    MP_CHECK(mp_grow_add(A_P5Z, other, 1, &o, &r, &e) != 0);
+    MP_CHECK_STR(r.code, "dlc_refused");
+    MP_CHECK(starts_with(A_P5Z, orig, olen) && size_of(A_P5Z) == olen);
+    // a game with a dlc_emu.ini of its own, written by hand
+    copy_tree(GAME, TMP "/hand");
+    const char *mine = "; mine\n[PSAL]\ncontent_id=UP0000-PPSA00000_00-MAXPACKLICENSE01\n";
+    put_dated(TMP "/hand/dlc_emu.ini", mine, strlen(mine), 1700000000);
+    if (mpt_pack(TMP "/hand", TMP "/hand.p5z", 1, NULL) != 0) return;
+    const char *lic[] = {DLC_DATA};
+    MP_CHECK(mp_grow_add(TMP "/hand.p5z", lic, 1, &o, &r, &e) != 0);
+    MP_CHECK_STR(r.code, "dlc_has_ini");
+    free(orig);
+}
+
 int main(void) {
     MP_RUN(p5z_append_one_file);
     MP_RUN(p5z_copy_all_is_identical);
@@ -938,5 +1072,8 @@ int main(void) {
     MP_RUN(play_json_says_index_version);
     MP_RUN(p5z_info_says_grown);
     MP_RUN(install_refuses_grown);
+    MP_RUN(add_dlc_unpack_original);
+    MP_RUN(add_second_dlc_numbering);
+    MP_RUN(add_refusals);
     MP_TEST_MAIN_END();
 }

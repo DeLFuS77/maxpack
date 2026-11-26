@@ -58,6 +58,9 @@ uint64_t mp_p5z_volume_offset(const mp_p5z *p, uint32_t vol);   // where the vol
 // regions of the files an update changed or removed, the room in the volumes no chunk uses. 0 for a .p5z
 // that never grew; maxpack compact makes a copy without them.
 int mp_p5z_unused(mp_p5z *p, uint64_t *unused, mp_err *e);
+// The files of the dump the .p5z was made of (its manifest) that take(ctx, path) takes (all with NULL), as a
+// source: each one read from the .p5z. p must stay open while the source is.
+int mp_p5z_source(mp_p5z *p, int (*take)(void *ctx, const char *path), void *ctx, mp_source **out, mp_err *e);
 int mp_unpack_folder(mp_p5z *p, const char *out_dir, unsigned threads, int progress, mp_err *e);
 // The same with volumes of at most volume_limit bytes (MP_ZPK_VOLUME_LIMIT, smaller in tests) for a .p5z that
 // grew: its volumes are laid out again as pack --folder lays them out; one that did not is copied as it is.

@@ -504,7 +504,8 @@ Nothing, from MaxPack itself, unless you ask it to look for new versions:
 - **The window** makes no connection of its own until you turn on Settings › Internet › **Look for new
   versions** (off by default). Then, once each time it starts, it asks GitHub's API for the latest release
   of this repository and, only when that is newer, downloads its `SHA256SUMS` and `SHA256SUMS.minisig` and
-  checks the signature with the key built into MaxPack; only if it is right does it offer the new version
+  checks the signature with the key built into MaxPack (it must also name that version); only if it is
+  right does it offer the new version
   (on Windows it first downloads the installer and checks it against that list; **Update** runs it). It
   goes only to GitHub, over HTTPS, and sends nothing about you or your games; its page is loaded from
   inside the program. A build without the key (the ones so far) says it is not available, and never

@@ -3,9 +3,11 @@
 // Package update looks for a newer release of MaxPack, and offers it only once its author's signature is
 // checked. It asks GitHub's API for the latest release of DeLFuS77/maxpack; when that is newer, it downloads
 // the release's SHA256SUMS and SHA256SUMS.minisig and checks the signature with the public key built into
-// MaxPack (minisign, Ed25519). Only when it is right does it download anything else: the file of this
-// system, whose SHA-256 must be the one the signed list gives. Everything goes over HTTPS, to GitHub's hosts
-// only.
+// MaxPack (minisign, Ed25519). The signature's trusted comment names the version ("MaxPack X.Y.Z", signed
+// with -t), which must be the release's: a signed list of an older release put under a newer tag is
+// refused. Only when all that is right does it download anything else: the file of this system, whose
+// SHA-256 must be the one the signed list gives; it is kept, and used again at the next start while it is
+// whole. Everything goes over HTTPS, to GitHub's hosts only.
 package update
 
 import (
@@ -47,8 +49,9 @@ var ErrNoKey = errors.New("no public key in this build")
 
 // Error is why a check found nothing to offer: Code is "network" (GitHub could not be asked, or answered
 // otherwise than expected, or only over plain HTTP or another host), "unsigned" (the release has no signed
-// list), "bad_signature" (the list is not signed by the key), "not_listed" (the list has no file of this
-// system) or "bad_download" (the file downloaded is not the one listed).
+// list), "bad_signature" (the list is not signed by the key, or its signature names another version),
+// "not_listed" (the list has no file of this system) or "bad_download" (the file downloaded is not the one
+// listed).
 type Error struct {
 	Code string
 	Err  error
@@ -164,6 +167,10 @@ func Check(ctx context.Context, c Config) (Offer, error) {
 	}
 	version := strings.TrimPrefix(latest.Tag, "v")
 	if !newer(version, c.Current) {
+		// nothing newer: what an earlier start downloaded (the update was installed) goes
+		if c.Download {
+			clean(c.Folder, "")
+		}
 		return Offer{}, nil
 	}
 	sizes := map[string]int64{}
@@ -185,8 +192,13 @@ func Check(ctx context.Context, c Config) (Offer, error) {
 	if err != nil {
 		return Offer{}, err
 	}
-	if _, err := minisign.Verify(key, sums, signature); err != nil {
+	trusted, err := minisign.Verify(key, sums, signature)
+	if err != nil {
 		return Offer{}, &Error{Code: "bad_signature", Err: err}
+	}
+	// the version is signed: the trusted comment is exactly "MaxPack <the tag's version>"
+	if trusted != "MaxPack "+version {
+		return Offer{}, fail("bad_signature", "the signed list is of %q, not MaxPack %s", trusted, version)
 	}
 
 	// signed: the file of this system must be on the list, and be what it says
@@ -295,25 +307,40 @@ func (g getter) get(ctx context.Context, address string, limit int64, headers ma
 	return body, nil
 }
 
+// clean takes away from folder what checks downloaded there (maxpack-*), but keep.
+func clean(folder, keep string) {
+	if folder == "" {
+		return
+	}
+	entries, err := os.ReadDir(folder)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), "maxpack-") && entry.Name() != keep {
+			os.RemoveAll(filepath.Join(folder, entry.Name()))
+		}
+	}
+}
+
 // download writes a file to folder as name, hashing it on the way; it keeps it only when its SHA-256 is want.
-// What earlier checks left there (maxpack-*) goes first.
+// One there already with that SHA-256 (an earlier start downloaded it) is used as it is; anything else that
+// earlier checks left there (maxpack-*) goes first.
 func (g getter) download(ctx context.Context, address, folder, name, want string) (string, error) {
 	if err := os.MkdirAll(folder, 0o755); err != nil {
 		return "", fail("bad_download", "%v", err)
 	}
-	if entries, err := os.ReadDir(folder); err == nil {
-		for _, entry := range entries {
-			if strings.HasPrefix(entry.Name(), "maxpack-") {
-				os.RemoveAll(filepath.Join(folder, entry.Name()))
-			}
-		}
+	path := filepath.Join(folder, name)
+	if VerifyFile(path, want) == nil {
+		clean(folder, name)
+		return path, nil
 	}
+	clean(folder, "")
 	resp, err := g.request(ctx, address, nil)
 	if err != nil {
 		return "", err
 	}
 	defer resp.Body.Close()
-	path := filepath.Join(folder, name)
 	part := path + ".part"
 	out, err := os.Create(part)
 	if err != nil {

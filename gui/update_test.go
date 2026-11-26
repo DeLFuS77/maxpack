@@ -36,7 +36,7 @@ func newFakeGitHub(bad bool) *fakeGitHub {
 	g := &fakeGitHub{files: map[string][]byte{"maxpack-windows-x64-setup.exe": []byte("installer 1.1.0")}}
 	sum := sha256.Sum256(g.files["maxpack-windows-x64-setup.exe"])
 	g.files["SHA256SUMS"] = []byte(hex.EncodeToString(sum[:]) + "  maxpack-windows-x64-setup.exe\n")
-	g.files["SHA256SUMS.minisig"] = minisigntest.Sign(private, [8]byte{'w', 'i', 'n', 'd', 'o', 'w', 's', '1'}, g.files["SHA256SUMS"], true, "file:SHA256SUMS")
+	g.files["SHA256SUMS.minisig"] = minisigntest.Sign(private, [8]byte{'w', 'i', 'n', 'd', 'o', 'w', 's', '1'}, g.files["SHA256SUMS"], true, "MaxPack 1.1.0")
 	if bad {
 		g.files["SHA256SUMS"] = append(g.files["SHA256SUMS"], '\n')
 	}

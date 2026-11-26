@@ -16,23 +16,29 @@ signature is made by hand, offline, with a key the CI never has.
    - `sha256sum -c SHA256SUMS`;
    - `gh attestation verify <file> -R DeLFuS77/maxpack` for each file.
 5. **Sign `SHA256SUMS`, offline.** On the computer that holds the secret key (not the CI, and not a
-   machine that builds), in the folder of the `SHA256SUMS` just checked:
+   machine that builds), in the folder of the `SHA256SUMS` just checked, with the version in the trusted
+   comment, exactly `MaxPack` and the version without the `v` (here for v1.2.3):
 
    ```
-   minisign -Sm SHA256SUMS
+   minisign -Sm SHA256SUMS -t "MaxPack 1.2.3"
    ```
 
    It asks for the key's password and writes `SHA256SUMS.minisig`. Check it with the public key:
-   `minisign -Vm SHA256SUMS -P <the public key>`.
+   `minisign -Vm SHA256SUMS -P <the public key>`, which prints `Trusted comment: MaxPack 1.2.3`. The window
+   refuses a signature whose trusted comment is not exactly `MaxPack <the version of the tag>`: that is what
+   keeps the signed list of an old release from being offered under a newer tag. A plain
+   `minisign -Sm SHA256SUMS` (whose trusted comment is a timestamp and the file name) is refused too.
 6. **Upload the signature to the draft**, before publishing it:
    `gh release upload vX.Y.Z SHA256SUMS.minisig -R DeLFuS77/maxpack`. Do not upload a `SHA256SUMS` of your
    own: the signed one must be the one in the draft, byte for byte.
 7. **Publish.** `gh release edit vX.Y.Z -R DeLFuS77/maxpack --notes-file <notes> --draft=false --latest`.
 
 What the window does with it (Settings › Internet › **Look for new versions**, off by default): it offers a
-release newer than itself only when the release has `SHA256SUMS` and `SHA256SUMS.minisig` and the signature
-is valid for the key built into it (both the signature and its trusted comment). On Windows it then
-downloads the installer and checks its SHA-256 against that list before it offers **Update**. A release
+release newer than itself only when the release has `SHA256SUMS` and `SHA256SUMS.minisig`, the signature
+is valid for the key built into it (both the signature and its trusted comment), and the trusted comment is
+`MaxPack` and the version of the release's tag. On Windows it then downloads the installer and checks its
+SHA-256 against that list before it offers **Update**; the installer stays in the settings folder
+(`updates/`), is used again at the next start while it is whole, and goes once the window is up to date. A release
 published without `SHA256SUMS.minisig`, or signed with another key, is never offered: users would update by
 hand. Signing a release after it was published works too (the window looks once each time it starts), but
 the signature should be there before it is.

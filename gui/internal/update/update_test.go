@@ -102,7 +102,8 @@ func signed(tag string) *release {
 		sums.WriteString(hex.EncodeToString(sum[:]) + "  " + name + "\n")
 	}
 	files["SHA256SUMS"] = []byte(sums.String())
-	files["SHA256SUMS.minisig"] = minisigntest.Sign(private, id, files["SHA256SUMS"], true, "timestamp:1764000000\tfile:SHA256SUMS\thashed")
+	// as docs/releasing.md signs it: minisign -Sm SHA256SUMS -t "MaxPack X.Y.Z"
+	files["SHA256SUMS.minisig"] = minisigntest.Sign(private, id, files["SHA256SUMS"], true, "MaxPack "+strings.TrimPrefix(tag, "v"))
 	return &release{tag: tag, assets: files}
 }
 
@@ -315,5 +316,60 @@ func TestAssetOfEachSystem(t *testing.T) {
 		if name != c.name || download != c.download {
 			t.Errorf("%s/%s portable %v: %q %v", c.goos, c.arch, c.portable, name, download)
 		}
+	}
+}
+
+// The version is signed: a genuine signed list of an older release, put under a newer tag (a replay by someone
+// in control of the repository but not of the key), is refused, and so is a list signed without the version.
+func TestReplayedListRefused(t *testing.T) {
+	old := signed("v1.0.8")
+	replay := &release{tag: "v9.9.9", assets: old.assets}
+	server := httptest.NewTLSServer(replay)
+	defer server.Close()
+	c := config(t, server, "1.0.7")
+	if offer, err := Check(context.Background(), c); codeOf(err) != "bad_signature" || offer.Version != "" {
+		t.Fatalf("an old list under a newer tag: %+v, %v", offer, err)
+	}
+	if strings.Contains(replay.requests(), installer) {
+		t.Fatalf("the installer was downloaded: %s", replay.requests())
+	}
+	private, id, _ := testKey()
+	for _, trusted := range []string{"timestamp:1764000000\tfile:SHA256SUMS\thashed", "MaxPack 9.9.9 ", "maxpack 9.9.9", "MaxPack v9.9.9", "MaxPack 9.9"} {
+		r := signed("v9.9.9")
+		r.assets["SHA256SUMS.minisig"] = minisigntest.Sign(private, id, r.assets["SHA256SUMS"], true, trusted)
+		server := httptest.NewTLSServer(r)
+		_, err := Check(context.Background(), config(t, server, "1.0.7"))
+		server.Close()
+		if codeOf(err) != "bad_signature" {
+			t.Errorf("signed with the trusted comment %q: %v", trusted, err)
+		}
+	}
+}
+
+// The installer checked is kept: the next start finds it whole and downloads nothing; changed on disk, it is
+// downloaded again; once nothing newer is out (the update was installed), it goes.
+func TestInstallerKeptBetweenStarts(t *testing.T) {
+	r := signed("v1.1.0")
+	server := httptest.NewTLSServer(r)
+	defer server.Close()
+	c := config(t, server, "1.0.7")
+	first, err := Check(context.Background(), c)
+	if err != nil || first.File == "" {
+		t.Fatalf("%+v, %v", first, err)
+	}
+	second, err := Check(context.Background(), c)
+	if err != nil || second.File != first.File || strings.Count(r.requests(), installer) != 1 {
+		t.Fatalf("the second start: %+v, %v, asked %s", second, err, r.requests())
+	}
+	os.WriteFile(first.File, []byte("changed"), 0o644)
+	if third, err := Check(context.Background(), c); err != nil || strings.Count(r.requests(), installer) != 2 || VerifyFile(third.File, third.SHA256) != nil {
+		t.Fatalf("a changed one is not downloaded again: %v, asked %s", err, r.requests())
+	}
+	c.Current = "1.1.0"
+	if offer, err := Check(context.Background(), c); err != nil || offer.Version != "" {
+		t.Fatalf("up to date: %+v, %v", offer, err)
+	}
+	if entries, _ := os.ReadDir(c.Folder); len(entries) != 0 {
+		t.Fatalf("left after the update: %v", entries)
 	}
 }

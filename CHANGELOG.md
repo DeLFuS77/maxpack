@@ -26,8 +26,9 @@ All notable changes to MaxPack are listed here. The format follows
   trusted comment `MaxPack X.Y.Z`, checks it with the keys of `release.pub`, uploads `SHA256SUMS.minisig`
   and publishes when told; `-check` tells whether a stored key is one of them.
 - **Keyboard shortcuts** in the window: Ctrl+O adds files, Ctrl+Shift+O a folder, Ctrl+Enter starts, Esc
-  cancels the queue once asked, Ctrl+P pauses or resumes, Ctrl+1 to Ctrl+5 open the sections (⌘ on macOS),
-  with any keyboard layout (Russian and Arabic ones too). Settings › Keyboard lists them.
+  cancels the queue once asked (also with a checkbox, a choice or a slider in focus, not while typing in a
+  field), Ctrl+P pauses or resumes, Ctrl+1 to Ctrl+5 open the sections (⌘ on macOS), with any keyboard layout
+  (Russian and Arabic ones too). Settings › Keyboard lists them.
 - **Accessibility:** the bars are progress bars with their value (and whether they are paused), the ✕ of a
   row says which game it takes out, the status of the queue and the notices are read out, and every text
   reads at 4.5:1 at least in both themes (links in a darker blue; coral and amber darker in the light
@@ -42,21 +43,30 @@ All notable changes to MaxPack are listed here. The format follows
   json` they say `{"event":"paused"}` and `{"event":"resumed"}`; a cancel while paused cancels. In C,
   `mp_pause_set` (`src/analyze/mp_parallel.h`). In the window, **Pause** and **Resume** next to Cancel in
   Compress, Decompress and Verify: nothing else starts while paused (`maxpack-par2`, which cannot pause, is
-  suspended), the taskbar shows it paused, the watched folder waits, and the PC may sleep. Closing the
-  window with a paused queue says it cannot be resumed after MaxPack closes.
+  suspended), the taskbar shows it paused (the Dock of macOS keeps its percentage), the watched folder waits,
+  and the PC may sleep. A queue whose last game ends while paused ends at once, with its end card, notice and
+  sound. Closing the window with a paused queue says it cannot be resumed after MaxPack closes.
 - **Send to the console:** `maxpack send <game.p5z> <ps5-ip> --code <6 digits> [--drive <id>]` sends a
   `.p5z` to MaxPack for the console over the network, which verifies it when it has it whole and only
   then gives it its name. It shows the MB/s and the time left, goes on from what the console has after
   a broken connection, a pause of the console or a stop (Ctrl+C, a cancel, the window closed: the console
   keeps what arrived; `--delete-on-cancel` and `send --discard` delete it), and ends with what the console's verify
   says, with an exit code and a message for each refusal (receiving off, wrong code, already there,
-  busy, no space, FAT32, file name, no such drive, arrived damaged). `send --drives` lists the console's
+  busy, no space, FAT32, file name, no such drive, arrived damaged). `send --discard` deletes what a send
+  left with the console's own request for it (`POST /api/receive/discard`), never a new receive, so a drive
+  that is full does not refuse it; it uses only the name of the `.p5z`, never touches one whole there, and
+  says when nothing of it was there (`"deleted":false`); exit code 18 when the console could not delete it.
+  A drive with no room where part of it is already (a send that stopped, or a resume after a write error)
+  says how much is there (`kept`, `have`). A send this PC slept through (its clock jumped past `--stall`
+  between two looks) says the PC slept, not that nothing moved on the console (`slept`). `send --drives` lists the console's
   drives with their free space; `--json` gives progress lines for a front end. In the window: Settings
   > MaxPack for the console (its IP address and pairing code; the code goes only to `maxpack-core`, in
   its environment, never into a log or a report), and **Send to the console** on the card of a `.p5z`
   in Details and on the end card of Compress, with the drive and its free space, the bar, Cancel and
-  the end card; several `.p5z` go one after another. Needs MaxPack for the console with Settings >
-  Receive games from the PC.
+  the end card; several `.p5z` go one after another. **Delete what arrived on the console**, on the row,
+  shows after a send that stopped or did not end, also one that found no room while part of it was there,
+  or whose engine had to be killed after a cancel. The send card says the console checks every volume and
+  loose file. Needs MaxPack for the console with Settings > Receive games from the PC.
 - **Quick verify:** `maxpack verify --quick <game.p5z>` (text and `--json`) checks a `.p5z`'s header,
   footer and index, each volume's SHA-256 and header, and each stored file's SHA-256, without
   decompressing the packs: at the speed of the disk. In C, `mp_p5z_verify_quick`
@@ -64,13 +74,22 @@ All notable changes to MaxPack are listed here. The format follows
   receives. It works on `.p5z` files as packed and grown, and reads one whose append stopped as it was.
 - **Watched folder** (Settings > Watched folder, off by default): while the window is open, each dump
   folder, image or `.pkg` that arrives at the top of one folder is compressed with the settings of
-  Compress once nothing new in it has changed for a minute (and, on Windows, no program holds a file of it
-  open for writing; downloads at work are left alone), its DLC with it; what is in the destination already
-  is skipped, a game that lacks files of its list stays in the list with its warning, and what ended is not
-  handed over again until it changes. What is there when it is turned on is offered, not compressed. Its
-  originals are always kept, whatever Settings says: it only compresses (and sends), and a game that changed
-  while it was compressed fails and comes again once whole. **Send them to the console too** sends each `.p5z`
-  made. Windows, macOS and Linux (it looks every 5 seconds).
+  Compress once nothing new in it has changed for a minute (and no program holds a file of it open for
+  writing: on Windows, and on Linux for the user's own programs, by `/proc`; macOS has no such look;
+  downloads at work are left alone), its DLC with it; what is in the destination already is skipped, a game
+  that lacks files of its list stays in the list with its warning, and what ended is not handed over again
+  until it changes. A game it compressed well that changes afterwards (a copy that stalled for a minute and
+  ended later) is compressed again in place of the `.p5z` it made, while that very file (its size and date,
+  kept) is still there, and its row says so; anything else there stays. A new version of a game whose `.p5z`
+  is in the destination is skipped with both versions on its row, pointing to Details › Update with a new
+  dump…; nothing is updated by itself. What the window puts in the folder (Decompress there, a folder for the
+  console made there) is never new. On a share that drops, closing the window or choosing another folder does
+  not wait for a look at work, and what a listing misses is forgotten only after 3 listings in a row. What is
+  there when it is turned on is offered, not compressed. Its originals are always kept, whatever Settings
+  says (a queue started with its games in it does not list them as going): it only compresses (and sends),
+  and a game that changed while it was compressed fails and comes again once whole. **Send them to the
+  console too** sends each `.p5z` made; a console that has the older copy of one made again says so. Windows,
+  macOS and Linux (it looks every 5 seconds).
 - The HTTP client of the engine takes headers of its own and a response as soon as its `Content-Length`
   has arrived.
 
@@ -109,6 +128,14 @@ All notable changes to MaxPack are listed here. The format follows
   DLL's own path, which would take the DLL of a later install.
 - The switch **Open .p5z files with MaxPack**, in the installer and in Settings, says that it also shows
   each `.p5z` with its game's cover in the Explorer, in the eleven languages.
+- **A `.p5z` another program holds:** Add DLC, Update and compact said "another MaxPack is changing this
+  .p5z" also when the Explorer held it to make its cover, or an antivirus to check it, which sent you looking
+  for a second MaxPack. They now say what may hold it (another MaxPack, the Explorer making its cover, an
+  antivirus) and to try again in a moment. MaxPack's cover provider only reads the stream the Explorer opens.
+- **Update:** while an antivirus held the thumbnail provider without delete sharing, the installer showed
+  NSIS's "Error opening file for writing" with Abort/Retry/Ignore. It now sets the DLL aside in the temporary
+  folder, as the uninstaller does, or keeps the one there until the next update, and says so.
+- The choice of what to add to a `.p5z` (Add DLC, Update) is no longer drawn as a warning.
 
 ## [1.0.7] - 2026-11-26
 

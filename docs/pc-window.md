@@ -168,11 +168,12 @@ without losing anything:
   more is read, compressed or written, so the CPU and the disk are idle; the memory it uses stays;
 - nothing else starts: not the next game, nor the verification or the repair data of this one
   (`maxpack-par2`, which cannot be told to pause, is suspended);
-- the bars stand still, the status says "Paused", the taskbar shows it paused, the watched folder is
-  not looked at, and the PC may go to sleep meanwhile;
+- the bars stand still, the status says "Paused", the taskbar shows it paused (the Dock keeps its
+  percentage), the watched folder is not looked at, and the PC may go to sleep meanwhile;
 - **Resume** goes on from where it stopped, and what is made is the same as without the pause;
 - **Cancel** while paused cancels as usual. A paused queue cannot be resumed once MaxPack closes:
-  closing the window says so before it cancels it.
+  closing the window says so before it cancels it. A queue whose last game ends while it is paused has
+  nothing to resume: its end card comes at once.
 
 Low priority (Settings) is still there apart: it keeps the work going, but behind everything else.
 
@@ -437,7 +438,8 @@ least in both themes, and nothing moves when the system asks for less motion.
 - **Keyboard** lists the shortcuts (⌘ in place of Ctrl on macOS):
   - **Ctrl+O** adds files and **Ctrl+Shift+O** a folder to the section open;
   - **Ctrl+Enter** starts (as its button, when it can);
-  - **Esc** cancels the queue running, once you say yes; with a card open, Esc closes the card instead;
+  - **Esc** cancels the queue running, once you say yes (also with a checkbox, a choice or a slider in focus;
+    not while you type in a field); with a card open, Esc closes the card instead;
   - **Ctrl+P** pauses or resumes the queue;
   - **Ctrl+1** to **Ctrl+5** open Compress, Decompress, Verify, Details and Rename.
 - **Internet.** MaxPack's window goes on the internet for nothing, unless you turn on **Look for new
@@ -530,15 +532,20 @@ made `.p5z` files (they are added to Details, read, and sent from there).
   pauses (idle, a write error) is started again, one stopped on the console is not. **Cancel**, or closing
   the window, stops it: the console keeps what arrived, and the next send goes on from there.
 - **Delete what arrived on the console** shows on a row whose send stopped, was stopped on the console,
-  stalled, could not be written, got no answer or arrived damaged: it asks first, then the console deletes
-  what it received of it, and the next send starts from nothing.
+  stalled (or this PC slept), could not be written, got no answer or arrived damaged, and on one that found
+  no room on the drive while part of it is there from before (that part takes room): it asks first, then the
+  console deletes what it received of it, and the next send starts from nothing. It is the console's own
+  request for it, which a full drive does not refuse; when nothing of it was there, the row says so. While the
+  console is still at work on that receive it refuses: a receive the PC stopped is paused by the console
+  after 10 minutes without data.
 - **Asking for the drives** opens the card at once with "Asking the console for its drives…": **Cancel**
   stops the question, and it gives up after 30 s (a console never reached says "no answer" in about 11 s).
 - **The end card** says how many went and how fast. A row that ended well says that the console
   verified it; the others say why in words of their own: no answer, receiving off, wrong code (or too
   many), already there, the console busy, no room, a FAT32 drive, a name it does not take, a drive it
   no longer has, cancelled on the console, or arrived damaged with what did not match (the console keeps
-  it aside as `<name>.maxpack-recv`; send it again).
+  it aside as `<name>.maxpack-recv`; send it again). A send this PC slept through says the PC slept, not that
+  nothing moved on the console.
 
 ### Watched folder
 
@@ -559,22 +566,38 @@ minimized too: no service stays in the system.
   compressed (read through each file before and after) fails, nothing made of it is kept or sent, and it comes
   again once it is whole. Without a destination it waits for one. What
   is in the destination already is skipped ("it is in the destination already"), and nothing is
-  replaced. A game that lacks files of its list (the 1.0.6 check) stays in the list with its warning.
-  When a queue of Compress is running, what arrives joins it.
+  replaced, but for one case: a game it compressed well that changed afterwards (its copy stalled for a
+  minute, and ended later) is compressed again in place of the `.p5z` it made, while the destination still
+  has that very file (the size and date it had, kept in `watched.json`); written apart and checked as always,
+  only that `.p5z` is replaced, and the row says "it changed after it was compressed: compressed again".
+  Another file there by then stays. A new version of a game (an update dump) whose `.p5z` is in the
+  destination is skipped with both versions on its row: **Update with a new dump…** on its card in Details
+  puts it in; nothing is updated by itself. A game that lacks files of its list (the 1.0.6 check) stays in
+  the list with its warning. When a queue of Compress is running, what arrives joins it, with the same
+  rules.
 - **Never twice:** what ended (compressed, failed, or skipped as in the destination already) is kept in
   `watched.json` next to the settings, with what it was then; it is handed over again only once it changes.
   What never ran (no destination, no room, cancelled, the window closed) is tried again the next time it is
   stable: those waiting in Compress every 30 s and when a destination is chosen, the others in the next run.
 - **Still arriving:** on Windows each file is read through itself (a listing may lag behind a file being
-  written), and one another program still holds open for writing is still arriving; a `.part`, `.crdownload`,
+  written), and one another program still holds open for writing is still arriving. On Linux, MaxPack looks
+  in `/proc` for a file of it that a program of your own user holds open for writing (not the programs of
+  other users, nor a writer on another machine of a network share). macOS has no such look: there only the
+  quiet minute and the names of downloads tell a file still arriving. A `.part`, `.crdownload`,
   `.!qB`, `.!ut` or `.filepart` download, or an empty file in place of a download, is never a game. What systems
   write into folders (`.DS_Store`, `._*`, `Thumbs.db`, `desktop.ini`, `.Spotlight-V100`, `$RECYCLE.BIN`,
   `System Volume Information`...) never makes a dump new or changing. One whose file cannot be opened (not
   because a program writes it) is looked at three times, then left alone, and said, until it changes.
 - **Compress the N already there** goes through the same checks: they go once whole, by the next looks.
+- **What the window puts there** (Decompress to the watched folder, a folder for the console made there) is
+  never new to it.
 - **To the console too:** each `.p5z` the watched folder made goes on to the console of Settings, to
-  the drive chosen last, once its queue ends.
+  the drive chosen last, once its queue ends. One made again after its game changed, which the console
+  has already, says the console has the older copy: delete it there first, then send it again.
 - **The folder gone** (a USB drive taken out) is said in Settings, and watching goes on when it is back.
+- **A share that drops:** the looks hold nothing else, so closing the window or choosing another folder does
+  not wait for a slow listing; what one listing misses is forgotten only once it is missing from 3 in a row,
+  and a listing that fails forgets nothing.
 
 ## 5. Repair data
 

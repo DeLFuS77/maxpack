@@ -397,8 +397,10 @@ shows the console's drives with their free space (one where they do not fit says
 speed and the time left, then the console's verify, and the end card how it went. If the connection
 breaks it goes on from what the console has. **Cancel**, or closing the window, stops it and the console
 keeps what arrived: the next send goes on from there. **Delete what arrived on the console**, on the row,
-deletes it there, once you say so. The code goes only to `maxpack-core`, in its environment: never into a log
-nor into **Copy report**.
+deletes it there, once you say so; it shows too when a drive of the console has no room for it while part of
+it is there already from before (that part takes room: delete it, or choose another drive), and says so when
+nothing of it was there. A send this PC slept through says the PC slept, not that the console did nothing.
+The code goes only to `maxpack-core`, in its environment: never into a log nor into **Copy report**.
 
 ### Watched folder ([details](pc-window.md#watched-folder))
 
@@ -410,13 +412,25 @@ together, the DLC inside it). It is compressed with the settings of Compress: th
 level and the repair data. **Its originals are always kept**: the watched folder only compresses (and
 sends, when asked), whatever Settings says of originals. A game whose files changed while it was compressed
 (it was still arriving) fails ("it changed while it was being compressed"): nothing made of it is kept, it is not
-sent, and it is compressed again once it is whole. It never replaces: what is in the destination already is
-skipped. A game that lacks files of its list stays in the list with its warning instead. Turning it on, or
+sent, and it is compressed again once it is whole. It never replaces what is in the destination already:
+that game is skipped. But the `.p5z` it made itself is made again when its game changed after it was
+compressed (a copy that stalled for a minute and ended later): while the destination still has that very file
+(the size and date it had when it was made, which MaxPack keeps), the new one takes its place, written apart
+and checked as always, and the row says "it changed after it was compressed: compressed again". Sent to the
+console too, a console that has the older copy says so: delete it there first. A new version of a game (an
+update dump) whose `.p5z` is in the destination is skipped with both versions on its row: put it in with
+Details › **Update with a new dump…**; nothing is updated by itself. A game that lacks files of its list
+stays in the list with its warning instead. Turning it on, or
 choosing another folder, takes what is there as not new: Settings offers to compress it, and those go as what
 arrives goes, once whole. What ended (compressed, failed or skipped as there) is not handed over again until it
 changes (MaxPack keeps that in `watched.json` next to its settings); what never ran (no destination, cancelled,
-the window closed) comes again the next time. A file another program still has open for writing (Windows), a
-`.part`, `.crdownload`, `.!qB` or `.filepart` download, or an empty placeholder is still arriving; what systems
+the window closed) comes again the next time. A file another program still has open for writing is still
+arriving: Windows says so when MaxPack opens it, and on Linux MaxPack looks in `/proc` for the programs of
+your own user (not those of other users, nor a writer on another machine of a share); macOS has no such look,
+only the quiet minute. So is a `.part`, `.crdownload`, `.!qB` or `.filepart` download, or an empty
+placeholder. What the window itself puts in the folder (Decompress there, a folder for the console made
+there) is never new. On a share that drops, closing the window or choosing another folder does not wait for a
+look at work, and what one listing misses is forgotten only once it is missing from 3 in a row; what systems
 write into folders (`.DS_Store`, `._*`, `Thumbs.db`, `desktop.ini`, `.Spotlight-V100`, `$RECYCLE.BIN`...) never
 counts; one whose file cannot be opened is left alone, and said, until it changes. With **Send them to the console too**, each `.p5z` made goes on to the console, to the drive
 chosen last. The subfolders are not looked into, and nothing runs with the window closed: what arrived
@@ -739,7 +753,9 @@ maxpack compact "D:\games\MyGame [PPSA00000].p5z" -o "D:\games\MyGame compact.p5
   `too_big`); `--volume-limit N` (for testing); `--passcode`; `--progress json` and `--control stdin`.
   Before writing anything they stop when the disk has not the room for the raw size of what they add
   (plus 1 % and 64 MiB; `no_space`), when the `.p5z` would have more than 256 volumes, the most the
-  console takes (`too_many_volumes`), when another MaxPack is changing the same `.p5z` (`busy`), or
+  console takes (`too_many_volumes`), when another program holds the same `.p5z` so that MaxPack cannot be its
+  only writer (`busy`: another MaxPack changing it; on Windows also the Explorer while it makes its cover, or an
+  antivirus while it checks it; try again in a moment), or
   when the new dump is packed already (`already_packed`) or would leave the packs empty
   (`no_packs_left`).
 - They say what they did: the files the same, new, changed and removed, what was stored, what the
@@ -804,7 +820,11 @@ then gives it its name, so its library never sees half a game; one that arrived 
 console goes off, you press Ctrl+C or you cancel, the console keeps what arrived and the same command goes on
 from there. A receive the console pauses (idle for 10 minutes, or a write error) is started again by itself;
 one stopped on the console's page is not (exit code 15), and goes on when you send it again. Only `--discard`,
-or `--delete-on-cancel` with a cancel, makes the console delete what it received.
+or `--delete-on-cancel` with a cancel, makes the console delete what it received. When a drive has no room for
+it and part of it is there already (from a send that stopped, or a resume after a write error), the refusal
+says how much is there (exit code 9, `kept` and `have` in the JSON): delete it with `--discard`, or send it to
+another drive. When this PC slept while it was sending (its clock jumped past `--stall` between two looks), it
+says the PC slept, not that nothing moved on the console (exit code 16, `slept` in the JSON).
 
 On the console, turn on Settings > **Receive games from the PC**: its page then shows a 6-digit pairing
 code. Without it the console takes nothing: anyone on the home network could write to its drives. The code
@@ -815,10 +835,10 @@ travels in clear on the home network (there is no encryption), so another device
 | `send <game.p5z> <ps5-ip> --code C` | Sends it to the console's internal storage (or its first drive). | `maxpack send "D:\games\MyGame [PPSA00000].p5z" 192.168.1.20 --code 482913` |
 | `--drive ID` | To another drive of the console: `internal`, `usb0`... | `--drive usb0` |
 | `send --drives <ps5-ip> --code C` | Lists the console's drives with their free space (`--json`: as JSON). | `maxpack send --drives 192.168.1.20 --code 482913` |
-| `send --discard <game.p5z> <ps5-ip> --code C` | Deletes what the console received of it (its `.maxpack-recv`) on that drive (`--drive`). A `.p5z` that is there whole is not touched (exit code 7). | `maxpack send --discard "D:\games\MyGame [PPSA00000].p5z" 192.168.1.20 --code 482913` |
+| `send --discard <game.p5z> <ps5-ip> --code C` | Deletes what the console received of it (its `.maxpack-recv`) on that drive (`--drive`), with the console's own request for it: never a new receive, so a full drive does not refuse it. Only its name is used (the `.p5z` need not be on the PC any more). It says when nothing of it was there; a `.p5z` that is there whole is never touched. A receive of it still at work on the console is refused (exit code 8): one this PC stopped is paused by the console after 10 minutes without data. | `maxpack send --discard "D:\games\MyGame [PPSA00000].p5z" 192.168.1.20 --code 482913` |
 | `<ps5-ip>` | The console's IP address, as its page shows it (no leading zeros); `a.b.c.d:port` when it is not on port 8095. | `192.168.1.20` |
 | `MAXPACK_SEND_CODE` | The code can come in this environment variable instead of `--code`, so other programs of the PC do not see it on the command line (the window does that). | |
-| `--json` | One JSON line per event on stdout, as `--progress json`: `started` (the drive, and what the console had already), `progress` of the phases `sending` (with `rate` in bytes a second and `eta` in seconds) and `verifying` (the console's), `retry`, `paused`, and the `result` (with `kept` and `have` when it did not end: whether the console keeps what arrived, and how much). | `--json` |
+| `--json` | One JSON line per event on stdout, as `--progress json`: `started` (the drive, and what the console had already), `progress` of the phases `sending` (with `rate` in bytes a second and `eta` in seconds) and `verifying` (the console's), `retry`, `paused`, and the `result` (with `kept` and `have` when it did not end: whether the console keeps what arrived, and how much; `slept` when this PC slept through it). With `--discard`, one line: `ok`, `deleted` (whether there was anything) and `had` (its bytes). | `--json` |
 | `--control stdin` | `cancel` stops it, and the console keeps what arrived; so does the end of the input (a window closed or gone). `pause` is not taken: the console would stop the receive. | |
 | `--delete-on-cancel` | With `--control stdin`: `cancel` makes the console delete what it received (the end of the input still keeps it). Off by default. | |
 | `--chunk N`, `--retries N`, `--retry-wait MS` | Bytes per request (default 32 MiB, at most 64 MiB); tries after a broken connection (10, but 1 while the console has never answered: "no answer" in about 11 s; any answer begins the count again); the wait after the first one (1 s, doubling up to 30 s; at most 30000). The connect waits 5 s at most. | `--retries 20` |
@@ -831,23 +851,24 @@ and message:
 | Code | Means |
 |---|---|
 | 0 | Sent, and the console verified it. |
-| 1 | An error on the PC (the `.p5z` cannot be read, is not a whole `.p5z`, or another MaxPack is changing it), or an answer the console should not give. |
+| 1 | An error on the PC (the `.p5z` cannot be read, is not a whole `.p5z`, or another program holds it: another MaxPack changing it, the Explorer making its cover, an antivirus), or an answer the console should not give. |
 | 2 | Usage. |
 | 3 | No answer from the console after the tries: is MaxPack for the console open, on the same network, at that address? |
 | 4 | Receiving games from the PC is off on the console. |
 | 5 | Wrong pairing code. |
 | 6 | 5 wrong codes in a row: the console takes none from this PC for a minute. |
 | 7 | The `.p5z` is already on that drive. |
-| 8 | The console is busy (another receive, an install, a verify or a test compression). |
-| 9 | Not enough free space on that drive (the `.p5z` and 256 MiB more). |
+| 8 | The console is busy (another receive, an install, a verify or a test compression; with `--discard`, a receive of that very file at work). |
+| 9 | Not enough free space on that drive (the `.p5z` and 256 MiB more); when part of it is there already, how much (delete it with `--discard`). |
 | 10 | The drive is FAT32 and the `.p5z` is 4 GiB or more. |
 | 11 | A file name the console does not take: a plain `*.p5z` name of at most 200 bytes, without `/`, `\`, `..` or control characters. |
 | 12 | The console has no such drive. |
 | 13 | It arrived damaged: what did not match is listed (`FAILED: ...`); send it again. |
 | 14 | The receive was cancelled on the console. |
 | 15 | It was stopped on the console's page: the console keeps what arrived; send it again to go on. |
-| 16 | Nothing moved on the console for `--stall` seconds: it keeps what arrived. |
+| 16 | Nothing moved on the console for `--stall` seconds, or this PC slept that long while sending: it keeps what arrived. |
 | 17 | The console could not write it to that drive, again and again (full, read-only or failing). |
+| 18 | `--discard`: the console could not delete it (what it said follows). |
 | 130 | Cancelled or stopped here (`kept` in the JSON says whether the console keeps what arrived). |
 
 What the console answers, for anyone writing a client (port 8095, the same server as its page, every
@@ -856,11 +877,12 @@ request with the header `X-MaxPack-Code: <6 digits>`; refusals are JSON `{"error
 | Request | Answer |
 |---|---|
 | `GET /api/receive/drives` | `{"drives":[{"id":"internal","free":N,"total":N,"fs":"..."},...]}` |
-| `POST /api/receive/start` with `{"name","size","drive"}` | `{"id":"<token>","have":N}`; `have` > 0 when a `.maxpack-recv` of that name and size is there. 409 `exists` or `busy`, 507 `no_space`, 400 `bad_name` or `fat32`, 404 `no_drive` |
+| `POST /api/receive/start` with `{"name","size","drive"}` | `{"id":"<token>","have":N}`; `have` > 0 when a `.maxpack-recv` of that name and size is there. 409 `exists` or `busy`, 507 `no_space` (with `have`, the bytes of a `.maxpack-recv` of that name there already, and `need`, how many more the drive would need), 400 `bad_name` or `fat32`, 404 `no_drive` |
 | `PUT /api/receive/data?id=&offset=` with the bytes (64 MiB at most) | `{"have":N}`; `offset` must be `have`, else 409 `offset` with `{"have":N}` |
 | `GET /api/receive/status?id=` | `{"have","size","state":"receiving|verifying|done|failed|cancelled|paused","reason":"idle|write_error|stopped","verify":{"bytes","total","bad":[...]}}` |
 | `POST /api/receive/finish?id=` | 202: the console verifies it; `done` once it has its name, `failed` with what did not match |
 | `POST /api/receive/cancel?id=` | The partial file goes; `cancelled` |
+| `POST /api/receive/discard` with `{"name","drive"}` | Deletes `<name>.maxpack-recv` on that drive if it is there, whatever its size and with no space check, and ends a paused receive of it: `{"deleted":true,"bytes":N}`, or `{"deleted":false}` when nothing is there. Never a `.p5z`. 409 `busy` while a receive of it is at work, 400 `bad_name`, 404 `no_drive`, 500 `delete_failed` |
 
 Every route answers 403 `receive_off` while receiving is off, 401 `bad_code` without the right code, and
 429 `locked` for a minute after 5 wrong codes in a row from one address. A paused receive (idle, a write error,
@@ -1147,6 +1169,15 @@ loose files plus 256 MiB; if you free it, the game mounts by itself. Or put the 
 - **It arrived damaged:** the console keeps it as `<name>.maxpack-recv` and says what did not match.
   Check the `.p5z` on the PC (`maxpack verify --quick`), then send it again; if the PC copy is damaged
   too, repair it or compress the game again.
+- **"Not enough free space, and what arrived of it before is still there":** a send that stopped (or a drive
+  that filled up while it wrote) left part of the `.p5z` there, and it takes room. **Delete what arrived on
+  the console** (or `maxpack send --discard`) frees it; or send it to another drive. While the console is
+  still at work on that receive it refuses the delete: a receive the PC stopped is paused after 10 minutes
+  without data, and can be deleted then.
+- **"This PC slept while it was sending":** the console keeps what arrived; send it again to go on.
+- **"The console has the older copy of it":** the watched folder made the `.p5z` again (its game changed
+  after it was compressed), and the console has the one made before. Delete that one on the console, then
+  send it again.
 
 ### A damaged `.p5z`
 
@@ -1329,6 +1360,14 @@ makes it fail to open. Give it back its name, or put the file next to it with th
 If that file cannot be read (another program has it open, a USB drive that is waking up), MaxPack
 leaves it and the `.p5z` as they are: an add, an update or a compact stops saying so, and other commands
 warn. Try again once the file can be read.
+
+### "Another program has this .p5z open"
+
+Add DLC, Update with a new dump, compact and Send need to be the only ones writing the `.p5z` (or, for Send,
+that no change of it is at work). Another MaxPack changing it holds it; on Windows, so does the Explorer
+while it reads it to make its cover (it opens the file itself and lets others only read it; MaxPack's cover
+provider only reads what the Explorer gives it), and an antivirus while it checks it. Nothing is changed:
+try again in a moment, once the Explorer has made the cover or the antivirus is done.
 
 ### Copies left by a run that did not end
 

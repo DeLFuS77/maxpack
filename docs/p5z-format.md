@@ -245,7 +245,9 @@ on Windows, the folder flushed elsewhere, `F_FULLFSYNC` on macOS), 64 bytes:
   - A journal that is there and cannot be read (an I/O error, a drive waking up) is never taken for
     damaged: it and the `.p5z` are left as they are; `add`, `update` and `compact` stop saying so, and
     the other commands warn and read the `.p5z` as it is.
-  - While another MaxPack holds the `.p5z` (an append at work), nothing is touched.
+  - While another program holds the `.p5z` so that this one cannot be its only writer (another MaxPack
+    appending; on Windows also a reader that lets others only read it, as the Explorer while it makes the
+    cover, or an antivirus), nothing is touched, and the command says what may hold it.
 - Meanwhile, a reader that finds a journal that matches reads the `.p5z` as it was before the append,
   or as it grew when that append had ended.
 - The journal is found by the `.p5z`'s name: a `.p5z` renamed after an append stopped is read as it is

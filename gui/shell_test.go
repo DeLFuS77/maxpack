@@ -237,12 +237,16 @@ func TestInstallerScript(t *testing.T) {
 	// Abort/Retry/Ignore question (SetOverwrite off for that File only)
 	thumbs := install[strings.Index(install, `Delete "$INSTDIR\maxpack-thumbs-*.old"`):]
 	thumbs = thumbs[:strings.Index(thumbs, `File "/oname=LICENSE.txt"`)]
-	for _, want := range []string{"ClearErrors\n    " + `Rename "$INSTDIR\maxpack-thumbs.dll" "$INSTDIR\maxpack-thumbs-$0.old"` + "\n    ${If} ${Errors}",
-		`Rename "$INSTDIR\maxpack-thumbs.dll" "$TEMP\maxpack-thumbs-$0.old"`, `DetailPrint "$(ThumbsKept)"`,
+	for _, want := range []string{"ClearErrors\n    " + `Rename "$INSTDIR\maxpack-thumbs.dll" "$INSTDIR\maxpack-thumbs-$0.old"` + "\n    ${IfNot} ${Errors}",
+		`DetailPrint "$(ThumbsKept)"`,
 		"SetOverwrite off\n  ${EndIf}\n  " + `File "/oname=maxpack-thumbs.dll" "${THUMBS}"` + "\n  SetOverwrite on"} {
 		if !strings.Contains(thumbs, want) {
 			t.Errorf("the update of the thumbnail provider does not have: %s", want)
 		}
+	}
+	// a rename needs delete access, so one to the temporary folder fails as the first did: the update does not try it
+	if strings.Contains(thumbs, `"$TEMP\maxpack-thumbs-$0.old"`) {
+		t.Error("the update tries a set-aside that cannot work")
 	}
 	if strings.Contains(script, `/REBOOTOK "$INSTDIR\maxpack-thumbs.dll"`) {
 		t.Error("a delete at the restart of the thumbnail provider's own path, which a later install would lose")

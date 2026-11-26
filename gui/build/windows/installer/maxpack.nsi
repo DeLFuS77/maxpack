@@ -350,18 +350,13 @@ Section "MaxPack"
     System::Call "kernel32::GetTickCount() i .r0"
     ClearErrors
     Rename "$INSTDIR\maxpack-thumbs.dll" "$INSTDIR\maxpack-thumbs-$0.old"
-    ${If} ${Errors}
-      ; held without delete sharing (an antivirus checking it): set aside in the temporary folder, as the
-      ; uninstall does, and deleted there if it can
-      ClearErrors
-      Rename "$INSTDIR\maxpack-thumbs.dll" "$TEMP\maxpack-thumbs-$0.old"
-      Delete "$TEMP\maxpack-thumbs-$0.old"
-    ${Else}
+    ${IfNot} ${Errors}
       Delete "$INSTDIR\maxpack-thumbs-$0.old"
     ${EndIf}
   ${EndIf}
-  ; nothing could set it aside: the one there stays until the next update (the covers keep working), and NSIS asks
-  ; nothing (Abort/Retry/Ignore) for this file
+  ; held without delete sharing (an antivirus checking it), it cannot be renamed at all: the one there stays until
+  ; the next update (the covers keep working), a line in the install's details says so, and NSIS asks nothing
+  ; (Abort/Retry/Ignore) for this file
   ${If} ${FileExists} "$INSTDIR\maxpack-thumbs.dll"
     DetailPrint "$(ThumbsKept)"
     SetOverwrite off

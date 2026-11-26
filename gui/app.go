@@ -64,6 +64,9 @@ type App struct {
 
 	notices      sync.Once
 	noticesReady bool
+	// whether the window is in front, as the page tells it (TellFront), and the stand-in of the tests
+	pageFront atomic.Bool
+	front     func() bool
 
 	// the ampr-emu-ng that comes with MaxPack, written once to the folder of the settings (see
 	// builtInRuntime): its path, "" when it could not be written

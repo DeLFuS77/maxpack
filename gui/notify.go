@@ -9,7 +9,9 @@ import (
 	"strings"
 
 	"github.com/DeLFuS77/maxpack/gui/internal/portable"
+	"github.com/DeLFuS77/maxpack/gui/internal/system"
 	"github.com/DeLFuS77/maxpack/gui/jobs"
+	"github.com/DeLFuS77/maxpack/gui/settings"
 
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -53,15 +55,43 @@ func noticeText(lang string, s jobs.Summary) (title, body string) {
 	return "MaxPack", strings.Join(parts, w.sep)
 }
 
-// notify shows a notice of the system.
-func (a *App) notify(title, body string) {
-	if a.ctx == nil {
+// endNotice tells the end of a queue while the window is not in front (in front, its end card says it),
+// unless Settings says not to (QuietEnd): a notice of the system, which makes the system's sound, and the
+// page's own short sound ("job:chime") where no notice could go (the portable version of Windows, a system
+// without notices) or where notices make none (Linux).
+func (a *App) endNotice(x extras, sum jobs.Summary) {
+	if saved, _ := settings.Load(); saved.QuietEnd || a.inFront() {
 		return
 	}
-	a.notices.Do(func() { a.noticesReady = a.readyNotices() })
-	if a.noticesReady {
-		wailsruntime.SendNotification(a.ctx, wailsruntime.NotificationOptions{ID: "maxpack-done", Title: title, Body: body})
+	if sent := x.Notify(noticeText(a.language(), sum)); !sent || runtime.GOOS == "linux" {
+		a.send("job:chime", nil)
 	}
+}
+
+// TellFront is called by the page as it gains and loses the focus: whether the window is in front.
+func (a *App) TellFront(front bool) { a.pageFront.Store(front) }
+
+// inFront tells whether the window is in front: as Windows says it, else as the page told it.
+func (a *App) inFront() bool {
+	if a.front != nil {
+		return a.front()
+	}
+	if front, known := system.WindowInFront(); known {
+		return front
+	}
+	return a.pageFront.Load()
+}
+
+// notify shows a notice of the system, and tells whether it could.
+func (a *App) notify(title, body string) bool {
+	if a.ctx == nil {
+		return false
+	}
+	a.notices.Do(func() { a.noticesReady = a.readyNotices() })
+	if !a.noticesReady {
+		return false
+	}
+	return wailsruntime.SendNotification(a.ctx, wailsruntime.NotificationOptions{ID: "maxpack-done", Title: title, Body: body}) == nil
 }
 
 // readyNotices readies the notices of the system as the first one is sent, not at every start,

@@ -3,7 +3,8 @@
 // Package settings keeps what the user chose between runs: language, theme, mode, level, the
 // runtime of ampr-emu-ng, the last destination, what becomes of the originals, the priority of the
 // engine, the names of the files, the threads it compresses with, the repair data of a .p5z and the
-// passcode of PS5 packages, the console a .p5z is sent to and the folder watched.
+// passcode of PS5 packages, the console a .p5z is sent to, the folder watched, how the end of a queue
+// is told and whether MaxPack looks for new versions.
 package settings
 
 import (
@@ -91,6 +92,12 @@ type Settings struct {
 	WatchOn     bool
 	WatchFolder string
 	WatchSend   bool
+	// QuietEnd tells the end of a queue with neither a sound nor a notice of the system; off by default,
+	// so both come when a queue ends while the window is not in front
+	QuietEnd bool
+	// UpdateCheck looks for a new version of MaxPack once each time it starts (see update.go); off by
+	// default, and until it is on MaxPack does not go on the internet
+	UpdateCheck bool
 }
 
 const fileName = "settings.json"
@@ -254,6 +261,8 @@ func Load() (Settings, error) {
 	read("WatchOn", &s.WatchOn)
 	read("WatchFolder", &s.WatchFolder)
 	read("WatchSend", &s.WatchSend)
+	read("QuietEnd", &s.QuietEnd)
+	read("UpdateCheck", &s.UpdateCheck)
 	return s.Normalize(), nil
 }
 

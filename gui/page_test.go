@@ -26,6 +26,7 @@ type pageEvents struct {
 	items    []itemEvent
 	progress []progressEvent
 	paused   []bool
+	chimes   int
 	done     chan jobs.Summary
 }
 
@@ -41,6 +42,8 @@ func (p *pageEvents) emit(event string, data any) {
 		p.progress = append(p.progress, data.(progressEvent))
 	case "job:paused":
 		p.paused = append(p.paused, data.(pausedEvent).Paused)
+	case "job:chime":
+		p.chimes++
 	case "job:done":
 		p.done <- data.(jobs.Summary)
 	}
@@ -83,7 +86,7 @@ func (p *pageEvents) last(i int) itemEvent {
 }
 
 func quietExtras() extras {
-	return extras{Awake: func() func() { return func() {} }, Taskbar: func(string, uint64, uint64) {}, Notify: func(string, string) {}}
+	return extras{Awake: func() func() { return func() {} }, Taskbar: func(string, uint64, uint64) {}, Notify: func(string, string) bool { return true }}
 }
 
 func pageApp(engine string, events *pageEvents) *App {

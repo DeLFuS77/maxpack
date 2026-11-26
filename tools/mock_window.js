@@ -50,8 +50,8 @@
 //   ?grow=1             Details with a .p5z that grew twice (by DLC and an update) and one that never did:
 //                       Add DLC… ends well, and Update with a new dump… stops because most of the game
 //                       changed until Update anyway
-//   ?paused=1           the first queue started pauses by itself a moment later, to see it paused (Pause and
-//                       Resume work in any queue of Compress, Decompress and Verify)
+//   ?paused=1           Compress starts by itself and its queue pauses a moment later, to see it paused (Pause
+//                       and Resume work in any queue of Compress, Decompress and Verify)
 // Start runs a queue made up here: each game packs and verifies in a few seconds (and gets its repair
 // data), the games added meanwhile join it, and the card of the end shows; in Verify the damaged
 // .p5z fails, and Repair and Add repair data run their own steps. Compare levels and Measure this PC tell made-up
@@ -78,7 +78,8 @@ const mock = `
     DeleteOriginals: !!query.get("delete"), DeletePermanently: query.get("delete") === "good", LowPriority: !!query.get("low"), NameTemplate: query.get("template") || templates[0],
     Threads: Number(query.get("threads")) || 0, RepairData: !!query.get("repair"), RepairPercent: Number(query.get("percent")) || 5, KeepLeftovers: false,
     ConsoleIP: query.get("console") ? "192.168.1.20" : "", ConsoleCode: query.get("console") ? "482913" : "",
-    WatchOn: !!query.get("watch"), WatchFolder: query.get("watch") ? "D:\\\\incoming" : "", WatchSend: false };
+    WatchOn: !!query.get("watch"), WatchFolder: query.get("watch") ? "D:\\\\incoming" : "", WatchSend: false,
+    QuietEnd: false, UpdateCheck: !!query.get("update") };
   if (query.get("nodest")) settings.LastDest = "";
   const builtIn = query.get("nobuiltin") ? {} : { builtInRuntime: "C:\\\\Users\\\\user\\\\AppData\\\\Roaming\\\\MaxPack\\\\ampr-emu-ng\\\\libSceAmpr.sprx", builtInRuntimeVersion: "v0.5.1-maxpack.2" };
   const games = {
@@ -265,6 +266,8 @@ const mock = `
       q.sum.Duration = (Date.now() - q.started) * 1e6;
       queue = null;
       emit("job:done", q.sum);
+      // the end told while the window is not in front: here, the sound the page plays where no notice goes
+      if (!front && !settings.QuietEnd) emit("job:chime");
     };
     q.items.forEach((item, i) => emit("job:item", { i, state: "waiting", detail: "" }));
     setTimeout(step, 300);
@@ -274,7 +277,7 @@ const mock = `
       setTimeout(() => { if (queue === q) App.Pause(); }, 1300);
     }
   }
-  let pausedOnce = false;
+  let pausedOnce = false, front = true;
   // Compare the levels and Measure this PC: a few steps told as the engine tells them, then the result;
   // a cancel ends them as cancelled
   let tool = null;
@@ -344,6 +347,7 @@ const mock = `
     ChooseFiles: async () => Object.keys(games).slice(4), ChooseFolder: async () => Object.keys(games), ChooseDest: async () => "E:\\\\", ChooseRuntime: async () => "",
     ChooseDLC: async () => dlcChosen,
     CloseTexts: async () => {}, TellLanguage: async () => {}, ConfirmClose: async () => {},
+    TellFront: async now => { front = !!now; },
     Plan: async (section, items, opts) => items.map(item => Object.assign(plan(item, opts), opts.Mode === "repair" && !(repairs[item.Path] && repairs[item.Path].state === "match") ? { Block: "no_repair_data" } : {})),
     Space: async (section, items, opts) => (query.get("space") ? [{ Root: "E:\\\\", Need: 322390000000, Free: 118200000000 }] : []),
     StartWatch: async () => {
@@ -396,6 +400,7 @@ const mock = `
     Rename: async items => (await App.RenamePlan(items)).map(p => ({ From: p.From, To: p.To, State: p.Block ? "skipped" : "ok", Detail: p.Block })),
   };
   window.go = { main: { App } };
+  if (query.get("paused")) window.addEventListener("load", () => setTimeout(() => document.getElementById("start").click(), 1500));
   if (query.get("section")) document.addEventListener("DOMContentLoaded", () => setTimeout(() => { const b = document.querySelector('nav button[data-section="' + query.get("section") + '"]'); if (b) b.click(); }, 50));
 })();
 `;

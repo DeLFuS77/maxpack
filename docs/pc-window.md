@@ -156,9 +156,11 @@ it. A new `.p5z` that replaces an old one of the same name takes the old one's s
 ![MaxPack compressing, with the progress of each game](img/window-working.jpg)
 
 While there is work, the PC does not go to sleep. Progress also shows on the taskbar (Windows) or in
-the Dock (macOS), and when it ends the system notifies you. The portable version of Windows does not
-notify: to send notifications it would have to register in the Windows registry, and the portable one
-writes nothing there.
+the Dock (macOS). When it ends while MaxPack is not in front, the system notifies you, with its sound
+(Settings › While working › **Sound and notice at the end**, on by default); in front, the end card says
+it. The portable version of Windows does not notify: to send notifications it would have to register in
+the Windows registry, and the portable one writes nothing there, so it plays a short sound of its own
+instead (as on Linux, whose notices make none).
 
 **Pause** (next to **Cancel**, in Compress, Decompress and Verify) frees the PC for something else
 without losing anything:
@@ -360,6 +362,11 @@ Afterwards:
 
 ## 4. Settings
 
+Everything can be reached with the keyboard: the Tab key goes through the page in its order and the
+focus always shows; the bars and the buttons that are only a sign say what they are to screen readers,
+and what changes by itself (the status of the queue, the notices) is read out. Text reads at 4.5:1 at
+least in both themes, and nothing moves when the system asks for less motion.
+
 - **Language** and **Theme** (System, Light or Dark). The window speaks English, Russian, Chinese,
   German, Spanish, French, Japanese, Portuguese (Brazil), Italian, Korean and Arabic (written from right to
   left), each shown by its own name. Until you choose one it uses the language of your system, or English
@@ -398,6 +405,8 @@ Afterwards:
   `.auth_info` files some dump tools leave stay out of what Compress makes, only when the game's own
   list of the original package's files proves they are not the game's; a game without that list keeps
   them.
+  **Sound and notice at the end** (on by default): a queue that ends while MaxPack is not in front
+  says so with a notice of the system and its sound.
   **Repair data for each .p5z** is the default of the box next to Compress, with its share (1, 5 or
   10 %). **Delete the originals once checked** is the default of the box next to Compress, and **Delete
   them for good, not to the recycle bin** skips the recycle bin.
@@ -425,6 +434,12 @@ Afterwards:
 - **Windows Explorer** (Windows only): the right-click menu, Send to › MaxPack and opening `.p5z`
   files with MaxPack (with their covers as thumbnails), each a switch, off until you turn it on. See
   [Windows Explorer](#windows-explorer).
+- **Keyboard** lists the shortcuts (⌘ in place of Ctrl on macOS):
+  - **Ctrl+O** adds files and **Ctrl+Shift+O** a folder to the section open;
+  - **Ctrl+Enter** starts (as its button, when it can);
+  - **Esc** cancels the queue running, once you say yes; with a card open, Esc closes the card instead;
+  - **Ctrl+P** pauses or resumes the queue;
+  - **Ctrl+1** to **Ctrl+5** open Compress, Decompress, Verify, Details and Rename.
 - **Internet.** MaxPack's window goes on the internet for nothing; see
   [What goes on the internet](../README.md#what-goes-on-the-internet).
 - **About** has **Copy report** and the links to report a bug or a game.

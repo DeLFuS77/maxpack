@@ -41,7 +41,7 @@ func (x *pauseExtras) extras() extras {
 			x.states = append(x.states, state)
 			x.mutex.Unlock()
 		},
-		Notify: func(string, string) {},
+		Notify: func(string, string) bool { return true },
 	}
 }
 

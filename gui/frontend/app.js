@@ -56,7 +56,7 @@ const takes = {
 const defaultTemplate = "{title} [{id}]";
 const defaults = { Lang: "", Theme: "system", Runtime: "", LastDest: "", Mode: "p5z", Level: 19, DeleteOriginals: false, DeletePermanently: false, LowPriority: false, NameTemplate: defaultTemplate, Threads: 0,
   RepairData: false, RepairPercent: 5, Passcode: "", KeepLeftovers: false, ConsoleIP: "", ConsoleCode: "",
-  WatchOn: false, WatchFolder: "", WatchSend: false };
+  WatchOn: false, WatchFolder: "", WatchSend: false, QuietEnd: false, UpdateCheck: false };
 // the shares of repair data the window offers (a PAR2 set next to each .p5z)
 const percents = [1, 5, 10];
 
@@ -848,6 +848,7 @@ function paintState(row) {
       seg.className = "seg " + (steps[n] === "verifying" || steps[n] === "protecting" ? "tone-check" : "tone-work");
       seg.firstElementChild.style.transform = "scaleX(" + (n < index ? 1 : n === index ? share : 0) + ")";
     });
+    tellBar(segs, rowShare(row, job), t("progressGame")((row.game && row.game.Name) || baseName(row.path)));
     const phase = row.phase ? t("phase_" + row.phase) : "";
     step.textContent = [phase, t("percent")(Math.floor(rowShare(row, job) * 100)), state.paused ? t("stepPaused") : ""].filter(Boolean).join(" · ");
   }
@@ -859,6 +860,22 @@ function paintState(row) {
   if (savedText && !saved.textContent) saved.classList.add("pop");
   saved.textContent = savedText;
   tr.querySelector(".remove button").disabled = running() && job.rows.includes(row) && !notStarted.includes(row.state);
+  paintRemove(row);
+}
+
+// the button that takes a game out of the list is only a sign: it says which game to screen readers
+function paintRemove(row) {
+  const button = row.tr.querySelector(".remove button"), name = t("removeRow")((row.game && row.game.Name) || baseName(row.path));
+  button.setAttribute("aria-label", name);
+  button.title = name;
+}
+
+// a bar says how far it is to screen readers: a percentage, and whether it is paused
+function tellBar(bar, share, label) {
+  const percent = Math.floor(Math.min(1, Math.max(0, share)) * 100);
+  bar.setAttribute("aria-valuenow", String(percent));
+  bar.setAttribute("aria-valuetext", [t("percent")(percent), state.paused && running() ? t("stepPaused") : ""].filter(Boolean).join(" · "));
+  if (label) bar.setAttribute("aria-label", label);
 }
 
 // ---- the page ----------------------------------------------------------------------------------
@@ -1033,6 +1050,8 @@ function paintSettings() {
   $("pref-runtime-clear").textContent = builtIn ? t("runtimeUseBuiltIn") : t("forget");
   $("pref-runtime-clear").hidden = !s.Runtime;
   $("pref-low").checked = !!s.LowPriority;
+  $("pref-end-notice").checked = !s.QuietEnd;
+  paintKeys();
   // the passcode of PS5 packages: empty is the default; one being typed stays as it is
   if (document.activeElement !== $("pref-passcode")) {
     $("pref-passcode").value = s.Passcode || "";
@@ -1184,6 +1203,7 @@ function paintSummary() {
     bar.hidden = false;
     bar.firstElementChild.style.transform = "scaleX(" + share + ")";
     bar.classList.toggle("paused", state.paused);
+    tellBar(bar, share);
     $("status").textContent = state.cancelling ? t("cancelling") : state.paused ? t("pausedStatus")
       : [job.rate > 0 ? t("speed")(size(job.rate)) : "", left >= 1 ? t("timeLeft")(time(Math.round(left))) : ""].filter(Boolean).join(" · ");
     return;
@@ -2153,6 +2173,7 @@ function paintTool() {
   const prefix = tool.kind === "levels" ? "levels" : "measure";
   $(prefix + "-bar").hidden = !tool.running;
   $(prefix + "-bar").firstElementChild.style.transform = "scaleX(" + share + ")";
+  tellBar($(prefix + "-bar"), share);
   $(prefix + "-status").textContent = status;
   $(prefix + "-status").hidden = !status;
   $(prefix + "-cancel").hidden = !tool.running;
@@ -2322,6 +2343,117 @@ function tellCloseTexts() {
   go.call("CloseTexts", t("closeQuestion"), t("closeYes"), t("closeNo")).catch(() => { });
 }
 
+// ---- the keyboard -------------------------------------------------------------------------------------
+
+// the sections Ctrl+1 to Ctrl+5 open, in the order of the menu
+const sectionKeys = ["compress", "decompress", "verify", "details", "rename"];
+const mac = platform => /mac/i.test(platform || "");
+
+// shortcutOf is what a key pressed does: "addFiles" (Ctrl+O), "addFolder" (Ctrl+Shift+O), "start"
+// (Ctrl+Enter), "cancel" (Esc), "pause" (Ctrl+P), "section:<name>" (Ctrl+1 to Ctrl+5), or "" for nothing;
+// ⌘ does what Ctrl does (macOS). The digits go by the key's place, whatever the keyboard writes there
+function shortcutOf(event) {
+  const ctrl = event.ctrlKey || event.metaKey;
+  if (event.key === "Escape") return ctrl || event.shiftKey || event.altKey ? "" : "cancel";
+  if (!ctrl || event.altKey) return "";
+  const key = String(event.key || "").toLowerCase();
+  if (key === "o") return event.shiftKey ? "addFolder" : "addFiles";
+  if (event.shiftKey) return "";
+  if (event.key === "Enter") return "start";
+  if (key === "p") return "pause";
+  const digit = /^Digit([1-5])$/.exec(event.code || "") || (!event.code && /^([1-5])$/.exec(key));
+  return digit ? "section:" + sectionKeys[Number(digit[1]) - 1] : "";
+}
+
+// the shortcuts as Settings › Keyboard lists them: [keys, what they do], with ⌘ on macOS
+function keyRows(platform) {
+  const m = mac(platform);
+  const k = (key, shift) => (m ? (shift ? "⇧" : "") + "⌘" + (key === "Enter" ? "↩" : key) : "Ctrl+" + (shift ? "Shift+" : "") + key);
+  return [[k("O"), t("addFiles")], [k("O", true), t("addFolder")], [k("Enter"), t("keyStart")], ["Esc", t("keyCancel")],
+    [k("P"), t("keyPause")], [k("1") + " … " + k("5"), t("keySections")]];
+}
+function paintKeys() {
+  const list = $("keys-list");
+  list.replaceChildren(...keyRows(navigator.platform).flatMap(([keys, text]) => {
+    const term = document.createElement("dt"), kbd = document.createElement("kbd"), what = document.createElement("dd");
+    kbd.textContent = keys;
+    term.append(kbd);
+    what.textContent = text;
+    return [term, what];
+  }));
+}
+
+// a key pressed anywhere: nothing while a dialog is open (it has its own keys), and Esc not while typing
+function onKey(event) {
+  const action = shortcutOf(event);
+  if (!action || document.querySelector("dialog[open]")) return;
+  const typing = event.target && /^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName || "");
+  if (action === "cancel" && (typing || !running())) return;
+  const works = state.section !== "settings";
+  if (action === "addFiles" || action === "addFolder") {
+    if (!works || !go.has()) return;
+    event.preventDefault();
+    go.call(action === "addFiles" ? "ChooseFiles" : "ChooseFolder", state.section).then(paths => addPaths(state.section, paths), error => toast(message(error)));
+    return;
+  }
+  event.preventDefault();
+  if (action === "start") { if (works && !$("start").hidden && !$("start").disabled) $("start").click(); return; }
+  if (action === "cancel") { askCancel(); return; }
+  if (action === "pause") { togglePause(); return; }
+  setSection(action.slice("section:".length));
+}
+
+// cancelQueue stops the queue running (Cancel, or Esc once asked)
+function cancelQueue() {
+  if (!running() || state.cancelling) return;
+  state.cancelling = true;
+  paintStart();
+  paintSummary();
+  go.call("Cancel").catch(error => toast(message(error)));
+}
+// Esc asks first: the game at work stops and what it half made goes
+async function askCancel() {
+  if (!running() || state.cancelling) return;
+  if (await ask($("cancel-dialog")) === "cancel-queue") cancelQueue();
+}
+
+// ---- the end of a queue, told while the window is not in front ---------------------------------------
+
+// the short sound of the end, made here (two soft notes) for where the notice of the system makes none:
+// the window asks for it (job:chime). The sound can only start once the page was touched (the browser's rule)
+let audio = null;
+function chime() {
+  try {
+    const Context = window.AudioContext || window.webkitAudioContext;
+    if (!Context) return;
+    audio = audio || new Context();
+    if (audio.state === "suspended") audio.resume();
+    const now = audio.currentTime;
+    for (const [at, frequency] of [[0, 880], [0.14, 1318.5]]) {
+      const tone = audio.createOscillator(), gain = audio.createGain();
+      tone.type = "sine";
+      tone.frequency.value = frequency;
+      gain.gain.setValueAtTime(0.0001, now + at);
+      gain.gain.exponentialRampToValueAtTime(0.18, now + at + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + at + 0.4);
+      tone.connect(gain).connect(audio.destination);
+      tone.start(now + at);
+      tone.stop(now + at + 0.45);
+    }
+  } catch { }
+}
+// the sound is readied by the first touch of the page, so it can play later with the window behind
+function readySound() {
+  try {
+    const Context = window.AudioContext || window.webkitAudioContext;
+    if (Context && !audio) audio = new Context();
+  } catch { }
+}
+// the window is told whether it is in front, for the notice of the end
+function tellFront() {
+  go.call("TellFront", !!(document.hasFocus && document.hasFocus()) && document.visibilityState !== "hidden").catch(() => { });
+}
+
 // ---- dropping files ----------------------------------------------------------------------------
 
 // the layer over the window while files are dragged over it, as in NXPress: it goes with the
@@ -2367,6 +2499,7 @@ function wire() {
   $("repair-damaged").addEventListener("click", () => startQueue("repair"));
   $("delete-originals").addEventListener("change", () => { state.deleteOriginals = $("delete-originals").checked; render(); });
   $("pref-low").addEventListener("change", () => keep({ LowPriority: $("pref-low").checked }));
+  $("pref-end-notice").addEventListener("change", () => keep({ QuietEnd: !$("pref-end-notice").checked }));
   // the passcode of PS5 packages: kept once it is one (or empty, the default); the packages that
   // needed another one are read again with it
   $("pref-passcode").addEventListener("input", () => { $("passcode-bad").hidden = validPasscode($("pref-passcode").value.trim()); });
@@ -2432,12 +2565,11 @@ function wire() {
   $("link-bug").addEventListener("click", () => go.call("OpenLink", "bug").catch(error => toast(message(error))));
   $("link-game").addEventListener("click", () => go.call("OpenLink", "game").catch(error => toast(message(error))));
   $("pause").addEventListener("click", togglePause);
-  $("cancel").addEventListener("click", () => {
-    state.cancelling = true;
-    paintStart();
-    paintSummary();
-    go.call("Cancel").catch(error => toast(message(error)));
-  });
+  $("cancel").addEventListener("click", cancelQueue);
+  document.addEventListener("keydown", onKey);
+  for (const kind of ["pointerdown", "keydown"]) window.addEventListener(kind, readySound, { once: true });
+  for (const kind of ["focus", "blur"]) window.addEventListener(kind, tellFront);
+  document.addEventListener("visibilitychange", tellFront);
   for (const input of document.querySelectorAll('input[name="made-for"]')) input.addEventListener("change", () => { keep({ Mode: input.value }); render(); });
   for (const input of document.querySelectorAll('input[name="unpack-to"]')) input.addEventListener("change", () => { state.unpackTo = input.value; save("unpackTo", input.value); render(); });
   $("level").addEventListener("input", () => paintLevel($("level").value));
@@ -2474,6 +2606,7 @@ async function main() {
   go.on("job:progress", onProgress);
   go.on("job:done", onDone);
   go.on("job:paused", onPaused);
+  go.on("job:chime", chime);
   go.on("close:ask", askClose);
   go.on("tool:progress", onToolProgress);
   go.on("tool:level", onToolLevel);
@@ -2497,6 +2630,7 @@ async function main() {
   state.lang = chooseLanguage(state.settings.Lang);
   state.deleteOriginals = !!state.settings.DeleteOriginals;
   tellCloseTexts();
+  tellFront();
   applyTheme();
   const setup = state.setup;
   banner(setup && setup.coreError ? (setup.coreOtherVersion ? coreText(setup) : t("coreMissing") + " " + setup.coreError) : "");

@@ -62,7 +62,7 @@
     <div class="actions">
       <div class="summary">
         <div id="summary-text"></div>
-        <div class="bar total" id="total-bar" hidden><div></div></div>
+        <div class="bar total" id="total-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" data-t-label="progressQueue" hidden><div></div></div>
         <div id="status" class="muted" aria-live="polite"></div>
       </div>
       <button id="pause" class="secondary" hidden></button>
@@ -178,6 +178,10 @@
           <input id="pref-low" class="switch" type="checkbox" role="switch" aria-labelledby="low-name">
         </div>
         <div class="pref-item">
+          <div class="pref-text"><b id="end-notice-name" data-t="endNotice"></b><small data-t="endNoticeHint"></small></div>
+          <input id="pref-end-notice" class="switch" type="checkbox" role="switch" aria-labelledby="end-notice-name">
+        </div>
+        <div class="pref-item">
           <div class="pref-text"><b data-t="prefPasscode"></b><small data-t="prefPasscodeHint"></small><small class="pref-status warning" id="passcode-bad" data-t="passcodeBad" hidden></small></div>
           <input id="pref-passcode" class="passcode" type="text" spellcheck="false" autocomplete="off" maxlength="32" data-t-placeholder="passcodeDefault">
         </div>
@@ -260,6 +264,11 @@
         <p class="hint" id="explorer-for" data-t="explorerFor"></p>
       </section>
       <section class="pref-group">
+        <h2 data-t="prefKeys"></h2>
+        <dl class="about-list keys" id="keys-list"></dl>
+        <p class="hint" data-t="keysHint"></p>
+      </section>
+      <section class="pref-group">
         <h2 data-t="prefInternet"></h2>
         <p class="hint plain" data-t="internetText"></p>
       </section>
@@ -305,8 +314,8 @@
       </div>
     </td>
     <td class="size"></td>
-    <td class="state"><span class="badge" hidden></span><div class="segs" hidden></div><div class="step"></div><div class="saved"></div></td>
-    <td class="remove"><button class="quiet icon">✕</button></td>
+    <td class="state"><span class="badge" hidden></span><div class="segs" role="progressbar" aria-valuemin="0" aria-valuemax="100" hidden></div><div class="step"></div><div class="saved"></div></td>
+    <td class="remove"><button class="quiet icon"><span aria-hidden="true">✕</span></button></td>
   </tr>
 </template>
 <!-- a step of the bar of a game: compress, then verify -->
@@ -394,6 +403,13 @@
   <form method="dialog" class="dialog-actions"><button value="close" class="danger" data-t="closeYes"></button><button value="stay" class="primary" data-t="closeNo" autofocus></button></form>
 </dialog>
 
+<!-- Esc while a queue runs: it asks before it cancels; Escape again keeps it going -->
+<dialog id="cancel-dialog" class="warn-dialog" aria-labelledby="cancel-title" aria-describedby="cancel-text">
+  <h2 id="cancel-title"><svg class="warn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 2.8 19.5h18.4z"/><path d="M12 9.5v4.5M12 16.8v.2"/></svg><span data-t="cancelTitle"></span></h2>
+  <p class="muted" id="cancel-text" data-t="cancelText"></p>
+  <form method="dialog" class="dialog-actions"><button value="cancel-queue" class="danger" data-t="cancelYes"></button><button value="keep" class="primary" data-t="cancelNo" autofocus></button></form>
+</dialog>
+
 <!-- the end of a queue that wrote games: what it saved, what saved most, and what to do now -->
 <dialog id="done-dialog" aria-labelledby="done-title">
   <h2 id="done-title"><span class="squeeze-ic" aria-hidden="true"><svg viewBox="0 0 24 24"><g class="down"><path d="M12 3v6m0 0-3-3m3 3 3-3"/></g><g class="up"><path d="M12 21v-6m0 0-3 3m3-3 3 3"/></g><path d="M5 12h14"/></svg></span><span data-t="doneTitle"></span></h2>
@@ -445,7 +461,7 @@
   <h2 id="levels-title" data-t="levelsTitle"></h2>
   <p class="muted" id="levels-game"></p>
   <p class="muted" id="levels-for"></p>
-  <div class="bar total" id="levels-bar"><div></div></div>
+  <div class="bar total" id="levels-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" data-t-label="levelsTitle"><div></div></div>
   <p class="muted" id="levels-status" aria-live="polite"></p>
   <table class="tool-table">
     <thead><tr><th data-t="levelsLevel"></th><th class="num" id="levels-size-head"></th><th class="num" data-t="levelsSaved"></th><th class="num" data-t="levelsTime"></th><th></th></tr></thead>
@@ -462,7 +478,7 @@
 <dialog id="measure-dialog" class="tool-dialog" aria-labelledby="measure-title">
   <h2 id="measure-title" data-t="measureTitle"></h2>
   <p class="muted" id="measure-intro"></p>
-  <div class="bar total" id="measure-bar"><div></div></div>
+  <div class="bar total" id="measure-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" data-t-label="measureTitle"><div></div></div>
   <p class="muted" id="measure-status" aria-live="polite"></p>
   <table class="tool-table">
     <thead><tr><th data-t="measureThreads"></th><th data-t="measureSpeed"></th></tr></thead>
@@ -472,7 +488,7 @@
   <p class="tool-result" id="measure-result" hidden></p>
   <form method="dialog" class="dialog-actions"><button type="button" id="measure-cancel" class="quiet" data-t="cancel"></button><button value="close" id="measure-close" class="primary" data-t="close"></button></form>
 </dialog>
-<template id="trial-row-template"><tr><td class="threads"></td><td><div class="speed"><span></span><div class="bar"><div></div></div><b class="used"></b></div></td></tr></template>
+<template id="trial-row-template"><tr><td class="threads"></td><td><div class="speed"><span></span><div class="bar" aria-hidden="true"><div></div></div><b class="used"></b></div></td></tr></template>
 
 <div id="drop-overlay" hidden><div class="drop-card"><svg class="drop-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 19h14"/></svg><b data-t="dropHere"></b></div></div>
 <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>

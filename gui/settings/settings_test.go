@@ -275,3 +275,20 @@ func TestSettingsWatch(t *testing.T) {
 		t.Errorf("no folder: %+v", got)
 	}
 }
+
+// The end of a queue makes a sound and a notice by default (QuietEnd off), and MaxPack looks for new versions
+// only once it is turned on (UpdateCheck off by default); both are kept.
+func TestSettingsEndAndUpdates(t *testing.T) {
+	useFolder(t)
+	if got, _ := Load(); got.QuietEnd || got.UpdateCheck {
+		t.Fatalf("defaults: %+v", got)
+	}
+	want := Defaults()
+	want.QuietEnd, want.UpdateCheck = true, true
+	if err := Save(want); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := Load(); err != nil || got != want {
+		t.Fatalf("%+v, %v; expected %+v", got, err, want)
+	}
+}

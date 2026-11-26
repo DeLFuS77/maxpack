@@ -343,6 +343,10 @@ only accepts a `libSceAmpr.sprx` that reads zstd.
 
   The portable version writes nothing in Windows and leaves them off. Uninstalling MaxPack takes them
   away. [Details](pc-window.md#windows-explorer).
+- **Sound and notice at the end** (in While working, on by default): when a queue ends while MaxPack is
+  not in front, a notice of the system with its sound (a short sound of MaxPack where there is no notice).
+- **Keyboard:** **Ctrl+O** add files, **Ctrl+Shift+O** add a folder, **Ctrl+Enter** start, **Esc** cancel
+  (it asks first), **Ctrl+P** pause or resume, **Ctrl+1** to **Ctrl+5** the sections (⌘ on macOS).
 - **Internet:** MaxPack's window goes on the internet for nothing.
 - **About:** the versions, **Copy report**, and the links to report a bug or a game.
 

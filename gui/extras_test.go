@@ -62,7 +62,7 @@ func TestRunExtras(t *testing.T) {
 				total = tot
 			}
 		},
-		Notify: func(ti, bo string) { mu.Lock(); defer mu.Unlock(); notices++; title, body = ti, bo },
+		Notify: func(ti, bo string) bool { mu.Lock(); defer mu.Unlock(); notices++; title, body = ti, bo; return true },
 	}}
 	sum := a.run(context.Background(), plans, o)
 	if sum.Done != 1 {
@@ -99,7 +99,7 @@ func TestRunExtrasFailureShowsError(t *testing.T) {
 	a := &App{core: filepath.Join(t.TempDir(), "no-existe.exe"), lang: func() string { return "en" }, extras: extras{
 		Awake:   func() func() { return func() {} },
 		Taskbar: func(state string, done, total uint64) { states = append(states, state) },
-		Notify:  func(string, string) { notices++ },
+		Notify:  func(string, string) bool { notices++; return true },
 	}}
 	plans := []jobs.Plan{{Item: jobs.Item{Path: t.TempDir(), Name: "x", Kind: "folder"}, Out: filepath.Join(t.TempDir(), "x.p5z"), Args: []string{"pack"}}}
 	sum := a.run(context.Background(), plans, jobs.Options{Mode: jobs.ModeP5z})
@@ -285,7 +285,7 @@ func TestRunTaskbarPhases(t *testing.T) {
 				last, total = done, tot
 			}
 		},
-		Notify: func(string, string) {},
+		Notify: func(string, string) bool { return true },
 	}}
 	// told after the taskbar: what it shows with that line counted
 	a.onEvent = func(i int, e core.Event) {

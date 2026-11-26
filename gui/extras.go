@@ -16,8 +16,9 @@ import (
 // extras are what MaxPack does around a queue, apart so the tests can stand in for them.
 type extras struct {
 	Awake   func() func()                          // keeps the PC awake; the function it gives lets it sleep
-	Taskbar func(state string, done, total uint64) // "normal", "error" or "none"
-	Notify  func(title, body string)
+	Taskbar func(state string, done, total uint64) // "normal", "paused", "error" or "none"
+	// Notify shows a notice of the system, and tells whether it could
+	Notify func(title, body string) bool
 }
 
 // the progress of a queue is told in this many parts
@@ -26,7 +27,7 @@ const taskbarParts = 10000
 // run does the plans with the Runner and the extras: the PC stays awake meanwhile (but while the
 // queue is paused), the taskbar shows the progress of the whole queue as the page counts it (see share;
 // never going back) and whether it is paused, the page is told how each game goes (job:item,
-// job:progress), and one notice tells the summary at the end. The original of a game removed once checked is written in the log, and what a game
+// job:progress), and the end is told as endNotice says. The original of a game removed once checked is written in the log, and what a game
 // writes apart in the journal of the leftovers.
 func (a *App) run(ctx context.Context, plans []jobs.Plan, o jobs.Options) jobs.Summary {
 	return a.runQueue(ctx, &queue{o: o, jobs: jobs.NewQueue(plans)})
@@ -151,6 +152,6 @@ func (a *App) runQueue(ctx context.Context, q *queue) jobs.Summary {
 	} else {
 		x.Taskbar("none", 0, 0)
 	}
-	x.Notify(noticeText(a.language(), sum))
+	a.endNotice(x, sum)
 	return sum
 }

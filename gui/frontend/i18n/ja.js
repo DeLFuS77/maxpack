@@ -477,6 +477,7 @@ texts.ja = {
   detail_other_game: "新しいダンプは別のゲームです(タイトル ID が違います)",
   detail_same_version: "新しいダンプは .p5z と同じバージョンです",
   detail_no_title_id: "同じゲームか判断するためのタイトル ID がありません",
+  detail_not_a_game: "新しいダンプはゲームではありません(eboot.bin がないか、DLC です)。DLC は「DLC を追加…」で入れます",
   detail_changed_meanwhile: "読み込み中に .p5z が変わりました。もう一度お試しください",
   detail_dump_packed: "新しいダンプはすでに圧縮されています。ダンプしたままのものを指定してください",
   detail_nothing_given: "追加するものが指定されていません",

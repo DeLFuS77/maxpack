@@ -480,6 +480,7 @@ texts.ru = {
   detail_other_game: "новый дамп — другая игра (другой ID)",
   detail_same_version: "новый дамп — та же версия, что уже в .p5z",
   detail_no_title_id: "нет ID игры, чтобы понять, что это та же игра",
+  detail_not_a_game: "новый дамп — не игра (нет eboot.bin, или это DLC): DLC добавляется через «Добавить DLC…»",
   detail_changed_meanwhile: ".p5z изменился во время чтения: попробуйте ещё раз",
   detail_dump_packed: "новый дамп уже сжат: укажите его в том виде, в каком он снят",
   detail_nothing_given: "не указано, что добавить",

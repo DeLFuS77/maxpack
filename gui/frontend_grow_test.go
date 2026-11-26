@@ -55,7 +55,7 @@ console.log(vm.runInContext(` + "`" + `(() => {
   }
   // what the engine and the window say, in the page's words
   for (const code of ["grown", "nothing_to_do", "repair_redone", "busy", "grow_no_space", "grow_too_big", "too_many_volumes", "mostly_changed",
-    "no_packs_left", "other_game", "same_version", "no_title_id", "changed_meanwhile", "dump_packed", "nothing_given"]) {
+    "no_packs_left", "other_game", "same_version", "no_title_id", "not_a_game", "changed_meanwhile", "dump_packed", "nothing_given"]) {
     if (detailText(code) !== t("detail_" + code)) say("the detail " + code + ": " + detailText(code));
   }
   if (detailText("grown; repair_redone") !== t("detail_grown") + "; " + t("detail_repair_redone")) say("two details: " + detailText("grown; repair_redone"));

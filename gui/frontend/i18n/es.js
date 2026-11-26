@@ -477,6 +477,7 @@ texts.es = {
   detail_other_game: "el volcado nuevo es de otro juego (otro ID de título)",
   detail_same_version: "el volcado nuevo es la versión que ya tiene el .p5z",
   detail_no_title_id: "no hay ID de título para saber que es el mismo juego",
+  detail_not_a_game: "el volcado nuevo no es un juego (no tiene eboot.bin, o es un DLC): un DLC se añade con Añadir DLC…",
   detail_changed_meanwhile: "el .p5z cambió mientras se leía: inténtalo otra vez",
   detail_dump_packed: "el volcado nuevo ya está comprimido: dalo tal como se volcó",
   detail_nothing_given: "no se dio nada que añadir",

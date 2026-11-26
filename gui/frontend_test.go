@@ -78,7 +78,8 @@ func pageCodes() []string {
 		"skipped_by_user", "already_packed", "not_packed", "other",
 		// a .p5z that grows (jobs/grow.go): how it ended, and what the engine says when it does not
 		"grown", "nothing_to_do", "repair_redone", "nothing_given", "busy", "grow_no_space", "grow_too_big", "too_many_volumes",
-		"mostly_changed", "no_packs_left", "other_game", "same_version", "no_title_id", "changed_meanwhile", "dump_packed",
+		"mostly_changed", "no_packs_left", "other_game", "same_version", "no_title_id", "not_a_game", "changed_meanwhile",
+		"dump_packed",
 	}
 	// the phases of the progress of the engine (phase_code in src/cli/main.c), and of par2
 	phases := []string{"copying", "comparing", "packing", "verifying", "unpacking", "working", "protecting", "repairing"}

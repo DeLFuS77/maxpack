@@ -477,6 +477,7 @@ texts.it = {
   detail_other_game: "il nuovo dump è un altro gioco (un altro ID titolo)",
   detail_same_version: "il nuovo dump è la versione che il .p5z ha già",
   detail_no_title_id: "manca l'ID titolo per dire che è lo stesso gioco",
+  detail_not_a_game: "il nuovo dump non è un gioco (manca eboot.bin, o è un DLC): un DLC si aggiunge con Aggiungi DLC…",
   detail_changed_meanwhile: "il .p5z è cambiato mentre veniva letto: riprova",
   detail_dump_packed: "il nuovo dump è già compresso: fornisci quello estratto così com'era",
   detail_nothing_given: "non è stato indicato nulla da aggiungere",

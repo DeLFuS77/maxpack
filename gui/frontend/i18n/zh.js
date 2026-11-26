@@ -477,6 +477,7 @@ texts.zh = {
   detail_other_game: "新转储是另一款游戏（标题 ID 不同）",
   detail_same_version: "新转储与 .p5z 已有的版本相同",
   detail_no_title_id: "没有标题 ID，无法判断是否为同一款游戏",
+  detail_not_a_game: "新转储不是游戏（没有 eboot.bin，或是 DLC）：DLC 请用“添加 DLC…”加入",
   detail_changed_meanwhile: "读取期间 .p5z 发生了变化：请重试",
   detail_dump_packed: "新转储已经压缩过：请提供按原样转储的版本",
   detail_nothing_given: "未指定要添加的内容",

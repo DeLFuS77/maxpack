@@ -477,6 +477,7 @@ texts.ko = {
   detail_other_game: "새 덤프는 다른 게임입니다(타이틀 ID가 다름)",
   detail_same_version: "새 덤프는 .p5z에 이미 있는 버전입니다",
   detail_no_title_id: "같은 게임인지 알 수 있는 타이틀 ID가 없습니다",
+  detail_not_a_game: "새 덤프는 게임이 아닙니다(eboot.bin이 없거나 DLC입니다). DLC는 'DLC 추가…'로 넣습니다",
   detail_changed_meanwhile: "읽는 동안 .p5z가 바뀌었습니다. 다시 시도하세요",
   detail_dump_packed: "새 덤프는 이미 압축되어 있습니다. 덤프한 그대로의 것을 지정하세요",
   detail_nothing_given: "추가할 것이 지정되지 않았습니다",

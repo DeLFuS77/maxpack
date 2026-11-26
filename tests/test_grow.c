@@ -1420,6 +1420,29 @@ MP_TEST(recover_unreadable_journal_kept) {
     free(orig);
 }
 
+// An update's new dump is a game: a DLC folder or package given by mistake would leave the .p5z with
+// only the DLC once forced.
+MP_TEST(update_refuses_non_game) {
+    mpt_clear(TMP);
+    make_versions();
+    if (mpt_pack(V1, G_P5Z, 1, NULL) != 0) return;
+    size_t olen = 0;
+    uint8_t *orig = mpt_slurp(G_P5Z, &olen);
+    copy_tree(DLC_DATA, TMP "/dlcdump");
+    const char *pj = "{\"contentId\": \"UP0000-PPSA00000_00-MAXPACKDLCDATA01\", \"titleId\": \"PPSA00000\", "
+                     "\"contentVersion\": \"01.005.000\"}";
+    put_dated(TMP "/dlcdump/sce_sys/param.json", pj, strlen(pj), 1700500000);
+    mp_grow_opts o = quiet_opts();   // forced: the check is not the more-than-half one
+    mp_grow_result r;
+    mp_err e = {{0}};
+    MP_CHECK(mp_grow_update(G_P5Z, TMP "/dlcdump", &o, &r, &e) != 0);
+    MP_CHECK_STR(r.code, "not_a_game");
+    MP_CHECK(mp_grow_update(G_P5Z, MP_FIXTURES_DIR "/dlc_data.pkg", &o, &r, &e) != 0);
+    MP_CHECK_STR(r.code, "not_a_game");
+    MP_CHECK(starts_with(G_P5Z, orig, olen) && size_of(G_P5Z) == olen);
+    free(orig);
+}
+
 int main(void) {
     MP_RUN(p5z_append_one_file);
     MP_RUN(p5z_copy_all_is_identical);
@@ -1457,5 +1480,6 @@ int main(void) {
     MP_RUN(recover_lone_tmp_journal);
     MP_RUN(recover_keeps_committed);
     MP_RUN(recover_unreadable_journal_kept);
+    MP_RUN(update_refuses_non_game);
     MP_TEST_MAIN_END();
 }

@@ -86,7 +86,7 @@ func pageCodes() []string {
 		"send_console_error", "send_invalid", "send_kept", "send_console_stopped", "send_stalled", "send_write_error",
 		"send_discarded", "send_no_space_kept", "send_slept", "send_nothing_left", "send_discard_busy", "send_delete_failed",
 		// what the watched folder does not compress (app.js)
-		"watch_exists", "watch_incomplete",
+		"watch_exists", "watch_incomplete", "watch_redone", "watch_other_version", "send_exists_older",
 	}
 	// the phases of the progress of the engine (phase_code in src/cli/main.c), and of par2
 	phases := []string{"copying", "comparing", "packing", "verifying", "unpacking", "working", "protecting", "repairing", "sending"}

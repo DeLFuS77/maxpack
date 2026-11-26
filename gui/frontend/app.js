@@ -487,6 +487,8 @@ function partText(part) {
   if (found) return t("detail_repair_not_possible")(+found[1]);
   found = /^exit_(-?\d+)$/.exec(part);
   if (found) return t("detail_exit")(+found[1]);
+  found = /^watch_other_version: (\S+) (\S+)$/.exec(part);
+  if (found) return t("detail_watch_other_version")(found[1], found[2]);
   found = /^([a-z][a-z0-9_]*)(?:: ([\s\S]*))?$/.exec(part);
   if (found && typeof texts.en["detail_" + found[1]] === "string") {
     const rest = found[2] || "";
@@ -1400,7 +1402,7 @@ function itemWith(row, dlc) {
     AddDLCSize: dlc.filter(other => other.game.DLCData).reduce((sum, other) => sum + (Number(other.game.OriginalSize) || 0), 0),
     // a .p5z of Details that grows: the DLC to add, or the new dump, and whether to go on with most of it changed
     Grow: row.section === "details" && row.grow ? row.grow.slice() : [], Force: row.section === "details" && !!row.force,
-    // the watched folder brought it: its original follows Settings, to the recycle bin at most, once checked again
+    // the watched folder brought it: its original is always kept (jobs/watched.go)
     Watched: row.section === "compress" && !!row.watched });
 }
 // the items of the games a queue starts with or takes, each game told which DLC went inside it, what
@@ -1525,8 +1527,9 @@ async function startQueue(kind, only, extra, auto) {
       const row = rows[n];
       if (p.Block) { skipped.push([row, p.Block]); continue; }
       if ((p.Replace || []).length) {
-        // the watched folder never replaces: what is in the destination already is not done again
-        let answer = auto ? "watch" : all;
+        // the watched folder never replaces what is in the destination, but the .p5z it made itself of a game
+        // that changed since (WatchRedo): that one is made again in its place
+        let answer = auto ? (p.WatchRedo ? "replace" : "watch") : all;
         if (!answer) {
           asked++;
           $("replace-text").textContent = t("replaceText")(p.Item.Name);
@@ -1540,7 +1543,7 @@ async function startQueue(kind, only, extra, auto) {
         }
         if (answer === "cancel") return;
         if (answer === "skip") { skipped.push([row, "skipped_by_user"]); continue; }
-        if (answer === "watch") { skipped.push([row, "watch_exists"]); continue; }
+        if (answer === "watch") { skipped.push([row, watchInTheWay(p, row)]); continue; }
         opts.Replace.push(p.Out);
       }
       going.push(n);
@@ -1550,10 +1553,11 @@ async function startQueue(kind, only, extra, auto) {
       if (!auto) toast(t("nothingToDo"));
       return;
     }
-    // the originals that go once checked: said with what each takes and where it goes (the watched
-    // folder does as Settings says, and keeps the ones that cannot go to the recycle bin)
-    if (opts.DeleteOriginals && !auto) {
-      const answer = await askOriginals(going.map(n => plans[n]), opts);
+    // the originals that go once checked: said with what each takes and where it goes; what the watched
+    // folder brought keeps its original whatever this queue does (jobs/watched.go), and is not listed
+    const goes = going.filter(n => !rows[n].watched);
+    if (opts.DeleteOriginals && !auto && goes.length) {
+      const answer = await askOriginals(goes.map(n => plans[n]), opts);
       if (answer === "cancel") return;
       if (answer === "keep") opts.DeleteOriginals = false;
     }
@@ -1634,14 +1638,36 @@ function join(row) {
 async function joinQueue() {
   const job = state.job;
   if (!running() || job.joining) return;
-  const rows = toJoin.splice(0).filter(row => row.game && state.lists[job.section].includes(row) && !job.rows.includes(row)
+  let rows = toJoin.splice(0).filter(row => row.game && state.lists[job.section].includes(row) && !job.rows.includes(row)
     && row.state !== "ok" && !(job.section === "compress" && (row.game.Packed || isDlc(row.game))) && !(job.section === "verify" && !row.game.Packed));
   if (!rows.length) return;
   job.joining = true;
   try {
+    // what the watched folder brings and is in the destination already, as when it starts a queue: the .p5z it
+    // made itself of a game that changed since is made again in its place; anything else there stays, and the
+    // game is left out, with why
+    const replace = [];
+    const watched = job.section === "compress" ? rows.filter(row => row.watched) : [];
+    if (watched.length) {
+      const plans = await go.call("Plan", job.section, watched.map(itemOf), job.opts);
+      if (!running()) return;
+      const out = [];
+      plans.forEach((p, n) => {
+        if (p.Block || !(p.Replace || []).length) return;
+        if (p.WatchRedo) replace.push(p.Out);
+        else out.push([watched[n], watchInTheWay(p, watched[n])]);
+      });
+      for (const [row, detail] of out) {
+        Object.assign(row, { state: "skipped", detail, out: "", outSize: 0, warnings: [] });
+        watchEnded(row);
+        paintRow(row);
+      }
+      rows = rows.filter(row => !out.some(([left]) => left === row));
+      if (!rows.length) return;
+    }
     let keepOriginals = false;
-    // what the watched folder brings is not asked about: its originals follow Settings, whatever this queue
-    // does with the others (jobs/watched.go), to the recycle bin at most
+    // what the watched folder brings is not asked about: its original is always kept, whatever this queue
+    // does with the others (jobs/watched.go)
     if (job.deletes && !rows.every(row => row.watched)) {
       const plans = await go.call("Plan", job.section, rows.map(itemOf), Object.assign({}, job.opts, { DeleteOriginals: true }));
       const opts = { DeleteNoBin: false };
@@ -1649,7 +1675,7 @@ async function joinQueue() {
       if (answer === "cancel" || !running()) return;
       keepOriginals = answer === "keep" || plans.some(p => p.NoBin && !opts.DeleteNoBin);
     }
-    const first = await go.call("Append", job.section, itemsOf(rows), [], keepOriginals);
+    const first = await go.call("Append", job.section, itemsOf(rows), replace, keepOriginals);
     rows.forEach((row, n) => {
       job.rows[first + n] = row;
       Object.assign(row, { state: "queued", detail: "", step: "", phase: "", offset: 0, done: 0, total: 0, out: "", outSize: 0, warnings: [], unqueued: false });
@@ -1767,7 +1793,7 @@ async function sendRows(rows) {
   const picked = document.querySelector('input[name="send-drive"]:checked');
   const drive = picked ? picked.value : chosen;
   save("sendDrive", drive);
-  for (const row of rows) row.sentDrive = drive;
+  for (const row of rows) Object.assign(row, { sentDrive: drive, redone: false });
   startQueue("send", rows, { Drive: drive });
 }
 
@@ -1843,9 +1869,15 @@ function watchReady(rows) {
   }
   return ready;
 }
-// the window is told how a watched game ended: done (compressed, failed, in the destination already) until it
-// changes; anything else (cancelled, skipped for another reason) comes again in the next run
-const watchFinal = row => row.state === "ok" || row.state === "error" || (row.state === "skipped" && /^(watch_)?exists$/.test(row.detail));
+// the window is told how a watched game ended: done (compressed, failed, in the destination already, also in
+// another version) until it changes; anything else (cancelled, skipped for another reason) comes again in the
+// next run
+const watchFinal = row => row.state === "ok" || row.state === "error"
+  || (row.state === "skipped" && /^((watch_)?exists|watch_other_version: .*)$/.test(row.detail));
+// why the watched folder leaves out a game that is in the destination already: the same game there in another
+// version (an update, which Details › Update with a new dump… puts in), or anything else there
+const watchInTheWay = (p, row) => p.OtherVersion && row.game && row.game.Version && !/\s/.test(p.OtherVersion + row.game.Version)
+  ? "watch_other_version: " + p.OtherVersion + " " + row.game.Version : "watch_exists";
 // what keeps the watched folder waiting (no destination, no room) is said once per wait, not on every try
 function watchSayOnce(what) {
   if (state.watchSaid === what) return false;
@@ -1855,7 +1887,8 @@ function watchSayOnce(what) {
 function watchEnded(row) {
   if (!row.watched || !ended.includes(row.state) || row.watchTold === row.state) return;
   row.watchTold = row.state;
-  go.call("WatchEnded", row.path, watchFinal(row)).catch(() => {});
+  // what it made, when it ended well: the window keeps it, to make it again in its place once the game changes
+  go.call("WatchEnded", row.path, watchFinal(row), row.state === "ok" ? row.out || "" : "").catch(() => {});
 }
 // what was in the watched folder when it was turned on: compressed only when asked
 async function takeExisting() {
@@ -1887,9 +1920,12 @@ async function sendWatched(job) {
   if (!validConsoleIp(state.settings.ConsoleIP) || !validConsoleCode(state.settings.ConsoleCode)) { toast(t("sendNoConsole")); watchSoon(); return; }
   addPaths("details", paths);
   const wanted = new Set(paths.map(pathKey));
+  // the .p5z made again of a game that changed: the console may have the older copy
+  const redone = new Set(job.rows.filter(row => row && row.watched && /(^|; )watch_redone($|; )/.test(row.detail || "")).map(row => pathKey(row.out)));
   const rowsOf = () => state.lists.details.filter(row => wanted.has(pathKey(row.path)));
   for (let waited = 0; waited < 120 && rowsOf().some(row => !row.game && !row.error); waited++) await new Promise(done => setTimeout(done, 250));
   const rows = rowsOf().filter(row => row.game && row.game.Kind === "p5z");
+  for (const row of rows) row.redone = redone.has(pathKey(row.path));
   if (rows.length && !state.busy) startQueue("send", rows, { Drive: load("sendDrive", "") }, true);
   else watchSoon();
 }
@@ -1906,6 +1942,8 @@ function onItem(event) {
   if (working.includes(event.state) && event.state !== row.step) Object.assign(row, { step: event.state, phase: "", offset: 0, done: 0, total: 0 });
   row.state = event.state;
   row.detail = event.detail || "";
+  // a .p5z the watched folder made again, which the console has already: it has the older copy
+  if (row.redone && row.detail === "send_exists") row.detail = "send_exists_older";
   if (event.out) Object.assign(row, { out: event.out, outSize: event.size || 0, homebrew: !!event.homebrew });
   row.repairSize = event.repair || 0;
   watchEnded(row);

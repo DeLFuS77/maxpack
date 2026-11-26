@@ -12,6 +12,7 @@
 
 #define TMP MP_TEST_TMP "/p5z_icon"
 #define ICON "sce_sys/icon0.png"
+#define FRAME_REC_T 16u   // a frame record of the index
 
 static uint32_t rd32(const uint8_t *p) { return p[0] | p[1] << 8 | p[2] << 16 | (uint32_t)p[3] << 24; }
 static uint64_t rd64(const uint8_t *p) { return rd32(p) | (uint64_t)rd32(p + 4) << 32; }
@@ -488,6 +489,76 @@ MP_TEST(thumb_damaged_frame) {
     free(d);
 }
 
+// The icon's frames, crafted so that every check of before holds and the read is still the icon: one
+// frame padded with a skippable frame of 1 MiB (more than any zstd frame of its size takes), or the icon
+// in 65 frames (the packer gives an icon of up to 8 MiB one). Each is refused before its frames are read,
+// so a hostile .p5z cannot make the file manager read far more than an icon.
+MP_TEST(thumb_frames_bounded) {
+    const size_t isz = 20000;
+    uint8_t *icon = pattern(isz, 9);
+    size_t n = 0, ixn = 0;
+    uint8_t *d = icon_p5z(icon, isz, &n);
+    if (!d) {
+        free(icon);
+        return;
+    }
+    uint64_t ioff = rd64(d + n - 32 + 8);
+    uint8_t *ix0 = index_of(d, n, &ixn);
+    for (int c = 0; c < 2; c++) {
+        const uint32_t nframes = c == 0 ? 1 : 65;
+        uint32_t nf = rd32(ix0 + 12), nfr = rd32(ix0 + 16);
+        // the index, with room for nframes more frame records at the end of its frames (case 1)
+        size_t add = c == 0 ? 0 : (size_t)FRAME_REC_T * nframes, at = 56 + 88ull * nf + FRAME_REC_T * (size_t)nfr;
+        size_t ixn2 = ixn + add;
+        uint8_t *ix = malloc(ixn2);
+        memcpy(ix, ix0, at);
+        memcpy(ix + at + add, ix0 + at, ixn - at);
+        wr32(ix + 16, nfr + (c == 0 ? 0 : nframes));
+        uint8_t *r = record(ix, ixn2, ICON);
+        uint32_t first = c == 0 ? rd32(r + 44) : nfr;
+        // the region: the icon's frames, one after the other
+        size_t cap = ZSTD_compressBound(isz) + nframes * 64 + (1u << 20) + 8, en = 0, done = 0;
+        uint8_t *extra = calloc(cap, 1);
+        for (uint32_t k = 0; k < nframes; k++) {
+            size_t piece = k + 1 < nframes ? isz / nframes : isz - done;
+            size_t cz = ZSTD_compress(extra + en, cap - en, icon + done, piece, 3);
+            if (c == 0) {   // a skippable frame after it, inside the same frame record
+                wr32(extra + en + cz, 0x184D2A50);
+                wr32(extra + en + cz + 4, 1u << 20);
+                cz += 8 + (1u << 20);
+            }
+            uint8_t *fr = ix + 56 + 88ull * nf + FRAME_REC_T * (size_t)(first + k);
+            wr64(fr, ioff + en);
+            wr32(fr + 8, (uint32_t)cz);
+            wr32(fr + 12, (uint32_t)piece);
+            en += cz;
+            done += piece;
+        }
+        r[9] = 1;   // stored as frames
+        wr64(r + 28, ioff);
+        wr64(r + 36, en);
+        wr32(r + 44, first);
+        wr32(r + 48, nframes);
+        size_t m = 0;
+        uint8_t *bad = with_index(d, n, extra, en, ix, ixn2, &m);
+        memsrc s = src_of(bad, m);
+        uint8_t *png = NULL;
+        size_t len = 0;
+        char err[256];
+        int rc = read_icon(&s, m, &png, &len, err, sizeof err);
+        if (rc != -1 || png || !strstr(err, "frames"))
+            MP_FAIL_("case %d: rc %d, \"%s\", %llu bytes read", c, rc, err, (unsigned long long)s.total);
+        if (s.total > ixn2 + (64u << 10)) MP_FAIL_("case %d: read %llu bytes", c, (unsigned long long)s.total);
+        free(png);
+        free(bad);
+        free(extra);
+        free(ix);
+    }
+    free(ix0);
+    free(icon);
+    free(d);
+}
+
 int main(void) {
     mpt_clear(TMP);
     MP_RUN(thumb_reads_icon);
@@ -500,5 +571,6 @@ int main(void) {
     MP_RUN(thumb_index_too_big);
     MP_RUN(thumb_region_outside);
     MP_RUN(thumb_damaged_frame);
+    MP_RUN(thumb_frames_bounded);
     MP_TEST_MAIN_END();
 }

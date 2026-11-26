@@ -509,11 +509,10 @@ minimized too: no service stays in the system.
   size, date or number of files) for a minute, all of it at once, so a game and its DLC go together.
 - **How:** as if dropped on Compress: its row, its bar and the end card, with the destination, level and
   repair data of Compress; nothing is asked.
-- **Its original** goes only when Settings > Delete the originals once checked is on (whatever the queue it
-  joins does with the others), and then to the recycle bin only, never for good; one the bin cannot take
-  stays. It goes only when its list said it was complete (every file, of its size) and it is, file by file
-  (read through each file), as it was when its compression began; else it stays and the row says why ("it
-  changed while it was compressed", "its list does not say it is complete"). Without a destination it waits for one. What
+- **Its original is always kept,** whatever Settings or the queue it joins say of originals: the watched
+  folder only compresses (and sends, when asked), and the row says so. A game whose files changed while it was
+  compressed (read through each file before and after) fails, nothing made of it is kept or sent, and it comes
+  again once it is whole. Without a destination it waits for one. What
   is in the destination already is skipped ("it is in the destination already"), and nothing is
   replaced. A game that lacks files of its list (the 1.0.6 check) stays in the list with its warning.
   When a queue of Compress is running, what arrives joins it.
@@ -523,7 +522,11 @@ minimized too: no service stays in the system.
   stable: those waiting in Compress every 30 s and when a destination is chosen, the others in the next run.
 - **Still arriving:** on Windows each file is read through itself (a listing may lag behind a file being
   written), and one another program still holds open for writing is still arriving; a `.part`, `.crdownload`,
-  `.!qB` or `.!ut` download, or an empty file in place of a download, is never a game.
+  `.!qB`, `.!ut` or `.filepart` download, or an empty file in place of a download, is never a game. What systems
+  write into folders (`.DS_Store`, `._*`, `Thumbs.db`, `desktop.ini`, `.Spotlight-V100`, `$RECYCLE.BIN`,
+  `System Volume Information`...) never makes a dump new or changing. One whose file cannot be opened (not
+  because a program writes it) is looked at three times, then left alone, and said, until it changes.
+- **Compress the N already there** goes through the same checks: they go once whole, by the next looks.
 - **To the console too:** each `.p5z` the watched folder made goes on to the console of Settings, to
   the drive chosen last, once its queue ends.
 - **The folder gone** (a USB drive taken out) is said in Settings, and watching goes on when it is back.

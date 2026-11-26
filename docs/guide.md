@@ -397,16 +397,18 @@ Settings > **Watched folder**, off until you choose a folder and turn it on: whi
 `.pkg` that arrives at the top of that folder goes to Compress as if you had dropped it there, once
 nothing new in the folder has changed for a minute (so a game and its DLC that arrive together go
 together, the DLC inside it). It is compressed with the settings of Compress: the destination, the
-level and the repair data. Its original goes only when Settings > Delete the originals once checked is on, and
-then only to the recycle bin, never for good whatever Settings says (those the bin cannot take stay), and only
-when the dump was complete by its list (every file, of its size) and is, file by file, as it was when its
-compression began: else it stays, and its row says why. It never replaces: what is in the destination already
-is skipped. A game that lacks files of its list stays in the list with its warning instead. Turning it on, or
-choosing another folder, takes what is there as not new: Settings offers to compress it. What ended (compressed,
-failed or skipped as there) is not handed over again until it changes (MaxPack keeps that in `watched.json`
-next to its settings); what never ran (no destination, cancelled, the window closed) comes again the next time.
-A file another program still has open for writing (Windows), a `.part`, `.crdownload` or `.!qB` download, or an
-empty placeholder is still arriving. With **Send them to the console too**, each `.p5z` made goes on to the console, to the drive
+level and the repair data. **Its originals are always kept**: the watched folder only compresses (and
+sends, when asked), whatever Settings says of originals. A game whose files changed while it was compressed
+(it was still arriving) fails ("it changed while it was being compressed"): nothing made of it is kept, it is not
+sent, and it is compressed again once it is whole. It never replaces: what is in the destination already is
+skipped. A game that lacks files of its list stays in the list with its warning instead. Turning it on, or
+choosing another folder, takes what is there as not new: Settings offers to compress it, and those go as what
+arrives goes, once whole. What ended (compressed, failed or skipped as there) is not handed over again until it
+changes (MaxPack keeps that in `watched.json` next to its settings); what never ran (no destination, cancelled,
+the window closed) comes again the next time. A file another program still has open for writing (Windows), a
+`.part`, `.crdownload`, `.!qB` or `.filepart` download, or an empty placeholder is still arriving; what systems
+write into folders (`.DS_Store`, `._*`, `Thumbs.db`, `desktop.ini`, `.Spotlight-V100`, `$RECYCLE.BIN`...) never
+counts; one whose file cannot be opened is left alone, and said, until it changes. With **Send them to the console too**, each `.p5z` made goes on to the console, to the drive
 chosen last. The subfolders are not looked into, and nothing runs with the window closed: what arrived
 meanwhile is found when it opens.
 

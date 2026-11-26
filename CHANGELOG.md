@@ -32,9 +32,9 @@ All notable changes to MaxPack are listed here. The format follows
   open for writing; downloads at work are left alone), its DLC with it; what is in the destination already
   is skipped, a game that lacks files of its list stays in the list with its warning, and what ended is not
   handed over again until it changes. What is there when it is turned on is offered, not compressed. Its
-  originals go to the recycle bin only when Settings says so, never for good, and only when the dump was
-  complete by its list and did not change while it was compressed. **Send them to the console too** sends
-  each `.p5z` made. Windows, macOS and Linux (it looks every 5 seconds).
+  originals are always kept, whatever Settings says: it only compresses (and sends), and a game that changed
+  while it was compressed fails and comes again once whole. **Send them to the console too** sends each `.p5z`
+  made. Windows, macOS and Linux (it looks every 5 seconds).
 - The HTTP client of the engine takes headers of its own and a response as soon as its `Content-Length`
   has arrived.
 

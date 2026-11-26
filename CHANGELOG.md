@@ -156,7 +156,8 @@ All notable changes to MaxPack are listed here. The format follows
 - **A swap held for a moment:** replacing a `.p5z` (Replace, or the watched folder making its own again) waits
   a few seconds for a program that holds the old one (the Explorer making its cover, an antivirus) instead of
   failing and throwing the verified new one away; a power cut between its two renames leaves the old one
-  journaled, and **Clean** puts it back.
+  journaled (the journal is on the disk before the renames begin), and **Clean** puts it back, with words of
+  its own ("a replace cut short does not lose the .p5z that was there").
 - The choice of what to add to a `.p5z` (Add DLC, Update) is no longer drawn as a warning.
 
 ## [1.0.7] - 2026-11-26

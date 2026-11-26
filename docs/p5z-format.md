@@ -270,5 +270,12 @@ the essentials.
   `archive_id`, the size of the `.p5z`, the loose files (`loose`, with `loose_bytes` as the sum) and the
   volumes (`volumes`, with `id`, `offset` and `length`). In C, the same is in `mp_play_open`,
   `mp_play_json` and `mp_play_extract` (`src/pack/mp_play.h`).
+- **The sums, to compare two packs:** `maxpack info --sums <game.p5z>` prints the header's level and
+  `archive_id` and, for each volume record in its order, its name, its size (the whole volume) and its
+  SHA-256 (of bytes [64, end) of the volume): `level N`, `archive_id <32 hex>`, `ampr_zstd-NNN.pak <size>
+  <64 hex>`, lowercase, each line ending in `\n`. They are read from the index, nothing is hashed again.
+  In C: `mp_p5z_sums_get`, `mp_p5z_sums_lines` and `mp_p5z_sums_json` (`src/pack/mp_p5z.h`); the JSON is
+  `{"archive_id","level","volumes":[{"name","size","sha256"}...]}`, and `info --json` has the same as
+  `archive_id`, `level` and `volume_sums`.
 - **`maxpack.image`:** with that data the payload writes the `maxpack.image` file that `ampr-emu-ng` reads
   to locate the volumes inside the `.p5z`. Its contract is in `docs/p5z-mode.md` of ampr-emu-ng.

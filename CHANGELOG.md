@@ -39,6 +39,11 @@ All notable changes to MaxPack are listed here. The format follows
   with its bar, **Cancel** and end card; the `.p5z` is verified after it grows, and gets its repair data
   again when it had some. An update of most of the game says so and offers **Update anyway**. Details
   says how many times a `.p5z` grew and the space it does not use. In its 11 languages.
+- `maxpack info --sums <game.p5z>`: what the index records of its packs, as `level N`, `archive_id <hex>`
+  and one `ampr_zstd-NNN.pak <size> <sha256>` line per volume (the SHA-256 of its bytes after its 64-byte
+  header), the lines MaxPack for the console prints after packing on the console, so that `diff` compares
+  the two packs. `info --json` of a `.p5z` has the same as `archive_id`, `level` and `volume_sums`; in C,
+  `mp_p5z_sums_get`, `mp_p5z_sums_lines` and `mp_p5z_sums_json`. For `.p5z` files that grew too.
 - **DLC inside the `.p5z`.** `pack --dlc <DLC>` (as many as needed) puts a game's DLC inside what is
   made of it: a PS5 package of additional content (`.pkg`, with the same passcode) or a dumped DLC
   folder (`sce_sys/param.json` and no `eboot.bin`), of the game's title ID. Each DLC with files of its

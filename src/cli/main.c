@@ -20,6 +20,7 @@
 #include "mp_complete.h"
 #include "mp_describe.h"
 #include "mp_grow.h"
+#include "mp_hash.h"
 #include "mp_levels.h"
 #include "mp_p5z.h"
 #include "mp_parallel.h"
@@ -44,6 +45,8 @@ static void usage(FILE *out) {
             "  maxpack info <game.p5z>\n"
             "  maxpack info --json <folder|image|package|game.p5z>\n"
             "  maxpack info --play <game.p5z>   what the console needs to play it without installing (JSON)\n"
+            "  maxpack info --sums <game.p5z>   what its index records of its packs: level, archive_id and each\n"
+            "                                   volume's size and SHA-256, in the lines the console's pack prints\n"
             "  maxpack icon <folder|image|package|game.p5z> -o <icon.png>\n"
             "  maxpack verify <game.p5z | folder> [--against <source>] [--threads N]\n"
             "  maxpack measure [<folder>] [options]   measure this PC (and the folder's disk), with no game\n"
@@ -1353,9 +1356,27 @@ static int cmd_info_json(const char *path) {
     printf(",\"original_size\":%llu,\"install_size\":%llu,\"p5z_size\":%llu,\"files\":%llu",
            (unsigned long long)d.original_size, (unsigned long long)d.install_size,
            (unsigned long long)d.p5z_size, (unsigned long long)d.files);
-    if (!strcmp(d.kind, "p5z"))
+    if (!strcmp(d.kind, "p5z")) {
         printf(",\"loose_bytes\":%llu,\"grown\":%u,\"unused_bytes\":%llu,\"recovered\":%s", (unsigned long long)d.loose_bytes,
                d.grown, (unsigned long long)d.unused_bytes, recovered ? "true" : "false");
+        // what its index records of its packs (info --sums): left out when the index cannot give them
+        mp_p5z *p = NULL;
+        mp_p5z_sums s;
+        if (mp_p5z_open(path, &p, NULL) == 0 && mp_p5z_sums_get(p, &s, NULL) == 0) {
+            printf(",\"archive_id\":\"");
+            for (int i = 0; i < 16; i++) printf("%02x", s.archive_id[i]);
+            printf("\",\"level\":%d,\"volume_sums\":[", s.level);
+            for (size_t i = 0; i < s.nvolumes; i++) {
+                char sha[65];
+                mp_sha256_hex(s.volumes[i].sha256, sha);
+                printf("%s{\"name\":\"%s\",\"size\":%llu,\"sha256\":\"%s\"}", i ? "," : "", s.volumes[i].name,
+                       (unsigned long long)s.volumes[i].size, sha);
+            }
+            printf("]");
+            mp_p5z_sums_free(&s);
+        }
+        mp_p5z_close(p);
+    }
     printf(",\"packed_files\":%llu,\"volumes\":%llu", (unsigned long long)d.packed_files,
            (unsigned long long)d.volumes);
     printf(",\"has_runtime\":%s,\"has_zstd_runtime\":%s,\"packed\":%s", d.has_runtime ? "true" : "false",
@@ -1380,6 +1401,35 @@ static int cmd_info_json(const char *path) {
     mp_jbuf_free(&b);
     printf("}\n");
     fflush(stdout);
+    return 0;
+}
+
+// info --sums: what the index records of the packs, in the lines the console's pack prints after its "# "
+// notes (crates/maxpack-logic/src/pack.rs lines()), so that a diff of the two compares them.
+static int cmd_info_sums(const char *path) {
+    recover_note(path);
+    mp_err e = {{0}};
+    mp_p5z *p = NULL;
+    mp_p5z_sums s;
+    if (mp_p5z_open(path, &p, &e) != 0 || mp_p5z_sums_get(p, &s, &e) != 0) {
+        fprintf(stderr, "error: %s\n", e.msg);
+        mp_p5z_close(p);
+        return 1;
+    }
+    mp_p5z_close(p);
+    char *l = mp_p5z_sums_lines(&s);
+    mp_p5z_sums_free(&s);
+    if (!l) {
+        fprintf(stderr, "error: out of memory\n");
+        return 1;
+    }
+#ifdef _WIN32
+    fflush(stdout);
+    _setmode(_fileno(stdout), _O_BINARY);   // lines end in \n, as the console's
+#endif
+    fputs(l, stdout);
+    fflush(stdout);
+    free(l);
     return 0;
 }
 
@@ -1409,7 +1459,10 @@ static int cmd_info(int argc, char **argv) {
     if (argc == 2 && !strcmp(argv[1], "--play")) return cmd_info_play(argv[0]);
     if (argc == 2 && !strcmp(argv[0], "--json")) return cmd_info_json(argv[1]);
     if (argc == 2 && !strcmp(argv[1], "--json")) return cmd_info_json(argv[0]);
-    if (argc != 1 || !strcmp(argv[0], "--json")) return bad_usage("info needs a .p5z file (or --json or --play and a path)", NULL);
+    if (argc == 2 && !strcmp(argv[0], "--sums")) return cmd_info_sums(argv[1]);
+    if (argc == 2 && !strcmp(argv[1], "--sums")) return cmd_info_sums(argv[0]);
+    if (argc != 1 || !strcmp(argv[0], "--json"))
+        return bad_usage("info needs a .p5z file (or --json, --play or --sums and a path)", NULL);
     recover_note(argv[0]);
     mp_err e = {{0}};
     mp_p5z *p = NULL;

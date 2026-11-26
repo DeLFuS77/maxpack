@@ -546,6 +546,7 @@ maxpack compact <in.p5z> -o <out.p5z> [--threads N]
 maxpack info <game.p5z>
 maxpack info --json <folder|image|package|game.p5z>
 maxpack info --play <game.p5z>
+maxpack info --sums <game.p5z>
 maxpack icon <folder|image|package|game.p5z> -o <icon.png>
 maxpack verify <game.p5z | folder> [--against <source>] [--threads N]
 maxpack measure [<folder>] [options]
@@ -742,6 +743,7 @@ it exits with code 1; a dump that was not complete is no failure of the `.p5z`.
 | `info` | Title, ID, version, files, packs and size of a `.p5z`, for people. | `maxpack info "D:\games\MyGame.p5z"` |
 | `info --json` | The same for a `.p5z`, a folder or an image, in one JSON line. It is what the window reads. | `maxpack info --json "D:\dumps\MyGame.exfat"` |
 | `info --play` | What the console needs to play a `.p5z` without installing it, in JSON. It is for development. | `maxpack info --play "D:\games\MyGame.p5z"` |
+| `info --sums` | What the `.p5z`'s index records of its packs: `level N`, `archive_id <hex>` and one `ampr_zstd-NNN.pak <size> <sha256>` line per volume, in the lines MaxPack for the console prints after packing, so that `diff` compares the two. | `maxpack info --sums "D:\games\MyGame.p5z"` |
 | `icon` | Saves the game's `sce_sys/icon0.png`. Exits with code 1 if it has none. | `maxpack icon "D:\dumps\MyGame.exfat" -o icon.png` |
 
 Example of `info` on a small test `.p5z` (the numbers are those of a tiny test game; yours will be bigger):
@@ -760,7 +762,16 @@ inside, else `""`), `compressed` (whether reading it decompresses PFSC or Kraken
 `version`, `name`, `content_id` (from `param.json`, also of a `.p5z`, an image or a package; its first two letters are the region,
 and it is `""` when `param.json` gives none), `original_size`, `install_size`, `p5z_size`, `files`,
 `packed_files`, `volumes`, `has_runtime`, `has_zstd_runtime`, `packed`, `content`, `dlc_data`, `dlc` and
-`completeness` (below).
+`completeness` (below). Of a `.p5z` it also has `loose_bytes`, `grown`, `unused_bytes`, `recovered`, and
+what `info --sums` prints: `archive_id` (32 lowercase hex digits), `level` (the packs' zstd level) and
+`volume_sums`, one `{"name","size","sha256"}` per volume (left out when the index cannot give them).
+
+**Comparing two packs of the same game** (the PC's and the console's): `info --sums` prints, for each
+volume, what the index records, which is its whole size (its 64-byte header too) and the SHA-256 of its
+bytes from 64 to its end (the header has its own CRC; `tail -c +65 ampr_zstd-000.pak | sha256sum` of a
+volume that `unpack --folder` wrote gives the same). MaxPack for the console prints the same lines after
+its `#` notes; without those notes, `diff` of the two is empty for the same game packed with the same
+level and volume limit. A `.p5z` that grew lists its old volumes as they were and the new ones after.
 
 `content` is `game`, or `dlc` for a DLC (a package of additional content, or a folder or image with
 `sce_sys/param.json` and no `eboot.bin`); then `dlc_data` says whether it has files of its own (else it

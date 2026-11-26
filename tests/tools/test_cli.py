@@ -1264,5 +1264,57 @@ rc, so, _ = run("--help")
 check("help_grow", "maxpack add <game.p5z> --dlc" in so and "maxpack update <game.p5z>" in so
       and "maxpack compact <in.p5z> -o <out.p5z>" in so, so[:3000])
 
+# info --sums: what the index records of the packs, in the lines the console's pack prints (after its
+# "# " notes) so that a diff of the two compares them; info --json has the same as archive_id, level and
+# volume_sums.
+def run_raw(*args):
+    p = subprocess.run([EXE, *args], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    return p.returncode, p.stdout, p.stderr.decode("utf-8", "replace")
+
+
+def console_lines(level, archive_id, volumes):
+    # crates/maxpack-logic/src/pack.rs lines(), with no notes
+    out = "level %d\narchive_id %s\n" % (level, archive_id)
+    for v in volumes:
+        out += "%s %d %s\n" % (v["name"], v["size"], v["sha256"])
+    return out.encode("ascii")
+
+
+SUMS_RE = re.compile(rb"\Alevel \d+\narchive_id [0-9a-f]{32}\n(ampr_zstd-\d{3}\.pak \d+ [0-9a-f]{64}\n)*\Z")
+for name, path in (("grown", gp), ("v1", cp)):
+    rc, raw, err = run_raw("info", "--sums", path)
+    rcj, so, _ = run("info", "--json", path)
+    d = json.loads(so or "{}") if rcj == 0 else {}
+    vs = d.get("volume_sums", [])
+    check("info_sums_" + name, rc == 0 and SUMS_RE.match(raw) is not None and b"\r" not in raw
+          and [v["name"] for v in vs] == ["ampr_zstd-%03d.pak" % i for i in range(len(vs))] and len(vs) >= 1
+          and raw == console_lines(d.get("level", -1), d.get("archive_id", ""), vs), repr(raw[:400]) + so[-300:] + err)
+    rc, raw2, _ = run_raw("info", path, "--sums")
+    check("info_sums_either_order_" + name, rc == 0 and raw2 == raw)
+# each volume's SHA-256 is of its bytes after its 64-byte header, as unpack --folder writes it (v1)
+v1_back = fresh(os.path.join(TMP, "sums_back"))
+rc, _, err = run("unpack", cp, "--folder", "-o", v1_back)
+_, so, _ = run("info", "--json", cp)
+vs = json.loads(so or "{}").get("volume_sums", [])
+same = rc == 0 and len(vs) >= 1
+for v in vs:
+    with open(os.path.join(v1_back, v["name"]), "rb") as f:
+        b = f.read()
+    same = same and len(b) == v["size"] and hashlib.sha256(b[64:]).hexdigest() == v["sha256"]
+check("info_sums_are_the_volumes", same, err[-300:])
+# the archive ID is the one info --play gives the console
+_, so, _ = run("info", "--play", gp)
+_, sj, _ = run("info", "--json", gp)
+check("info_sums_archive_id", json.loads(so or "{}").get("archive_id") == json.loads(sj or "{}").get("archive_id"),
+      so[:300] + sj[:300])
+# only a .p5z has them
+rc, raw, err = run_raw("info", "--sums", BASIC)
+check("info_sums_only_p5z", rc != 0 and raw == b"" and ".p5z" in err, err)
+_, so, _ = run("info", "--json", BASIC)
+d = json.loads(so or "{}")
+check("info_json_no_sums_elsewhere", "archive_id" not in d and "volume_sums" not in d and "level" not in d, so[:300])
+rc, so, _ = run("--help")
+check("help_sums", "maxpack info --sums <game.p5z>" in so, so[:3000])
+
 print("test_cli: %d failures" % len(failures))
 sys.exit(1 if failures else 0)

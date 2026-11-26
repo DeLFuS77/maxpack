@@ -1507,6 +1507,155 @@ MP_TEST(grow_refuses_packed_without_packs) {
     MP_CHECK_CONTAINS(e.msg, "packs");
 }
 
+// ---- the sums of a .p5z's packs (what the console's pack prints, to compare) ------------------------
+
+// The SHA-256 of bytes [64, n) of a file, in hex.
+static int volume_sha_hex(const char *path, char hex[65], uint64_t *size) {
+    size_t n = 0;
+    uint8_t *b = mpt_slurp(path, &n), d[32];
+    if (!b || n < 64) {
+        free(b);
+        return -1;
+    }
+    sha_of(b + 64, n - 64, d);
+    mp_sha256_hex(d, hex);
+    *size = n;
+    free(b);
+    return 0;
+}
+
+static void hex_of(const uint8_t *p, size_t n, char *out) {
+    for (size_t i = 0; i < n; i++) sprintf(out + 2 * i, "%02x", p[i]);
+}
+
+// A fresh pack: the archive ID and level of its header, and for each volume what the index records, which
+// is the size of the volume unpack --folder writes and the SHA-256 of its bytes after the 64-byte header.
+MP_TEST(sums_fresh_pack) {
+    mpt_clear(TMP);
+    make_versions();
+    if (mpt_pack_vol(V1, G_P5Z, 1, NULL, 262208) != 0) return;
+    mp_err e = {{0}};
+    mp_p5z *p = NULL;
+    MP_CHECK(mp_p5z_open(G_P5Z, &p, &e) == 0);
+    if (!p) return;
+    mp_p5z_sums s;
+    MP_CHECK(mp_p5z_sums_get(p, &s, &e) == 0);
+    MP_CHECK(!memcmp(s.archive_id, mp_p5z_manifest(p)->archive_id, 16) && s.level == mp_p5z_manifest(p)->level);
+    MP_CHECK(s.nvolumes >= 3);
+    mp_zpk *z = NULL;
+    MP_CHECK(mp_p5z_zpk(p, &z, &e) == 0);
+    if (z) MP_CHECK(!memcmp(s.archive_id, mp_zpk_archive_id(z), 16) && mp_zpk_volume_count(z) == s.nvolumes);
+    mp_zpk_close(z);
+    MP_CHECK(mp_unpack_folder(p, TMP "/sums_folder", 2, 0, &e) == 0);
+    for (size_t v = 0; v < s.nvolumes; v++) {
+        char want[32], path[512], hex[65], got[65];
+        snprintf(want, sizeof want, "ampr_zstd-%03u.pak", (unsigned)v);
+        MP_CHECK_STR(s.volumes[v].name, want);
+        snprintf(path, sizeof path, TMP "/sums_folder/%s", want);
+        uint64_t size = 0;
+        MP_CHECK(volume_sha_hex(path, hex, &size) == 0);
+        hex_of(s.volumes[v].sha256, 32, got);
+        MP_CHECK_STR(got, hex);
+        MP_CHECK_EQ_U64(s.volumes[v].size, size);
+    }
+    mp_p5z_sums_free(&s);
+    mp_p5z_close(p);
+}
+
+// A .p5z that grew: its old volumes keep their records, the new ones follow; each is the SHA-256 of that
+// volume's bytes in the .p5z after its header (its header is the only part an append may write again).
+MP_TEST(sums_grown) {
+    uint8_t *orig = NULL;
+    size_t olen = 0;
+    if (grown_v2(262208, &orig, &olen) != 0) return;
+    mpt_clear(TMP "/v1.p5z");
+    mpt_put(TMP "/v1.p5z", orig, olen);
+    mp_err e = {{0}};
+    mp_p5z *p = NULL, *q = NULL;
+    MP_CHECK(mp_p5z_open(G_P5Z, &p, &e) == 0 && mp_p5z_open(TMP "/v1.p5z", &q, &e) == 0);
+    if (!p || !q) {
+        mp_p5z_close(p);
+        mp_p5z_close(q);
+        free(orig);
+        return;
+    }
+    MP_CHECK(mp_p5z_version(p) == 2);
+    mp_p5z_sums s, s1;
+    MP_CHECK(mp_p5z_sums_get(p, &s, &e) == 0 && mp_p5z_sums_get(q, &s1, &e) == 0);
+    MP_CHECK(!memcmp(s.archive_id, s1.archive_id, 16) && s.level == s1.level && s.nvolumes > s1.nvolumes);
+    for (size_t v = 0; v < s1.nvolumes && v < s.nvolumes; v++)
+        MP_CHECK(!strcmp(s.volumes[v].name, s1.volumes[v].name) && s.volumes[v].size == s1.volumes[v].size &&
+                 !memcmp(s.volumes[v].sha256, s1.volumes[v].sha256, 32));
+    size_t glen = 0;
+    uint8_t *g = mpt_slurp(G_P5Z, &glen);
+    for (size_t v = 0; g && v < s.nvolumes; v++) {
+        char want[32];
+        snprintf(want, sizeof want, "ampr_zstd-%03u.pak", (unsigned)v);
+        MP_CHECK_STR(s.volumes[v].name, want);
+        uint64_t off = mp_p5z_volume_offset(p, (uint32_t)v);
+        uint8_t d[32];
+        MP_CHECK(off >= 64 && off + s.volumes[v].size <= glen);
+        if (off + s.volumes[v].size > glen) break;
+        sha_of(g + off + 64, (size_t)s.volumes[v].size - 64, d);
+        MP_CHECK(!memcmp(d, s.volumes[v].sha256, 32));
+    }
+    free(g);
+    mp_p5z_sums_free(&s);
+    mp_p5z_sums_free(&s1);
+    mp_p5z_close(p);
+    mp_p5z_close(q);
+    free(orig);
+}
+
+// As the console prints them (crates/maxpack-logic/src/pack.rs lines() after its # notes) and as its
+// ps5/pack.c gives them in JSON: byte for byte.
+MP_TEST(sums_lines_and_json) {
+    mp_p5z_volume_sum v[2];
+    memset(v, 0, sizeof v);
+    strcpy(v[0].name, "ampr_zstd-000.pak");
+    v[0].size = 4294901760ull;
+    for (int i = 0; i < 32; i++) v[0].sha256[i] = (uint8_t)(i * 7 + 1);
+    strcpy(v[1].name, "ampr_zstd-001.pak");
+    v[1].size = 64;
+    memset(v[1].sha256, 0xab, 32);
+    mp_p5z_sums s;
+    memset(&s, 0, sizeof s);
+    for (int i = 0; i < 16; i++) s.archive_id[i] = (uint8_t)(0xf0 - i);
+    s.level = 19;
+    s.nvolumes = 2;
+    s.volumes = v;
+    char sha0[65], aid[33];
+    hex_of(v[0].sha256, 32, sha0);
+    hex_of(s.archive_id, 16, aid);
+    char want[1024];
+    snprintf(want, sizeof want,
+             "level 19\narchive_id %s\nampr_zstd-000.pak 4294901760 %s\nampr_zstd-001.pak 64 "
+             "abababababababababababababababababababababababababababababababab\n",
+             aid, sha0);
+    char *l = mp_p5z_sums_lines(&s);
+    MP_CHECK_STR(l, want);
+    free(l);
+    snprintf(want, sizeof want,
+             "{\"archive_id\":\"%s\",\"level\":19,\"volumes\":[{\"name\":\"ampr_zstd-000.pak\",\"size\":4294901760,"
+             "\"sha256\":\"%s\"},{\"name\":\"ampr_zstd-001.pak\",\"size\":64,\"sha256\":"
+             "\"abababababababababababababababababababababababababababababababab\"}]}",
+             aid, sha0);
+    char *j = mp_p5z_sums_json(&s);
+    MP_CHECK_STR(j, want);
+    free(j);
+    // a .p5z without packs: the two lines alone, and no volumes
+    s.nvolumes = 0;
+    s.volumes = NULL;
+    l = mp_p5z_sums_lines(&s);
+    snprintf(want, sizeof want, "level 19\narchive_id %s\n", aid);
+    MP_CHECK_STR(l, want);
+    free(l);
+    j = mp_p5z_sums_json(&s);
+    snprintf(want, sizeof want, "{\"archive_id\":\"%s\",\"level\":19,\"volumes\":[]}", aid);
+    MP_CHECK_STR(j, want);
+    free(j);
+}
+
 int main(void) {
     MP_RUN(p5z_append_one_file);
     MP_RUN(p5z_copy_all_is_identical);
@@ -1547,5 +1696,8 @@ int main(void) {
     MP_RUN(update_refuses_non_game);
     MP_RUN(install_verify_after_growth);
     MP_RUN(grow_refuses_packed_without_packs);
+    MP_RUN(sums_fresh_pack);
+    MP_RUN(sums_grown);
+    MP_RUN(sums_lines_and_json);
     MP_TEST_MAIN_END();
 }

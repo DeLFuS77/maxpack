@@ -5,9 +5,9 @@ package main
 import "testing"
 
 // watchRedoChecks: what the watched folder does with a game that is in the destination already. The .p5z it
-// made itself of a game that changed since is made again in its place, without asking (WatchRedo); the same game
-// in another version is left out, with both versions and the way to update it; anything else is left out, as
-// before. The same when the game joins a queue at work.
+// made itself of a game that grew since is made again in its place, without asking (WatchRedo), asked for apart
+// (Redo, never Replace); anything else is left out with the window's reason (WatchSkip): another version newer or
+// older, only dates changed, made again too often, or simply there. The same when the game joins a queue at work.
 const watchRedoChecks = `
   render = () => {};
   paintRow = () => {};
@@ -16,7 +16,7 @@ const watchRedoChecks = `
   const game = (name, version) => ({ Name: name, Kind: "folder", TitleID: "PPSA10001", Version: version, OriginalSize: 9000 });
   const row = (name, version) => ({ path: "D:/w/" + name, section: "compress", game: game(name, version), error: "", state: "", detail: "", warnings: [], watched: true });
   const view = (name, more) => Object.assign({ Item: { Name: name }, Out: "D:/d/" + name + ".p5z", Replace: ["D:/d/" + name + ".p5z"], Warnings: [], Block: "" }, more);
-  const views = [view("A", { WatchRedo: true }), view("B", { OtherVersion: "01.000.000" }), view("C", {})];
+  const views = [view("A", { WatchRedo: true }), view("B", { WatchSkip: "watch_other_version: 01.000.000 01.002.000" }), view("C", { WatchSkip: "watch_older_version: 01.002.000 01.000.000" })];
   state.settings.LastDest = "D:/d";
   // a queue started by the watched folder
   let rows = [row("A", "01.000.000"), row("B", "01.002.000"), row("C", "01.000.000")];
@@ -24,17 +24,25 @@ const watchRedoChecks = `
   window.answers = { Plan: views, Space: [], Start: null };
   await startQueue("", rows, undefined, true);
   const start = calls.find(call => call.startsWith("Start "));
-  if (!start || !start.includes('"Replace":["D:/d/A.p5z"]')) say("the .p5z it made is not replaced: " + start);
+  if (!start || !start.includes('"Redo":["D:/d/A.p5z"]') || !start.includes('"Replace":[]')) say("the .p5z it made is not asked to be made again apart: " + start);
   if (rows[1].state !== "skipped" || rows[1].detail !== "watch_other_version: 01.000.000 01.002.000") say("another version: " + rows[1].state + " " + rows[1].detail);
-  if (rows[2].state !== "skipped" || rows[2].detail !== "watch_exists") say("in the way: " + rows[2].state + " " + rows[2].detail);
+  if (rows[2].state !== "skipped" || rows[2].detail !== "watch_older_version: 01.002.000 01.000.000") say("an older one: " + rows[2].state + " " + rows[2].detail);
+  if (detailText("watch_older_version: 01.002.000 01.000.000") !== t("detail_watch_older_version")("01.002.000", "01.000.000")
+    || t("detail_watch_older_version")("01.002.000", "01.000.000").includes(t("updateCard"))) say("the older one: " + detailText("watch_older_version: 01.002.000 01.000.000"));
+  for (const code of ["watch_dates_only", "watch_redo_limit", "watch_redo_refused"]) {
+    if (detailText(code) !== t("detail_" + code)) say("the detail " + code);
+    if (!watchFinal({ state: "skipped", detail: code })) say("not final: " + code);
+  }
+  // a swap a program held too long is not final: the game comes again in the next run
+  if (watchFinal({ state: "error", detail: "swap_failed: in use" }) || !watchFinal({ state: "error", detail: "verify_failed" })) say("swap_failed is final");
   for (const name of ["B", "C"]) if (!calls.some(call => call.startsWith("WatchEnded ") && call.includes("D:/w/" + name) && call.includes("true"))) say("not final: " + name);
   if (detailText("watch_other_version: 01.000.000 01.002.000") !== t("detail_watch_other_version")("01.000.000", "01.002.000")) say("the versions: " + detailText("watch_other_version: 01.000.000 01.002.000"));
   if (!t("detail_watch_other_version")("01.000.000", "01.002.000").includes(t("updateCard"))) say("it does not say how to update it");
   if (!watchFinal({ state: "skipped", detail: "watch_other_version: 01.000.000 01.002.000" })) say("another version comes again as it is");
   if (detailText("watch_redone; original_kept_watched") !== t("detail_watch_redone") + "; " + t("detail_original_kept_watched")) say("made again: " + detailText("watch_redone; original_kept_watched"));
   // the .p5z made of a game that ended well goes to the window with it
-  watchEnded({ path: "D:/w/A", watched: true, state: "ok", out: "D:/d/A.p5z", detail: "" });
-  if (!calls.some(call => call === 'WatchEnded ["D:/w/A",true,"D:/d/A.p5z"]')) say("what was made is not told: " + calls.filter(c => c.startsWith("WatchEnded")).join(" | "));
+  watchEnded({ path: "D:/w/A", watched: true, state: "ok", out: "D:/d/A.p5z", detail: "watch_redone; original_kept_watched", game: game("A", "01.000.000") });
+  if (!calls.some(call => call === 'WatchEnded ["D:/w/A",true,"D:/d/A.p5z","PPSA10001","01.000.000",true]')) say("what was made is not told: " + calls.filter(c => c.startsWith("WatchEnded")).join(" | "));
   // the same when they join a queue at work
   rows = [row("A", "01.000.000"), row("B", "01.002.000"), row("C", "01.000.000")];
   state.lists.compress = rows;
@@ -45,8 +53,8 @@ const watchRedoChecks = `
   for (const r of rows) toJoin.push(r);
   await joinQueue();
   const append = calls.find(call => call.startsWith("Append "));
-  if (!append || !append.includes('"Name":"A"') || append.includes('"Name":"B"') || append.includes('"Name":"C"') || !append.includes('["D:/d/A.p5z"]')) say("joined: " + append);
-  if (rows[1].detail !== "watch_other_version: 01.000.000 01.002.000" || rows[2].detail !== "watch_exists") say("joined, left out: " + rows[1].detail + " " + rows[2].detail);
+  if (!append || !append.includes('"Name":"A"') || append.includes('"Name":"B"') || append.includes('"Name":"C"') || !append.includes('],[],["D:/d/A.p5z"],false]')) say("joined: " + append);
+  if (rows[1].detail !== "watch_other_version: 01.000.000 01.002.000" || rows[2].detail !== "watch_older_version: 01.002.000 01.000.000") say("joined, left out: " + rows[1].detail + " " + rows[2].detail);
   // sent to the console too: a console that has the older copy says so
   state.job = null;
   state.busy = false;
@@ -85,3 +93,21 @@ const watchRedoChecks = `
 
 // TestPageWatchRedo: see watchRedoChecks.
 func TestPageWatchRedo(t *testing.T) { runPage(t, watchRedoChecks) }
+
+// TestPageWatchWriting: the watched folder's status says which games wait for a program that keeps writing into
+// them (Settings › Watched folder), and nothing once none does.
+func TestPageWatchWriting(t *testing.T) {
+	runPage(t, `
+  if (typeof t("watchWriting")("Copper Vale") !== "string" || !t("watchWriting")("Copper Vale").includes("Copper Vale")) say("watchWriting");
+  state.settings = Object.assign(state.settings, { WatchOn: true, WatchFolder: "D:/w" });
+  state.watch = { folder: "D:/w", error: "", existing: 0, writing: "Copper Vale" };
+  paintWatchStatus(state.settings);
+  if ($("pref-watch-status").hidden || $("pref-watch-status").textContent !== t("watchWriting")("Copper Vale")) say("not said: " + $("pref-watch-status").textContent);
+  state.watch.writing = "";
+  paintWatchStatus(state.settings);
+  if (!$("pref-watch-status").hidden) say("still said");
+  state.watch.error = "gone";
+  paintWatchStatus(state.settings);
+  if ($("pref-watch-status").hidden || $("pref-watch-status").textContent !== t("watchGone")) say("gone");
+`)
+}

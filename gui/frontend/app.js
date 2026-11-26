@@ -487,8 +487,8 @@ function partText(part) {
   if (found) return t("detail_repair_not_possible")(+found[1]);
   found = /^exit_(-?\d+)$/.exec(part);
   if (found) return t("detail_exit")(+found[1]);
-  found = /^watch_other_version: (\S+) (\S+)$/.exec(part);
-  if (found) return t("detail_watch_other_version")(found[1], found[2]);
+  found = /^watch_(other|older)_version: (\S+) (\S+)$/.exec(part);
+  if (found) return t("detail_watch_" + found[1] + "_version")(found[2], found[3]);
   found = /^([a-z][a-z0-9_]*)(?:: ([\s\S]*))?$/.exec(part);
   if (found && typeof texts.en["detail_" + found[1]] === "string") {
     const rest = found[2] || "";
@@ -1069,8 +1069,7 @@ function paintSettings() {
   $("pref-watch").checked = !!s.WatchOn && !!s.WatchFolder;
   $("pref-watch").disabled = !s.WatchFolder;
   $("pref-watch-folder").textContent = s.WatchFolder || t("watchNoFolder");
-  $("pref-watch-status").hidden = !(s.WatchOn && state.watch.error);
-  $("pref-watch-status").textContent = state.watch.error === "gone" ? t("watchGone") : t("watchUnreadable");
+  paintWatchStatus(s);
   $("pref-watch-send").checked = !!s.WatchSend;
   $("pref-watch-send").disabled = !s.WatchOn;
   $("pref-watch-send-row").classList.toggle("off", !s.WatchOn);
@@ -1502,7 +1501,7 @@ async function startQueue(kind, only, extra, auto) {
   // a .p5z that grows gets its repair data made again when it had some of its own: the bar counts that step
   const own = grows.includes(mode) && rows[0].repair && rows[0].repair.state === "match" ? Number(rows[0].repair.percent) || 0 : 0;
   const repair = mode === "p5z" ? repairOf() : mode === "protect" ? Number(state.settings.RepairPercent) || 5 : own;
-  const opts = { Mode: mode, Dest: "", Level: Number(state.settings.Level) || 19, Runtime: state.settings.Runtime || "", ContinueFat32: false, Replace: [],
+  const opts = { Mode: mode, Dest: "", Level: Number(state.settings.Level) || 19, Runtime: state.settings.Runtime || "", ContinueFat32: false, Replace: [], Redo: [],
     // the watched folder never takes an original away (jobs/watched.go)
     DeleteOriginals: section === "compress" && !auto && state.deleteOriginals, DeleteNoBin: false, Repair: repair, Drive: "" };
   Object.assign(opts, extra || {});
@@ -1526,10 +1525,11 @@ async function startQueue(kind, only, extra, auto) {
     for (const [n, p] of plans.entries()) {
       const row = rows[n];
       if (p.Block) { skipped.push([row, p.Block]); continue; }
+      // the watched folder never replaces what is in the destination, but the .p5z it made itself of a game that
+      // grew since (WatchRedo): that one is asked to be made again in its place, apart (the window decides again)
+      if ((p.Replace || []).length && auto && p.WatchRedo) { opts.Redo.push(p.Out); going.push(n); continue; }
       if ((p.Replace || []).length) {
-        // the watched folder never replaces what is in the destination, but the .p5z it made itself of a game
-        // that changed since (WatchRedo): that one is made again in its place
-        let answer = auto ? (p.WatchRedo ? "replace" : "watch") : all;
+        let answer = auto ? "watch" : all;
         if (!answer) {
           asked++;
           $("replace-text").textContent = t("replaceText")(p.Item.Name);
@@ -1543,7 +1543,7 @@ async function startQueue(kind, only, extra, auto) {
         }
         if (answer === "cancel") return;
         if (answer === "skip") { skipped.push([row, "skipped_by_user"]); continue; }
-        if (answer === "watch") { skipped.push([row, watchInTheWay(p, row)]); continue; }
+        if (answer === "watch") { skipped.push([row, p.WatchSkip || "watch_exists"]); continue; }
         opts.Replace.push(p.Out);
       }
       going.push(n);
@@ -1584,7 +1584,7 @@ async function startQueue(kind, only, extra, auto) {
     // the games left out are said in the list; the others wait for their turn
     for (const [row, detail] of skipped) { Object.assign(row, { state: "skipped", detail, out: "", outSize: 0, warnings: [] }); watchEnded(row); }
     job = { section, mode: opts.Mode, repair: opts.Repair, dest: opts.Dest, runtime: opts.Runtime || builtInRuntime(), rows: going.map(n => rows[n]), shown: 0, rate: 0,
-      opts: Object.assign({}, opts, { Replace: [] }), deletes: opts.DeleteOriginals, early: {}, watched: !!auto };
+      opts: Object.assign({}, opts, { Replace: [], Redo: [] }), deletes: opts.DeleteOriginals, early: {}, watched: !!auto };
     for (const n of going) {
       Object.assign(rows[n], { state: "waiting", detail: "", step: "", phase: "", offset: 0, done: 0, total: 0, out: "", outSize: 0, repairSize: 0,
         warnings: plans[n].Warnings || [] });
@@ -1646,7 +1646,7 @@ async function joinQueue() {
     // what the watched folder brings and is in the destination already, as when it starts a queue: the .p5z it
     // made itself of a game that changed since is made again in its place; anything else there stays, and the
     // game is left out, with why
-    const replace = [];
+    const redo = [];
     const watched = job.section === "compress" ? rows.filter(row => row.watched) : [];
     if (watched.length) {
       const plans = await go.call("Plan", job.section, watched.map(itemOf), job.opts);
@@ -1654,8 +1654,8 @@ async function joinQueue() {
       const out = [];
       plans.forEach((p, n) => {
         if (p.Block || !(p.Replace || []).length) return;
-        if (p.WatchRedo) replace.push(p.Out);
-        else out.push([watched[n], watchInTheWay(p, watched[n])]);
+        if (p.WatchRedo) redo.push(p.Out);
+        else out.push([watched[n], p.WatchSkip || "watch_exists"]);
       });
       for (const [row, detail] of out) {
         Object.assign(row, { state: "skipped", detail, out: "", outSize: 0, warnings: [] });
@@ -1675,7 +1675,7 @@ async function joinQueue() {
       if (answer === "cancel" || !running()) return;
       keepOriginals = answer === "keep" || plans.some(p => p.NoBin && !opts.DeleteNoBin);
     }
-    const first = await go.call("Append", job.section, itemsOf(rows), replace, keepOriginals);
+    const first = await go.call("Append", job.section, itemsOf(rows), [], redo, keepOriginals);
     rows.forEach((row, n) => {
       job.rows[first + n] = row;
       Object.assign(row, { state: "queued", detail: "", step: "", phase: "", offset: 0, done: 0, total: 0, out: "", outSize: 0, warnings: [], unqueued: false });
@@ -1844,6 +1844,15 @@ async function sendMade(job) {
 
 // ---- the watched folder ------------------------------------------------------------------------------
 
+// what Settings says of the watched folder at work: why it cannot be looked at, else the games that wait for a
+// program that keeps writing into them
+function paintWatchStatus(s) {
+  const what = !s.WatchOn ? "" : state.watch.error === "gone" ? t("watchGone") : state.watch.error ? t("watchUnreadable")
+    : state.watch.writing ? t("watchWriting")(state.watch.writing) : "";
+  $("pref-watch-status").hidden = !what;
+  $("pref-watch-status").textContent = what;
+}
+
 // what arrived in the watched folder, whole (watch:found): it goes to Compress as if it had been dropped on
 // it, and is compressed with its settings once read; one that came back changed goes again
 function onWatchFound(event) {
@@ -1877,15 +1886,11 @@ function watchReady(rows) {
   }
   return ready;
 }
-// the window is told how a watched game ended: done (compressed, failed, in the destination already, also in
-// another version) until it changes; anything else (cancelled, skipped for another reason) comes again in the
-// next run
-const watchFinal = row => row.state === "ok" || row.state === "error"
-  || (row.state === "skipped" && /^((watch_)?exists|watch_other_version: .*)$/.test(row.detail));
-// why the watched folder leaves out a game that is in the destination already: the same game there in another
-// version (an update, which Details › Update with a new dump… puts in), or anything else there
-const watchInTheWay = (p, row) => p.OtherVersion && row.game && row.game.Version && !/\s/.test(p.OtherVersion + row.game.Version)
-  ? "watch_other_version: " + p.OtherVersion + " " + row.game.Version : "watch_exists";
+// the window is told how a watched game ended: done (compressed, failed, in the destination already, and every
+// reason the watched folder gives for not making it again) until it changes; anything else (cancelled, skipped for
+// another reason, a swap that a program held too long) comes again in the next run
+const watchFinal = row => row.state === "ok" || (row.state === "error" && !/^swap_failed/.test(row.detail))
+  || (row.state === "skipped" && /^((watch_)?exists|watch_(other|older)_version: .*|watch_dates_only|watch_redo_limit|watch_redo_refused)$/.test(row.detail));
 // what keeps the watched folder waiting (no destination, no room) is said once per wait, not on every try
 function watchSayOnce(what) {
   if (state.watchSaid === what) return false;
@@ -1895,8 +1900,11 @@ function watchSayOnce(what) {
 function watchEnded(row) {
   if (!row.watched || !ended.includes(row.state) || row.watchTold === row.state) return;
   row.watchTold = row.state;
-  // what it made, when it ended well: the window keeps it, to make it again in its place once the game changes
-  go.call("WatchEnded", row.path, watchFinal(row), row.state === "ok" ? row.out || "" : "").catch(() => {});
+  // what it made, when it ended well, of which game and version, and whether it was made again: the window keeps
+  // it, to make it again in its place once the game grows (at most twice in a row)
+  const ok = row.state === "ok", game = row.game || {};
+  go.call("WatchEnded", row.path, watchFinal(row), ok ? row.out || "" : "", ok ? game.TitleID || "" : "", ok ? game.Version || "" : "",
+    ok && /(^|; )watch_redone($|; )/.test(row.detail || "")).catch(() => {});
 }
 // what was in the watched folder when it was turned on: compressed only when asked
 async function takeExisting() {

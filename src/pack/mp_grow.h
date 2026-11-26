@@ -36,6 +36,7 @@ typedef struct {
     uint32_t grown;                        // how many times it has grown, this one included
     int nothing;                           // nothing changed: nothing was written
     int par2;                              // it has repair data next to it (<name>.p5z.par2): no longer of it
+    int journal_left;                      // it grew, but its journal could not be deleted: the next open does it
     unsigned dlc_data, dlc_license;        // add: the DLC added
     uint64_t dlc_bytes;
     // on failure, why as a code: "busy" (another MaxPack is changing it), "no_space", "too_big"

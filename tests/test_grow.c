@@ -589,50 +589,83 @@ MP_TEST(grow_play_lists_every_volume) {
     mp_play_close(pl);
 }
 
-// The test hook: fails (mode 1) or stops as a power cut would (mode 2) at its call number `at`.
+// The test hook: fails (mode 1) or stops as a power cut would (mode 2) at its call number `at`, and
+// keeps the name of that step.
 static int fault_at, fault_mode, fault_calls;
+static char fault_step[32];
 static int fault_hook(const char *step) {
-    (void)step;
-    return ++fault_calls == fault_at ? fault_mode : 0;
+    if (++fault_calls != fault_at) return 0;
+    snprintf(fault_step, sizeof fault_step, "%s", step);
+    return fault_mode;
 }
+
+// The steps at which the append has ended: its index and footer are written, so what is cut there (a
+// power cut, a journal that cannot be deleted) is a .p5z that grew, which the next open keeps.
+static int after_commit(const char *step) {
+    return !strcmp(step, "footer") || !strcmp(step, "synced") || !strcmp(step, "journal delete");
+}
+
+static int same_file_bytes(const char *path, const uint8_t *want, size_t n) { return starts_with(path, want, n) && size_of(path) == n; }
 
 MP_TEST(grow_fault_every_step) {
     mpt_clear(TMP);
     make_versions();
     if (mpt_pack_vol(V1, G_P5Z, 1, NULL, 262208) != 0) return;
-    size_t olen = 0;
-    uint8_t *orig = mpt_slurp(G_P5Z, &olen);
+    size_t olen = 0, glen = 0;
+    uint8_t *orig = mpt_slurp(G_P5Z, &olen), *grown = NULL;
     mp_grow_opts o = quiet_opts();
     o.volume_limit = 262208;
+    {   // the .p5z the append gives when nothing stops it
+        mp_grow_result r;
+        mp_err e = {{0}};
+        MP_CHECK(grow_with(G_P5Z, V2, &o, &r, &e) == 0);
+        grown = mpt_slurp(G_P5Z, &glen);
+        mpt_clear(G_P5Z);
+        mpt_put(G_P5Z, orig, olen);
+    }
     mp_grow_set_fault(fault_hook);
-    int steps = 0;
+    int steps = 0, kept = 0;
     for (int mode = 1; mode <= 2; mode++) {
         for (fault_at = 1;; fault_at++) {
             fault_mode = mode;
             fault_calls = 0;
+            fault_step[0] = 0;
             mp_grow_result r;
             mp_err e = {{0}};
             int rc = grow_with(G_P5Z, V2, &o, &r, &e);
             if (fault_calls < fault_at) {   // the run did not reach that step: it went to the end
-                MP_CHECK(rc == 0);
+                MP_CHECK(rc == 0 && !r.journal_left);
                 break;
             }
-            MP_CHECK(rc != 0);
-            if (mode == 2) {
-                // as after a power cut: a reader sees it as it was, a later open undoes the append
+            int deleting = !strcmp(fault_step, "journal delete"), committed = after_commit(fault_step);
+            int keep = committed && (mode == 2 || deleting);
+            if (deleting) {
+                // the journal could not be deleted after the append ended: done, and said so
+                MP_CHECK(rc == 0 && r.journal_left);
+                MP_CHECK(mp_path_kind(G_P5Z MP_P5Z_JOURNAL) == 1);
+            } else {
+                MP_CHECK(rc != 0);
+            }
+            if (mode == 2 || deleting) {
+                // as after a power cut: a reader sees it as it was or, once it had ended, as it grew;
+                // a later open undoes the append, or keeps the one that had ended
                 mp_p5z *p = NULL;
                 MP_CHECK(mp_p5z_open(G_P5Z, &p, &e) == 0);
-                if (p) MP_CHECK(mp_p5z_version(p) == 1 && p->size == olen);
+                if (p) MP_CHECK(mp_p5z_version(p) == (uint32_t)(keep ? 2 : 1));
                 mp_p5z_close(p);
                 int what = -1;
                 MP_CHECK(mp_p5z_recover(G_P5Z, &what, &e) == 0 && what != MP_RECOVER_BUSY);
+                if (keep) MP_CHECK_EQ_U64(what, MP_RECOVER_COMMITTED);
             }
-            if (!starts_with(G_P5Z, orig, olen) || size_of(G_P5Z) != olen) {
-                MP_FAIL_("mode %d, step %d: the .p5z is not as it was", mode, fault_at);
+            if (keep) kept++;
+            if (!same_file_bytes(G_P5Z, keep ? grown : orig, keep ? glen : olen))
+                MP_FAIL_("mode %d, step %d (%s): the .p5z is not as it %s", mode, fault_at, fault_step,
+                         keep ? "grew" : "was");
+            MP_CHECK(mp_path_kind(G_P5Z MP_P5Z_JOURNAL) == 0 && mp_path_kind(G_P5Z MP_P5Z_JOURNAL ".tmp") == 0);
+            if (!same_file_bytes(G_P5Z, orig, olen)) {
                 mpt_clear(G_P5Z);
                 mpt_put(G_P5Z, orig, olen);
             }
-            MP_CHECK(mp_path_kind(G_P5Z MP_P5Z_JOURNAL) == 0);
             if (mode == 1) steps++;
             if (fault_at > 400) {
                 MP_FAIL_("too many steps");
@@ -644,9 +677,11 @@ MP_TEST(grow_fault_every_step) {
         mpt_put(G_P5Z, orig, olen);
     }
     mp_grow_set_fault(NULL);
-    fprintf(stderr, "  %d steps\n", steps);
+    fprintf(stderr, "  %d steps, %d kept as grown\n", steps, kept);
     MP_CHECK(steps > 10);
+    MP_CHECK(kept >= 4);   // footer and synced as power cuts, journal delete in both modes
     free(orig);
+    free(grown);
 }
 
 MP_TEST(grow_refuses) {
@@ -1284,6 +1319,107 @@ MP_TEST(recover_never_touches_a_folder) {
     MP_CHECK(mp_path_kind(TMP "/afolder" MP_P5Z_JOURNAL) == 1);
 }
 
+// ---- fresh review fixes ------------------------------------------------------------------------------
+
+// A journal whose rename did not reach the disk (only its .tmp is there, whole) is the journal: the
+// append it began is undone, never forgotten.
+MP_TEST(recover_lone_tmp_journal) {
+    uint8_t *orig = NULL;
+    size_t olen = 0;
+    if (half_appended(&orig, &olen) != 0) return;
+    mp_err e = {{0}};
+    MP_CHECK(p5z_journal_write(J_P5Z, olen, orig + olen - 32, &e) == 0);
+    MP_CHECK(mp_rename(J_FILE, J_FILE ".tmp", &e) == 0);
+    mp_p5z *p = NULL;
+    MP_CHECK(mp_p5z_open(J_P5Z, &p, &e) == 0);   // a reader sees it as it was
+    if (p) MP_CHECK_EQ_U64(p->size, olen);
+    mp_p5z_close(p);
+    int what = -1;
+    MP_CHECK(mp_p5z_recover(J_P5Z, &what, &e) == 0);
+    MP_CHECK_EQ_U64(what, MP_RECOVER_RESTORED);
+    MP_CHECK(starts_with(J_P5Z, orig, olen) && size_of(J_P5Z) == olen);
+    MP_CHECK(mp_path_kind(J_FILE ".tmp") == 0 && mp_path_kind(J_FILE) == 0);
+    free(orig);
+}
+
+// A journal left after the append had ended (its delete failed, or the power went right after): the
+// .p5z's end is the new index and footer, written after it: the next open keeps what grew. So does a
+// grown copy put back over one that was cut.
+MP_TEST(recover_keeps_committed) {
+    uint8_t *orig = NULL;
+    size_t olen = 0;
+    if (grown_v2(MP_ZPK_VOLUME_LIMIT, &orig, &olen) != 0) return;
+    size_t glen = 0;
+    uint8_t *grown = mpt_slurp(G_P5Z, &glen);
+    mp_err e = {{0}};
+    MP_CHECK(p5z_journal_write(G_P5Z, olen, orig + olen - 32, &e) == 0);
+    mp_p5z *p = NULL;
+    MP_CHECK(mp_p5z_open(G_P5Z, &p, &e) == 0);   // readers see what grew
+    if (p) MP_CHECK(mp_p5z_version(p) == 2 && p->size == glen);
+    mp_p5z_close(p);
+    int what = -1;
+    MP_CHECK(mp_p5z_recover(G_P5Z, &what, &e) == 0);
+    MP_CHECK_EQ_U64(what, MP_RECOVER_COMMITTED);
+    MP_CHECK(starts_with(G_P5Z, grown, glen) && size_of(G_P5Z) == glen);
+    MP_CHECK(mp_path_kind(G_P5Z MP_P5Z_JOURNAL) == 0);
+    // a journal of another append (its old size is not the new index's prev_size) is no proof: it is cut
+    uint8_t junk[100] = {0};
+    mp_wfile *f = NULL;
+    MP_CHECK(mp_wfile_reopen(G_P5Z, &f, &e) == 0 && mp_wfile_write(f, junk, sizeof junk, &e) == 0);
+    mp_wfile_close(f, NULL);
+    MP_CHECK(p5z_journal_write(G_P5Z, glen, grown + glen - 32, &e) == 0);
+    MP_CHECK(mp_p5z_recover(G_P5Z, &what, &e) == 0 && what == MP_RECOVER_RESTORED);
+    MP_CHECK(starts_with(G_P5Z, grown, glen) && size_of(G_P5Z) == glen);
+    free(grown);
+    free(orig);
+}
+
+// A journal that cannot be read (held by another program, a drive waking up) is left alone with its
+// .p5z, and the open fails saying why: only a journal read and not matching may go.
+#ifdef _WIN32
+#include <fcntl.h>
+#include <io.h>
+#include <share.h>
+static int hold_unreadable(const char *path) {
+    int fd = -1;
+    return _sopen_s(&fd, path, _O_RDONLY | _O_BINARY, _SH_DENYRW, 0) == 0 ? fd : -1;
+}
+static void release_unreadable(const char *path, int h) {
+    (void)path;
+    if (h >= 0) _close(h);
+}
+#else
+#include <sys/stat.h>
+#include <unistd.h>
+static int hold_unreadable(const char *path) { return geteuid() != 0 && chmod(path, 0) == 0 ? 1 : -1; }
+static void release_unreadable(const char *path, int h) {
+    if (h >= 0) chmod(path, 0644);
+}
+#endif
+
+MP_TEST(recover_unreadable_journal_kept) {
+    uint8_t *orig = NULL;
+    size_t olen = 0;
+    if (half_appended(&orig, &olen) != 0) return;
+    mp_err e = {{0}};
+    MP_CHECK(p5z_journal_write(J_P5Z, olen, orig + olen - 32, &e) == 0);
+    int h = hold_unreadable(J_FILE);
+    if (h < 0) {
+        fprintf(stderr, "  (the journal cannot be made unreadable here: skipped)\n");
+        free(orig);
+        return;
+    }
+    int what = -1;
+    e.msg[0] = 0;
+    MP_CHECK(mp_p5z_recover(J_P5Z, &what, &e) != 0);
+    MP_CHECK_CONTAINS(e.msg, "journal");
+    release_unreadable(J_FILE, h);
+    MP_CHECK(mp_path_kind(J_FILE) == 1 && size_of(J_P5Z) == olen + 5000);
+    MP_CHECK(mp_p5z_recover(J_P5Z, &what, &e) == 0 && what == MP_RECOVER_RESTORED);   // once it reads
+    MP_CHECK(starts_with(J_P5Z, orig, olen) && size_of(J_P5Z) == olen);
+    free(orig);
+}
+
 int main(void) {
     MP_RUN(p5z_append_one_file);
     MP_RUN(p5z_copy_all_is_identical);
@@ -1318,5 +1454,8 @@ int main(void) {
     MP_RUN(describe_grown);
     MP_RUN(describe_grown_damaged_packs);
     MP_RUN(recover_never_touches_a_folder);
+    MP_RUN(recover_lone_tmp_journal);
+    MP_RUN(recover_keeps_committed);
+    MP_RUN(recover_unreadable_journal_kept);
     MP_TEST_MAIN_END();
 }

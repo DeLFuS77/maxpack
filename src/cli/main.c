@@ -1020,6 +1020,8 @@ static int recover_note(const char *path) {
     }
     if (what == MP_RECOVER_RESTORED)
         fprintf(stderr, "note: an interrupted change of %s was undone: it is as it was before it\n", path);
+    if (what == MP_RECOVER_COMMITTED)
+        fprintf(stderr, "note: the last change of %s had ended; the file left of it was deleted\n", path);
     return what == MP_RECOVER_RESTORED;
 }
 
@@ -1092,18 +1094,23 @@ static void grow_report(const char *p5z, const mp_grow_result *r, int add, uint6
     }
     if (r->par2 && !r->nothing)
         fprintf(stderr, "note: the repair data (PAR2) next to %s no longer match it: make them again\n", p5z);
+    if (r->journal_left)
+        fprintf(stderr, "warning: %s%s could not be deleted (another program has it open?); %s is whole as it "
+                        "grew, and the next time MaxPack opens it that file goes\n",
+                p5z, MP_P5Z_JOURNAL, p5z);
     if (g_json) {
-        char extra[768];
+        char extra[800];
         snprintf(extra, sizeof extra,
                  ",\"same_files\":%llu,\"new_files\":%llu,\"changed_files\":%llu,\"removed_files\":%llu,"
                  "\"stored_bytes\":%llu,\"added_bytes\":%llu,\"p5z_size\":%llu,\"volumes\":%llu,\"unused_bytes\":%llu,"
-                 "\"grown\":%u,\"nothing\":%s,\"par2\":%s,\"dlc_data\":%u,\"dlc_license\":%u,\"dlc_bytes\":%llu",
+                 "\"grown\":%u,\"nothing\":%s,\"par2\":%s,\"journal_left\":%s,\"dlc_data\":%u,\"dlc_license\":%u,"
+                 "\"dlc_bytes\":%llu",
                  (unsigned long long)r->same_files, (unsigned long long)r->new_files,
                  (unsigned long long)r->changed_files, (unsigned long long)r->removed_files,
                  (unsigned long long)r->stored_bytes, (unsigned long long)r->added_bytes,
                  (unsigned long long)r->p5z_size, (unsigned long long)r->volumes, (unsigned long long)r->unused_bytes,
-                 r->grown, r->nothing ? "true" : "false", r->par2 ? "true" : "false", r->dlc_data, r->dlc_license,
-                 (unsigned long long)r->dlc_bytes);
+                 r->grown, r->nothing ? "true" : "false", r->par2 ? "true" : "false",
+                 r->journal_left ? "true" : "false", r->dlc_data, r->dlc_license, (unsigned long long)r->dlc_bytes);
         json_result(1, NULL, extra);
     }
 }

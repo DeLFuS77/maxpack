@@ -145,6 +145,25 @@ MP_TEST(wfile_truncate_and_lock) {
     mp_wfile_close(g, NULL);
 }
 
+// A rename whose new name is on the disk when it returns (the journal of an append depends on it), and
+// that never replaces what is there.
+MP_TEST(wfile_rename_durable) {
+    mp_err e = {{0}};
+    MP_CHECK(mp_make_dirs(TMP, &e) == 0);
+    const char *a = TMP "/durable.a", *b = TMP "/durable.b";
+    remove_if_exists(a);
+    remove_if_exists(b);
+    MP_CHECK(mp_write_file(a, "journal", 7, &e) == 0);
+    MP_CHECK(mp_rename_durable(a, b, &e) == 0);
+    MP_CHECK(mp_path_kind(a) == 0 && mp_path_kind(b) == 1);
+    MP_CHECK(mp_write_file(a, "other", 5, &e) == 0);
+    MP_CHECK(mp_rename_durable(a, b, &e) != 0);   // b is there: not replaced
+    MP_CHECK(mp_path_kind(a) == 1);
+    mp_wfile *f = NULL;
+    MP_CHECK(mp_wfile_reopen(b, &f, &e) == 0 && mp_wfile_sync_full(f, &e) == 0);
+    mp_wfile_close(f, NULL);
+}
+
 int main(void) {
     MP_RUN(wfile_reopen_patches);
     MP_RUN(wfile_truncate_and_lock);
@@ -152,5 +171,6 @@ int main(void) {
     MP_RUN(wfile_create_refuses_existing);
     MP_RUN(set_mtime_roundtrip);
     MP_RUN(dir_is_empty);
+    MP_RUN(wfile_rename_durable);
     MP_TEST_MAIN_END();
 }

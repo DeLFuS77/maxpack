@@ -54,6 +54,10 @@ const mp_pack_manifest *mp_p5z_manifest(const mp_p5z *p);
 int mp_p5z_info(const mp_p5z *p, FILE *out);
 int mp_p5z_zpk(mp_p5z *p, mp_zpk **out, mp_err *e);
 uint64_t mp_p5z_volume_offset(const mp_p5z *p, uint32_t vol);   // where the volume starts in the .p5z
+// The bytes of the .p5z that nothing uses any more: the indexes and footers an append replaced, the
+// regions of the files an update changed or removed, the room in the volumes no chunk uses. 0 for a .p5z
+// that never grew; maxpack compact makes a copy without them.
+int mp_p5z_unused(mp_p5z *p, uint64_t *unused, mp_err *e);
 int mp_unpack_folder(mp_p5z *p, const char *out_dir, unsigned threads, int progress, mp_err *e);
 int mp_unpack_original(mp_p5z *p, const char *out_dir, unsigned threads, int progress, mp_err *e);
 void mp_p5z_close(mp_p5z *p);

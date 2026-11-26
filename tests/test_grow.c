@@ -8,9 +8,11 @@
 #include <zstd.h>
 
 #include "mp_fixture.h"
+#include "mp_grow.h"
 #include "mp_hash.h"
 #include "mp_p5z_icon.h"
 #include "mp_p5z_internal.h"
+#include "mp_play.h"
 
 #define TMP MP_TEST_TMP "/grow"
 #define GAME MP_FIXTURES_DIR "/game"
@@ -424,6 +426,316 @@ MP_TEST(recover_damaged_or_tmp) {
     free(orig);
 }
 
+// ---- the grow engine -----------------------------------------------------------------------------
+
+#define V1 TMP "/v1"
+#define V2 TMP "/v2"
+
+typedef struct {
+    const char *from, *to;
+} tree_copy;
+
+static int copy_cb(void *ctx, const char *rel, int is_dir, uint64_t size, int64_t mtime) {
+    const tree_copy *t = ctx;
+    (void)size;
+    if (is_dir) return 0;
+    char a[2048], b[2048];
+    snprintf(a, sizeof a, "%s/%s", t->from, rel);
+    snprintf(b, sizeof b, "%s/%s", t->to, rel);
+    mpt_copy_file(a, b);
+    mp_set_mtime(b, mtime, NULL);
+    return 0;
+}
+
+// A copy of a folder, dates kept.
+static void copy_tree(const char *from, const char *to) {
+    tree_copy t = {from, to};
+    mpt_clear(to);
+    mp_err e = {{0}};
+    mp_make_dirs(to, &e);
+    mp_dir_walk(from, copy_cb, &t, &e);
+}
+
+static void put_dated(const char *path, const void *data, size_t n, int64_t mtime) {
+    mpt_clear(path);
+    mpt_put(path, data, n);
+    mp_set_mtime(path, mtime, NULL);
+}
+
+// v1: the game; v2: its next version: param.json and data/big.bin changed (big.bin keeps its size),
+// data/noise.bin gone, data/new1.bin and sce_sys/new.txt new, small/s00.txt only dated again.
+static void make_versions(void) {
+    copy_tree(GAME, V1);
+    copy_tree(GAME, V2);
+    const char *pj = "{\"contentId\": \"UP0000-PPSA00000_00-MAXPACKTEST00000\", \"titleId\": \"PPSA00000\", "
+                     "\"contentVersion\": \"01.001.000\", \"localizedParameters\": {\"defaultLanguage\": \"en-US\", "
+                     "\"en-US\": {\"titleName\": \"MaxPack Test Game\"}}}";
+    put_dated(V2 "/sce_sys/param.json", pj, strlen(pj), 1700100000);
+    size_t n = 0;
+    uint8_t *b = mpt_slurp(V1 "/data/big.bin", &n);
+    if (b && n > 1000) {
+        for (size_t i = 0; i < n; i += 4096) b[i] ^= 0x5A;
+        put_dated(V2 "/data/big.bin", b, n, 1700100001);
+    }
+    free(b);
+    mpt_clear(V2 "/data/noise.bin");
+    uint8_t *t = malloc(300000);
+    for (size_t i = 0; i < 300000; i++) t[i] = (uint8_t)("new data for the second version "[i % 32]);
+    put_dated(V2 "/data/new1.bin", t, 300000, 1700100002);
+    free(t);
+    put_dated(V2 "/sce_sys/new.txt", "a loose file new in version 2\n", 30, 1700100003);
+    int64_t m = 0;
+    mp_stat(V2 "/small/s00.txt", NULL, &m);
+    mp_set_mtime(V2 "/small/s00.txt", m + 100, NULL);
+}
+
+static int grow_with(const char *p5z, const char *dump, const mp_grow_opts *o, mp_grow_result *r, mp_err *e) {
+    mp_source *s = NULL;
+    if (mp_source_open(dump, &s, e) != 0) return -1;
+    int rc = mp_grow_run(p5z, s, NULL, NULL, o, r, e);
+    mp_source_close(s);
+    return rc;
+}
+
+static mp_grow_opts quiet_opts(void) {
+    mp_grow_opts o;
+    mp_grow_opts_default(&o);
+    o.threads = 2;
+    o.progress = 0;
+    o.force = 1;
+    return o;
+}
+
+#define G_P5Z TMP "/g.p5z"
+
+MP_TEST(grow_unpack_original_is_v2) {
+    mpt_clear(TMP);
+    make_versions();
+    if (mpt_pack(V1, G_P5Z, 1, NULL) != 0) return;
+    size_t olen = 0;
+    uint8_t *orig = mpt_slurp(G_P5Z, &olen);
+    mp_grow_opts o = quiet_opts();
+    mp_grow_result r;
+    mp_err e = {{0}};
+    MP_CHECK(grow_with(G_P5Z, V2, &o, &r, &e) == 0);
+    if (e.msg[0]) fprintf(stderr, "  %s\n", e.msg);
+    MP_CHECK(starts_with(G_P5Z, orig, olen));
+    MP_CHECK(mp_path_kind(G_P5Z MP_P5Z_JOURNAL) == 0);
+    MP_CHECK_EQ_U64(r.new_files, 2);
+    MP_CHECK_EQ_U64(r.changed_files, 2);
+    MP_CHECK_EQ_U64(r.removed_files, 1);
+    MP_CHECK_EQ_U64(r.grown, 1);
+    MP_CHECK(r.same_files > 10 && !r.nothing);
+    MP_CHECK_EQ_U64(r.p5z_size, size_of(G_P5Z));
+    MP_CHECK_EQ_U64(r.added_bytes, size_of(G_P5Z) - olen);
+    mp_p5z *p = NULL;
+    MP_CHECK(mp_p5z_open(G_P5Z, &p, &e) == 0);
+    if (p) {
+        MP_CHECK_EQ_U64(mp_p5z_version(p), 2);
+        MP_CHECK_STR(p->man.content_version, "01.001.000");
+        MP_CHECK(mp_unpack_original(p, TMP "/g_orig", 2, 0, &e) == 0);
+        mp_p5z_close(p);
+    }
+    MP_CHECK(mpt_dirs_equal(V2, TMP "/g_orig", NULL));
+    mp_verify_result vr;
+    MP_CHECK(mp_verify_p5z(G_P5Z, 2, 0, &vr, &e) == 0);
+    MP_CHECK_EQ_U64(vr.files_bad, 0);
+    free(orig);
+}
+
+// The volumes maxpack.image lists: every one, old and new, by id 0..n-1.
+MP_TEST(grow_play_lists_every_volume) {
+    mpt_clear(TMP);
+    make_versions();
+    if (mpt_pack_vol(V1, G_P5Z, 1, NULL, 262208) != 0) return;
+    mp_err e = {{0}};
+    mp_p5z *p = NULL;
+    uint32_t before = 0;
+    MP_CHECK(mp_p5z_open(G_P5Z, &p, &e) == 0);
+    for (size_t i = 0; p && i < p->nfiles; i++) before += p->files[i].role == MP_ROLE_VOLUME;
+    mp_p5z_close(p);
+    MP_CHECK(before > 2);
+    mp_grow_opts o = quiet_opts();
+    o.volume_limit = 262208;
+    mp_grow_result r;
+    MP_CHECK(grow_with(G_P5Z, V2, &o, &r, &e) == 0);
+    MP_CHECK(r.volumes_added > 0 && r.volumes == before + r.volumes_added);
+    char err[256] = "";
+    mp_play *pl = mp_play_open(G_P5Z, err, sizeof err);
+    MP_CHECK(pl != NULL);
+    if (!pl) {
+        fprintf(stderr, "  %s\n", err);
+        return;
+    }
+    char *j = mp_play_json(pl);
+    MP_CHECK(mp_p5z_open(G_P5Z, &p, &e) == 0);
+    size_t nvol = 0;
+    for (size_t i = 0; p && i < p->nfiles; i++) {
+        const p5z_file *f = &p->files[i];
+        if (f->role != MP_ROLE_VOLUME) continue;
+        char want[128];
+        snprintf(want, sizeof want, "{\"id\":%u,\"offset\":%llu,\"length\":%llu}", (unsigned)nvol,
+                 (unsigned long long)f->data_off, (unsigned long long)f->size);
+        MP_CHECK_CONTAINS(j, want);
+        nvol++;
+    }
+    MP_CHECK_EQ_U64(nvol, r.volumes);
+    char none[64];
+    snprintf(none, sizeof none, "{\"id\":%u,", (unsigned)nvol);
+    MP_CHECK(j && !strstr(j, none));
+    mp_p5z_close(p);
+    mp_play_free_str(j);
+    mp_play_close(pl);
+}
+
+// The test hook: fails (mode 1) or stops as a power cut would (mode 2) at its call number `at`.
+static int fault_at, fault_mode, fault_calls;
+static int fault_hook(const char *step) {
+    (void)step;
+    return ++fault_calls == fault_at ? fault_mode : 0;
+}
+
+MP_TEST(grow_fault_every_step) {
+    mpt_clear(TMP);
+    make_versions();
+    if (mpt_pack_vol(V1, G_P5Z, 1, NULL, 262208) != 0) return;
+    size_t olen = 0;
+    uint8_t *orig = mpt_slurp(G_P5Z, &olen);
+    mp_grow_opts o = quiet_opts();
+    o.volume_limit = 262208;
+    mp_grow_set_fault(fault_hook);
+    int steps = 0;
+    for (int mode = 1; mode <= 2; mode++) {
+        for (fault_at = 1;; fault_at++) {
+            fault_mode = mode;
+            fault_calls = 0;
+            mp_grow_result r;
+            mp_err e = {{0}};
+            int rc = grow_with(G_P5Z, V2, &o, &r, &e);
+            if (fault_calls < fault_at) {   // the run did not reach that step: it went to the end
+                MP_CHECK(rc == 0);
+                break;
+            }
+            MP_CHECK(rc != 0);
+            if (mode == 2) {
+                // as after a power cut: a reader sees it as it was, a later open undoes the append
+                mp_p5z *p = NULL;
+                MP_CHECK(mp_p5z_open(G_P5Z, &p, &e) == 0);
+                if (p) MP_CHECK(mp_p5z_version(p) == 1 && p->size == olen);
+                mp_p5z_close(p);
+                int what = -1;
+                MP_CHECK(mp_p5z_recover(G_P5Z, &what, &e) == 0 && what != MP_RECOVER_BUSY);
+            }
+            if (!starts_with(G_P5Z, orig, olen) || size_of(G_P5Z) != olen) {
+                MP_FAIL_("mode %d, step %d: the .p5z is not as it was", mode, fault_at);
+                mpt_clear(G_P5Z);
+                mpt_put(G_P5Z, orig, olen);
+            }
+            MP_CHECK(mp_path_kind(G_P5Z MP_P5Z_JOURNAL) == 0);
+            if (mode == 1) steps++;
+            if (fault_at > 400) {
+                MP_FAIL_("too many steps");
+                break;
+            }
+        }
+        // the run that went to the end grew it: start again from the original
+        mpt_clear(G_P5Z);
+        mpt_put(G_P5Z, orig, olen);
+    }
+    mp_grow_set_fault(NULL);
+    fprintf(stderr, "  %d steps\n", steps);
+    MP_CHECK(steps > 10);
+    free(orig);
+}
+
+MP_TEST(grow_refuses) {
+    mpt_clear(TMP);
+    make_versions();
+    if (mpt_pack_vol(V1, G_P5Z, 1, NULL, 262208) != 0) return;
+    size_t olen = 0;
+    uint8_t *orig = mpt_slurp(G_P5Z, &olen);
+    mp_grow_opts o = quiet_opts();
+    o.volume_limit = 262208;
+    mp_grow_result r;
+    mp_err e = {{0}};
+    // a dump already packed
+    copy_tree(V2, TMP "/v2packed");
+    put_dated(TMP "/v2packed/ampr_zstd.index", "x", 1, 1700000000);
+    MP_CHECK(grow_with(G_P5Z, TMP "/v2packed", &o, &r, &e) != 0);
+    MP_CHECK_STR(r.code, "already_packed");
+    // a cap the .p5z would go over
+    o.max_size = olen + 1000;
+    MP_CHECK(grow_with(G_P5Z, V2, &o, &r, &e) != 0);
+    MP_CHECK_STR(r.code, "too_big");
+    o.max_size = 0;
+    // more volumes than it may have
+    mp_p5z *p = NULL;
+    uint32_t nvol = 0;
+    MP_CHECK(mp_p5z_open(G_P5Z, &p, &e) == 0);
+    for (size_t i = 0; p && i < p->nfiles; i++) nvol += p->files[i].role == MP_ROLE_VOLUME;
+    mp_p5z_close(p);
+    // one more volume may be added, and a new file that does not compress needs three: the third stops it
+    copy_tree(V2, TMP "/v2b");
+    uint8_t *noise = malloc(600000);
+    uint32_t x = 2463534242u;
+    for (size_t i = 0; i < 600000; i++) {
+        x ^= x << 13;
+        x ^= x >> 17;
+        x ^= x << 5;
+        noise[i] = (uint8_t)(x >> 24);
+    }
+    put_dated(TMP "/v2b/data/rand.bin", noise, 600000, 1700300000);
+    free(noise);
+    o.max_volumes = nvol + 1;
+    MP_CHECK(grow_with(G_P5Z, TMP "/v2b", &o, &r, &e) != 0);
+    MP_CHECK_STR(r.code, "too_many_volumes");
+    MP_CHECK(starts_with(G_P5Z, orig, olen) && size_of(G_P5Z) == olen);
+    o.max_volumes = nvol;   // none may be added: refused before anything is written
+    MP_CHECK(grow_with(G_P5Z, V2, &o, &r, &e) != 0);
+    MP_CHECK_STR(r.code, "too_many_volumes");
+    o.max_volumes = 0;
+    // more than half of it changed, without force
+    o.force = 0;
+    copy_tree(V2, TMP "/v3");
+    size_t n = 0;
+    uint8_t *b = mpt_slurp(V1 "/data/big.bin", &n);
+    for (int k = 0; k < 3; k++) {
+        char path[256];
+        snprintf(path, sizeof path, TMP "/v3/data/more%d.bin", k);
+        put_dated(path, b, n, 1700200000 + k);
+    }
+    free(b);
+    MP_CHECK(grow_with(G_P5Z, TMP "/v3", &o, &r, &e) != 0);
+    MP_CHECK_STR(r.code, "mostly_changed");
+    MP_CHECK(starts_with(G_P5Z, orig, olen) && size_of(G_P5Z) == olen);
+    MP_CHECK(mp_path_kind(G_P5Z MP_P5Z_JOURNAL) == 0);
+    // another MaxPack growing it: busy
+    mp_wfile *f = NULL;
+    int busy = 0;
+    o.force = 1;
+    MP_CHECK(mp_wfile_reopen_locked(G_P5Z, &f, &busy, &e) == 0);
+    MP_CHECK(grow_with(G_P5Z, V2, &o, &r, &e) != 0);
+    MP_CHECK_STR(r.code, "busy");
+    mp_wfile_close(f, NULL);
+    MP_CHECK(starts_with(G_P5Z, orig, olen) && size_of(G_P5Z) == olen);
+    free(orig);
+}
+
+MP_TEST(grow_nothing_changed) {
+    mpt_clear(TMP);
+    make_versions();
+    if (mpt_pack(V1, G_P5Z, 1, NULL) != 0) return;
+    size_t olen = 0;
+    uint8_t *orig = mpt_slurp(G_P5Z, &olen);
+    mp_grow_opts o = quiet_opts();
+    mp_grow_result r;
+    mp_err e = {{0}};
+    MP_CHECK(grow_with(G_P5Z, V1, &o, &r, &e) == 0);
+    MP_CHECK(r.nothing && r.new_files == 0 && r.changed_files == 0 && r.removed_files == 0);
+    MP_CHECK(starts_with(G_P5Z, orig, olen) && size_of(G_P5Z) == olen);
+    free(orig);
+}
+
 int main(void) {
     MP_RUN(p5z_append_one_file);
     MP_RUN(p5z_copy_all_is_identical);
@@ -434,5 +746,10 @@ int main(void) {
     MP_RUN(recover_busy_leaves_everything);
     MP_RUN(recover_stale_journal);
     MP_RUN(recover_damaged_or_tmp);
+    MP_RUN(grow_unpack_original_is_v2);
+    MP_RUN(grow_play_lists_every_volume);
+    MP_RUN(grow_fault_every_step);
+    MP_RUN(grow_refuses);
+    MP_RUN(grow_nothing_changed);
     MP_TEST_MAIN_END();
 }

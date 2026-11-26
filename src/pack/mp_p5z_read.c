@@ -464,6 +464,29 @@ int mp_p5z_info(const mp_p5z *p, FILE *out) {
     return ferror(out) ? -1 : 0;
 }
 
+int mp_p5z_unused(mp_p5z *p, uint64_t *unused, mp_err *e) {
+    *unused = 0;
+    if (p->version < 2) return 0;   // a fresh pack leaves no room between its regions
+    uint64_t used = P5Z_HEADER + p->index_len + P5Z_FOOTER;
+    int vols = 0;
+    for (size_t i = 0; i < p->nfiles; i++) {
+        if (p->files[i].role == MP_ROLE_VOLUME) {
+            used += MP_ZPK_VOL_HEADER;   // a volume uses its header and its chunks
+            vols = 1;
+        } else {
+            used += p->files[i].data_len;
+        }
+    }
+    if (vols) {
+        mp_zpk *z = NULL;
+        if (mp_p5z_zpk(p, &z, e) != 0) return -1;
+        used += mp_zpk_stored_bytes(z);
+        mp_zpk_close(z);
+    }
+    *unused = p->size > used ? p->size - used : 0;
+    return 0;
+}
+
 uint64_t mp_p5z_volume_offset(const mp_p5z *p, uint32_t vol) {
     const p5z_file *f = volume_file(p, vol);
     return f ? f->data_off : 0;

@@ -19,7 +19,7 @@
 
 #define COPY_PIECE (4u << 20)
 #define RUNTIME_MAX (64u << 20)
-#define RUNTIME_PATH "fakelib/libSceAmpr.sprx"
+#define RUNTIME_PATH MP_RUNTIME_PATH
 
 void mp_pack_opts_default(mp_pack_opts *o) {
     memset(o, 0, sizeof *o);
@@ -53,9 +53,14 @@ static int has_marker(const uint8_t *p, size_t n) {
     return 0;
 }
 
-// Copies a file from the source to the output in chunks, computing its SHA-256.
-static int copy_file(mp_source *src, size_t i, const char *rel, int role, mp_pack_out *out, uint8_t *buf,
-                     uint8_t sha[32], mp_progress *prog, mp_err *e) {
+int mp_pack_idx3_skip(const char *path) { return ieq(path, "ampr_commands.bin") || ieq(path, "apr_emu.log"); }
+
+int mp_pack_already_packed(const char *path) {
+    return ieq(path, "ampr_zstd.index") || mp_glob_match("ampr_zstd-*.pak", path);
+}
+
+int mp_pack_copy_file(mp_source *src, size_t i, const char *rel, int role, mp_pack_out *out, uint8_t *buf,
+                      uint8_t sha[32], mp_progress *prog, mp_err *e) {
     const mp_entry *en = mp_source_entry(src, i);
     if (out->file_begin(out->ctx, rel, role, en->size, en->mtime, e) != 0) return -1;
     mp_sha256 s;
@@ -72,8 +77,8 @@ static int copy_file(mp_source *src, size_t i, const char *rel, int role, mp_pac
     return out->file_end(out->ctx, sha, e);
 }
 
-static int put_buffer(mp_pack_out *out, const char *rel, int role, const uint8_t *p, size_t n, int64_t mtime,
-                      mp_err *e) {
+int mp_pack_put_buffer(mp_pack_out *out, const char *rel, int role, const uint8_t *p, size_t n, int64_t mtime,
+                       mp_err *e) {
     uint8_t sha[32];
     mp_sha256 s;
     mp_sha256_init(&s);
@@ -196,7 +201,7 @@ int mp_pack_run(const char *src_path, mp_pack_out *out, const mp_pack_opts *o, m
     size_t orig_idx3 = SIZE_MAX, orig_rt = SIZE_MAX, param = SIZE_MAX;
     for (size_t i = 0; i < n; i++) {
         const char *p = mp_source_entry(src, i)->path;
-        if (ieq(p, "ampr_zstd.index") || mp_glob_match("ampr_zstd-*.pak", p)) {
+        if (mp_pack_already_packed(p)) {
             // A loose volume without its index too: it would clash with the new volumes.
             mp_err_set(e, "%s is already packed (it has %s); repacking will come later", src_path, p);
             goto done;
@@ -232,7 +237,7 @@ int mp_pack_run(const char *src_path, mp_pack_out *out, const mp_pack_opts *o, m
             man.v[i].flags = MP_MANIFEST_PACKED;
             packable[npack++] = (uint32_t)i;
         }
-        if (i == orig_idx3 || ieq(en->path, "ampr_commands.bin") || ieq(en->path, "apr_emu.log")) continue;
+        if (i == orig_idx3 || mp_pack_idx3_skip(en->path)) continue;
         rows[nrows].path = en->path;
         rows[nrows].size = (rt && i == orig_rt) ? rt_len : en->size;
         rows[nrows].mtime = (rt && i == orig_rt) ? rt_mtime : en->mtime;
@@ -282,7 +287,7 @@ int mp_pack_run(const char *src_path, mp_pack_out *out, const mp_pack_opts *o, m
     for (size_t i = 0; i < n && rc == -1; i++) {
         if (role[i] != MP_ROLE_LOOSE) continue;
         if (mp_cancel_check(e) != 0 ||
-            copy_file(src, i, man.v[i].path, MP_ROLE_LOOSE, out, buf, man.v[i].sha, &prog, e) != 0) {
+            mp_pack_copy_file(src, i, man.v[i].path, MP_ROLE_LOOSE, out, buf, man.v[i].sha, &prog, e) != 0) {
             mp_progress_free(&prog);
             goto done;
         }
@@ -321,15 +326,15 @@ int mp_pack_run(const char *src_path, mp_pack_out *out, const mp_pack_opts *o, m
 
     // 6. ampr_emu.index, runtime and replaced originals.
     if (mp_cancel_check(e) != 0) goto done;
-    if (put_buffer(out, "ampr_emu.index", MP_ROLE_IDX3, idx3, idx3_len, gen_mtime, e) != 0) goto done;
-    if (rt && put_buffer(out, RUNTIME_PATH, MP_ROLE_RUNTIME, rt, rt_len, rt_mtime, e) != 0) goto done;
+    if (mp_pack_put_buffer(out, "ampr_emu.index", MP_ROLE_IDX3, idx3, idx3_len, gen_mtime, e) != 0) goto done;
+    if (rt && mp_pack_put_buffer(out, RUNTIME_PATH, MP_ROLE_RUNTIME, rt, rt_len, rt_mtime, e) != 0) goto done;
     for (size_t i = 0; i < n; i++)
         if (role[i] == MP_ROLE_ORIGINAL &&
-            copy_file(src, i, man.v[i].path, MP_ROLE_ORIGINAL, out, buf, man.v[i].sha, NULL, e) != 0)
+            mp_pack_copy_file(src, i, man.v[i].path, MP_ROLE_ORIGINAL, out, buf, man.v[i].sha, NULL, e) != 0)
             goto done;
 
     // 7. ampr_zstd.index last.
-    if (npack && put_buffer(out, "ampr_zstd.index", MP_ROLE_ZPK_INDEX, zidx, zidx_len, gen_mtime, e) != 0)
+    if (npack && mp_pack_put_buffer(out, "ampr_zstd.index", MP_ROLE_ZPK_INDEX, zidx, zidx_len, gen_mtime, e) != 0)
         goto done;
     // the manifest has what went, in path order: without what was left out
     fin = man;

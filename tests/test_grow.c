@@ -1484,6 +1484,29 @@ MP_TEST(install_verify_after_growth) {
     MP_CHECK(!vr.p5z_checked);
 }
 
+// A crafted .p5z whose manifest says files are packed but that has no packs is refused, not followed.
+MP_TEST(grow_refuses_packed_without_packs) {
+    mpt_clear(TMP);
+    make_versions();
+    if (mpt_pack(V1, G_P5Z, 1, NULL) != 0) return;
+    size_t n = 0;
+    uint64_t ioff = 0;
+    uint8_t *ix = read_index(G_P5Z, &n, &ioff);
+    if (!ix) return;
+    uint32_t nf = rd32(ix + 12);
+    for (uint32_t i = 0; i < nf; i++) {   // the volumes and ampr_zstd.index become loose files
+        uint8_t *rec = ix + 56 + 88 * i;
+        if (rec[8] == MP_ROLE_VOLUME || rec[8] == MP_ROLE_ZPK_INDEX) rec[8] = MP_ROLE_LOOSE;
+    }
+    put_index(G_P5Z, TMP "/nopacks.p5z", ix, n);
+    free(ix);
+    mp_grow_opts o = quiet_opts();
+    mp_grow_result r;
+    mp_err e = {{0}};
+    MP_CHECK(grow_with(TMP "/nopacks.p5z", V2, &o, &r, &e) != 0);
+    MP_CHECK_CONTAINS(e.msg, "packs");
+}
+
 int main(void) {
     MP_RUN(p5z_append_one_file);
     MP_RUN(p5z_copy_all_is_identical);
@@ -1523,5 +1546,6 @@ int main(void) {
     MP_RUN(recover_unreadable_journal_kept);
     MP_RUN(update_refuses_non_game);
     MP_RUN(install_verify_after_growth);
+    MP_RUN(grow_refuses_packed_without_packs);
     MP_TEST_MAIN_END();
 }

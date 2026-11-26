@@ -561,6 +561,12 @@ check("delete_on_cancel", rc == 130 and res.get("kept") is False and C.cancelled
 rc, res = send_and_stop(["--delete-on-cancel"], close_only=True)
 check("closed_input_keeps_even_with_delete_on_cancel", rc == 130 and res.get("kept") is True and not C.cancelled
       and ("internal", NAME) in C.partial, "rc=%s %s" % (rc, res))
+# stopped before the console ever answered: nothing arrived, so nothing is "kept"
+proc = subprocess.Popen([EXE, "send", P5Z, "10.255.255.1:9", "--code", CODE, "--json", "--control", "stdin"],
+                        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+out, _ = proc.communicate(b"cancel\n", timeout=60)
+res = result(events(out.decode("utf-8", "replace")))
+check("stopped_before_anything_arrived", proc.returncode == 130 and res.get("kept") is False, "rc=%s %s" % (proc.returncode, res))
 # Delete what arrived on the console: started, then cancelled
 C.reset()
 C.partial[("internal", NAME)] = bytearray(DATA[:5 * 65536])

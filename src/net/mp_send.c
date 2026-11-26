@@ -178,6 +178,10 @@ static int stopped_here(sender *s, const char *id) {
         s->r->kept = 0;
         return fail(s, "cancelled", "cancelled: the console deletes what it received%s", NULL);
     }
+    if (!s->watching) {   // no receive began: nothing arrived to keep
+        s->r->kept = 0;
+        return fail(s, "cancelled", "stopped before anything was sent%s", NULL);
+    }
     char had[96];
     have_text(s, had, sizeof had);
     s->r->kept = 1;

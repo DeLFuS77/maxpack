@@ -49,10 +49,13 @@ func sendFailure(code string, result core.Event) string {
 	kept, _ := result.Raw["kept"].(bool)
 	switch code {
 	case "cancelled":
-		// stopped here: the console keeps what arrived (the window never tells the engine to delete it), also when
-		// the engine had to be killed (core.CancelGrace), which says nothing of it
-		if killed, _ := result.Raw["killed"].(bool); kept || killed {
+		// stopped here: the console keeps what arrived (the window never tells the engine to delete it); an engine
+		// that had to be killed (core.CancelGrace) said nothing of what arrived: the console may keep some
+		if kept {
 			return "send_kept"
+		}
+		if killed, _ := result.Raw["killed"].(bool); killed {
+			return "send_may_keep"
 		}
 		return code
 	case "no_space":

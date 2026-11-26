@@ -118,5 +118,22 @@ func TestPageSendLeftOnConsole(t *testing.T) {
   await discardOnConsole(row);
   if (row.detail !== "send_discarded" || toasts.join() !== t("discardDone")("Copper Vale")) say("deleted: " + row.detail + " " + toasts);
   if (!calls.some(call => call.startsWith("DiscardOnConsole"))) say("the window was not asked");
+  // an engine killed after a cancel said nothing of what arrived: the console may keep some, which can be deleted
+  if (!leftOnConsole(left("send_may_keep")) || detailText("send_may_keep") !== t("detail_send_may_keep")) say("may keep");
+  // the console could not delete it: its words go with the text; a console without the request says to update it
+  toasts.length = 0;
+  row.detail = "send_kept";
+  window.answers = { DiscardOnConsole: { error: "delete_failed", message: "x", detail: "read-only file system" } };
+  await discardOnConsole(row);
+  if (toasts.join() !== t("detail_send_delete_failed") + ": read-only file system") say("delete failed: " + toasts);
+  toasts.length = 0;
+  window.answers = { DiscardOnConsole: { error: "discard_unsupported", message: "x" } };
+  await discardOnConsole(row);
+  if (toasts.join() !== t("detail_send_discard_unsupported")) say("an older console: " + toasts);
+  // while the console lets go of a receive of it, the page says so
+  toasts.length = 0;
+  state.lists.details = [row];
+  onDiscardWaiting({ path: "D:/g.p5z", seconds: 3 });
+  if (toasts.join() !== t("discardWaiting")("Copper Vale")) say("waiting: " + toasts);
 `)
 }

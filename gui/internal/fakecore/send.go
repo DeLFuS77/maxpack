@@ -14,7 +14,8 @@ import (
 // SendFailEnv makes "send" of the modes "sends" end with that code, as the real one ends with each refusal
 // of the console (and "verify_failed" with what the console found wrong). "<code>+kept" says the console keeps
 // what arrived (4096 bytes), "<code>+slept" that this PC slept meanwhile. For "send --discard", "nothing" says
-// there was nothing to delete, and any other code refuses it.
+// there was nothing to delete, "waits" that the console let go of it after two waits, and any other code refuses
+// it (with the console's words in detail).
 const SendFailEnv = "MP_FAKE_SEND_FAIL"
 
 // DrivesWaitEnv makes "send --drives" wait that many milliseconds before it answers (a console far away).
@@ -60,9 +61,16 @@ func send(mode string, args []string) int {
 				rest = append(rest, a)
 			}
 		}
-		if (fail != "" && fail != "nothing") || len(rest) < 2 {
-			fmt.Printf("{\"ok\":false,\"error\":%q,\"message\":\"no\"}\n", fail)
-			return sendExit[fail]
+		if (fail != "" && fail != "nothing" && fail != "waits") || len(rest) < 2 {
+			fmt.Printf("{\"ok\":false,\"error\":%q,\"message\":\"no\",\"detail\":\"the console says %s\"}\n", fail, fail)
+			if n, ok := sendExit[fail]; ok {
+				return n
+			}
+			return 1
+		}
+		if fail == "waits" { // the console lets go of a receive of it at work: asked again twice
+			fmt.Println(`{"event":"waiting","seconds":1}`)
+			fmt.Println(`{"event":"waiting","seconds":1}`)
 		}
 		drive := ""
 		for i := 0; i+1 < len(rest); i++ {

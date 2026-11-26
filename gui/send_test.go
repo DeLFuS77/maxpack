@@ -126,6 +126,12 @@ type fakeConsole struct {
 	badCode   int
 	routes    []string
 	discarded string
+	// contract v3.1: what a PC said when it left, how slowly the bytes are taken, and how many times a discard
+	// answers busy with retry_after first
+	left, leaves int
+	slow         time.Duration
+	busyTimes    int
+	holdVerify   bool
 }
 
 func (c *fakeConsole) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -143,9 +149,21 @@ func (c *fakeConsole) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	c.routes = append(c.routes, r.URL.Path)
 	switch r.URL.Path {
+	case "/api/receive/leave":
+		c.leaves++
+		if c.state == "receiving" {
+			c.state = "paused"
+			c.left++
+		}
+		answer(200, map[string]any{"have": c.got.Len()})
 	case "/api/receive/discard":
 		var req struct{ Name, Drive string }
 		json.NewDecoder(r.Body).Decode(&req)
+		if c.busyTimes > 0 {
+			c.busyTimes--
+			answer(409, map[string]any{"error": "busy", "retry_after": 1})
+			return
+		}
 		c.discarded = req.Name + " on " + req.Drive
 		if c.got.Len() == 0 {
 			answer(200, map[string]any{"deleted": false})
@@ -166,12 +184,25 @@ func (c *fakeConsole) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		answer(200, map[string]any{"id": "t1", "have": c.got.Len()})
 	case "/api/receive/data":
 		data, _ := io.ReadAll(r.Body)
+		if c.state == "paused" {
+			answer(409, map[string]any{"error": "paused", "reason": "left", "have": c.got.Len()})
+			return
+		}
+		if c.slow > 0 {
+			c.mu.Unlock()
+			time.Sleep(c.slow)
+			c.mu.Lock()
+		}
 		c.got.Write(data)
 		answer(200, map[string]any{"have": c.got.Len()})
 	case "/api/receive/finish":
 		c.state = "done"
 		w.WriteHeader(202)
 	case "/api/receive/status":
+		if c.holdVerify && c.state == "done" {
+			answer(200, map[string]any{"have": c.got.Len(), "size": c.size, "state": "verifying", "verify": map[string]any{"bytes": 0, "total": c.size, "bad": []any{}}})
+			return
+		}
 		answer(200, map[string]any{"have": c.got.Len(), "size": c.size, "state": c.state, "verify": map[string]any{"bytes": c.size, "total": c.size, "bad": []any{}}})
 	default:
 		answer(404, map[string]string{"error": "no_route"})
@@ -218,15 +249,20 @@ func TestSendReal(t *testing.T) {
 // it (no start, which the console would refuse for space), and says when there was nothing.
 func TestDiscardReal(t *testing.T) {
 	engine, _ := needCore(t)
-	console := &fakeConsole{}
+	console := &fakeConsole{busyTimes: 1}
 	console.got.Write(make([]byte, 5000))
 	server := httptest.NewServer(console)
 	defer server.Close()
 	withConsole(t, strings.TrimPrefix(server.URL, "http://"))
 	p5z := filepath.Join(t.TempDir(), "Game [PPSA00000].p5z")
-	a := &App{core: engine}
+	events := &waitEvents{}
+	a := &App{core: engine, emit: events.emit}
+	// the console lets go of it first (busy, retry_after): the engine waits and asks again, and the page is told
 	if view := a.DiscardOnConsole(p5z, "internal"); view.Error != "" || !view.Deleted || view.Had != 5000 {
 		t.Fatalf("%+v", view)
+	}
+	if events.count() != 1 {
+		t.Errorf("the page was told %d waits", events.count())
 	}
 	if view := a.DiscardOnConsole(p5z, "internal"); view.Error != "" || view.Deleted || view.Had != 0 {
 		t.Errorf("nothing there: %+v", view)
@@ -253,6 +289,13 @@ func TestDiscardOnConsole(t *testing.T) {
 	if said, _ := os.ReadFile(p5z + ".discarded"); string(said) != "drive usb0 code "+consoleCode {
 		t.Errorf("the engine was given %q", said)
 	}
+	// the console lets go of it first: the page is told each wait
+	events := &waitEvents{}
+	a.emit = events.emit
+	t.Setenv(fakecore.SendFailEnv, "waits")
+	if view := a.DiscardOnConsole(p5z, "usb0"); view.Error != "" || !view.Deleted || events.count() != 2 {
+		t.Errorf("waited: %+v, %d waits told", view, events.count())
+	}
 	// nothing of it there: no error, and nothing said deleted
 	t.Setenv(fakecore.SendFailEnv, "nothing")
 	if view := a.DiscardOnConsole(p5z, "usb0"); view.Error != "" || view.Deleted || view.Had != 0 {
@@ -264,8 +307,12 @@ func TestDiscardOnConsole(t *testing.T) {
 		t.Errorf("at work: %+v", view)
 	}
 	t.Setenv(fakecore.SendFailEnv, "delete_failed")
-	if view := a.DiscardOnConsole(p5z, "usb0"); view.Error != "delete_failed" {
+	if view := a.DiscardOnConsole(p5z, "usb0"); view.Error != "delete_failed" || view.Detail != "the console says delete_failed" {
 		t.Errorf("not deleted: %+v", view)
+	}
+	t.Setenv(fakecore.SendFailEnv, "discard_unsupported")
+	if view := a.DiscardOnConsole(p5z, "usb0"); view.Error != "discard_unsupported" {
+		t.Errorf("an older console: %+v", view)
 	}
 	saveSettings(t, func(s *settings.Settings) {})
 	if view := a.DiscardOnConsole(p5z, ""); view.Error != "no_console" {
@@ -296,5 +343,59 @@ func TestConsoleDrivesCancelAndTimeout(t *testing.T) {
 	start := time.Now()
 	if view := a.ConsoleDrives(); view.Error != "unreachable" || time.Since(start) > 10*time.Second {
 		t.Errorf("timeout: %+v after %v", view, time.Since(start))
+	}
+}
+
+// waitEvents counts the "discard:waiting" the page is told.
+type waitEvents struct {
+	mutex sync.Mutex
+	n     int
+}
+
+func (w *waitEvents) emit(event string, data any) {
+	w.mutex.Lock()
+	defer w.mutex.Unlock()
+	if event == "discard:waiting" {
+		w.n++
+	}
+}
+
+func (w *waitEvents) count() int {
+	w.mutex.Lock()
+	defer w.mutex.Unlock()
+	return w.n
+}
+
+// Cancel (or closing the window) while the real engine sends (here while the console verifies): it stops and
+// keeps what arrived, and tells the console it left (contract v3.1), so that the console lets go of it at once.
+func TestSendCancelLeaves(t *testing.T) {
+	engine, fixtures := needCore(t)
+	console := &fakeConsole{holdVerify: true}
+	server := httptest.NewServer(console)
+	defer server.Close()
+	withConsole(t, strings.TrimPrefix(server.URL, "http://"))
+	out := filepath.Join(t.TempDir(), "Game [PPSA00000].p5z")
+	if _, _, err := core.RunWith(context.Background(), engine, []string{"pack", filepath.Join(fixtures, "basic.exfat"), "-o", out, "--p5z", "--threads", "2"}, core.RunOptions{}, nil); err != nil {
+		t.Fatal(err)
+	}
+	game, err := (&App{core: engine}).Details(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	events := newPageEvents()
+	a := pageApp(engine, events)
+	a.onEvent = func(i int, e core.Event) {
+		if e.Kind == "progress" && e.Phase == "verifying" {
+			go a.Cancel()
+		}
+	}
+	if err := a.Start("details", []jobs.Item{game.Item}, Choices{Options: jobs.Options{Mode: jobs.ModeSend}}); err != nil {
+		t.Fatal(err)
+	}
+	sum := events.wait(t)
+	console.mu.Lock()
+	defer console.mu.Unlock()
+	if sum.Cancelled != 1 || events.last(0).Detail != "send_kept" || console.leaves != 1 {
+		t.Errorf("%+v %+v, left %d, routes %v", sum, events.last(0), console.leaves, console.routes)
 	}
 }

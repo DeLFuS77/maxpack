@@ -1801,7 +1801,7 @@ async function sendRows(rows) {
 // console, cut off, stalled or slept through, a write error, arrived damaged, or a drive that filled up with
 // part of it there): it can be deleted there
 const leftOnConsole = row => row.section === "details" && !!row.game && row.game.Kind === "p5z"
-  && /^send_(kept|console_stopped|stalled|slept|write_error|unreachable|verify_failed|no_space_kept)(:|$)/.test(row.detail || "");
+  && /^send_(kept|may_keep|console_stopped|stalled|slept|write_error|unreachable|verify_failed|no_space_kept)(:|$)/.test(row.detail || "");
 // Delete what arrived on the console: asked first, as it cannot be undone (the next send starts from nothing)
 async function discardOnConsole(row) {
   if (!leftOnConsole(row)) return;
@@ -1812,6 +1812,8 @@ async function discardOnConsole(row) {
   render();
   try {
     const view = await go.call("DiscardOnConsole", row.path, row.sentDrive || load("sendDrive", "")).catch(error => ({ error: "io", message: message(error) }));
+    // the console could not delete it: its own words go with the text
+    if (view.error === "delete_failed" && view.detail) { toast(t("detail_send_delete_failed") + ": " + view.detail); return; }
     if (view.error) { toast(sendErrorText(view.error, view.message)); return; }
     // nothing of it was there (the console had deleted it, or it never came): said so, not "deleted"
     row.detail = view.deleted === false ? "send_nothing_left" : "send_discarded";
@@ -1820,6 +1822,12 @@ async function discardOnConsole(row) {
     state.busy = false;
     render();
   }
+}
+
+// the console is letting go of a receive of a .p5z to delete (discard:waiting): said, as it asks again shortly
+function onDiscardWaiting(event) {
+  const row = state.lists.details.find(r => event && pathKey(r.path) === pathKey(event.path || ""));
+  toast(t("discardWaiting")(row && row.game ? row.game.Name || baseName(row.path) : baseName((event && event.path) || "")));
 }
 
 // the end card of Compress: the .p5z it made go to Details, and from there to the console once read
@@ -2726,6 +2734,7 @@ async function main() {
   go.on("tool:level", onToolLevel);
   go.on("tool:trial", onToolTrial);
   go.on("watch:found", onWatchFound);
+  go.on("discard:waiting", onDiscardWaiting);
   go.on("watch:skipped", event => { for (const path of (event && event.paths) || []) toast(t("watchSkipped")(baseName(path))); });
   go.on("watch:status", status => {
     const before = Number(state.watch.existing) || 0;

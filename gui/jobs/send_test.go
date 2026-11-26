@@ -126,8 +126,8 @@ func TestSendCancelled(t *testing.T) {
 	}
 }
 
-// An engine that does not stop when the send is cancelled is killed after core.CancelGrace: what arrived stays on
-// the console as with any stop here (the window never asks it to delete), so the row says so and can delete it.
+// An engine that does not stop when the send is cancelled is killed after core.CancelGrace: it said nothing of
+// what arrived, so the row says the console may keep some (the window never asks it to delete), and can delete it.
 func TestSendKilledKeeps(t *testing.T) {
 	t.Setenv(fakecore.Env, "stubborn")
 	grace := core.CancelGrace
@@ -145,7 +145,7 @@ func TestSendKilledKeeps(t *testing.T) {
 		}
 	}
 	sum := (&Runner{Core: os.Args[0], OnItem: onItem}).Run(ctx, PlanSend(items, o), o)
-	if state, detail := rec.last(0); state != StateCancelled || detail != "send_kept" || sum.Cancelled != 1 {
+	if state, detail := rec.last(0); state != StateCancelled || detail != "send_may_keep" || sum.Cancelled != 1 {
 		t.Errorf("%v %q %+v", rec.states[0], detail, sum)
 	}
 }

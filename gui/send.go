@@ -72,16 +72,26 @@ func (a *App) CancelConsoleDrives() {
 }
 
 // DiscardView is what Delete what arrived on the console did: whether the console had anything of it, and what,
-// or why it did nothing ("no_console", "discard_busy": a receive of it is at work there, or a code of the engine).
+// or why it did nothing ("no_console", "discard_busy": a receive of it is at work there, or a code of the engine:
+// "delete_failed" with the console's words in Detail, "discard_unsupported"...).
 type DiscardView struct {
 	Had     uint64 `json:"had"`
 	Deleted bool   `json:"deleted"`
 	Error   string `json:"error"`
 	Message string `json:"message"`
+	Detail  string `json:"detail"`
+}
+
+// discardWaiting is "discard:waiting": the console is letting go of the receive of path, and is asked again in
+// that many seconds.
+type discardWaiting struct {
+	Path    string `json:"path"`
+	Seconds int    `json:"seconds"`
 }
 
 // DiscardOnConsole deletes what the console of Settings received of the .p5z at path on drive ("" for the
-// engine's choice): what a send stopped or cancelled left there. The page asks first.
+// engine's choice): what a send stopped or cancelled left there. The page asks first, and is told while the
+// console lets go of a receive of it (discard:waiting).
 func (a *App) DiscardOnConsole(path, drive string) DiscardView {
 	saved, _ := settings.Load()
 	if saved.ConsoleIP == "" || saved.ConsoleCode == "" {
@@ -93,12 +103,14 @@ func (a *App) DiscardOnConsole(path, drive string) DiscardView {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	had, deleted, code, err := core.DiscardOnConsole(ctx, engine, saved.ConsoleIP, saved.ConsoleCode, path, drive)
-	if code == "busy" {
-		code = "discard_busy" // the console is at work on that very receive, not on another one
+	done, err := core.DiscardOnConsole(ctx, engine, saved.ConsoleIP, saved.ConsoleCode, path, drive, func(seconds int) {
+		a.send("discard:waiting", discardWaiting{Path: path, Seconds: seconds})
+	})
+	if done.Failure == "busy" {
+		done.Failure = "discard_busy" // the console is at work on that very receive, not on another one
 	}
 	if err != nil {
-		return DiscardView{Error: code, Message: err.Error()}
+		return DiscardView{Error: done.Failure, Message: err.Error(), Detail: done.Detail}
 	}
-	return DiscardView{Had: had, Deleted: deleted}
+	return DiscardView{Had: done.Had, Deleted: done.Deleted}
 }

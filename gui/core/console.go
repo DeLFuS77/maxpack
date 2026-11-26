@@ -3,6 +3,7 @@
 package core
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -62,11 +63,20 @@ func ConsoleDrives(ctx context.Context, core, address, code string) ([]ConsoleDr
 	return answer.Drives, "", nil
 }
 
+// Discarded is what DiscardOnConsole did: whether the console had anything of it, and what; or why not (Failure:
+// "busy", a receive of it is at work there; "delete_failed", with the console's words in Detail;
+// "discard_unsupported", a console without that request; a refusal of the console; "io").
+type Discarded struct {
+	Had             uint64
+	Deleted         bool
+	Failure, Detail string
+}
+
 // DiscardOnConsole deletes what the console at address received of the .p5z at path on that drive (send
-// --discard, which never touches a .p5z whole there): it gives whether there was anything, and what, or an error
-// with its code ("busy": a receive of it is at work there; "delete_failed"). The code goes to the engine in its
-// environment.
-func DiscardOnConsole(ctx context.Context, core, address, code, path, drive string) (had uint64, deleted bool, failure string, err error) {
+// --discard, which never touches a .p5z whole there). While the console lets go of a receive of it at work the
+// engine waits and asks again (contract v3.1): waiting, when given, is told each wait, in seconds. The code goes
+// to the engine in its environment.
+func DiscardOnConsole(ctx context.Context, core, address, code, path, drive string, waiting func(seconds int)) (Discarded, error) {
 	var stderr bytes.Buffer
 	args := []string{"send", "--discard", path, address, "--json"}
 	if drive != "" {
@@ -75,22 +85,48 @@ func DiscardOnConsole(ctx context.Context, core, address, code, path, drive stri
 	command := hide(exec.CommandContext(ctx, core, args...))
 	command.Env = append(os.Environ(), SendCodeEnv+"="+code)
 	command.Stderr = &stderr
-	out, err := command.Output()
-	var answer struct {
+	type line struct {
+		Event   string `json:"event"`
+		Seconds int    `json:"seconds"`
 		OK      bool   `json:"ok"`
 		Deleted bool   `json:"deleted"`
 		Had     uint64 `json:"had"`
 		Error   string `json:"error"`
 		Message string `json:"message"`
+		Detail  string `json:"detail"`
 	}
-	if json.Unmarshal(bytes.TrimSpace(out), &answer) != nil {
-		return 0, false, "io", fmt.Errorf("deleting on the console: %v: %s", err, strings.TrimSpace(stderr.String()))
+	var answer line
+	read := false
+	stdout, err := command.StdoutPipe()
+	if err == nil {
+		err = command.Start()
+	}
+	if err == nil {
+		// each wait on a line of its own, as it comes, and the answer on the last
+		lines := bufio.NewScanner(stdout)
+		for lines.Scan() {
+			var one line
+			if json.Unmarshal(bytes.TrimSpace(lines.Bytes()), &one) != nil {
+				continue
+			}
+			if one.Event == "waiting" {
+				if waiting != nil {
+					waiting(one.Seconds)
+				}
+				continue
+			}
+			answer, read = one, true
+		}
+		err = command.Wait()
+	}
+	if !read {
+		return Discarded{Failure: "io"}, fmt.Errorf("deleting on the console: %v: %s", err, strings.TrimSpace(stderr.String()))
 	}
 	if !answer.OK {
 		if answer.Error == "" {
 			answer.Error = "io"
 		}
-		return 0, false, answer.Error, fmt.Errorf("%s", answer.Message)
+		return Discarded{Failure: answer.Error, Detail: answer.Detail}, fmt.Errorf("%s", answer.Message)
 	}
-	return answer.Had, answer.Deleted, "", nil
+	return Discarded{Had: answer.Had, Deleted: answer.Deleted}, nil
 }

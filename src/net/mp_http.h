@@ -39,6 +39,17 @@ void mp_http_stop(mp_http_server *s);
 int mp_http_request(const char *host, uint16_t port, const char *method, const char *path, const char *body,
                     size_t body_len, unsigned timeout_ms, int *status, char **resp, size_t *resp_len, mp_err *e);
 
+// The same with a body of another type and headers of the caller's. A response with a Content-Length is
+// taken as soon as that many bytes of it have arrived (a server that keeps the connection open is not
+// waited for); one without, when the server closes it.
+typedef struct {
+    const char *content_type;   // NULL: application/json
+    const char *headers;        // more header lines, each one ending in "\r\n" (NULL: none)
+    unsigned timeout_ms;        // to connect, and for each send and each read
+} mp_http_opts;
+int mp_http_request_ex(const char *host, uint16_t port, const char *method, const char *path, const char *body,
+                       size_t body_len, const mp_http_opts *o, int *status, char **resp, size_t *resp_len, mp_err *e);
+
 int mp_url_decode(const char *in, char *out, size_t cap);   // %XX and '+'; -1 if it does not fit or is malformed
 // (Decoded) value of key in a query "a=1&b=2". -1 if it is absent.
 int mp_http_query_get(const char *query, const char *key, char *out, size_t cap);

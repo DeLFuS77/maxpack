@@ -143,6 +143,65 @@ MP_TEST(http_client_errors) {
     close_sock(ls);
 }
 
+// A server that answers one request and keeps the connection open: what it saw of the request goes in seen.
+typedef struct {
+    sock_t ls;
+    char seen[4096];
+} keep_open;
+
+static void keep_open_serve(void *arg) {
+    keep_open *k = arg;
+    sock_t c = accept(k->ls, NULL, NULL);
+    size_t n = 0;
+    while (n < sizeof k->seen - 1) {
+        int got = (int)recv(c, k->seen + n, (int)(sizeof k->seen - 1 - n), 0);
+        if (got <= 0) break;
+        n += (size_t)got;
+        k->seen[n] = 0;
+        char *end = strstr(k->seen, "\r\n\r\n");
+        if (end && (size_t)(end + 4 - k->seen) + 3 <= n) break;   // the head and its 3 bytes of body
+    }
+    const char *answer = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 11\r\n\r\n{\"have\":3}\n";
+    send(c, answer, (int)strlen(answer), 0);
+    mp_sleep_ms(2500);   // as a server that ignores Connection: close
+    close_sock(c);
+}
+
+MP_TEST(http_request_ex) {
+    keep_open k;
+    memset(&k, 0, sizeof k);
+    k.ls = socket(AF_INET, SOCK_STREAM, 0);
+    struct sockaddr_in a;
+    memset(&a, 0, sizeof a);
+    a.sin_family = AF_INET;
+    inet_pton(AF_INET, "127.0.0.1", &a.sin_addr);
+    bind(k.ls, (struct sockaddr *)&a, sizeof a);
+    listen(k.ls, 4);
+    socklen_t al = sizeof a;
+    getsockname(k.ls, (struct sockaddr *)&a, &al);
+    mp_thread *t = NULL;
+    MP_CHECK(mp_thread_start(&t, keep_open_serve, &k) == 0);
+    mp_http_opts o = {"application/octet-stream", "X-MaxPack-Code: 123456\r\n", 5000};
+    int st = 0;
+    char *resp = NULL;
+    size_t rl = 0;
+    mp_err e = {{0}};
+    uint64_t t0 = mp_now_ns();
+    MP_CHECK(mp_http_request_ex("127.0.0.1", ntohs(a.sin_port), "PUT", "/api/receive/data?id=a&offset=0", "abc", 3, &o,
+                                &st, &resp, &rl, &e) == 0);
+    MP_CHECK(mp_now_ns() - t0 < 2000000000ull);   // it did not wait for the connection to close
+    MP_CHECK(st == 200);
+    MP_CHECK(resp && rl == 11 && !strcmp(resp, "{\"have\":3}\n"));
+    free(resp);
+    mp_thread_join(t);
+    close_sock(k.ls);
+    MP_CHECK_CONTAINS(k.seen, "PUT /api/receive/data?id=a&offset=0 HTTP/1.1\r\n");
+    MP_CHECK_CONTAINS(k.seen, "\r\nX-MaxPack-Code: 123456\r\n");
+    MP_CHECK_CONTAINS(k.seen, "\r\nContent-Type: application/octet-stream\r\n");
+    MP_CHECK_CONTAINS(k.seen, "\r\nContent-Length: 3\r\n");
+    MP_CHECK_CONTAINS(k.seen, "\r\n\r\nabc");
+}
+
 MP_TEST(url_decode) {
     char out[64];
     MP_CHECK(mp_url_decode("%2Fmnt%2Fusb0%2Fa+b.p5z", out, sizeof out) == 0);
@@ -159,6 +218,7 @@ int main(void) {
     MP_RUN(http_roundtrip);
     MP_RUN(http_limits);
     MP_RUN(http_client_errors);
+    MP_RUN(http_request_ex);
     MP_RUN(url_decode);
     MP_TEST_MAIN_END();
 }

@@ -335,6 +335,27 @@ static int connect_timeout(sock_t s, const struct sockaddr_in *a, unsigned ms) {
 
 int mp_http_request(const char *host, uint16_t port, const char *method, const char *path, const char *body,
                     size_t body_len, unsigned timeout_ms, int *status, char **resp, size_t *resp_len, mp_err *e) {
+    mp_http_opts o = {NULL, NULL, timeout_ms};
+    return mp_http_request_ex(host, port, method, path, body, body_len, &o, status, resp, resp_len, e);
+}
+
+// Once the head has arrived: how many bytes the whole response has (head and body), or 0 while that cannot be
+// told (no head yet, or no Content-Length: until the server closes).
+static size_t response_length(char *buf) {
+    char *end = strstr(buf, "\r\n\r\n");
+    if (!end) return 0;
+    size_t head = (size_t)(end - buf) + 4;
+    char saved = buf[head - 2];
+    buf[head - 2] = 0;   // the headers end in NUL so they can be searched
+    const char *cl = find_header(buf, "Content-Length");
+    unsigned long long want = cl ? strtoull(cl, NULL, 10) : 0;
+    buf[head - 2] = saved;
+    return cl ? head + (size_t)want : 0;
+}
+
+int mp_http_request_ex(const char *host, uint16_t port, const char *method, const char *path, const char *body,
+                       size_t body_len, const mp_http_opts *o, int *status, char **resp, size_t *resp_len, mp_err *e) {
+    unsigned timeout_ms = o->timeout_ms;
     *status = 0;
     *resp = NULL;
     *resp_len = 0;
@@ -358,11 +379,12 @@ int mp_http_request(const char *host, uint16_t port, const char *method, const c
         return -1;
     }
     set_timeouts(s, timeout_ms);
-    char head[2600];
+    char head[3200];
     int k = snprintf(head, sizeof head,
-                     "%s %s HTTP/1.1\r\nHost: %s:%u\r\nContent-Type: application/json\r\nContent-Length: %zu\r\n"
+                     "%s %s HTTP/1.1\r\nHost: %s:%u\r\nContent-Type: %s\r\nContent-Length: %zu\r\n%s"
                      "Connection: close\r\n\r\n",
-                     method, path, host, (unsigned)port, body_len);
+                     method, path, host, (unsigned)port, o->content_type ? o->content_type : "application/json",
+                     body_len, o->headers ? o->headers : "");
     if (k < 0 || (size_t)k >= sizeof head || send_all(s, head, (size_t)k) != 0 ||
         (body_len && send_all(s, body, body_len) != 0)) {
         close_sock(s);
@@ -390,6 +412,9 @@ int mp_http_request(const char *host, uint16_t port, const char *method, const c
         if (got < 0) rc = -1;
         if (got <= 0) break;
         n += (size_t)got;
+        buf[n] = 0;
+        size_t whole = response_length(buf);
+        if (whole && n >= whole) break;   // all it said it would send: no need to wait for the close
     }
     close_sock(s);
     if (rc == 0) {

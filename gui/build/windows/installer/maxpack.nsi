@@ -395,8 +395,20 @@ Section "Uninstall"
   Delete "$INSTDIR\MaxPack.exe"
   Delete "$INSTDIR\maxpack-core.exe"
   Delete "$INSTDIR\maxpack-par2.exe"
-  ; the Explorer may still have the thumbnail provider loaded (its keys are gone: it loads it no more)
-  Delete /REBOOTOK "$INSTDIR\maxpack-thumbs.dll"
+  ; the Explorer may still have the thumbnail provider loaded (its keys are gone: it loads it no more). A loaded
+  ; DLL can be moved but not deleted: it goes to the temporary folder, so that this folder can go, and is deleted
+  ; there now if it can, else at a restart when Windows takes that request. On another drive than the temporary
+  ; folder it can only be set aside here. Never its own path at a restart: a later install would have its DLL there
+  Delete "$INSTDIR\maxpack-thumbs.dll"
+  ${If} ${FileExists} "$INSTDIR\maxpack-thumbs.dll"
+    System::Call "kernel32::GetTickCount() i .r0"
+    Rename "$INSTDIR\maxpack-thumbs.dll" "$TEMP\maxpack-thumbs-$0.old"
+    Delete /REBOOTOK "$TEMP\maxpack-thumbs-$0.old"
+    ${If} ${FileExists} "$INSTDIR\maxpack-thumbs.dll"
+      Rename "$INSTDIR\maxpack-thumbs.dll" "$INSTDIR\maxpack-thumbs-$0.old"
+      Delete /REBOOTOK "$INSTDIR\maxpack-thumbs-$0.old"
+    ${EndIf}
+  ${EndIf}
   Delete "$INSTDIR\maxpack-thumbs-*.old"
   Delete "$INSTDIR\LICENSE.txt"
   Delete "$INSTDIR\THIRD_PARTY_NOTICES.txt"

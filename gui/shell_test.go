@@ -202,7 +202,12 @@ func TestInstallerScript(t *testing.T) {
 		`Rename "$INSTDIR\maxpack-thumbs.dll" "$INSTDIR\maxpack-thumbs-$0.old"`,
 		`Delete "$INSTDIR\maxpack-thumbs-$0.old"`,
 		`Delete "$INSTDIR\maxpack-thumbs-*.old"`,
-		`Delete /REBOOTOK "$INSTDIR\maxpack-thumbs.dll"`,
+		// at the uninstall, one still loaded goes to the temporary folder, so that the install folder can go
+		// (on another drive, it is set aside there); a delete at the restart is left only for that copy,
+		// never for the DLL's own path, which a later install would have
+		`Rename "$INSTDIR\maxpack-thumbs.dll" "$TEMP\maxpack-thumbs-$0.old"`,
+		`Delete /REBOOTOK "$TEMP\maxpack-thumbs-$0.old"`,
+		`Delete /REBOOTOK "$INSTDIR\maxpack-thumbs-$0.old"`,
 		`DeleteRegKey HKCU "Software\Classes\CLSID\{266D6364-17C0-4B3E-BB33-7EEB90C91837}"`,
 		// the finish page never offers to restart the PC
 		`!define MUI_FINISHPAGE_NOREBOOTSUPPORT`,
@@ -222,6 +227,13 @@ func TestInstallerScript(t *testing.T) {
 	}
 	if strings.Contains(install, "/REBOOTOK") || strings.Contains(install, "SetRebootFlag true") {
 		t.Error("the install may set the reboot flag")
+	}
+	if strings.Contains(script, `/REBOOTOK "$INSTDIR\maxpack-thumbs.dll"`) {
+		t.Error("a delete at the restart of the thumbnail provider's own path, which a later install would lose")
+	}
+	if uninstall := script[strings.Index(script, `Section "Uninstall"`):]; !strings.Contains(uninstall,
+		`System::Call "kernel32::GetTickCount() i .r0"`+"\n    "+`Rename "$INSTDIR\maxpack-thumbs.dll" "$TEMP\maxpack-thumbs-$0.old"`) {
+		t.Error("the uninstaller does not name the copy it sets aside")
 	}
 	if no, page := strings.Index(script, "!define MUI_FINISHPAGE_NOREBOOTSUPPORT"), strings.Index(script, "!insertmacro MUI_PAGE_FINISH"); no < 0 || no > page {
 		t.Error("the finish page has its restart")

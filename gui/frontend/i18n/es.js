@@ -369,6 +369,7 @@ texts.es = {
   repairNothing: "Ningún .p5z de esta lista está dañado y tiene sus propios datos de reparación: verifícalos primero.",
   protectNothing: "No hay ningún .p5z en esta lista.",
   withRepair: amount => "datos de reparación " + amount,
+  unpackedSize: amount => amount + " al descomprimir",
   repairedCount: n => n === 1 ? "1 .p5z reparado" : n + " .p5z reparados",
   protectedCount: n => n === 1 ? "Datos de reparación añadidos a 1 .p5z" : "Datos de reparación añadidos a " + n + " .p5z",
   doneRepair: (n, bytes) => (n === 1 ? "1 .p5z" : n + " .p5z") + " con datos de reparación: " + size(bytes) + ".",

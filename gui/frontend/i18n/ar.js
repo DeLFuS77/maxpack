@@ -372,6 +372,7 @@ texts.ar = {
   repairNothing: "لا يوجد في هذه القائمة ‎.p5z‎ تالف وله بيانات إصلاح خاصة به: تحقق منها أولًا.",
   protectNothing: "لا يوجد أي ‎.p5z‎ في هذه القائمة.",
   withRepair: amount => "بيانات الإصلاح " + amount,
+  unpackedSize: amount => "بعد فك الضغط " + amount,
   repairedCount: n => "تم إصلاح " + n + " ‎.p5z‎",
   protectedCount: n => "أُضيفت بيانات الإصلاح إلى " + n + " ‎.p5z‎",
   doneRepair: (n, bytes) => n + " ‎.p5z‎ مع بيانات الإصلاح: " + size(bytes) + ".",

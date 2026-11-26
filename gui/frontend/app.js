@@ -416,6 +416,17 @@ const imageKinds = { exfat: ".exfat", ufs2: ".ffpkg", pfs: ".ffpfs", pfsc: ".ffp
 function sizeBefore(game) {
   return Number(imageKinds[game.Kind] ? game.ImageSize : game.OriginalSize) || 0;
 }
+// what a game of a list takes on disk, as the system's file manager says it: an image's or a package's
+// file (which a compressed one makes less than the game in it), else the game
+const onDisk = game => Number(imageKinds[game.Kind] && Number(game.ImageSize) > 0 ? game.ImageSize : game.OriginalSize) || 0;
+// for a compressed image or package, whose file is not the game's size, what the game takes unpacked,
+// said beside what its file takes; "" for anything else (one not compressed differs from its game by its
+// room and padding only), or within 1 % of it
+function unpackedNote(game) {
+  const file = onDisk(game), unpacked = Number(game.OriginalSize) || 0;
+  if (!imageKinds[game.Kind] || !game.Compressed || !file || !unpacked || Math.abs(unpacked - file) <= file / 100) return "";
+  return t("unpackedSize")(size(unpacked));
+}
 // the same for a game of a queue, with the DLC that went inside it, which what was made holds too (as
 // the window counts what it saved); 0 when the game's is not known
 function beforeOf(row) {
@@ -756,11 +767,12 @@ function paintRow(row) {
   tr.title = row.path;
   const title = tr.querySelector(".title");
   title.textContent = game ? game.Name : baseName(row.path);
-  // its ID, version and what it is; until read, that it is being read, or where it is
+  // its ID, version and what it is (with what the game takes unpacked when its file is not that); until
+  // read, that it is being read, or where it is
   const file = tr.querySelector(".file"), dlc = dlcCountOf(row);
-  if (game) file.textContent = [game.TitleID, game.Version && t("versionOf")(game.Version), kindName(game), dlc && t("withDlc")(dlc)].filter(Boolean).join(" · ");
+  if (game) file.textContent = [game.TitleID, game.Version && t("versionOf")(game.Version), kindName(game), dlc && t("withDlc")(dlc), unpackedNote(game)].filter(Boolean).join(" · ");
   else file.textContent = row.error ? row.path : t("reading");
-  tr.querySelector(".size").textContent = game ? size(game.OriginalSize) : "";
+  tr.querySelector(".size").textContent = game ? size(onDisk(game)) : "";
 
   // once made: the size before and after (compressed), and where it is
   const sizes = tr.querySelector(".sizes"), where = tr.querySelector(".where");
@@ -1248,10 +1260,11 @@ function paintStart() {
   $("clear").disabled = state.busy || list.length === 0;
 }
 
-// what a list holds, at its foot: its games and what they take, the DLC (which go inside them) apart
+// what a list holds, at its foot: its games and what they take on disk (as their rows say), the DLC
+// (which go inside them) apart
 function listedText(list) {
   if (!list.length) return t("nothing");
-  const bytes = list.reduce((sum, row) => sum + (row.game ? row.game.OriginalSize : 0), 0);
+  const bytes = list.reduce((sum, row) => sum + (row.game ? onDisk(row.game) : 0), 0);
   const dlc = list.filter(row => isDlc(row.game)).length;
   return dlc ? t("listedDlc")(list.length - dlc, dlc, bytes) : t("listed")(list.length, bytes);
 }

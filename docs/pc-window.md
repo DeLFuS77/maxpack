@@ -217,8 +217,11 @@ everywhere it takes a dump folder
   is, and Rename gives it the extension of what it is. The `.p5z` is the one of the same game as a
   folder; only the files' dates can differ, as the image gives them
   ([source-images.md](source-images.md)).
-- **The room it needs is the game's; what it saves is against the image's file.** The list and the
-  space of the queue count the size of the game in the image, as `maxpack-core` reads it: an `.ffpfsc`
+- **The room it needs is the game's; what it saves is against the image's file.** The size of its
+  row, and the total at the foot of the list, is what the image's (or package's) file takes on disk,
+  as your file manager says; when it is compressed (an `.ffpfsc`, or a `.pkg` with compressed blocks)
+  and the game in it takes more unpacked, the line under its name says so ("512.0 GB unpacked"). The
+  space of the queue counts the size of the game in the image, as `maxpack-core` reads it: an `.ffpfsc`
   is compressed, so the game in it (and what is made of it) can be bigger than the file. What a game
   saved, under it, on the card at the end ("before" and "saved"), in the notice and in **Copy
   report**, is against the image's file on disk, what your disk gets back, never against the game.

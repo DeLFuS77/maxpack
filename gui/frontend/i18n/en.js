@@ -369,6 +369,7 @@ texts.en = {
   repairNothing: "No .p5z of this list is damaged and has repair data of its own: verify them first.",
   protectNothing: "There is no .p5z in this list.",
   withRepair: amount => "repair data " + amount,
+  unpackedSize: amount => amount + " unpacked",
   repairedCount: n => n === 1 ? "1 .p5z repaired" : n + " .p5z repaired",
   protectedCount: n => n === 1 ? "Repair data added to 1 .p5z" : "Repair data added to " + n + " .p5z",
   doneRepair: (n, bytes) => (n === 1 ? "1 .p5z" : n + " .p5z") + " with repair data: " + size(bytes) + ".",

@@ -369,6 +369,7 @@ texts.zh = {
   repairNothing: "此列表中没有既已损坏又有自身修复数据的 .p5z：请先校验。",
   protectNothing: "此列表中没有 .p5z。",
   withRepair: amount => "修复数据 " + amount,
+  unpackedSize: amount => "解压后 " + amount,
   repairedCount: n => "已修复 " + n + " 个 .p5z",
   protectedCount: n => "已为 " + n + " 个 .p5z 添加修复数据",
   doneRepair: (n, bytes) => n + " 个 .p5z 带修复数据：" + size(bytes) + "。",

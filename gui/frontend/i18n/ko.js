@@ -369,6 +369,7 @@ texts.ko = {
   repairNothing: "이 목록에는 손상되었으면서 자체 복구 데이터가 있는 .p5z가 없습니다: 먼저 검증하세요.",
   protectNothing: "이 목록에 .p5z가 없습니다.",
   withRepair: amount => "복구 데이터 " + amount,
+  unpackedSize: amount => "압축 해제 시 " + amount,
   repairedCount: n => ".p5z " + n + "개 복구됨",
   protectedCount: n => ".p5z " + n + "개에 복구 데이터 추가됨",
   doneRepair: (n, bytes) => "복구 데이터가 있는 .p5z " + n + "개: " + size(bytes) + ".",

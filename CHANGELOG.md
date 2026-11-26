@@ -113,6 +113,11 @@ All notable changes to MaxPack are listed here. The format follows
 
 ### Fixed
 
+- **The size of an image or a package in the lists** is what its file takes on disk, as the file manager
+  says (a compressed `.pkg` showed the size of the game in it, which can be more than twice its file, with
+  nothing saying so); for a compressed one, the line under its name adds what the game takes unpacked when
+  that is more than 1 % apart ("512.0 GB unpacked"), and the foot of the list adds up the files. The
+  space a queue needs is still counted from the game, and what it saved from the file, as before.
 - **Growing a `.p5z` in the window:** a cancel during the verification that follows an update (or DLC
   added) said "Cancelled", although the `.p5z` had grown already, and the same update tried again then
   failed with `same_version`. The row now says that it grew and was not verified, ends as done, and

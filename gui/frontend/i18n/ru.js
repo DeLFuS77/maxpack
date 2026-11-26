@@ -372,6 +372,7 @@ texts.ru = {
   repairNothing: "Ни один .p5z этого списка не повреждён и не имеет своих данных для восстановления: сначала проверьте их.",
   protectNothing: "В этом списке нет ни одного .p5z.",
   withRepair: amount => "данные для восстановления " + amount,
+  unpackedSize: amount => "в распакованном виде " + amount,
   repairedCount: n => "Восстановлено .p5z: " + n,
   protectedCount: n => "Данные для восстановления добавлены к .p5z: " + n,
   doneRepair: (n, bytes) => "С данными для восстановления: " + n + " .p5z, " + size(bytes) + ".",

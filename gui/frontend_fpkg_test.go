@@ -46,6 +46,26 @@ console.log(vm.runInContext(` + "`" + `(() => {
   if (vsImage(pkg, 60) !== "vs your .pkg: " + t("smallerBy")(25)) say("vsImage of a package: " + vsImage(pkg, 60));
   if (vsImage(Object.assign({}, pkg, { Compressed: false, ImageSize: 110 }), 60) !== "vs your .pkg: " + t("smallerBy")(45)) say("vsImage of a stored package");
   if (vsImage(Object.assign({}, pkg, { ImageSize: 0 }), 60) !== "") say("vsImage of a package of unknown size");
+  // the size of a row is what its file takes on disk, as the system's file manager says; the game
+  // unpacked is said beside it when it is not that (a compressed package: 100 against 80)
+  if (onDisk(pkg) !== 80) say("onDisk of a package: " + onDisk(pkg));
+  if (onDisk({ Kind: "folder", OriginalSize: 10 }) !== 10) say("onDisk of a folder");
+  if (onDisk(Object.assign({}, pkg, { ImageSize: 0 })) !== 100) say("onDisk of a package of unknown size");
+  if (unpackedNote(pkg) !== t("unpackedSize")(size(100))) say("unpackedNote of a package: " + unpackedNote(pkg));
+  if (unpackedNote({ Kind: "folder", OriginalSize: 10 }) !== "") say("unpackedNote of a folder");
+  if (unpackedNote({ Kind: "pfsc", Compressed: true, ImageSize: 1000, OriginalSize: 995 }) !== "") say("unpackedNote of an image about its game's size");
+  // an image or a package that is not compressed differs from its game by its room and padding only:
+  // nothing is unpacked, so nothing is said
+  if (unpackedNote({ Kind: "exfat", ImageSize: 1726, OriginalSize: 1680 }) !== "") say("unpackedNote of an exFAT image");
+  if (unpackedNote(Object.assign({}, pkg, { Compressed: false, ImageSize: 110 })) !== "") say("unpackedNote of a stored package");
+  if (listedText([row("compress", pkg)]) !== t("listed")(1, 80)) say("the foot of a list with a package: " + listedText([row("compress", pkg)]));
+  const stub = () => ({ textContent: "", hidden: false, classList: { toggle() {}, add() {}, remove() {} }, style: {}, dataset: {},
+    replaceChildren() {}, append() {}, setAttribute() {}, removeAttribute() {}, querySelector: () => stub() });
+  const cells = {}, cell = sel => (cells[sel] = cells[sel] || stub());
+  const painted = Object.assign(row("compress", pkg), { path: pkg.Path, tr: { querySelector: cell, classList: { toggle() {} } } });
+  paintRow(painted);
+  if (cells[".size"].textContent !== size(80)) say("the size cell of a package: " + cells[".size"].textContent);
+  if (!String(cells[".file"].textContent).endsWith(" · " + t("unpackedSize")(size(100)))) say("the line of a package: " + cells[".file"].textContent);
   const report = gameReport(row("compress", pkg));
   if (report.Kind !== "fpkg" || report.Compressed !== true || report.ImageSize !== 80 || JSON.stringify(report).includes("Copper")) say("the report of a package: " + JSON.stringify(report));
   // the passcode: what the engine says of a package made with another one is said in the page's

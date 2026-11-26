@@ -369,6 +369,7 @@ texts.ja = {
   repairNothing: "このリストに、壊れていて自分の修復データを持つ .p5z はありません: まず検証してください。",
   protectNothing: "このリストに .p5z はありません。",
   withRepair: amount => "修復データ " + amount,
+  unpackedSize: amount => "展開後 " + amount,
   repairedCount: n => n + " 個の .p5z を修復しました",
   protectedCount: n => n + " 個の .p5z に修復データを追加しました",
   doneRepair: (n, bytes) => "修復データ付きの .p5z: " + n + " 個、" + size(bytes) + "。",

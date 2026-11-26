@@ -18,6 +18,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -40,24 +41,34 @@ const watchedFile = "watched.json"
 
 // WatchStatus is what the page is told of the watched folder ("watch:status", and StartWatch): the folder
 // watched ("" when none is), why it cannot be looked at ("gone": not there, or not a folder; "unreadable"; ""
-// when it can), and how many games were there when it was turned on and have not been compressed.
+// when it can), how many games were there when it was turned on and have not been compressed, and the names of
+// those that have waited a while for a program that keeps writing into them (", " between them).
 type WatchStatus struct {
 	Folder   string `json:"folder"`
 	Error    string `json:"error"`
 	Existing int    `json:"existing"`
+	Writing  string `json:"writing"`
 }
+
+// watchWritingAfter is how long a game waits for a program writing into it before the status says so.
+const watchWritingAfter = 2 * time.Minute
+
+// maxRedos is how many times in a row the watched folder makes a game's .p5z again by itself.
+const maxRedos = 2
 
 // watchFound is "watch:found": what arrived, whole.
 type watchFound struct {
 	Paths []string `json:"paths"`
 }
 
-// watching is the watcher at work: how to stop it, what it watches and its state; gone (with keepMutex) once it
-// was stopped, from when it keeps nothing more.
+// watching is the watcher at work: how to stop it, what it watches and its state; gone once it was stopped, from
+// when it tells and keeps nothing more. mutex holds gone, and is held while it tells the page and keeps
+// watched.json: once a stop has it, nothing more is told.
 type watching struct {
 	stop    chan struct{}
 	folder  string
 	watcher *watch.Watcher
+	mutex   sync.Mutex
 	gone    bool
 }
 
@@ -97,14 +108,23 @@ func keptOf(folder string) (kept watchedJSON, ok bool) {
 }
 
 // keepMutex keeps two writers of watched.json (the watcher's looks, a game's end, Compress the N already there)
-// from writing it at once, and one stopped from writing it after.
+// from writing it at once; a stopped one writes nothing (watching.gone).
 var keepMutex sync.Mutex
 
 func keepWatched(w *watching) {
+	w.mutex.Lock()
+	defer w.mutex.Unlock()
+	if !w.gone {
+		keepLocked(w)
+	}
+}
+
+// keepLocked writes watched.json, with w.mutex held.
+func keepLocked(w *watching) {
 	keepMutex.Lock()
 	defer keepMutex.Unlock()
 	path, err := watchedPath()
-	if err != nil || w.gone {
+	if err != nil {
 		return
 	}
 	done, existing := w.watcher.Kept()
@@ -178,6 +198,10 @@ func (a *App) watchLoop(w *watching, every time.Duration) {
 	if poll == nil {
 		poll = (*watch.Watcher).Poll
 	}
+	writingAfter := a.watchWritingAfter
+	if writingAfter == 0 {
+		writingAfter = watchWritingAfter
+	}
 	tick := time.NewTicker(every)
 	defer tick.Stop()
 	told, existing := WatchStatus{Error: "-"}, -1
@@ -194,13 +218,14 @@ func (a *App) watchLoop(w *watching, every time.Duration) {
 			continue
 		}
 		found, err := poll(w.watcher)
-		// stopped meanwhile (the window closes, another folder): it tells and keeps nothing more
-		select {
-		case <-w.stop:
+		// all of what this look found is told at once, unless it was stopped meanwhile (the window closes, another
+		// folder): then it tells and keeps nothing more, and a stop that comes meanwhile waits for it
+		w.mutex.Lock()
+		if w.gone {
+			w.mutex.Unlock()
 			return
-		default:
 		}
-		status := WatchStatus{Folder: w.folder, Existing: w.watcher.ExistingCount()}
+		status := WatchStatus{Folder: w.folder, Existing: w.watcher.ExistingCount(), Writing: writingNames(w.watcher.Writing(writingAfter))}
 		switch {
 		case errors.Is(err, watch.ErrGone):
 			status.Error = "gone"
@@ -212,7 +237,7 @@ func (a *App) watchLoop(w *watching, every time.Duration) {
 			told = status
 		}
 		if done, _ := w.watcher.Kept(); len(done) != kept || status.Existing != existing {
-			keepWatched(w)
+			keepLocked(w)
 			kept, existing = len(done), status.Existing
 		}
 		if len(found) > 0 {
@@ -222,6 +247,7 @@ func (a *App) watchLoop(w *watching, every time.Duration) {
 		if skipped := w.watcher.TakeSkipped(); len(skipped) > 0 {
 			a.send("watch:skipped", watchFound{Paths: skipped})
 		}
+		w.mutex.Unlock()
 		select {
 		case <-w.stop:
 			return
@@ -237,54 +263,150 @@ func (a *App) watcher() *watching {
 	return a.watch
 }
 
+// writingNames are the names of paths, for the status.
+func writingNames(paths []string) string {
+	names := make([]string, len(paths))
+	for i, path := range paths {
+		names[i] = filepath.Base(path)
+	}
+	return strings.Join(names, ", ")
+}
+
 // WatchEnded is how a game the watched folder brought ended: final (compressed, failed, or in the destination
 // already) makes it done until it changes; else (it never ran, or was cancelled) the next run brings it again.
-// out is the .p5z made of one compressed well ("" else): it is kept with it, as it is now.
-func (a *App) WatchEnded(path string, final bool, out string) {
+// For one compressed well, out is the .p5z made of it, titleID and version its game's, and redone that it was
+// made again in place of the one made before: they are kept with it, as it is now ("" else).
+func (a *App) WatchEnded(path string, final bool, out, titleID, version string, redone bool) {
 	if w := a.watcher(); w != nil {
-		w.watcher.EndedWith(path, final, out)
+		w.watcher.EndedAs(path, watch.Ending{Final: final, Out: out, TitleID: titleID, Version: version, Redone: redone})
 		if final {
 			keepWatched(w)
 		}
 	}
 }
 
-// watchRedo gives, to each plan of a game the watched folder brought whose destination has the very .p5z the
-// watched folder made of it (it ended well, and changed since: a copy that had stalled), what that file must
-// still be when the new one takes its place (ReplaceIf). The page replaces it without asking; another file there
-// (not the one made) is never replaced by the watched folder.
+// watchRedo looks at each plan of a game the watched folder brought that has something in its way, which it never
+// replaces but in one case: the very .p5z it made of that game (the size and date it had), of the same game in
+// the same version, when the game grew or lost files since (a copy that stalled and went on), at most maxRedos
+// times in a row. Then the plan gets what that file must still be when the new one takes its place (ReplaceIf);
+// else why not (WatchSkip). The page asks for it apart (Choices.Redo), and the Runner decides again (redoStill).
 func (a *App) watchRedo(plans []jobs.Plan) {
 	w := a.watcher()
-	if w == nil {
-		return
-	}
-	for i, p := range plans {
+	for i := range plans {
+		p := &plans[i]
 		if !p.Item.Watched || p.Block != "" || len(p.Replace) == 0 {
 			continue
 		}
-		if made, ok := w.watcher.MadeOf(p.Item.Path); ok && pathKey(made.Out) == pathKey(p.Out) && made.Matches() {
-			plans[i].ReplaceIf = &jobs.Fingerprint{Size: made.Size, Mtime: made.Mtime}
+		p.ReplaceIf, p.WatchSkip = nil, "watch_exists"
+		if w == nil {
+			continue
+		}
+		made, ok := w.watcher.MadeOf(p.Item.Path)
+		if !ok || pathKey(made.Out) != pathKey(p.Out) || !made.Matches() {
+			continue // not what it made: never replaced
+		}
+		if p.WatchSkip = redoSkip(made, p.Item, w.watcher.HandedSig(p.Item.Path)); p.WatchSkip == "" {
+			p.ReplaceIf = &jobs.Fingerprint{Size: made.Size, Mtime: made.Mtime}
 		}
 	}
 }
 
-// otherVersion is, for a plan of a game the watched folder brought whose destination has a .p5z it did not make,
-// the version of that .p5z when it is the same game (title ID) in another version than the dump: an update, which
-// the page says goes in with Details › Update with a new dump… "" else (or when it cannot be read).
-func (a *App) otherVersion(p jobs.Plan) string {
-	if !p.Item.Watched || p.Block != "" || len(p.Replace) == 0 || p.ReplaceIf != nil || p.Item.TitleID == "" || p.Item.Version == "" ||
-		!strings.EqualFold(filepath.Ext(p.Out), ".p5z") {
-		return ""
+// redoSkip is why the .p5z made (made) of a game handed over again as it is now (now, its signature) is not made
+// again, "" when it is.
+func redoSkip(made watch.Made, it jobs.Item, now string) string {
+	switch {
+	case made.TitleID == "" || !strings.EqualFold(made.TitleID, it.TitleID):
+		return "watch_exists"
+	case made.Version != it.Version:
+		return versionSkip(made.Version, it.Version) // never a .p5z of another version
+	case now == "":
+		return "watch_exists"
+	case sameFiles(made.Sig, now):
+		return "watch_dates_only"
+	case made.Redos >= maxRedos:
+		return "watch_redo_limit"
 	}
-	engine, err := a.engine()
-	if err != nil {
-		return ""
+	return ""
+}
+
+// sameFiles tells whether two signatures (count/size/newest) have the same files and size: only dates changed.
+func sameFiles(a, b string) bool {
+	x, y := strings.Split(a, "/"), strings.Split(b, "/")
+	return len(x) == 3 && len(y) == 3 && x[0] == y[0] && x[1] == y[1]
+}
+
+// versionSkip is the detail of a dump of version dump whose game is in the destination in version there: a newer
+// dump points to Details › Update with a new dump…, an older one says the destination has a newer one, and one that
+// cannot be told apart says it is there.
+func versionSkip(there, dump string) string {
+	if strings.ContainsAny(there+dump, " \t") {
+		return "watch_exists"
 	}
-	there, err := jobs.Describe(engine, p.Out)
-	if err != nil || there.Kind != "p5z" || !strings.EqualFold(there.TitleID, p.Item.TitleID) || there.Version == "" || there.Version == p.Item.Version {
-		return ""
+	switch c, ok := compareVersions(dump, there); {
+	case !ok || c == 0:
+		return "watch_exists"
+	case c > 0:
+		return "watch_other_version: " + there + " " + dump
 	}
-	return there.Version
+	return "watch_older_version: " + there + " " + dump
+}
+
+// compareVersions compares two versions of a game ("01.002.000"), part by part as numbers: -1, 0 or 1, and ok
+// false when either is not so written.
+func compareVersions(a, b string) (int, bool) {
+	x, y := strings.Split(a, "."), strings.Split(b, ".")
+	if a == "" || b == "" || len(x) != len(y) {
+		return 0, false
+	}
+	for i := range x {
+		m, errM := strconv.Atoi(x[i])
+		n, errN := strconv.Atoi(y[i])
+		if errM != nil || errN != nil {
+			return 0, false
+		}
+		if m != n {
+			if m < n {
+				return -1, true
+			}
+			return 1, true
+		}
+	}
+	return 0, true
+}
+
+// watchVersions, for the plans of the page: a game the watched folder brought whose destination has a .p5z it did
+// not make, of the same game (title ID, read with info --json) in another version, says both (see versionSkip).
+func (a *App) watchVersions(plans []jobs.Plan) {
+	for i := range plans {
+		p := &plans[i]
+		if !p.Item.Watched || p.Block != "" || len(p.Replace) == 0 || p.ReplaceIf != nil || p.WatchSkip != "watch_exists" ||
+			p.Item.TitleID == "" || p.Item.Version == "" || !strings.EqualFold(filepath.Ext(p.Out), ".p5z") {
+			continue
+		}
+		engine, err := a.engine()
+		if err != nil {
+			return
+		}
+		if there, err := jobs.Describe(engine, p.Out); err == nil && there.Kind == "p5z" && strings.EqualFold(there.TitleID, p.Item.TitleID) {
+			p.WatchSkip = versionSkip(there.Version, p.Item.Version)
+		}
+	}
+}
+
+// redoStill is the Runner's look, when its turn comes and right before the swap, at a game to make again in place
+// of the .p5z the watched folder made of it: "" while the watcher at work still has that record, of that game and
+// version, and the file is still exactly so; else why not. No watcher (turned off, or another folder) is a no.
+func (a *App) redoStill(p jobs.Plan) string {
+	w := a.watcher()
+	if w == nil || p.ReplaceIf == nil {
+		return "watch_redo_refused"
+	}
+	made, ok := w.watcher.MadeOf(p.Item.Path)
+	if !ok || pathKey(made.Out) != pathKey(p.Out) || made.Size != p.ReplaceIf.Size || made.Mtime != p.ReplaceIf.Mtime ||
+		!made.Matches() || !strings.EqualFold(made.TitleID, p.Item.TitleID) || made.Version != p.Item.Version || made.Redos >= maxRedos {
+		return "watch_redo_refused"
+	}
+	return ""
 }
 
 // watchOwn tells the watcher that the window put out there itself (what a queue made): if it is in the watched
@@ -319,10 +441,11 @@ func (a *App) stopWatchLocked() {
 	if a.watch == nil {
 		return
 	}
-	close(a.watch.stop)
-	keepMutex.Lock()
-	a.watch.gone = true
-	keepMutex.Unlock()
+	w := a.watch
+	w.mutex.Lock()
+	w.gone = true
+	close(w.stop)
+	w.mutex.Unlock()
 	a.watch = nil
 }
 

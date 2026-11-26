@@ -85,6 +85,7 @@ type App struct {
 	watchEvery, watchQuiet time.Duration
 	watchLoops             sync.WaitGroup
 	watchPoll              func(*watch.Watcher) ([]string, error)
+	watchWritingAfter      time.Duration
 
 	// the question of the console's drives at work (see send.go), and how long it may take when not drivesTimeout
 	drivesCancel  context.CancelFunc

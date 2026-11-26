@@ -12,20 +12,39 @@ import (
 	"syscall"
 )
 
-// heldOpen tells whether a process of this user holds a file at root, or under it, open for writing, as /proc
-// shows it (each process's fd/ and fdinfo/). A best effort: the processes of other users are not seen, nor a
-// writer on another machine (a network share).
-func heldOpen(root string) bool {
-	if abs, err := filepath.Abs(root); err == nil {
-		root = abs
+// heldOpen tells which of roots a process of this user holds a file of open for writing (the root itself, or a
+// file under it), as /proc shows it: one look through each process's fd/ and fdinfo/ for all of them. A best
+// effort: the processes of other users are not seen, nor a writer on another machine (a network share), nor one
+// that opened the file through another path (a bind mount, another mount namespace).
+func heldOpen(roots []string) map[string]bool {
+	if len(roots) == 0 {
+		return nil
 	}
-	if real, err := filepath.EvalSymlinks(root); err == nil {
-		root = real
+	// each root as /proc names what is open: absolute, its links followed
+	real := make(map[string]string, len(roots))
+	for _, root := range roots {
+		r := root
+		if abs, err := filepath.Abs(r); err == nil {
+			r = abs
+		}
+		if resolved, err := filepath.EvalSymlinks(r); err == nil {
+			r = resolved
+		}
+		real[r] = root
+	}
+	under := func(target string) (string, bool) {
+		for r, root := range real {
+			if target == r || strings.HasPrefix(target, r+"/") {
+				return root, true
+			}
+		}
+		return "", false
 	}
 	procs, err := os.ReadDir("/proc")
 	if err != nil {
-		return false
+		return nil
 	}
+	found := map[string]bool{}
 	uid := uint32(os.Getuid())
 	for _, proc := range procs {
 		if _, err := strconv.Atoi(proc.Name()); err != nil {
@@ -43,15 +62,22 @@ func heldOpen(root string) bool {
 		}
 		for _, fd := range fds {
 			target, err := os.Readlink(dir + "/fd/" + fd.Name())
-			if err != nil || (target != root && !strings.HasPrefix(target, root+"/")) {
+			if err != nil {
+				continue
+			}
+			root, ok := under(target)
+			if !ok || found[root] {
 				continue
 			}
 			if writing(dir + "/fdinfo/" + fd.Name()) {
-				return true
+				found[root] = true
+				if len(found) == len(real) {
+					return found
+				}
 			}
 		}
 	}
-	return false
+	return found
 }
 
 // writing tells whether an fdinfo says its file is open for writing (its flags, in octal: O_WRONLY or O_RDWR).

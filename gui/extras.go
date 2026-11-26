@@ -122,6 +122,7 @@ func (a *App) runQueue(ctx context.Context, q *queue) jobs.Summary {
 		Journal: journal,
 		Log:     a.log,
 		Pause:   q.pause,
+		Redo:    a.redoStill,
 		OnEvent: func(i int, e core.Event) {
 			if e.Total > 0 {
 				mutex.Lock()

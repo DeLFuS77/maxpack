@@ -349,8 +349,8 @@ func TestAppendJoinsTheQueue(t *testing.T) {
 			return
 		}
 		done = true
-		appended, appendErr = a.Append("compress", []jobs.Item{it("PPSA10002", "Iron Harbor"), it("PPSA10003", "Neon Meridian")}, nil, false)
-		_, otherErr = a.Append("decompress", []jobs.Item{it("PPSA10004", "Lost Signal")}, nil, false)
+		appended, appendErr = a.Append("compress", []jobs.Item{it("PPSA10002", "Iron Harbor"), it("PPSA10003", "Neon Meridian")}, nil, nil, false)
+		_, otherErr = a.Append("decompress", []jobs.Item{it("PPSA10004", "Lost Signal")}, nil, nil, false)
 		removed = a.Unqueue("compress", appended+1)
 		removedAgain = a.Unqueue("compress", 0)
 	}
@@ -373,7 +373,7 @@ func TestAppendJoinsTheQueue(t *testing.T) {
 	if last := events.last(1); filepath.Base(last.Out) != "Iron Harbor [PPSA10002].p5z" {
 		t.Errorf("not made with the options of the queue: %+v", last)
 	}
-	if _, err := a.Append("compress", []jobs.Item{it("PPSA10005", "Quiet Tide")}, nil, false); err == nil {
+	if _, err := a.Append("compress", []jobs.Item{it("PPSA10005", "Quiet Tide")}, nil, nil, false); err == nil {
 		t.Error("added to a queue that ended")
 	}
 }

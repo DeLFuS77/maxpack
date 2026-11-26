@@ -124,6 +124,7 @@ func TestWaitsUntilQuiet(t *testing.T) {
 func TestHandedIsRemembered(t *testing.T) {
 	dir := t.TempDir()
 	write(t, filepath.Join(dir, "a.pkg"), "x")
+	write(t, filepath.Join(dir, "notes.txt"), "the folder is never empty: an empty listing forgets nothing")
 	c := &clock{time.Unix(1700000000, 0)}
 	w := newWatcher(dir, c)
 	w.Poll()

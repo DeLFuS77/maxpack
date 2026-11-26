@@ -28,6 +28,7 @@ func TestMadeIsKept(t *testing.T) {
 	dir, dest := t.TempDir(), t.TempDir()
 	game := filepath.Join(dir, "Game")
 	dump(t, game, true)
+	write(t, filepath.Join(dir, "notes.txt"), "the folder is never empty: an empty listing forgets nothing")
 	out := filepath.Join(dest, "Game [PPSA10001].p5z")
 	write(t, out, "a .p5z")
 	c := &clock{time.Unix(1700000000, 0)}
@@ -35,7 +36,7 @@ func TestMadeIsKept(t *testing.T) {
 	if found := handOver(t, w, c); len(found) != 1 {
 		t.Fatalf("found %v", found)
 	}
-	w.EndedWith(game, true, out)
+	w.EndedAs(game, Ending{Final: true, Out: out, TitleID: "PPSA10001", Version: "01.000.000"})
 	info, _ := os.Stat(out)
 	made, ok := w.MadeOf(game)
 	if !ok || made.Out != out || made.Size != info.Size() || made.Mtime != info.ModTime().UnixNano() || made.Sig == "" {
@@ -59,7 +60,7 @@ func TestMadeIsKept(t *testing.T) {
 	if found := handOver(t, again, c); len(found) != 1 {
 		t.Fatalf("changed: %v", found)
 	}
-	again.EndedWith(game, true, "")
+	again.Ended(game, true)
 	if m, _ := again.MadeOf(game); m != made {
 		t.Errorf("a failure forgot what was made: %+v", m)
 	}
@@ -103,7 +104,7 @@ func TestHeldOpenIsBusy(t *testing.T) {
 	game := filepath.Join(dir, "Game")
 	dump(t, game, true)
 	defer func() { held = heldOpen }()
-	held = func(root string) bool { return root == game }
+	held = func(roots []string) map[string]bool { return map[string]bool{game: len(roots) > 0 && roots[0] == game} }
 	if _, busy, _ := Signature(game); !busy {
 		t.Error("held open, not busy")
 	}
@@ -112,7 +113,7 @@ func TestHeldOpenIsBusy(t *testing.T) {
 	if found := handOver(t, w, c); len(found) != 0 {
 		t.Errorf("held open, handed over: %v", found)
 	}
-	held = func(string) bool { return false }
+	held = func([]string) map[string]bool { return nil }
 	c.pass(61 * time.Second)
 	if found, _ := w.Poll(); len(found) != 1 {
 		t.Errorf("let go, not handed over: %v", found)

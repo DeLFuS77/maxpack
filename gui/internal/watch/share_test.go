@@ -72,6 +72,7 @@ func TestMissingThriceToBeForgotten(t *testing.T) {
 	dir := t.TempDir()
 	game := filepath.Join(dir, "Game")
 	dump(t, game, true)
+	write(t, filepath.Join(dir, "notes.txt"), "the folder is never empty: an empty listing forgets nothing")
 	c := &clock{time.Unix(1700000000, 0)}
 	w := newWatcher(dir, c)
 	w.Poll()

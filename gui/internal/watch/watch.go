@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -80,17 +81,31 @@ type Watcher struct {
 	skipped  map[string]string // could not be read: not tried again while it stays so
 	said     []string          // skipped, not yet told (TakeSkipped)
 	seen     map[string]seen
-	missing  map[string]int // listings in a row that did not have it
+	pathOf   map[string]string // the path of each key seen
+	missing  map[string]int    // listings in a row that did not have it
 }
 
 // Made is what the watched folder made of an item that ended well: the item as it was then (its signature: how
-// many files, what they take, the newest date) and the .p5z, with its size and date when it was made. Once the
-// item changes, a .p5z still exactly so in the destination is the one made of it, and can be made again.
+// many files, what they take, the newest date; its game's title ID and version) and the .p5z, with its size and
+// date when it was made. Redos is how many times in a row it was made again so (a copy that stalled and went
+// on). Once the item changes, a .p5z still exactly so in the destination is the one made of it.
 type Made struct {
-	Sig   string `json:"sig"`
-	Out   string `json:"out"`
-	Size  int64  `json:"size"`
-	Mtime int64  `json:"mtime"`
+	Sig     string `json:"sig"`
+	Out     string `json:"out"`
+	Size    int64  `json:"size"`
+	Mtime   int64  `json:"mtime"`
+	TitleID string `json:"title_id"`
+	Version string `json:"version"`
+	Redos   int    `json:"redos"`
+}
+
+// Ending is how an item handed over ended (see EndedAs): Final makes it done until it changes; for one compressed
+// well, Out is the .p5z made of it, TitleID and Version its game's, and Redone that it was made again in place of
+// the one made before.
+type Ending struct {
+	Final                 bool
+	Out, TitleID, Version string
+	Redone                bool
 }
 
 // Matches tells whether the file at Out is still the one made: the same size and date.
@@ -102,7 +117,8 @@ func (m Made) Matches() bool {
 type seen struct {
 	sig, strong string
 	since       time.Time
-	tries       int // looks that found a file that could not be opened
+	tries       int       // looks that found a file that could not be opened
+	writing     time.Time // since when a program holds a file of it open for writing (zero: none)
 }
 
 func (w *Watcher) now() time.Time {
@@ -218,23 +234,20 @@ var (
 	held = heldOpen
 )
 
-// Signature is what the file or folder at path is now, read through each of its files (not from listings), in
-// the form of the listing's, what systems write into folders left out: for a file its size and date; for a
-// folder how many files and folders, what they take and the newest date. busy is whether one of its files is
-// still being written (a program holds it open for writing: on Windows, and on Linux for the user's own
-// programs) or downloaded (.part and the like); unreadable, whether one of its files could not be opened for
-// another reason (then sig is "?").
-func Signature(path string) (sig string, busy, unreadable bool) {
+// look is what the file or folder at path is now through each of its files (see Signature), without the look at
+// the programs that hold it (held): open, a file a program holds open for writing (Windows says so when it is
+// opened); downloading, a download at work in it.
+func look(path string) (sig string, open, downloading, unreadable bool) {
 	info, err := os.Lstat(path)
 	if err != nil {
-		return "?", false, true
+		return "?", false, false, true
 	}
 	if !info.IsDir() {
-		size, mtime, open, err := stat(path)
+		size, mtime, held, err := stat(path)
 		if err != nil {
-			return "?", false, true
+			return "?", false, false, true
 		}
-		return strconv.FormatInt(size, 10) + "/" + strconv.FormatInt(mtime, 10), open || isDownloading(info.Name()) || held(path), false
+		return strconv.FormatInt(size, 10) + "/" + strconv.FormatInt(mtime, 10), held, isDownloading(info.Name()), false
 	}
 	var count, size, newest int64
 	walk(path, func(p string, d fs.DirEntry, err error) {
@@ -246,21 +259,33 @@ func Signature(path string) (sig string, busy, unreadable bool) {
 		if d.IsDir() {
 			return // as in cheap: only the files' dates count
 		}
-		s, mtime, open, err := stat(p)
+		s, mtime, held, err := stat(p)
 		if err != nil {
 			unreadable = true
 			return
 		}
-		busy = busy || open || isDownloading(d.Name())
+		open = open || held
+		downloading = downloading || isDownloading(d.Name())
 		size += s
 		if mtime > newest {
 			newest = mtime
 		}
 	})
 	if unreadable {
-		return "?", busy, true
+		return "?", open, downloading, true
 	}
-	return sigOf(count, size, newest), busy || held(path), false
+	return sigOf(count, size, newest), open, downloading, false
+}
+
+// Signature is what the file or folder at path is now, read through each of its files (not from listings), in
+// the form of the listing's, what systems write into folders left out: for a file its size and date; for a
+// folder how many files and folders, what they take and the newest date. busy is whether one of its files is
+// still being written (a program holds it open for writing: on Windows, and on Linux for the user's own
+// programs) or downloaded (.part and the like); unreadable, whether one of its files could not be opened for
+// another reason (then sig is "?").
+func Signature(path string) (sig string, busy, unreadable bool) {
+	sig, open, downloading, unreadable := look(path)
+	return sig, open || downloading || (!unreadable && held([]string{path})[path]), unreadable
 }
 
 // ErrGone is the error of Poll when the folder is not there (or is not a folder).
@@ -285,6 +310,7 @@ func (w *Watcher) init() {
 	}
 	if w.seen == nil {
 		w.seen, w.inflight, w.skipped, w.missing = map[string]seen{}, map[string]string{}, map[string]string{}, map[string]int{}
+		w.pathOf = map[string]string{}
 	}
 }
 
@@ -292,9 +318,11 @@ func (w *Watcher) init() {
 // there when the watcher was turned on), all of it at once, when none of it has changed for Quiet and a look
 // through its files finds none still being written: a dump and its DLC that arrive together go together. One
 // whose files cannot be opened is skipped after a few looks (TakeSkipped), and holds back nothing else. What is
-// missing from forgetAfter listings in a row is forgotten; a listing that fails forgets nothing. The listing and
-// the look through the files are made without holding the watcher: what the page says meanwhile (Ended,
-// TakeExisting...) does not wait for them.
+// missing from forgetAfter listings in a row is forgotten; a listing that fails forgets nothing, nor does one
+// that has none of what is known (an empty one of a share that went), nor an entry that is listed but cannot be
+// checked. The listing and the look through the files are made without holding the watcher: what the page says
+// meanwhile (Ended, TakeExisting...) does not wait for them. The programs that write into what is pending are
+// looked for once for all of it (heldOpen).
 func (w *Watcher) Poll() ([]string, error) {
 	if info, err := os.Stat(w.Folder); err != nil || !info.IsDir() {
 		return nil, ErrGone
@@ -305,23 +333,25 @@ func (w *Watcher) Poll() ([]string, error) {
 	}
 	type entry struct{ path, sig string }
 	var listed []entry
+	here := map[string]bool{}
 	for _, e := range entries {
 		path := filepath.Join(w.Folder, e.Name())
+		here[key(path)] = true // listed: there, whatever its check says
 		if candidate(path, e) {
 			listed = append(listed, entry{path, cheap(path, e)})
 		}
 	}
 	w.mutex.Lock()
 	w.init()
-	now, here := w.now(), map[string]bool{}
+	now := w.now()
 	var pending []string
 	quiet := true
 	for _, e := range listed {
 		path, sig := e.path, e.sig
 		k := key(path)
-		here[k] = true
+		w.pathOf[k] = path
 		if s, ok := w.seen[k]; !ok || s.sig != sig {
-			w.seen[k] = seen{sig: sig, since: now}
+			w.seen[k] = seen{sig: sig, since: now, writing: s.writing}
 		}
 		if w.Snapshot {
 			w.Existing[k] = sig
@@ -349,14 +379,15 @@ func (w *Watcher) Poll() ([]string, error) {
 	}
 	// the last look, through the files: one still being written, or whose listing was not current, waits (a
 	// minute more); one that cannot be opened is looked at again, then skipped; the others go
-	type look struct {
-		strong           string
-		busy, unreadable bool
+	type through struct {
+		strong                              string
+		open, downloading, unreadable, held bool
 	}
-	looks := make([]look, len(pending))
+	looks := make([]through, len(pending))
 	for i, path := range pending {
-		looks[i].strong, looks[i].busy, looks[i].unreadable = Signature(path)
+		looks[i].strong, looks[i].open, looks[i].downloading, looks[i].unreadable = look(path)
 	}
+	writers := held(pending)
 	w.mutex.Lock()
 	defer w.mutex.Unlock()
 	var whole []string
@@ -366,16 +397,29 @@ func (w *Watcher) Poll() ([]string, error) {
 		if !ok {
 			continue
 		}
-		switch l := looks[i]; {
-		case l.unreadable && !l.busy:
+		l := looks[i]
+		writing := l.open || writers[path]
+		busy := writing || l.downloading
+		switch {
+		case l.unreadable && !busy:
 			if s.tries++; s.tries >= unreadableTries {
 				w.skipped[k] = s.sig
 				w.said = append(w.said, path)
 			}
+			s.writing = time.Time{}
 			w.seen[k] = s
-		case l.busy || (l.strong != s.sig && l.strong != s.strong):
-			w.seen[k] = seen{sig: s.sig, strong: l.strong, since: now}
+		case busy || (l.strong != s.sig && l.strong != s.strong):
+			next := seen{sig: s.sig, strong: l.strong, since: now}
+			if writing {
+				next.writing = s.writing
+				if next.writing.IsZero() {
+					next.writing = now
+				}
+			}
+			w.seen[k] = next
 		default:
+			s.writing = time.Time{}
+			w.seen[k] = s
 			w.inflight[k] = s.sig
 			whole = append(whole, path)
 		}
@@ -383,8 +427,34 @@ func (w *Watcher) Poll() ([]string, error) {
 	return whole, nil
 }
 
+// Writing gives what has waited for at least least because a program holds a file of it open for writing: a copy
+// at work, or a program that keeps a file open (the page says it).
+func (w *Watcher) Writing(least time.Duration) []string {
+	w.mutex.Lock()
+	defer w.mutex.Unlock()
+	now := w.now()
+	var paths []string
+	for _, s := range w.seenPaths() {
+		if v := w.seen[key(s)]; !v.writing.IsZero() && now.Sub(v.writing) >= least {
+			paths = append(paths, s)
+		}
+	}
+	sort.Strings(paths)
+	return paths
+}
+
+// seenPaths are the paths of what was seen, with the watcher held (seen is by key: the path is the folder and the
+// key's name as the listing gave it).
+func (w *Watcher) seenPaths() []string {
+	var paths []string
+	for k := range w.seen {
+		paths = append(paths, w.pathOf[k])
+	}
+	return paths
+}
+
 // forgetMissing forgets what was not in forgetAfter listings in a row (here is what this one had), with the
-// watcher held.
+// watcher held. An empty listing, or one with none of several things known, counts for nothing.
 func (w *Watcher) forgetMissing(here map[string]bool) {
 	known := map[string]bool{}
 	for _, m := range []map[string]string{w.Done, w.Existing, w.inflight, w.skipped} {
@@ -403,6 +473,17 @@ func (w *Watcher) forgetMissing(here map[string]bool) {
 			delete(w.missing, k)
 		}
 	}
+	// an empty listing (a share that went, its mount point left), or one with none of several things known (another
+	// share in its place) tells nothing of them
+	listed := 0
+	for k := range known {
+		if here[k] {
+			listed++
+		}
+	}
+	if len(here) == 0 || (len(known) >= 3 && listed == 0) {
+		return
+	}
 	for k := range known {
 		if here[k] {
 			delete(w.missing, k)
@@ -415,6 +496,7 @@ func (w *Watcher) forgetMissing(here map[string]bool) {
 			delete(m, k)
 		}
 		delete(w.seen, k)
+		delete(w.pathOf, k)
 		delete(w.Made, k)
 		delete(w.missing, k)
 	}
@@ -422,27 +504,40 @@ func (w *Watcher) forgetMissing(here map[string]bool) {
 
 // Ended says how what was handed over ended: final (compressed, failed, or in the destination already) makes it
 // done until it changes; else (it never ran, or it was cancelled) it is handed again in the next run.
-func (w *Watcher) Ended(path string, final bool) { w.EndedWith(path, final, "") }
+func (w *Watcher) Ended(path string, final bool) { w.EndedAs(path, Ending{Final: final}) }
 
-// EndedWith is Ended, and for one compressed well, out is the .p5z made of it: kept with it (Made), as it is now.
-// An end with nothing made leaves what was made of it before as it was (that .p5z is still the one made of it).
-func (w *Watcher) EndedWith(path string, final bool, out string) {
+// EndedAs is Ended, and for one compressed well what was made of it is kept with it (Made), as it is now: a
+// redo counts one more, a fresh one 0. An end with nothing made leaves what was made of it before as it was (that
+// .p5z is still the one made of it).
+func (w *Watcher) EndedAs(path string, end Ending) {
 	w.mutex.Lock()
 	defer w.mutex.Unlock()
 	w.init()
 	k := key(path)
 	sig, ok := w.inflight[k]
-	if !ok || !final {
+	if !ok || !end.Final {
 		return
 	}
 	w.Done[k] = sig
 	delete(w.inflight, k)
-	if out == "" {
+	if end.Out == "" {
 		return
 	}
-	if info, err := os.Stat(out); err == nil && info.Mode().IsRegular() {
-		w.Made[k] = Made{Sig: sig, Out: out, Size: info.Size(), Mtime: info.ModTime().UnixNano()}
+	if info, err := os.Stat(end.Out); err == nil && info.Mode().IsRegular() {
+		redos := 0
+		if old, had := w.Made[k]; had && end.Redone {
+			redos = old.Redos + 1
+		}
+		w.Made[k] = Made{Sig: sig, Out: end.Out, Size: info.Size(), Mtime: info.ModTime().UnixNano(), TitleID: end.TitleID,
+			Version: end.Version, Redos: redos}
 	}
+}
+
+// HandedSig is the signature the item at path was handed over with this run, "" when it is not in flight.
+func (w *Watcher) HandedSig(path string) string {
+	w.mutex.Lock()
+	defer w.mutex.Unlock()
+	return w.inflight[key(path)]
 }
 
 // MadeOf is what was made of the item at path when it last ended well, if anything.

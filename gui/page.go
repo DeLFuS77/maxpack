@@ -79,9 +79,13 @@ func (a *App) RepairInfo(path string) RepairView { return repairView(path) }
 // once checked (to the recycle bin, or for good as Settings says) and whether the ones that cannot
 // go to the recycle bin are deleted for good. The names of the files and the priority of the
 // engine are the ones of Settings, whatever the page sends.
+//
+// Redo are the destinations the watched folder asks to make again in place of the .p5z it made itself (see
+// watchRedo): granted only when the window's own plan says so again.
 type Choices struct {
 	jobs.Options
 	Replace         []string
+	Redo            []string
 	DeleteOriginals bool
 	DeleteNoBin     bool
 }
@@ -92,15 +96,14 @@ type Choices struct {
 // "too_long"; "" when it can, or when it is deleted for good).
 //
 // For a game the watched folder brought that is in the destination already: WatchRedo, the .p5z there is the one
-// the watched folder made of it, which it changed since (it is made again in its place); OtherVersion, the .p5z
-// there is the same game in that other version (an update: Details › Update with a new dump…).
+// the watched folder made of it, which grew since (it is made again in its place); else Plan.WatchSkip says why
+// it is left out.
 type PlanView struct {
 	jobs.Plan
-	ReplaceSize  uint64
-	SourceSize   uint64
-	NoBin        string
-	WatchRedo    bool
-	OtherVersion string
+	ReplaceSize uint64
+	SourceSize  uint64
+	NoBin       string
+	WatchRedo   bool
 }
 
 // takes are the games a section works on.
@@ -401,12 +404,12 @@ func (a *App) Plan(section string, items []jobs.Item, opts Choices) ([]PlanView,
 	if err != nil {
 		return nil, err
 	}
+	if section == "compress" {
+		a.watchVersions(plans)
+	}
 	views := make([]PlanView, len(plans))
 	for i, p := range plans {
 		views[i] = PlanView{Plan: p, WatchRedo: p.ReplaceIf != nil}
-		if section == "compress" {
-			views[i].OtherVersion = a.otherVersion(p)
-		}
 		for _, path := range p.Replace {
 			views[i].ReplaceSize += jobs.SizeOf(path)
 		}
@@ -459,7 +462,7 @@ func (a *App) Start(section string, items []jobs.Item, opts Choices) error {
 	if err != nil {
 		return err
 	}
-	consent(plans, opts.Replace)
+	consent(plans, opts.Replace, opts.Redo)
 	ctx, cancel := context.WithCancelCause(context.Background())
 	q := &queue{ctx: ctx, cancel: cancel, done: make(chan struct{}), section: section, o: o, jobs: jobs.NewQueue(plans)}
 	if pausable[section] {
@@ -490,26 +493,43 @@ func (a *App) Start(section string, items []jobs.Item, opts Choices) error {
 	return nil
 }
 
-// consent skips the games whose destination has something the user did not say may be replaced.
-func consent(plans []jobs.Plan, replace []string) {
-	accepted := map[string]bool{}
+// consent skips the games whose destination has something the user did not say may be replaced (replace), but
+// for the .p5z the watched folder made itself (redo) while the window's own plan still says it may be made again
+// (ReplaceIf): asked for and not granted, it is skipped as watch_redo_refused. A replace the user said yes to is
+// the user's: no redo then.
+func consent(plans []jobs.Plan, replace, redo []string) {
+	accepted, redone := map[string]bool{}, map[string]bool{}
 	for _, path := range replace {
 		accepted[pathKey(path)] = true
 	}
+	for _, path := range redo {
+		redone[pathKey(path)] = true
+	}
 	for i, p := range plans {
-		if len(p.Replace) > 0 && p.Block == "" && !accepted[pathKey(p.Out)] {
-			plans[i].Block = "exists"
+		if len(p.Replace) == 0 || p.Block != "" {
+			plans[i].ReplaceIf = nil
+			continue
+		}
+		switch out := pathKey(p.Out); {
+		case accepted[out]:
+			plans[i].ReplaceIf = nil
+		case redone[out] && p.ReplaceIf != nil:
+		case redone[out]:
+			plans[i].Block = "watch_redo_refused"
+		default:
+			plans[i].Block, plans[i].ReplaceIf = "exists", nil
 		}
 	}
 }
 
 // Append adds games to the queue of a section that runs: they are planned with its options, told
 // to the page as queued (job:item) and done after the ones there. A game whose destination has
-// something in it is skipped when its turn comes, unless opts.Replace says it may be replaced;
-// with keepOriginals the originals of these games stay, whatever the queue does with the others.
+// something in it is skipped when its turn comes, unless replace says it may be replaced (or redo, for the
+// .p5z the watched folder made, as in Start); with keepOriginals the originals of these games stay, whatever
+// the queue does with the others.
 // It gives the index in the queue of the first one; an error when no queue of that section runs
 // or it is cancelled (the page then leaves them as they are).
-func (a *App) Append(section string, items []jobs.Item, replace []string, keepOriginals bool) (int, error) {
+func (a *App) Append(section string, items []jobs.Item, replace, redo []string, keepOriginals bool) (int, error) {
 	a.mutex.Lock()
 	q := a.queue
 	a.mutex.Unlock()
@@ -520,7 +540,7 @@ func (a *App) Append(section string, items []jobs.Item, replace []string, keepOr
 	if section == "compress" {
 		a.watchRedo(plans)
 	}
-	consent(plans, replace)
+	consent(plans, replace, redo)
 	q.mutex.Lock()
 	defer q.mutex.Unlock()
 	for i := range plans {

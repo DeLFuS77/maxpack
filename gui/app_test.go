@@ -158,7 +158,7 @@ func TestBuiltInRuntime(t *testing.T) {
 	if sum := sha256.Sum256(data); err != nil || hex.EncodeToString(sum[:]) != bundled.SHA256 {
 		t.Fatalf("not written at the start: %v", err)
 	}
-	if setup := a.Setup(); setup.BuiltInRuntime != want || setup.BuiltInRuntimeVersion != "v0.5.1-maxpack.1" {
+	if setup := a.Setup(); setup.BuiltInRuntime != want || setup.BuiltInRuntimeVersion != "v0.5.1-maxpack.2" {
 		t.Fatalf("%+v", setup)
 	}
 	item := jobs.Item{Path: filepath.Join(t.TempDir(), "Juego"), TitleID: "PPSA10001", Name: "Juego", Kind: "folder", OriginalSize: 10}

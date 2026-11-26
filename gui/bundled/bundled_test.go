@@ -13,21 +13,21 @@ import (
 	"time"
 )
 
-// The libSceAmpr.sprx inside the program is the one of the release v0.5.1-maxpack.1 of
+// The libSceAmpr.sprx inside the program is the one of the release v0.5.1-maxpack.2 of
 // ampr-emu-ng, byte for byte: its SHA-256 and size, as SHA256SUMS and VERSION of the release say,
 // and it reads zstd (it carries AMPRZPK1, as the engine and ChooseRuntime look for it).
 func TestRuntimeIsTheRelease(t *testing.T) {
 	sum := sha256.Sum256(sprx)
-	if got := hex.EncodeToString(sum[:]); got != SHA256 || SHA256 != "e24b5533ec8c51db9b08c0d3ef709b328c7fd1571f5a906addbd652dfebad461" {
+	if got := hex.EncodeToString(sum[:]); got != SHA256 || SHA256 != "1146b293cea1653b77895b98c1b1a2056db4d7e041ae9b81ade34fcdf146a893" {
 		t.Fatalf("SHA-256 %s, expected %s", got, SHA256)
 	}
-	if len(sprx) != 716176 {
-		t.Errorf("%d bytes, expected 716176", len(sprx))
+	if len(sprx) != 720048 {
+		t.Errorf("%d bytes, expected 720048", len(sprx))
 	}
 	if !bytes.Contains(sprx, []byte("AMPRZPK1")) {
 		t.Error("it does not read zstd: AMPRZPK1 is missing")
 	}
-	if Version() != "v0.5.1-maxpack.1" {
+	if Version() != "v0.5.1-maxpack.2" {
 		t.Errorf("version %q", Version())
 	}
 	sums, err := os.ReadFile(filepath.Join("ampr-emu-ng", "SHA256SUMS"))

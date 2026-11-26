@@ -22,7 +22,7 @@ import (
 const FileName = "libSceAmpr.sprx"
 
 // SHA256 is the SHA-256 of the libSceAmpr.sprx of the release, as its SHA256SUMS gives it.
-const SHA256 = "e24b5533ec8c51db9b08c0d3ef709b328c7fd1571f5a906addbd652dfebad461"
+const SHA256 = "1146b293cea1653b77895b98c1b1a2056db4d7e041ae9b81ade34fcdf146a893"
 
 //go:embed ampr-emu-ng/libSceAmpr.sprx
 var sprx []byte
@@ -30,7 +30,7 @@ var sprx []byte
 //go:embed ampr-emu-ng/VERSION
 var version string
 
-// Version is the release of ampr-emu-ng that comes with MaxPack ("v0.5.1-maxpack.1").
+// Version is the release of ampr-emu-ng that comes with MaxPack ("v0.5.1-maxpack.2").
 func Version() string { return strings.TrimSpace(version) }
 
 // Install puts the runtime in <folder>/ampr-emu-ng/libSceAmpr.sprx and gives its path. It is

@@ -45,8 +45,8 @@ MaxPack is three programs, each in its own repository (all GPL-3.0). You downloa
 | **MaxPack for the console** (`maxpack.elf`) | PS5 | [DeLFuS77/maxpack-ps5](https://github.com/DeLFuS77/maxpack-ps5) | Mounts games like Kraken Mount, plays a `.p5z` as it is and has an installer. |
 | **ampr-emu-ng** (`libSceAmpr.sprx`) | PS5 | [DeLFuS77/ampr-emu-ng](https://github.com/DeLFuS77/ampr-emu-ng) | The runtime that reads the packs while you play. MaxPack for the console and the PC window already carry it inside: you only download it for the `maxpack` command line. |
 
-MaxPack for the PC is version 1.0.1 and MaxPack for the console 1.0.0; both carry ampr-emu-ng
-v0.5.1-maxpack.1 inside.
+MaxPack for the PC 1.0.7 and MaxPack for the console 1.0.2 both carry ampr-emu-ng
+v0.5.1-maxpack.2 inside.
 
 ### Two ways to take a game to the PS5
 
@@ -302,7 +302,7 @@ is renamed with it, all or nothing.
 ### Settings ([details](pc-window.md#4-settings))
 
 Language (11 to choose from, or **System**), theme (System, Light or Dark) and the runtime for the games
-that lack one: the ampr-emu-ng that comes with MaxPack ("Built in: ampr-emu-ng v0.5.1-maxpack.1"), or a
+that lack one: the ampr-emu-ng that comes with MaxPack ("Built in: ampr-emu-ng v0.5.1-maxpack.2"), or a
 `libSceAmpr.sprx` you pick with **Choose another…**; **Use the built-in one** goes back to it. MaxPack
 only accepts a `libSceAmpr.sprx` that reads zstd.
 
@@ -1338,7 +1338,7 @@ based on [NXPress](https://github.com/DeLFuS77/NXPress), by the same author.
   reading of PS5 debug packages and its Kraken decoder are ported from it, with
   [Alembic](https://github.com/fthdgn-gh/Alembic) (GPL-3.0-or-later), which ports the same, as a second
   reading.
-- [ampr-emu-ng](https://github.com/DeLFuS77/ampr-emu-ng) `v0.5.1-maxpack.1` (GPL-3.0-or-later): the
+- [ampr-emu-ng](https://github.com/DeLFuS77/ampr-emu-ng) `v0.5.1-maxpack.2` (GPL-3.0-or-later): the
   `libSceAmpr.sprx` that the window puts in `fakelib/`, MaxPack's own copy of quer3q's ampr-emu-ng with
   the `.p5z` mode.
 - The window, in Go: [Wails](https://github.com/wailsapp/wails) v2 (MIT); on Windows, go-webview2
@@ -1355,7 +1355,7 @@ based on [NXPress](https://github.com/DeLFuS77/NXPress), by the same author.
 - [ampr-emu-ng](https://github.com/DeLFuS77/ampr-emu-ng): the runtime. It is its own copy of
   [ampr-emu-ng](https://github.com/quer3q/ampr-emu-ng), by quer3q, which in turn is a fork of
   [ampr_emu](https://github.com/drakmor/ampr_emu), by drakmor (GPL-3.0). The one included is
-  `v0.5.1-maxpack.1`: quer3q's v0.5.1 with the `.p5z` mode.
+  `v0.5.1-maxpack.2`: quer3q's v0.5.1 with the `.p5z` mode.
 - [dlc_emu](https://github.com/drakmor/dlc_emu) and [pgo_stub](https://github.com/drakmor/pgo_stub), by
   drakmor: the DLC and PlayGo emulators.
 - [ShadowMountPlus](https://github.com/drakmor/ShadowMountPlus), by drakmor (GPL-3.0): the home screen

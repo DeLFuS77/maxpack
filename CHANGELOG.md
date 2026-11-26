@@ -6,6 +6,8 @@ All notable changes to MaxPack are listed here. The format follows
 
 ## [Unreleased]
 
+## [1.0.7] - 2026-11-26
+
 ### Added
 
 - **A `.p5z` grows without packing it again.** `maxpack add <game.p5z> --dlc <DLC>` puts DLC that come
@@ -104,6 +106,9 @@ All notable changes to MaxPack are listed here. The format follows
 - The check of whether a dump is complete never counts `dlc_emu.ini` or the `addcont0/` to `addcont99/`
   folders at the root as files of more, against either list: what `pack --dlc` adds, or a user adds by
   hand for dlc_emu. So a dump that carries its own `dlc_emu.ini` no longer counts it as one.
+- The ampr-emu-ng that comes with MaxPack is now
+  [v0.5.1-maxpack.2](https://github.com/DeLFuS77/ampr-emu-ng/releases/tag/v0.5.1-maxpack.2), the release
+  that also plays a `.p5z` that grew. Settings says "Built in: ampr-emu-ng v0.5.1-maxpack.2".
 
 ## [1.0.6] - 2026-11-25
 
@@ -577,7 +582,8 @@ risk. The authors are not responsible for data loss, lost saves, damage to the c
 bans or any other problem. MaxPack is not affiliated with or endorsed by Sony Interactive
 Entertainment. Full text: [Legal and disclaimer](README.md#legal-and-disclaimer).
 
-[Unreleased]: https://github.com/DeLFuS77/maxpack/compare/v1.0.6...HEAD
+[Unreleased]: https://github.com/DeLFuS77/maxpack/compare/v1.0.7...HEAD
+[1.0.7]: https://github.com/DeLFuS77/maxpack/releases/tag/v1.0.7
 [1.0.6]: https://github.com/DeLFuS77/maxpack/releases/tag/v1.0.6
 [1.0.5]: https://github.com/DeLFuS77/maxpack/releases/tag/v1.0.5
 [1.0.4]: https://github.com/DeLFuS77/maxpack/releases/tag/v1.0.4

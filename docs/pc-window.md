@@ -352,7 +352,7 @@ Afterwards:
 - **Runtime for the games that lack one.** The zstd packs are served by ampr-emu-ng, and some dumps
   carry none, or an old `libSceAmpr.sprx` that does not read them. For those games MaxPack puts the
   `libSceAmpr.sprx` of ampr-emu-ng in their `fakelib/`, in both modes. MaxPack comes with its own
-  (Settings shows "Built in: ampr-emu-ng v0.5.1-maxpack.1"), which it writes to its settings folder and
+  (Settings shows "Built in: ampr-emu-ng v0.5.1-maxpack.2"), which it writes to its settings folder and
   uses by itself: there is nothing to download. **Choose another…** takes a `libSceAmpr.sprx` of your
   own instead, which MaxPack remembers; **Use the built-in one** goes back to the one that comes with it.
   - A `.p5z` is never warned about the runtime: MaxPack for the console puts its own ampr-emu-ng in

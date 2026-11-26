@@ -337,7 +337,7 @@ vm.runInContext(` + "`" + `(async () => {
     ["folder", "", "", true], ["folder", "", "B", false], ["folder", "C", "", false], ["folder", "C", "B", false],
   ]) {
     state.settings = Object.assign({}, state.settings, { Mode: mode, Runtime: chosen });
-    state.setup = { builtInRuntime: builtIn, builtInRuntimeVersion: builtIn ? "v0.5.1-maxpack.1" : "" };
+    state.setup = { builtInRuntime: builtIn, builtInRuntimeVersion: builtIn ? "v0.5.1-maxpack.2" : "" };
     state.askedRuntime = false;
     const warned = rowWarnings(row()).includes(t("warn_needs_runtime"));
     asked = 0;

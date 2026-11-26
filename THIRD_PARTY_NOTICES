@@ -117,15 +117,15 @@ SOFTWARE.
 2. PC window (MaxPack.exe / maxpack)
 -----------------------------------------
 
-ampr-emu-ng v0.5.1-maxpack.1 - https://github.com/DeLFuS77/ampr-emu-ng (gui/bundled/ampr-emu-ng)
+ampr-emu-ng v0.5.1-maxpack.2 - https://github.com/DeLFuS77/ampr-emu-ng (gui/bundled/ampr-emu-ng)
   License: GPL-3.0-or-later, the same as MaxPack's (the text is in LICENSE).
   The libSceAmpr.sprx of this release, as published, is inside the window, which writes it to its
   own folder and puts it in fakelib/ of the games that do not carry one. SHA-256:
-  e24b5533ec8c51db9b08c0d3ef709b328c7fd1571f5a906addbd652dfebad461
+  1146b293cea1653b77895b98c1b1a2056db4d7e041ae9b81ade34fcdf146a893
   It is MaxPack's own build of ampr-emu-ng by quer3q (https://github.com/quer3q/ampr-emu-ng), with
   the p5z mode (a game served from a .p5z file). gui/bundled/ampr-emu-ng/SOURCE records the
   release, the commit and the CI run that built it.
-  Corresponding Source: https://github.com/DeLFuS77/ampr-emu-ng/tree/v0.5.1-maxpack.1
+  Corresponding Source: https://github.com/DeLFuS77/ampr-emu-ng/tree/v0.5.1-maxpack.2
 
 Go (go1.26.7) - https://go.dev  License: BSD-3-Clause. Go's standard library is inside
 the window.

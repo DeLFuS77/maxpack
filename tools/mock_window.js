@@ -71,7 +71,7 @@ const mock = `
     DeleteOriginals: !!query.get("delete"), DeletePermanently: query.get("delete") === "good", LowPriority: !!query.get("low"), NameTemplate: query.get("template") || templates[0],
     Threads: Number(query.get("threads")) || 0, RepairData: !!query.get("repair"), RepairPercent: Number(query.get("percent")) || 5, KeepLeftovers: false };
   if (query.get("nodest")) settings.LastDest = "";
-  const builtIn = query.get("nobuiltin") ? {} : { builtInRuntime: "C:\\\\Users\\\\user\\\\AppData\\\\Roaming\\\\MaxPack\\\\ampr-emu-ng\\\\libSceAmpr.sprx", builtInRuntimeVersion: "v0.5.1-maxpack.1" };
+  const builtIn = query.get("nobuiltin") ? {} : { builtInRuntime: "C:\\\\Users\\\\user\\\\AppData\\\\Roaming\\\\MaxPack\\\\ampr-emu-ng\\\\libSceAmpr.sprx", builtInRuntimeVersion: "v0.5.1-maxpack.2" };
   const games = {
     "D:\\\\dumps\\\\Starfall.Odyssey-PPSA10001": { TitleID: "PPSA10001", Name: "Starfall Odyssey", Version: "01.000.010", ContentID: "EP0001-PPSA10001_00-STARFALL00000000", Kind: "folder", OriginalSize: 8390000000, HasZstdRuntime: false, Icon: "", Packed: false },
     "D:\\\\dumps\\\\Iron.Harbor-PPSA10002.exfat": { TitleID: "PPSA10002", Name: "Iron Harbor", Version: "01.000.021", ContentID: "", Kind: "exfat", OriginalSize: 180400000000, HasZstdRuntime: true, Icon: "", Packed: false,

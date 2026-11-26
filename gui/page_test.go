@@ -4,6 +4,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"math"
 	"os"
@@ -15,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DeLFuS77/maxpack/gui/core"
 	"github.com/DeLFuS77/maxpack/gui/jobs"
 )
 
@@ -594,5 +596,49 @@ func TestDetailsOfImages(t *testing.T) {
 	}
 	if plans := a.RenamePlan([]jobs.Item{game.Item}); filepath.Ext(plans[0].To) != ".ffpkg" {
 		t.Errorf("rename: %+v", plans[0])
+	}
+}
+
+// Details grows a .p5z: Add DLC… and Update with a new dump… are queues of their own there, in the
+// .p5z's place; it does nothing else.
+func TestDetailsGrowsAP5z(t *testing.T) {
+	dir := t.TempDir()
+	p5z := touch(t, dir, "Game [PPSA00001].p5z", 10)
+	item := jobs.Item{Path: p5z, TitleID: "PPSA00001", Name: "Game", Kind: "p5z", OriginalSize: 1000, Grow: []string{filepath.Join(dir, "d.pkg")}}
+	a := &App{fs: realFS{}}
+	plans, err := a.Plan("details", []jobs.Item{item}, Choices{Options: jobs.Options{Mode: jobs.ModeAddDLC}})
+	if err != nil || len(plans) != 1 || plans[0].Args[0] != "add" || plans[0].Out != p5z || plans[0].Tmp != "" {
+		t.Fatalf("%+v %v", plans, err)
+	}
+	if plans, err = a.Plan("details", []jobs.Item{item}, Choices{Options: jobs.Options{Mode: jobs.ModeUpdate}}); err != nil || plans[0].Args[0] != "update" {
+		t.Fatalf("%+v %v", plans, err)
+	}
+	if _, err := a.Plan("details", []jobs.Item{item}, Choices{Options: jobs.Options{Mode: jobs.ModeVerify}}); err == nil {
+		t.Fatal("Details verifies nothing")
+	}
+
+	engine, fixtures := needCore(t)
+	out := filepath.Join(t.TempDir(), "Game [PPSA00000].p5z")
+	if _, _, err := core.RunWith(context.Background(), engine, []string{"pack", filepath.Join(fixtures, "game"), "-o", out, "--p5z", "--threads", "2"}, core.RunOptions{}, nil); err != nil {
+		t.Fatal(err)
+	}
+	game, err := (&App{core: engine}).Details(out)
+	if err != nil || game.Grown != 0 {
+		t.Fatalf("%+v %v", game, err)
+	}
+	game.Item.Grow = []string{filepath.Join(fixtures, "dlc_data")}
+	events := newPageEvents()
+	a = pageApp(engine, events)
+	if err := a.Start("details", []jobs.Item{game.Item}, Choices{Options: jobs.Options{Mode: jobs.ModeAddDLC}}); err != nil {
+		t.Fatal(err)
+	}
+	if sum := events.wait(t); sum.Done != 1 || strings.Join(events.states(0), " ") != "waiting growing verifying ok" {
+		t.Fatalf("%+v %v", sum, events.items)
+	}
+	if last := events.last(0); last.Detail != "grown" || last.Out != "" {
+		t.Fatalf("%+v", last)
+	}
+	if game, err = (&App{core: engine}).Details(out); err != nil || game.Grown != 1 || len(game.DLC) != 1 {
+		t.Fatalf("%+v %v", game, err)
 	}
 }

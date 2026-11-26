@@ -37,10 +37,12 @@ const (
 	// making the repair data of a .p5z, and repairing one with it (see repair.go)
 	StateProtecting = "protecting"
 	StateRepairing  = "repairing"
-	StateOK         = "ok"
-	StateError      = "error"
-	StateSkipped    = "skipped"
-	StateCancelled  = "cancelled"
+	// adding to a .p5z (DLC, or what a new dump changes; see grow.go)
+	StateGrowing   = "growing"
+	StateOK        = "ok"
+	StateError     = "error"
+	StateSkipped   = "skipped"
+	StateCancelled = "cancelled"
 )
 
 // TopItem is a game of the ones that saved the most (see Summary for what Saved is against).
@@ -256,6 +258,8 @@ func (r *Runner) one(ctx context.Context, i int, p Plan, o Options) outcome {
 		return r.repairOne(ctx, i, p, o)
 	case ModeProtect:
 		return r.protectOne(ctx, i, p, o)
+	case ModeAddDLC, ModeUpdate:
+		return r.growOne(ctx, i, p, o)
 	}
 	// the drive may be gone (a USB taken out): say so instead of making its folders again
 	if info, err := os.Stat(o.Dest); err != nil || !info.IsDir() {

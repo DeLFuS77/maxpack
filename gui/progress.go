@@ -88,7 +88,8 @@ type teller struct {
 // writesOut tells whether a queue of a mode makes something of its own (not only checks, repairs or
 // adds repair data to what is there).
 func writesOut(mode jobs.Mode) bool {
-	return mode != jobs.ModeVerify && mode != jobs.ModeRepair && mode != jobs.ModeProtect
+	return mode != jobs.ModeVerify && mode != jobs.ModeRepair && mode != jobs.ModeProtect && mode != jobs.ModeAddDLC &&
+		mode != jobs.ModeUpdate
 }
 
 // setSize is what the repair data of a .p5z takes, 0 when it has none of its own.
@@ -188,6 +189,12 @@ func stepsOf(mode jobs.Mode, repair int) []string {
 		return []string{jobs.StateRepairing, jobs.StateVerifying}
 	case jobs.ModeConsole:
 		return []string{jobs.StateUnpacking, jobs.StateVerifying}
+	case jobs.ModeAddDLC, jobs.ModeUpdate:
+		// it grows in its place, is verified, and gets its repair data again when it had them
+		if repair > 0 {
+			return []string{jobs.StateGrowing, jobs.StateVerifying, jobs.StateProtecting}
+		}
+		return []string{jobs.StateGrowing, jobs.StateVerifying}
 	}
 	return []string{jobs.StateUnpacking}
 }
@@ -208,7 +215,7 @@ func (s *share) item(i int, state string) {
 	}
 	r := &s.rows[i]
 	switch state {
-	case jobs.StatePacking, jobs.StateVerifying, jobs.StateUnpacking, jobs.StateProtecting, jobs.StateRepairing:
+	case jobs.StatePacking, jobs.StateVerifying, jobs.StateUnpacking, jobs.StateProtecting, jobs.StateRepairing, jobs.StateGrowing:
 		if state != r.step {
 			r.step, r.phase, r.offset, r.done, r.total = state, "", 0, 0, 0
 		}

@@ -40,6 +40,9 @@ import (
 //     level given, and says the disk of the folder given (none without one).
 //   - "waits": tells some progress and waits for cancel (the line "cancel", or its input closed),
 //     then ends as cancelled.
+//   - "grows": add and update append "+grown" to the .p5z they are given, tell some progress and end
+//     well, saying what a real one says; verify ends well.
+//   - "mostly": as "grows", but update refuses with error "mostly_changed" unless given --force.
 const Env = "MP_FAKE_CORE"
 
 // InfoEnv is the file of what "info" says of each game: {"<name>": {<info --json>}, ...}.
@@ -153,6 +156,33 @@ func run(mode string, args []string) int {
 		}
 		fmt.Printf("{\"event\":\"result\",\"ok\":true,\"cpu_threads\":8,\"level\":%s,\"trials\":[%s],\"recommended_threads\":6,"+
 			"\"fastest_threads\":8,\"disk\":%s}\n", level, trials, disk)
+		return 0
+	case "grows", "mostly":
+		if len(args) > 0 && args[0] == "verify" {
+			fmt.Println(`{"event":"result","ok":true,"files_bad":0}`)
+			return 0
+		}
+		if len(args) < 2 || (args[0] != "add" && args[0] != "update") {
+			fmt.Fprintln(os.Stderr, "error: not add or update:", args)
+			return 2
+		}
+		if mode == "mostly" && args[0] == "update" && !hasArg(args, "--force") {
+			fmt.Println(`{"event":"result","ok":false,"error":"mostly_changed"}`)
+			return 1
+		}
+		f, err := os.OpenFile(args[1], os.O_APPEND|os.O_WRONLY, 0)
+		if err == nil {
+			_, err = f.WriteString("+grown")
+			f.Close()
+		}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			return 1
+		}
+		fmt.Println(`{"event":"progress","phase":"comparing","done":1,"total":2}`)
+		progress()
+		fmt.Println(`{"event":"result","ok":true,"same_files":3,"new_files":1,"changed_files":0,"removed_files":0,` +
+			`"added_bytes":6,"grown":1,"unused_bytes":0,"nothing":false,"par2":false}`)
 		return 0
 	case "waits":
 		progress()

@@ -286,6 +286,11 @@ func sectionOptions(section string, o jobs.Options) (jobs.Options, error) {
 		if o.Mode != jobs.ModeRepair && o.Mode != jobs.ModeProtect {
 			o.Mode = jobs.ModeVerify
 		}
+	case "details":
+		// the card of a .p5z adds DLC to it, or makes it a new dump of its game: nothing else
+		if o.Mode != jobs.ModeAddDLC && o.Mode != jobs.ModeUpdate {
+			return o, fmt.Errorf("the section %q only adds DLC to a .p5z and updates one", section)
+		}
 	default:
 		return o, fmt.Errorf("the section %q does not do jobs", section)
 	}
@@ -325,12 +330,20 @@ func (a *App) plans(section string, items []jobs.Item, choices Choices) ([]jobs.
 	o.NameTemplate, o.LowPriority, o.KeepLeftovers = saved.NameTemplate, saved.LowPriority, saved.KeepLeftovers
 	// the threads a measure of this PC found, to compress and for par2 (0: all the CPU's)
 	o.Threads = 0
-	if section == "compress" || o.Mode == jobs.ModeRepair || o.Mode == jobs.ModeProtect {
+	grows := o.Mode == jobs.ModeAddDLC || o.Mode == jobs.ModeUpdate
+	if section == "compress" || o.Mode == jobs.ModeRepair || o.Mode == jobs.ModeProtect || grows {
 		o.Threads = saved.Threads
 	}
 	// repair data only for a .p5z, of a percentage the window offers
 	if (o.Mode != jobs.ModeP5z && o.Mode != jobs.ModeProtect) || !par2.ValidPercent(o.Repair) {
 		o.Repair = 0
+	}
+	// a .p5z that grows gets its repair data made again when it had some of its own (see jobs/grow.go):
+	// their share, for the steps of its bar
+	if grows && len(items) > 0 {
+		if info := par2.Inspect(items[0].Path); info.State == par2.StateMatch {
+			o.Repair = info.Percent
+		}
 	}
 	if o.Mode == jobs.ModeProtect && o.Repair == 0 {
 		o.Repair = saved.RepairPercent
@@ -356,6 +369,8 @@ func planWith(items []jobs.Item, o jobs.Options, drives jobs.FS) []jobs.Plan {
 		return jobs.PlanProtect(items, o, drives)
 	case jobs.ModeOriginal, jobs.ModeConsole:
 		return jobs.PlanDecompress(items, o, drives)
+	case jobs.ModeAddDLC, jobs.ModeUpdate:
+		return jobs.PlanGrow(items, o, drives)
 	}
 	return jobs.PlanCompress(items, o, drives)
 }

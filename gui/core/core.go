@@ -36,8 +36,9 @@ var ErrClosing = errors.New("the window is closing")
 // "passcode": it reads PS5 debug packages (.pkg), with the passcode of Settings; "completeness":
 // info --json says whether a game has every file of the original package, and pack takes
 // --leave-out-leftovers; "dlc": pack takes --dlc, and info --json says what a DLC is and the DLC a
-// game carries.
-var Required = []string{"progress_json", "control_stdin", "max_file_size", "info_json", "icon", "packs", "content_id", "levels", "measure", "images", "fpkg", "passcode", "completeness", "dlc"}
+// game carries; "grow": add, update and compact grow a .p5z by appending, and info --json says how
+// many times one grew.
+var Required = []string{"progress_json", "control_stdin", "max_file_size", "info_json", "icon", "packs", "content_id", "levels", "measure", "images", "fpkg", "passcode", "completeness", "dlc", "grow"}
 
 // passcode is the one of Settings › FPKG passcode ("" is the default, which the engine knows).
 var passcode atomic.Value

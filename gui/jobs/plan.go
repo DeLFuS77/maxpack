@@ -24,6 +24,8 @@ const (
 	ModeVerify   Mode = "verify"   // only check
 	ModeRepair   Mode = "repair"   // repair a .p5z with its repair data (PAR2), then check it
 	ModeProtect  Mode = "protect"  // check a .p5z, then add repair data to it
+	ModeAddDLC   Mode = "add_dlc"  // put DLC into a .p5z already made, by appending to it
+	ModeUpdate   Mode = "update"   // a .p5z becomes a new dump of its game: only what it changes is added
 )
 
 // fat32Max is the most a file may have on FAT32 (4 GiB less one byte).
@@ -41,6 +43,11 @@ const fat32Max = 1<<32 - 1
 // compressed alone but with its game, "game" or "" for a game; DLCData, a DLC with files of its own
 // (else a license only). DLC are the DLC a game carries already (a .p5z made with them). AddDLC are the
 // DLC to compress into it (their paths, as the page gives them), and AddDLCSize what they take.
+//
+// A .p5z can grow (see grow.go): Grow are the DLC to add to it, or the new dump of it, and Force says
+// to update it even when more than half of the game changed. Grown is how many times it grew,
+// UnusedBytes what of it nothing uses any more, and Recovered that the engine found an append to it
+// that had stopped, and undid it, when it read it.
 type Item struct {
 	Path, TitleID, Name, Version, Kind string
 	Inner                              string
@@ -57,6 +64,11 @@ type Item struct {
 	DLC                                []DLC
 	AddDLC                             []string
 	AddDLCSize                         uint64
+	Grow                               []string
+	Force                              bool
+	Grown                              uint32
+	UnusedBytes                        uint64
+	Recovered                          bool
 }
 
 // DLC is a DLC a game carries, as info --json says it: its content ID and, when it has files of its
@@ -243,6 +255,7 @@ func FromInfo(path string, info map[string]any) Item {
 		Kind: text("kind"), Inner: text("inner"), Compressed: flag("compressed"), OriginalSize: number("original_size"),
 		HasZstdRuntime: flag("has_zstd_runtime"), Packed: flag("packed"), ContentID: text("content_id"),
 		Completeness: completenessOf(info), Content: text("content"), DLCData: flag("dlc_data"), DLC: dlcOf(info),
+		Grown: uint32(number("grown")), UnusedBytes: number("unused_bytes"), Recovered: flag("recovered"),
 	}
 	if it.Name == "" {
 		it.Name = baseName(path)

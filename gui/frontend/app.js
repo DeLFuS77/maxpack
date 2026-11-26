@@ -415,6 +415,7 @@ function rowWarnings(row) {
   if (!game) return list;
   // a DLC of Compress: why it goes inside no game, or not inside the one that started without it
   if (row.section === "compress" && isDlc(game)) {
+    if (dlcErrorOf(row)) return list;   // said as the error of its row
     const { games, late } = dlcStatus(row);
     if (!firstOfItsId(row)) list.push(t("dlcTwin"));
     else if (!games.length) list.push(t("dlcNoGame")(titleOf(game)));
@@ -534,21 +535,38 @@ const isDlc = game => !!game && game.Content === "dlc";
 // "UP0000-PPSA00000_00-..."), as the engine matches them
 const titleOf = game => (game && (game.TitleID || String(game.ContentID || "").slice(7, 16))) || "";
 const readRow = row => !!row.game && !row.error;
+// a content ID dlc_emu takes, as the engine checks it (mp_dlc_content_id_ok): 36 characters,
+// XXXXXX-TITLEID00_00-LABEL of 16, letters and digits
+const validContentId = id => /^[A-Za-z0-9]{6}-[A-Za-z0-9]{9}_[A-Za-z0-9]{2}-[A-Za-z0-9]{16}$/.test(String(id || ""));
+// the games of Compress a "DLC" row has the content ID of: it is that game, not a DLC of it
+const gamesItIs = row => state.lists.compress.filter(other => readRow(other) && !isDlc(other.game) && !!other.game.ContentID && other.game.ContentID === row.game.ContentID);
+// why a DLC row of Compress goes inside no game, as an error of its own row ("" when it can go): the
+// engine would refuse it, and so stop the whole game it went with
+function dlcErrorOf(row) {
+  if (row.section !== "compress" || !readRow(row) || !isDlc(row.game)) return "";
+  if (!validContentId(row.game.ContentID)) return t("dlcBadId");
+  const games = gamesItIs(row);
+  return games.length ? t("dlcIsGame")(namesOf(games)) : "";
+}
+// a DLC row that can go inside a game
+const goodDlc = row => readRow(row) && isDlc(row.game) && !dlcErrorOf(row);
 // whether a DLC row of Compress is the first of the list with its content ID: another one with it is
 // the same DLC, which goes once
-const firstOfItsId = row => state.lists.compress.find(other => readRow(other) && isDlc(other.game) && other.game.ContentID === row.game.ContentID) === row;
+const firstOfItsId = row => state.lists.compress.find(other => goodDlc(other) && other.game.ContentID === row.game.ContentID) === row;
 // the games of Compress a DLC row goes inside: read, of its title, not compressed already
 function gameRowsOf(row) {
   const id = titleOf(row.game);
-  if (!id || !firstOfItsId(row)) return [];
+  if (!id || !goodDlc(row) || !firstOfItsId(row)) return [];
   return state.lists.compress.filter(other => readRow(other) && !isDlc(other.game) && !other.game.Packed && titleOf(other.game) === id);
 }
 // the DLC rows that go inside a game of Compress, in the order of the list, once each
 function dlcRowsOf(row) {
   if (row.section !== "compress" || !readRow(row) || isDlc(row.game) || row.game.Packed) return [];
   const id = titleOf(row.game);
-  return id ? state.lists.compress.filter(other => readRow(other) && isDlc(other.game) && titleOf(other.game) === id && firstOfItsId(other)) : [];
+  return id ? state.lists.compress.filter(other => goodDlc(other) && titleOf(other.game) === id && firstOfItsId(other)) : [];
 }
+// the rows of a section still being read: Compress waits for them, as a DLC of a game may be among them
+const readingRows = section => (state.lists[section] || []).filter(row => !row.game && !row.error);
 // whether what a game of Compress is made with is set: it is made, or in the queue that runs (its DLC
 // went with it when it joined)
 const setRow = row => row.state === "ok" || (running() && state.job.rows.includes(row));
@@ -715,13 +733,13 @@ function paintRow(row) {
   warn.hidden = !warnings.length;
   warn.textContent = warnings.join(" · ");
 
-  const note = tr.querySelector(".note");
-  const said = (row.error && errorText(row.error)) || (row.detail && row.detail !== "cancelled" ? detailText(row.detail) : row.section === "rename" && row.renameBlock && row.state !== "ok" ? detailText(row.renameBlock) : "");
+  const note = tr.querySelector(".note"), dlcError = dlcErrorOf(row);
+  const said = (row.error && errorText(row.error)) || dlcError || (row.detail && row.detail !== "cancelled" ? detailText(row.detail) : row.section === "rename" && row.renameBlock && row.state !== "ok" ? detailText(row.renameBlock) : "");
   note.hidden = !said;
   note.textContent = said;
   // a repair that ended well says so as good news, not as a warning
   const good = row.state === "ok" && /^(repaired|repair_not_needed)$/.test(row.detail);
-  note.className = "note " + (row.error || row.state === "error" ? "bad" : good ? "good" : "warn");
+  note.className = "note " + (row.error || dlcError || row.state === "error" ? "bad" : good ? "good" : "warn");
   paintFacts(row);
   paintState(row);
 }
@@ -1029,7 +1047,9 @@ function paintStart() {
   const start = $("start"), acts = queues.includes(section) || section === "rename";
   start.hidden = !acts || (running() && section !== "rename");
   start.textContent = acts ? t(section) : "";
+  // Compress waits for every row to be read: a DLC still being read must not be left out of its game
   start.disabled = state.busy || !go.has() || !!(state.setup && state.setup.coreError) || !list.some(row => row.game && !(section === "compress" && isDlc(row.game)))
+    || (section === "compress" && readingRows(section).length > 0)
     || (section === "rename" && (running() || !list.some(row => row.renameTo && !row.renameBlock && row.state !== "ok")));
   $("cancel").hidden = !running();
   $("cancel").disabled = state.cancelling;
@@ -1053,9 +1073,10 @@ function paintSummary() {
   const bytes = list.reduce((sum, row) => sum + (row.game ? row.game.OriginalSize : 0), 0);
   $("summary-text").textContent = list.length ? t("listed")(list.length, bytes) : t("nothing");
   bar.hidden = true;
-  // how the last queue of this section ended, in the language of now
+  // why Compress waits, else how the last queue of this section ended, in the language of now
   const last = job && job.summary && job.section === state.section;
-  $("status").textContent = last ? summaryLine(job.summary) : "";
+  const reading = state.section === "compress" ? readingRows("compress").length : 0;
+  $("status").textContent = reading ? t("readingWait")(reading) : last ? summaryLine(job.summary) : "";
 }
 
 function render() {
@@ -1262,6 +1283,8 @@ async function plan(section, rows, opts) {
 async function startQueue(kind, only) {
   const section = kind ? "verify" : state.section;
   if (state.busy || !queues.includes(section)) return;
+  // a DLC still being read would be left out of its game
+  if (section === "compress" && readingRows(section).length) { toast(t("readingWait")(readingRows(section).length)); return; }
   const rows = only || readyRows(section, kind);
   if (!rows.length) { toast(kind === "repair" ? t("repairNothing") : kind === "protect" ? t("protectNothing") : t("nothingToDo")); return; }
   const mode = kind || modeOf(section);

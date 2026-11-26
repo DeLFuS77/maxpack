@@ -36,7 +36,10 @@ All notable changes to MaxPack are listed here. The format follows
 - **The window:** in Compress, a game's DLC are dropped with it, added with **Add files** or **Add
   folder**, or with **Add DLC** under the game; each goes inside every game of the list with its title
   ID. The game's row says how many ("with 2 DLC"), the DLC's row which game it goes inside, or why it
-  goes in none (no game of its ID in the list, the same DLC twice, or it came after its game started). A
+  goes in none (no game of its ID in the list, the same DLC twice, or it came after its game started).
+  One the engine would refuse (no content ID dlc_emu takes, or the content ID of a game of the list) is
+  an error on its own row and never stops a game. Compress waits until every row is read, so no DLC is
+  left out for being read late. A
   DLC is never compressed alone and its original is never deleted. Details says what a DLC is and lists
   the DLC of a `.p5z`; **Copy report** says how many, never which. In its 11 languages.
 

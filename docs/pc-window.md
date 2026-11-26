@@ -247,7 +247,13 @@ there with nothing installed (`maxpack pack --dlc`, see the
   its original is never deleted, whatever **Delete the originals once checked** says.
 - **A DLC that goes in none says why:** there is no game of its ID in the list ("No game of PPSA10009
   in the list: add it and this DLC goes inside it"), it is the same DLC as another one of the list (only
-  the first goes), or it came after its game started ("compress it again to put this DLC inside").
+  the first goes), or it came after its game started ("compress it again to put this DLC inside"). One
+  that `maxpack-core` would refuse says it as an error on its own row and goes inside no game, so it
+  never stops one: it has no content ID that dlc_emu takes (36 characters, in its `param.json`), or it
+  has the content ID of a game of the list (it is that game, not a DLC of it).
+- **Compress waits for every row to be read**, as a game's DLC may be among them: until then it says
+  how many are still being read ("1 is still being read: Compress waits for them, so no DLC is left
+  out"), and a DLC is never left out of its game for being read late.
 - The room a game needs counts its DLC with files of their own, and so does what it saved: what is made
   holds them too. A license only adds no files, only its line in the game's `dlc_emu.ini`.
 - **What stops a game:** a dump that already has a `dlc_emu.ini` of its own ("its dump has a

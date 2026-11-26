@@ -16,7 +16,7 @@ const fs = require("fs"), path = require("path"), vm = require("vm");
 const dir = process.argv[1];
 const element = () => ({ replaceChildren() {}, append() {}, classList: { toggle() {}, add() {}, remove() {} }, style: {},
   dataset: {}, content: { firstElementChild: { cloneNode: () => element() } }, querySelector: () => element() });
-const context = { navigator: {}, console, Promise };
+const context = { navigator: {}, console, Promise, setTimeout: () => 0, clearTimeout() {} };
 context.window = context;
 context.document = { readyState: "loading", addEventListener() {}, getElementById: () => element(), querySelectorAll: () => [], querySelector: () => element(), createElement: () => element() };
 vm.createContext(context);
@@ -105,6 +105,33 @@ console.log(vm.runInContext(` + "`" + `(() => {
   if (kindName(dlcA.game) !== t("kindFpkg") + " · " + t("kindDlc") || kindName(dlcB.game) !== t("kindDump") + " · " + t("kindDlcLicense")) say("kindName of a DLC: " + kindName(dlcA.game) + " / " + kindName(dlcB.game));
   // what the engine says when a DLC stops a game, in the page's words
   for (const code of ["dlc_has_ini", "dlc_too_many", "dlc_refused"]) if (detailText(code) !== t("detail_" + code)) say("the detail " + code + ": " + detailText(code));
+  // a DLC row the engine would refuse is an error on its own row and goes inside no game, so it cannot
+  // stop one: no content ID dlc_emu takes (two of them are not "the same DLC"), or the game's own
+  game1.game.ContentID = "UP0000-PPSA00000_00-MAXPACKTEST00000";
+  const noId = row("D:/dlc/noid", { Content: "dlc", DLCData: true, ContentID: "" });
+  const noId2 = row("D:/dlc/noid2", { Content: "dlc", DLCData: true, ContentID: "" });
+  const shortId = row("D:/dlc/short", { Content: "dlc", DLCData: true, ContentID: "UP0000-PPSA00000_00-SHORTLABEL00001" });
+  const itself = row("D:/games/one-copy", { Content: "dlc", DLCData: true, ContentID: "UP0000-PPSA00000_00-MAXPACKTEST00000" });
+  state.lists.compress = [noId, game1, noId2, shortId, itself, dlcA];
+  if (JSON.stringify(itemOf(game1).AddDLC) !== JSON.stringify(["D:/dlc/a.pkg"])) say("the DLC sent with bad ones in the list: " + itemOf(game1).AddDLC);
+  for (const bad of [noId, noId2, shortId]) {
+    if (dlcErrorOf(bad) !== t("dlcBadId") || rowWarnings(bad).length || dlcLineText(bad) !== "") say(bad.path + ": " + dlcErrorOf(bad) + " / " + rowWarnings(bad) + " / " + dlcLineText(bad));
+  }
+  if (dlcErrorOf(itself) !== t("dlcIsGame")("Copper Vale") || rowWarnings(itself).length || dlcLineText(itself) !== "") say("the game itself: " + dlcErrorOf(itself) + " / " + rowWarnings(itself));
+  if (dlcErrorOf(dlcA) !== "" || dlcErrorOf(game1) !== "") say("errors where there are none: " + dlcErrorOf(dlcA) + " / " + dlcErrorOf(game1));
+  if (dlcCountOf(game1) !== 1) say("the game counts " + dlcCountOf(game1));
+  game1.game.ContentID = undefined;
+  // Compress waits for what is still being read: a DLC of the game may be among it, and must not be
+  // left out; the reason is said
+  const pending = row("D:/dlc/pending", null);
+  state.lists.compress = [game1, pending];
+  state.section = "compress";
+  state.settings.LastDest = "E:\\\\";
+  if (readingRows("compress").length !== 1 || readingRows("verify").length !== 0) say("being read: " + readingRows("compress").length);
+  startQueue();
+  if (state.busy) say("Compress started while a row was being read");
+  state.busy = false;
+  if (!String(t("readingWait")(2)).includes("2")) say("the reason: " + t("readingWait")(2));
   return problems.join("\\n");
 })()` + "`" + `, context));
 `

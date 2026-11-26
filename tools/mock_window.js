@@ -133,11 +133,13 @@ const mock = `
   const dlc = (id, cid, name, data, kind, size) => ({ TitleID: id, Name: name, Version: "01.000.000", ContentID: cid, Kind: kind, OriginalSize: size, HasZstdRuntime: false,
     Icon: "", Packed: false, Content: "dlc", DLCData: data, DLC: [], ImageSize: kind === "fpkg" ? Math.round(size * 0.9) : 0 });
   const dlcShown = ["D:\\\\dlc\\\\Starfall Odyssey - Bonus Pack.pkg", "D:\\\\dlc\\\\Starfall Odyssey - Season Pass", "D:\\\\dlc\\\\copy\\\\Starfall Odyssey - Bonus Pack.pkg",
-    "D:\\\\dlc\\\\Harbor Lights Expansion.pkg"];
+    "D:\\\\dlc\\\\Harbor Lights Expansion.pkg", "D:\\\\dlc\\\\Starfall Odyssey - Hand Made"];
   games[dlcShown[0]] = dlc("PPSA10001", "EP0001-PPSA10001_00-STARFALLBONUS001", "Starfall Odyssey: Bonus Pack", true, "fpkg", 2140000000);
   games[dlcShown[1]] = dlc("PPSA10001", "EP0001-PPSA10001_00-STARFALLSEASON01", "Starfall Odyssey: Season Pass", false, "folder", 48000);
   games[dlcShown[2]] = Object.assign({}, games[dlcShown[0]]);
   games[dlcShown[3]] = dlc("PPSA10009", "EP0009-PPSA10009_00-HARBORLIGHTS0001", "Harbor Lights Expansion", true, "fpkg", 5300000000);
+  // a hand-made DLC folder whose param.json gives no content ID dlc_emu takes: an error of its own row
+  games[dlcShown[4]] = dlc("PPSA10001", "", "Starfall Odyssey: Hand Made", true, "folder", 12000000);
   const dlcChosen = ["D:\\\\dlc\\\\Lost Signal - Chapter Two.pkg", "D:\\\\dlc\\\\Lost Signal - Soundtrack.pkg"];
   games[dlcChosen[0]] = dlc("PPSA10004", "JP0004-PPSA10004_00-LOSTSIGNALCHAP02", "Lost Signal: Chapter Two", true, "fpkg", 3900000000);
   games[dlcChosen[1]] = dlc("PPSA10004", "JP0004-PPSA10004_00-LOSTSIGNALMUSIC1", "Lost Signal: Soundtrack", false, "fpkg", 61000);

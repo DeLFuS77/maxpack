@@ -8,6 +8,36 @@ All notable changes to MaxPack are listed here. The format follows
 
 ### Added
 
+- **DLC inside the `.p5z`.** `pack --dlc <DLC>` (as many as needed) puts a game's DLC inside what is
+  made of it: a PS5 package of additional content (`.pkg`, with the same passcode) or a dumped DLC
+  folder (`sce_sys/param.json` and no `eboot.bin`), of the game's title ID. Each DLC with files of its
+  own goes, all its files, to `addcont0/`, `addcont1/`... in the order given (at most 100); a license
+  only adds no folder. MaxPack writes `dlc_emu.ini` at the root: `[PSAC]` with the `content_id` and
+  `mount_point=/app0/addcontN` of each DLC with files, `[PSAL]` with `download_status=NO_EXTRA_DATA`
+  for each license. On the console, MaxPack for the console finds that file loose in the `.p5z` and
+  adds dlc_emu, which tells the game its DLC are installed where the file says, inside the `.p5z`: one
+  file with the game and its DLC, nothing installed. The `.p5z` is still of format version 1, so MaxPack
+  for the console 1.0.1 plays it; it verifies and unpacks as any other, and its original is the dump
+  with the `addcontN/` folders and the `dlc_emu.ini`. It stops before writing anything, with the reason
+  and an error code for `--progress json`, for a dump that has its own `dlc_emu.ini` (`dlc_has_ini`: two
+  lists are not mixed), more than 100 DLC with files or an ini over the 32 KiB dlc_emu reads
+  (`dlc_too_many`), and (`dlc_refused`) a DLC of another game, the same one twice, a content ID that is
+  not 36 characters, a game given as a DLC, a DLC folder without `param.json` or already packed, or a
+  game with no title ID. The result line has `dlc_data`, `dlc_license` and `dlc_bytes`. A game whose
+  **Fakelib** setting on the console is **Off** gets no dlc_emu and sees none of its DLC. That a game
+  reads a DLC with files of its own from inside a `.p5z` has not been tried on a real PS5 yet.
+- `info --json` says `content` (`game` or `dlc`), `dlc_data` (a DLC with files of its own, not a license
+  only) and `dlc`: the DLC a game carries, from its own `dlc_emu.ini`, each with its content ID, whether
+  it has data, its folder, and the size and files in it. A DLC's `title_id` is its content ID's. `info`
+  and `icon` open a DLC package; `analyze` and `pack` still take only a game, and a DLC package given as
+  one says to use `--dlc`. `--capabilities` has `dlc`.
+- **The window:** in Compress, a game's DLC are dropped with it, added with **Add files** or **Add
+  folder**, or with **Add DLC** under the game; each goes inside every game of the list with its title
+  ID. The game's row says how many ("with 2 DLC"), the DLC's row which game it goes inside, or why it
+  goes in none (no game of its ID in the list, the same DLC twice, or it came after its game started). A
+  DLC is never compressed alone and its original is never deleted. Details says what a DLC is and lists
+  the DLC of a `.p5z`; **Copy report** says how many, never which. In its 11 languages.
+
 - **`.p5z` covers in the file manager.** With **Open .p5z files with MaxPack** on (Settings › Windows
   Explorer, or the installer), the Windows Explorer shows each `.p5z` with its game's cover, its
   `sce_sys/icon0.png`, as its thumbnail, in the views with medium icons or larger, whichever program
@@ -27,6 +57,12 @@ All notable changes to MaxPack are listed here. The format follows
   a sandbox, such as Thunar (through Tumbler); others may show them too. GNOME Files runs thumbnailers
   in a sandbox that cannot see `~/.local`, where this install puts the engine, and KDE Dolphin does not
   use `.thumbnailer` files: neither shows the covers. `install.sh --uninstall` removes them. The menu entry says MaxPack opens `.p5z` files.
+
+### Changed
+
+- The check of whether a dump is complete never counts `dlc_emu.ini` or the `addcont0/` to `addcont99/`
+  folders at the root as files of more, against either list: what `pack --dlc` adds, or a user adds by
+  hand for dlc_emu. So a dump that carries its own `dlc_emu.ini` no longer counts it as one.
 
 ## [1.0.6] - 2026-11-25
 

@@ -85,14 +85,16 @@ made with another passcode: `this package was made with another passcode; give i
 (with `--json`, the error code is `passcode`; with a wrong one given, `... than the one given`). When
 the checksum is wrong too, the package is damaged.
 
-**Only a full PS5 game.** The rest stops with the reason:
+**Only a full PS5 game** (or, with `pack --dlc`, a DLC of one, which goes inside its game: see the
+[guide](guide.md#dlc-inside-the-p5z)). The rest stops with the reason:
 
 | the package | why it is refused |
 |---|---|
 | retail (byte 5 of the FIH header is 0x80) | `retail packages need keys this tool does not have` |
 | a PS4 package (`\x7FCNT`) | MaxPack is for PS5 games |
 | a patch (`\x7FLIH`) | it only has what the update changes: install it on the console, or pack the game with it applied |
-| additional content (CNT content type 0x21) | it is not a game: install it on the console |
+| additional content (CNT content type 0x21), given as the game | it is not a game: give it to pack with its game, with `--dlc` |
+| a game's package (content type 0x20) given with `--dlc` | it is not additional content |
 | another content type | not a game's package |
 | one whose PFS does not decrypt to a valid root folder | another passcode, or damaged (above) |
 

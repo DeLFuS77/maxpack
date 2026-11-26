@@ -114,6 +114,17 @@ It is followed, with no gaps, by `files`, `frames`, `manifest` and the strings.
   - loose: it is the file of `files` that the record points to;
   - replaced: it is its original with role 5.
 
+## A game with its DLC
+
+`pack --dlc` changes nothing in the format: the `.p5z` is still of version 1. The DLC are files of the
+dump it was made of, as if they had been put in it by hand: each DLC with files of its own in a folder
+`addcont0/`, `addcont1/`... at the root, and `dlc_emu.ini` at the root, which MaxPack writes (a `[PSAC]`
+section with `content_id` and `mount_point=/app0/addcontN` for each DLC with files, a `[PSAL]` one with
+`content_id` and `download_status=NO_EXTRA_DATA` for each license). They are in the manifest with their
+SHA-256, loose or packed by the same rules as any file (`dlc_emu.ini` is always loose, as every `.ini`
+is), in `ampr_emu.index`, and `unpack --original` gives them back. A reader that knows nothing of DLC
+reads such a `.p5z` as it reads any other; the console finds `dlc_emu.ini` among the loose files.
+
 ## Playing without installing (console)
 
 The console can play a `.p5z` without installing it, and without leaving on the internal disk more than

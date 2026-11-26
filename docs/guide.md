@@ -66,8 +66,9 @@ In the window, you choose in **Made for**:
   the result is the same as from the dump folder ([source-images.md](source-images.md)). Or a PS5
   debug package (FPKG, `.pkg`): MaxPack decrypts it with its passcode as it reads it (32 zeros unless
   whoever made it chose another; give it in Settings › **FPKG passcode**). Retail packages, PS4
-  packages, patches and DLC cannot be compressed
-  ([source-images.md](source-images.md#ps5-packages-fpkg-pkg)).
+  packages and patches cannot be compressed
+  ([source-images.md](source-images.md#ps5-packages-fpkg-pkg)); a DLC goes inside its game
+  ([DLC inside the `.p5z`](#dlc-inside-the-p5z)).
 - Space at the destination. MaxPack warns you if there is less free space than the original game takes
   (the game, not its image: an `.ffpfsc` is compressed and usually takes less than the game in it, as
   a Kraken-compressed `.pkg` does).
@@ -203,6 +204,9 @@ The sidebar has four work sections and Settings. Everything is explained, with s
    again, no other tool and no temporary space.
    **Add folder** takes several folders at once, and each one can be a game or a folder with games
    right below it.
+   A game's DLC (their `.pkg`, or dumped DLC folders) can come along: drop them with it, or use
+   **Add DLC** under the game. Each one goes inside every game of the list with its title ID, and the
+   game's row says how many ("with 2 DLC"); see [DLC inside the `.p5z`](#dlc-inside-the-p5z).
 2. In **Made for**, choose "MaxPack installer" (one `.p5z`) or "Play from the USB" (a folder in
    `homebrew/`).
 3. Pick the **Destination**.
@@ -274,7 +278,11 @@ or PFS image, or PFS container and the image inside it) and what its file takes,
 compression" when it is compressed: its original size is the game's. A `.pkg` says "PS5 package
 (FPKG)" and, under **Package file**, what it takes ("Kraken compression" when its blocks are
 compressed).
-**Copy report** under a game copies a text for an issue on GitHub, without its name or ID. A `.p5z` is a
+A DLC says so after what it is ("DLC", or "DLC, license only"), and a `.p5z` made with DLC lists them
+under **DLC**: how many have files of their own and how many are licenses only, then each one with its
+content ID and, for one with files, what they take and the folder they are in (`addcont0/`...).
+**Copy report** under a game copies a text for an issue on GitHub, without its name or ID (of its DLC,
+only how many). A `.p5z` is a
 card that also says what it saved and its repair data (how much, or none), with **Verify** and
 **Decompress**, which take it to those sections.
 A double click on a `.p5z` opens it here, when MaxPack opens `.p5z` files (see below).
@@ -568,6 +576,7 @@ maxpack pack "D:\dumps\MyGame.exfat" -o "D:\games\MyGame [PPSA00000].p5z" --p5z 
 | `--max-file-size N` | Only with `--p5z`: if the `.p5z` is going to pass N bytes, it stops and deletes it. | `--max-file-size 4294967295` (FAT32) |
 | `--volume-limit N` | For testing: each pack volume takes at most N bytes (from 262208 to 4294901760, the default). Lets a small game have several volumes; you do not need it to play. | `--volume-limit 524288` |
 | `--leave-out-leftovers` | Leaves out what dump tools leave behind (`decrypted/`, `*.auth_info`, the entitlement files), only when the game's `sce_sys/playgo-hash-table.dat` proves it is not the game's; without one, everything stays and it says so. See [Whether a dump is complete](#whether-a-dump-is-complete). | `--leave-out-leftovers` |
+| `--dlc DLC` | Puts a DLC of the game inside what is made: its `.pkg` (opened with the same `--passcode`) or a dumped DLC folder. Can be repeated. See [DLC inside the `.p5z`](#dlc-inside-the-p5z). | `--dlc "D:\dlc\Bonus.pkg"` |
 | `--progress json` | One JSON line per event on stdout; the text for people stays on stderr. | `--progress json` |
 | `--control stdin` | Reads the input: the line `cancel`, or closing the input, cancels and deletes what was written. | `--control stdin` |
 
@@ -593,7 +602,47 @@ With `--progress json`, the lines look like this:
 ```
 
 `--control stdin` is meant for a user interface. By hand, type `cancel` and press Enter. If the input
-is already closed (for example with `< /dev/null`), it cancels at once.
+is already closed (for example with `< /dev/null`), it cancels at once. The result line also has
+`left_out_files` and `left_out_bytes`, `dlc_data`, `dlc_license` and `dlc_bytes` (the DLC put inside,
+below) and `completeness`.
+
+### DLC inside the `.p5z`
+
+One `.p5z` can hold a game and its DLC, and the console plays them from it with nothing installed:
+
+```
+maxpack pack "D:\dumps\MyGame" --dlc "D:\dlc\Bonus.pkg" --dlc "D:\dlc\SeasonPass" -o "D:\games\MyGame [PPSA00000].p5z" --p5z
+```
+
+- A DLC is a PS5 package of additional content (`.pkg`, a debug package; it is opened with the same
+  `--passcode` as the game, or the default), or a dumped DLC folder: one with `sce_sys/param.json` and no
+  `eboot.bin`. Each must be of the game: the title ID in its content ID is the game's (its
+  `param.json`'s `titleId`, else the one in its content ID).
+- A DLC with files of its own goes, all its files, to `addcont0/`, `addcont1/`... inside the game, in
+  the order given (at most 100: `addcont0` to `addcont99`). A DLC whose files are all in `sce_sys/` is a
+  license only and adds no folder.
+- MaxPack writes `dlc_emu.ini` at the game's root: a `[PSAC]` section with the `content_id` and
+  `mount_point=/app0/addcontN` of each DLC with files, and a `[PSAL]` one with the `content_id` and
+  `download_status=NO_EXTRA_DATA` of each license. On the console, dlc_emu (drakmor's) reads it and
+  tells the game those DLC are installed, mounted where the file says, which is a folder inside the
+  `.p5z`; MaxPack for the console finds the `dlc_emu.ini` loose in the `.p5z` and adds dlc_emu by
+  itself. A game whose **Fakelib** setting on the console is **Off** gets no dlc_emu, so it sees none
+  of its DLC.
+- Everything else is as always: the DLC are files of the game, loose or packed by the same rules, and
+  the `.p5z` is still of format version 1. It plays, verifies and decompresses as any other, and its
+  original (`unpack --original`) is the dump with the `addcontN/` folders and the `dlc_emu.ini`, what you
+  would make by hand to use dlc_emu with a game in a folder. `pack --folder` does the same in a folder.
+- `info --json` lists the DLC a game carries (`dlc`, below), and the check of whether a dump is
+  complete never counts `addcontN/` or `dlc_emu.ini` as files of more.
+- What stops it, before anything is written (with `--progress json`, the error code in brackets): a
+  game whose dump already has a `dlc_emu.ini` (`dlc_has_ini`): MaxPack does not mix two lists, since
+  dlc_emu only shows the DLC of its file; more than 100 DLC with files, or so many that the
+  `dlc_emu.ini` would pass the 32 KiB dlc_emu reads (`dlc_too_many`); and (`dlc_refused`) a DLC of
+  another game, the same DLC twice (by content ID, or by its last 16 characters, the label dlc_emu
+  shows it by), a content ID that is not the 36 characters dlc_emu takes, a game given as a DLC, a DLC
+  folder without `param.json` or already packed, a game with no title ID, or a game that already has a
+  folder where a DLC would go. A DLC package made with another passcode says so (`passcode`).
+- Not yet: adding a DLC to a `.p5z` made before, PS5 patches, and PS4 DLC.
 
 ### `unpack`: decompress a `.p5z`
 
@@ -644,7 +693,22 @@ The `info --json` line carries `kind` (`folder`, `p5z`, `exfat`, `ufs2` for an `
 inside, else `""`), `compressed` (whether reading it decompresses PFSC or Kraken blocks), `title_id`,
 `version`, `name`, `content_id` (from `param.json`, also of a `.p5z`, an image or a package; its first two letters are the region,
 and it is `""` when `param.json` gives none), `original_size`, `install_size`, `p5z_size`, `files`,
-`packed_files`, `volumes`, `has_runtime`, `has_zstd_runtime`, `packed` and `completeness` (below).
+`packed_files`, `volumes`, `has_runtime`, `has_zstd_runtime`, `packed`, `content`, `dlc_data`, `dlc` and
+`completeness` (below).
+
+`content` is `game`, or `dlc` for a DLC (a package of additional content, or a folder or image with
+`sce_sys/param.json` and no `eboot.bin`); then `dlc_data` says whether it has files of its own (else it
+is a license only), and its `title_id` is the one in its content ID, the one `pack --dlc` checks. `dlc`
+lists the DLC a game carries, as its own `dlc_emu.ini` says them (`[]` when it has none, or one that
+cannot be read or passes 32 KiB): each with its `content_id`, `data` (files of its own), `folder` (where
+they are, `""` for a license) and the `size` and `files` in that folder:
+
+```
+"content":"game","dlc_data":false,"dlc":[{"content_id":"UP0000-PPSA00000_00-ABCDEFGHIJKLMNOP","data":true,"folder":"addcont0","size":312196,"files":6}]
+```
+
+`icon` and `info --json` take a DLC package too; `analyze` and `pack` take only a game (a DLC goes with
+`pack --dlc`).
 
 ### Whether a dump is complete
 
@@ -657,9 +721,11 @@ carries it, MaxPack checks the dump's files against it, in `analyze`, `info --js
   no names. A dump with missing files makes a `.p5z` that lacks them too; dump the game again if you
   can.
 - **Extra** are files the dump has and the list does not, such as the emulators a dump tool adds
-  (`fakelib/`, `dlc_emu.ini`). OS junk (`Thumbs.db`, `.DS_Store`, `._*`, `__MACOSX/`...) is not
+  (`fakelib/`). OS junk (`Thumbs.db`, `.DS_Store`, `._*`, `__MACOSX/`...) is not
   counted, nor is anything in `sce_sys/` that the list does not have: a dump puts there the package's
-  own entries (`param.json`, the PlayGo tables...), which are not files of the image.
+  own entries (`param.json`, the PlayGo tables...), which are not files of the image; nor what
+  `pack --dlc` adds, or a user adds by hand for dlc_emu: `dlc_emu.ini` at the root and the
+  `addcont0/` to `addcont99/` folders.
 - **Leftovers** are the extra files dump tools are known to leave: a `decrypted/` folder at the root
   (the raw copies of the executables), `*.auth_info` files next to the executables, and
   `entitlements.txt` and `entitlement_key.dat` at the root. `pack --leave-out-leftovers` (on in the
@@ -678,7 +744,7 @@ carries it, MaxPack checks the dump's files against it, in `analyze`, `info --js
     while it runs (anything under a `Saved/` folder, `*.log`), the runtime's files (`ampr_commands.bin`,
     `apr_emu.log`) and the list itself. The dates are never compared: copies and archives change them.
   - Extra are the files the list does not have (added after the dump, such as backports in
-    `fakelib/`); leftovers are only said by their names: the dump tool writes them too, so this list
+    `fakelib/`; never `dlc_emu.ini` or `addcont0/` to `addcont99/`); leftovers are only said by their names: the dump tool writes them too, so this list
     does not prove they are not the game's, and `--leave-out-leftovers` keeps them.
   - The table wins when there is one. A `.p5z` keeps the dump tool's list (the original
     `ampr_emu.index`) and says the same as the dump it was made of; a compressed folder carries
@@ -694,7 +760,7 @@ The `completeness` object of `info --json` (and of `analyze --json`, and of the 
 and `pack` with `--progress json`, without the paths):
 
 ```
-"completeness":{"checkable":true,"reason":"","source":"playgo","listed":1234,"present":1231,"missing":3,"size_mismatch":0,"extra_count":2,"extra_bytes":10240,"leftover_count":1,"leftover_bytes":8192,"extra_paths":["decrypted/eboot.bin","dlc_emu.ini"]}
+"completeness":{"checkable":true,"reason":"","source":"playgo","listed":1234,"present":1231,"missing":3,"size_mismatch":0,"extra_count":2,"extra_bytes":10240,"leftover_count":1,"leftover_bytes":8192,"extra_paths":["decrypted/eboot.bin","fakelib/libScePlayGo.sprx"]}
 ```
 
 `extra_paths` are the first 20 extra files, by path. A `.p5z` is checked against the table it carries
@@ -1116,6 +1182,10 @@ console repository, which identifies games only by these numbers.
   `.p5z` as the folder they were made from, less what the builder changes. No package made by
   ProsperoPkgTool or another builder has been tried yet. The window's tests take one through the
   queue to a `.p5z`, and one with another passcode with and without it in Settings.
+- **DLC** (`pack --dlc`): DLC from MaxPack's own generator, as packages of additional content and as
+  folders, with files of their own and licenses only, go inside a test game; the `.p5z` verifies, lists
+  them and unpacks to the game, its `addcontN/` folders and the `dlc_emu.ini`; up to 100 with files and
+  every refusal are tried. No DLC package made by another builder has been tried yet.
 - **On every change, in GitHub Actions:** the engine is built and passes its tests on Windows and Linux;
   the window is built and passes its tests on Windows, Linux and macOS; the packages are installed,
   compress a test image and are uninstalled.
@@ -1128,6 +1198,9 @@ console repository, which identifies games only by these numbers.
 ### Not tested on a console yet
 
 - **The console installer** (the Install tab): it has not been tested on a real PS5.
+- **DLC inside a `.p5z`** (`pack --dlc`): that a game reads a DLC with files of its own from
+  `/app0/addcont0` inside a `.p5z` has not been tried on a real PS5 yet; only licenses written by hand in
+  a `dlc_emu.ini`.
 - A side-by-side timing of a `.p5z` against a packed folder, and more games, firmwares and drives.
 - The Windows installer with a double click and the on-screen wizard. If something does not work, use
   the portable zip and report it.

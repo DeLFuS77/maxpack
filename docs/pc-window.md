@@ -80,6 +80,7 @@ go to **Compress** and a
    several dropped at once are each taken the same way. Each game shows its title, ID, version and size.
    A folder that is already compressed (with packs) is not compressed again: it shows "it is compressed
    already" and is skipped; to check it, use **Verify**.
+   A game's DLC can come along (see [DLC](#dlc) below).
 2. Choose **Made for**.
 3. Choose the compression **level**, 1 to 22 (19 by default), or one of the shortcuts **Light**,
    **Medium** and **Maximum**. 20 to 22 use a lot of memory and take much longer to gain little.
@@ -220,14 +221,44 @@ everywhere it takes a dump folder
   it was made with: the default (32 zeros, what fake packages use) unless Settings › **FPKG passcode**
   has another. A package made with another one says so in its row ("this package was made with another
   passcode: give it in Settings › FPKG passcode"); give it there, and the rows that needed it are read
-  again. Retail packages, PS4 packages, patches and additional content (DLC) are not taken, and the row
-  says why. What comes out is the files the package holds, and its builder did not keep the dump as it
+  again. Retail packages, PS4 packages and patches are not taken, and the row says why; a package of
+  additional content is a DLC, which goes inside its game ([DLC](#dlc)). What comes out is the files the package holds, and its builder did not keep the dump as it
   was: it fake-signs the executables, adds a few `sce_sys` files (`pfs-version.dat`, `right.sprx`, the
   PlayGo tables, `.dds` pictures), makes its own `playgo-chunk.dat`, and gives every file the date it
   built the package. So the `.p5z` is the one of what the builder packed, not always byte for byte of
   your first dump ([source-images.md](source-images.md#ps5-packages-fpkg-pkg)). Details shows "PS5
   package (FPKG)" and, under **Package file**, what it takes ("Kraken compression" when its blocks are
   compressed).
+
+### DLC
+
+A game's DLC go inside what is made of it, its `.p5z` or its folder for the console, and play from
+there with nothing installed (`maxpack pack --dlc`, see the
+[guide](guide.md#dlc-inside-the-p5z)).
+- **Adding them.** A DLC is its package (`.pkg`, a debug package of additional content, opened with the
+  passcode of Settings as a game's is) or a dumped DLC folder (`sce_sys/param.json` and no `eboot.bin`).
+  Drop them with the game, add them with **Add files** or **Add folder**, or press **Add DLC** under a
+  game, which asks for `.pkg` files. MaxPack tells a DLC from a game as it reads it: its row says "DLC",
+  or "DLC, license only" for one with no files of its own.
+- **Each DLC goes inside the game of its title ID**, the one in its content ID, wherever the two are in
+  the list and whichever was read first; with two games of that ID (two versions), inside both. The
+  game's row says how many go inside it ("with 2 DLC"), and the DLC's row which game it goes inside
+  ("Goes inside Starfall Odyssey", and once made "Went inside ..."). A DLC is never compressed alone, and
+  its original is never deleted, whatever **Delete the originals once checked** says.
+- **A DLC that goes in none says why:** there is no game of its ID in the list ("No game of PPSA10009
+  in the list: add it and this DLC goes inside it"), it is the same DLC as another one of the list (only
+  the first goes), or it came after its game started ("compress it again to put this DLC inside").
+- The room a game needs counts its DLC with files of their own, and so does what it saved: what is made
+  holds them too. A license only adds no files, only its line in the game's `dlc_emu.ini`.
+- **What stops a game:** a dump that already has a `dlc_emu.ini` of its own ("its dump has a
+  dlc_emu.ini of its own"): MaxPack writes that file for the DLC it puts inside and does not mix two
+  lists; take the DLC out of the list, or that file out of the dump. More than 100 DLC with files of
+  their own for one game stops it too. Either way nothing is left written.
+- **Details** says what a DLC is and lists the DLC of a `.p5z` made with them: how many, and each one
+  with its content ID and what its files take, or "license only". **Copy report** says how many, never
+  which.
+- On the console, the `.p5z` needs dlc_emu, which MaxPack for the console adds by itself when it finds
+  the `dlc_emu.ini`: a game whose **Fakelib** setting is **Off** gets none, and sees none of its DLC.
 
 ### Made for: MaxPack installer
 
@@ -402,7 +433,9 @@ low priority, the originals, the template of the names, whether an FPKG passcode
 the games it is about, whether each is complete against the original package (the counts: files
 listed, missing, not in the package and left by dump tools, never which), what each one is
 (for an image, its kind: "PFS container (.ffpfsc) with an exFAT image inside, compressed", and what its
-file takes, which its row for the list is against), its sizes, its volumes and how it ended. It never has a game's name, its title ID or a path. For a
+file takes, which its row for the list is against), its sizes, its volumes, how many DLC it has or goes
+with and how many of them have files of their own, and how it ended. It never has a game's name, its
+title ID, a DLC's content ID or a path. For a
 `.p5z` (or a game just compressed) it ends with the row for the
 [compatibility list](https://github.com/DeLFuS77/maxpack-ps5/blob/main/docs/compatibility.md), with the
 sizes and the volumes filled in and a `?` for what only the console knows. **Report a bug** and **Report

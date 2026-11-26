@@ -384,10 +384,10 @@ The same engine, for scripts and for measuring a game before you pack it.
 |---|---|
 | `maxpack analyze <dump>` | Measures, from a sample or the whole game, what each zstd level, deduplication, small-file grouping and the `.p5z` would save, without writing anything. [How to read it](docs/analyze-report.md). |
 | `maxpack analyze <dump> --levels` | Compares levels (3, 9, 15 and 19, or the ones given) on this PC: a sample packed with `pack`'s own code tells the `.p5z` and folder sizes and the time to pack the whole game. |
-| `maxpack pack <dump> -o <out>` | Packs into a folder (`--folder`, the default) or a single file (`--p5z`). Options for the level, threads, the runtime to put in `fakelib/`, files to keep loose and a size cap for FAT32. |
+| `maxpack pack <dump> -o <out>` | Packs into a folder (`--folder`, the default) or a single file (`--p5z`). Options for the level, threads, the runtime to put in `fakelib/`, files to keep loose, a size cap for FAT32 and the game's DLC to put inside (`--dlc`). |
 | `maxpack unpack <game.p5z>` | `--folder` gives the folder for the console; `--original` rebuilds the original dump bit for bit and checks every SHA-256. |
 | `maxpack verify <game.p5z or folder>` | Checks every file; `--against <dump>` also compares a folder with the original. |
-| `maxpack info`, `info --json`, `icon` | Title, ID, version, files, packs and sizes, for people or as JSON (which also says the content ID); extracts the game's icon. |
+| `maxpack info`, `info --json`, `icon` | Title, ID, version, files, packs and sizes, for people or as JSON (which also says the content ID, whether it is a DLC and the DLC a game carries); extracts the game's icon. |
 | `maxpack measure [<folder>]` | Measures this PC with no game: packing speed at 25, 50, 75 and 100 % of its threads, the threads to use, and the disk of a folder (a temporary file, deleted). |
 | `--version`, `--capabilities` | The engine and library versions; what this build can do, as JSON. |
 
@@ -627,8 +627,10 @@ them with their passcode as it reads them (32 zeros unless whoever made one chos
 with `--passcode` or in Settings › FPKG passcode). The `.p5z` has the files the package holds, which
 its builder changed a little (it fake-signs the executables, adds a few `sce_sys` files and dates
 everything when it built the package). Retail packages need keys MaxPack does not have, and PS4
-packages, patches and DLC are refused: only a full PS5 game
-([source-images.md](docs/source-images.md#ps5-packages-fpkg-pkg)).
+packages and patches are refused: only a full PS5 game
+([source-images.md](docs/source-images.md#ps5-packages-fpkg-pkg)). A DLC goes inside its game, as a
+package or a dumped folder, with `pack --dlc` or next to the game in Compress
+([guide](docs/guide.md#dlc-inside-the-p5z)).
 </details>
 
 ## Status

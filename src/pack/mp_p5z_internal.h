@@ -56,4 +56,15 @@ int p5z_out_keep(mp_pack_out *out, const mp_p5z *from, size_t i, int64_t mtime, 
 // Record i of from with its stored bytes copied at the end (frames as they are, nothing compressed again).
 int p5z_out_copy(mp_pack_out *out, mp_p5z *from, size_t i, mp_err *e);
 
+// ---- the journal of an append (mp_p5z_journal.c) ----------------------------------------------------
+
+int p5z_journal_write(const char *p5z, uint64_t old_size, const uint8_t footer[32], mp_err *e);
+// 0 with what it says, 1 if there is one that is damaged, -1 if there is none.
+int p5z_journal_read(const char *p5z, uint64_t *old_size, uint8_t footer[32]);
+// 1 if the journal is whole and the .p5z, size bytes long, has its footer where it says.
+int p5z_journal_matches(const char *p5z, uint64_t size, uint64_t *old_size);
+void p5z_journal_remove(const char *p5z);
+// mp_p5z_recover with the .p5z already open as its only writer (f).
+int p5z_restore_locked(mp_wfile *f, const char *p5z, int *what, mp_err *e);
+
 #endif

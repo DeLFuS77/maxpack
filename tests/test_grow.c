@@ -295,11 +295,144 @@ MP_TEST(p5z_icon_of_v2) {
     free(b);
 }
 
+// ---- the journal of an append --------------------------------------------------------------------
+
+#define J_P5Z TMP "/j.p5z"
+#define J_FILE J_P5Z MP_P5Z_JOURNAL
+
+// A .p5z with 5000 bytes appended to it (as an append that stopped would leave it), and its bytes
+// before (malloc) in *orig.
+static int half_appended(uint8_t **orig, size_t *olen) {
+    mpt_clear(TMP);
+    if (mpt_pack(GAME, J_P5Z, 1, NULL) != 0) return -1;
+    *orig = mpt_slurp(J_P5Z, olen);
+    mp_err e = {{0}};
+    mp_wfile *f = NULL;
+    uint8_t junk[5000];
+    for (int i = 0; i < 5000; i++) junk[i] = (uint8_t)(i * 13 + 5);
+    if (mp_wfile_reopen(J_P5Z, &f, &e) != 0 || mp_wfile_write(f, junk, sizeof junk, &e) != 0 ||
+        mp_wfile_close(f, &e) != 0) {
+        MP_FAIL_("%s", e.msg);
+        return -1;
+    }
+    return 0;
+}
+
+static uint64_t size_of(const char *path) {
+    uint64_t s = 0;
+    return mp_stat(path, &s, NULL) == 0 ? s : 0;
+}
+
+MP_TEST(journal_view_and_restore) {
+    uint8_t *orig = NULL;
+    size_t olen = 0;
+    if (half_appended(&orig, &olen) != 0) return;
+    mp_err e = {{0}};
+    mp_p5z *p = NULL;
+    MP_CHECK(mp_p5z_open(J_P5Z, &p, &e) != 0);   // without the journal: no footer at its end
+    MP_CHECK(p5z_journal_write(J_P5Z, olen, orig + olen - 32, &e) == 0);
+    MP_CHECK(mp_path_kind(J_FILE) == 1 && mp_path_kind(J_FILE ".tmp") == 0);
+    // a reader sees it as it was, and writes nothing
+    MP_CHECK(mp_p5z_open(J_P5Z, &p, &e) == 0);
+    if (p) MP_CHECK_EQ_U64(p->size, olen);
+    mp_p5z_close(p);
+    MP_CHECK_EQ_U64(size_of(J_P5Z), olen + 5000);
+    int what = -1;
+    MP_CHECK(mp_p5z_recover(J_P5Z, &what, &e) == 0);
+    MP_CHECK_EQ_U64(what, MP_RECOVER_RESTORED);
+    MP_CHECK(starts_with(J_P5Z, orig, olen) && size_of(J_P5Z) == olen);
+    MP_CHECK(mp_path_kind(J_FILE) == 0);
+    what = -1;
+    MP_CHECK(mp_p5z_recover(J_P5Z, &what, &e) == 0 && what == MP_RECOVER_NONE);
+    free(orig);
+}
+
+MP_TEST(recover_busy_leaves_everything) {
+    uint8_t *orig = NULL;
+    size_t olen = 0;
+    if (half_appended(&orig, &olen) != 0) return;
+    mp_err e = {{0}};
+    MP_CHECK(p5z_journal_write(J_P5Z, olen, orig + olen - 32, &e) == 0);
+    mp_wfile *f = NULL;
+    int busy = 0, what = -1;
+    MP_CHECK(mp_wfile_reopen_locked(J_P5Z, &f, &busy, &e) == 0);   // an append at work
+    MP_CHECK(mp_p5z_recover(J_P5Z, &what, &e) == 0);
+    MP_CHECK_EQ_U64(what, MP_RECOVER_BUSY);
+    MP_CHECK_EQ_U64(size_of(J_P5Z), olen + 5000);
+    MP_CHECK(mp_path_kind(J_FILE) == 1);
+    mp_p5z *p = NULL;
+    MP_CHECK(mp_p5z_open(J_P5Z, &p, &e) == 0);   // readers read it as it was meanwhile
+    mp_p5z_close(p);
+    mp_wfile_close(f, NULL);
+    MP_CHECK(mp_p5z_recover(J_P5Z, &what, &e) == 0 && what == MP_RECOVER_RESTORED);
+    MP_CHECK(starts_with(J_P5Z, orig, olen) && size_of(J_P5Z) == olen);
+    free(orig);
+}
+
+MP_TEST(recover_stale_journal) {
+    uint8_t *orig = NULL;
+    size_t olen = 0;
+    if (half_appended(&orig, &olen) != 0) return;
+    size_t blen = 0;
+    uint8_t *before = mpt_slurp(J_P5Z, &blen), foot[32];
+    mp_err e = {{0}};
+    int what = -1;
+    // a footer that is not the one there: not this file's journal, the file is not touched
+    memcpy(foot, orig + olen - 32, 32);
+    foot[3] ^= 1;
+    MP_CHECK(p5z_journal_write(J_P5Z, olen, foot, &e) == 0);
+    MP_CHECK(mp_p5z_recover(J_P5Z, &what, &e) == 0 && what == MP_RECOVER_STALE);
+    MP_CHECK(mp_path_kind(J_FILE) == 0);
+    MP_CHECK(starts_with(J_P5Z, before, blen) && size_of(J_P5Z) == blen);
+    // a size past the file's end
+    MP_CHECK(p5z_journal_write(J_P5Z, blen + 1, orig + olen - 32, &e) == 0);
+    MP_CHECK(mp_p5z_recover(J_P5Z, &what, &e) == 0 && what == MP_RECOVER_STALE);
+    MP_CHECK(starts_with(J_P5Z, before, blen) && size_of(J_P5Z) == blen);
+    // the .p5z is gone: its journal goes too
+    MP_CHECK(p5z_journal_write(J_P5Z, olen, orig + olen - 32, &e) == 0);
+    mpt_clear(J_P5Z);
+    MP_CHECK(mp_p5z_recover(J_P5Z, &what, &e) == 0 && what == MP_RECOVER_STALE);
+    MP_CHECK(mp_path_kind(J_FILE) == 0);
+    free(before);
+    free(orig);
+}
+
+MP_TEST(recover_damaged_or_tmp) {
+    uint8_t *orig = NULL;
+    size_t olen = 0;
+    if (half_appended(&orig, &olen) != 0) return;
+    mp_err e = {{0}};
+    int what = -1;
+    MP_CHECK(p5z_journal_write(J_P5Z, olen, orig + olen - 32, &e) == 0);
+    size_t jl = 0;
+    uint8_t *j = mpt_slurp(J_FILE, &jl);
+    MP_CHECK(j && jl == 64 && !memcmp(j, "P5ZJRNL1", 8));
+    if (j && jl == 64) {
+        j[20] ^= 1;   // the CRC no longer matches
+        mpt_clear(J_FILE);
+        mpt_put(J_FILE, j, jl);
+    }
+    mp_p5z *p = NULL;
+    MP_CHECK(mp_p5z_open(J_P5Z, &p, &e) != 0);   // a damaged journal tells a reader nothing
+    MP_CHECK(mp_p5z_recover(J_P5Z, &what, &e) == 0 && what == MP_RECOVER_STALE);
+    MP_CHECK(mp_path_kind(J_FILE) == 0 && size_of(J_P5Z) == olen + 5000);
+    // a journal half written (only its .tmp): no append began, it goes
+    mpt_put(J_FILE ".tmp", "P5ZJ", 4);
+    MP_CHECK(mp_p5z_recover(J_P5Z, &what, &e) == 0 && what == MP_RECOVER_NONE);
+    MP_CHECK(mp_path_kind(J_FILE ".tmp") == 0 && size_of(J_P5Z) == olen + 5000);
+    free(j);
+    free(orig);
+}
+
 int main(void) {
     MP_RUN(p5z_append_one_file);
     MP_RUN(p5z_copy_all_is_identical);
     MP_RUN(p5z_v1_only_refuses_v2);
     MP_RUN(p5z_v2_damaged);
     MP_RUN(p5z_icon_of_v2);
+    MP_RUN(journal_view_and_restore);
+    MP_RUN(recover_busy_leaves_everything);
+    MP_RUN(recover_stale_journal);
+    MP_RUN(recover_damaged_or_tmp);
     MP_TEST_MAIN_END();
 }

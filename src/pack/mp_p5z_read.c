@@ -217,6 +217,9 @@ int mp_p5z_open_ex(const char *path, int flags, mp_p5z **out, mp_err *e) {
     uint8_t h[P5Z_HEADER], ft[P5Z_FOOTER], *cz = NULL, *ix = NULL;
     int rc = -1;
     if (mp_file_open_read(path, &p->f, e) != 0 || mp_file_size(p->f, &p->size, e) != 0) goto done;
+    // an append that has not ended (at work, or stopped): the .p5z is read as it was before it
+    uint64_t before = 0;
+    if (p5z_journal_matches(path, p->size, &before)) p->size = before;
     if (p->size < P5Z_HEADER + P5Z_FOOTER) {
         mp_err_set(e, "truncated or empty .p5z: %s", path);
         goto done;

@@ -242,7 +242,11 @@ check("drives_text", rc == 0 and "internal" in so and "usb0" in so and "1500.00 
 check("drives_carry_the_code", all(r[2] == CODE for r in C.requests), str(C.requests))
 
 # ---- a whole send --------------------------------------------------------------------------------
+# maxpack send tells its progress at most every 100 ms (and at the end): the console takes each PUT in no
+# less than 40 ms here, so the 32 PUTs of 64 KiB last more than 1.2 s and more than four lines must come,
+# however fast the machine is
 C.reset()
+C.slow_put = 0.04
 rc, so, err = run("send", P5Z, ADDR, "--code", CODE, "--drive", "usb0", "--json", *SMALL)
 evs = events(so)
 res = result(evs)
@@ -252,7 +256,7 @@ check("send_done", rc == 0 and res.get("ok") is True and C.done.get(("usb0", NAM
       "rc=%d %s %s" % (rc, so[-400:], err[-400:]))
 check("send_result_fields", res.get("name") == NAME and res.get("drive") == "usb0" and res.get("size") == SIZE
       and res.get("resumed_from") == 0 and res.get("sent") == SIZE and res.get("retries") == 0, str(res))
-check("send_progress", len(sending) >= 4 and sending[-1]["done"] == SIZE and sending[-1]["total"] == SIZE
+check("send_progress", len(sending) >= 4 and sending[0]["done"] < SIZE and sending[-1]["done"] == SIZE and sending[-1]["total"] == SIZE
       and all(a["done"] <= b["done"] for a, b in zip(sending, sending[1:]))
       and all("rate" in e and "eta" in e for e in sending), str(sending[-3:]))
 check("send_console_verify_progress", len(verifying) >= 1 and all(e["total"] == SIZE for e in verifying),

@@ -1563,6 +1563,34 @@ MP_TEST(grow_refuses_packed_without_packs) {
     MP_CHECK_CONTAINS(e.msg, "packs");
 }
 
+// A .p5z whose header names another archive_id, or another level, than its packs (its CRCs right, as a
+// crafted file has them): what it grows would be of the header's, which its old volumes do not match, so
+// it is refused before anything is written.
+MP_TEST(grow_refuses_packs_not_of_its_header) {
+    mpt_clear(TMP);
+    make_versions();
+    for (int c = 0; c < 2; c++) {
+        mpt_clear(G_P5Z);
+        if (mpt_pack(V1, G_P5Z, 1, NULL) != 0) return;
+        size_t n = 0;
+        uint8_t *b = mpt_slurp(G_P5Z, &n);
+        if (!b || n < 64) return;
+        if (c == 0) b[24] ^= 0x5A;   // the archive_id
+        else b[20] = (uint8_t)(b[20] == 3 ? 4 : 3);   // the level
+        memset(b + 60, 0, 4);
+        wr32(b + 60, mp_crc32(b, 64, 0));
+        mpt_clear(G_P5Z);
+        mpt_put(G_P5Z, b, n);
+        mp_grow_opts o = quiet_opts();
+        mp_grow_result r;
+        mp_err e = {{0}};
+        if (grow_with(G_P5Z, V2, &o, &r, &e) == 0) MP_FAIL_("case %d: grew", c);
+        MP_CHECK_CONTAINS(e.msg, "header");
+        MP_CHECK(same_file_bytes(G_P5Z, b, n));
+        free(b);
+    }
+}
+
 // ---- the sums of a .p5z's packs (what the console's pack prints, to compare) ------------------------
 
 // The SHA-256 of bytes [64, n) of a file, in hex.
@@ -1756,5 +1784,6 @@ int main(void) {
     MP_RUN(sums_grown);
     MP_RUN(sums_lines_and_json);
     MP_RUN(play_refuses_volumes_not_its_packs);
+    MP_RUN(grow_refuses_packs_not_of_its_header);
     MP_TEST_MAIN_END();
 }

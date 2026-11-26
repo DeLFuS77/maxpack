@@ -284,8 +284,9 @@ content ID and, for one with files, what they take and the folder they are in (`
 **Copy report** under a game copies a text for an issue on GitHub, without its name or ID (of its DLC,
 only how many). A `.p5z` is a
 card that also says what it saved and its repair data (how much, or none), with **Verify** and
-**Decompress**, which take it to those sections, and **Add DLC…** and **Update with a new dump…**, which
-grow it in its place (see [Grow a `.p5z`](#add-update-and-compact-grow-a-p5z)). A `.p5z` that grew says
+**Decompress**, which take it to those sections, **Add DLC…** and **Update with a new dump…**, which
+grow it in its place (see [Grow a `.p5z`](#add-update-and-compact-grow-a-p5z)), and **Send to the
+console** (see below). A `.p5z` that grew says
 how many times under **Grown**, and the room it does not use under **Space not in use**.
 A double click on a `.p5z` opens it here, when MaxPack opens `.p5z` files (see below).
 
@@ -375,6 +376,32 @@ comes with MaxPack, next to `maxpack-core`.
   PC or on the USB drive.
 - **On the command line:** the `maxpack` command line does not make or use repair data; `maxpack-par2`
   does, see [Repair data with par2](#repair-data-with-par2).
+
+### Send to the console ([details](pc-window.md#send-to-the-console))
+
+A `.p5z` goes to MaxPack for the console from the window: **Send to the console** on its card in
+Details, or on the end card of Compress for the `.p5z` it made (they go to Details and are sent from
+there, one after another). Give the console's IP address and its pairing code once, in Settings >
+MaxPack for the console; the console must have Settings > **Receive games from the PC** on. A card
+shows the console's drives with their free space (one where they do not fit says so); the bar says the
+speed and the time left, then the console's verify, and the end card how it went. If the connection
+breaks it goes on from what the console has; **Cancel** stops it, and the console deletes what it got.
+The code goes only to `maxpack-core`, in its environment: never into a log nor into **Copy report**.
+
+### Watched folder ([details](pc-window.md#watched-folder))
+
+Settings > **Watched folder**, off until you choose a folder and turn it on: while the window is open
+(minimized too), each dump folder (with `sce_sys/param.json`; a game with its `eboot.bin`), image or
+`.pkg` that arrives at the top of that folder goes to Compress as if you had dropped it there, once
+nothing new in the folder has changed for a minute (so a game and its DLC that arrive together go
+together, the DLC inside it). It is compressed with the settings of Compress: the destination, the
+level, the repair data, and the originals deleted when that is on (those the recycle bin cannot take
+stay). It never replaces: what is in the destination already is skipped. A game that lacks files of its
+list stays in the list with its warning instead. What was handed over once is not again until it changes
+(MaxPack keeps that in `watched.json` next to its settings), so what failed is tried again only once it
+changes. With **Send them to the console too**, each `.p5z` made goes on to the console, to the drive
+chosen last. The subfolders are not looked into, and nothing runs with the window closed: what arrived
+meanwhile is found when it opens.
 
 ## 5. MaxPack on the console
 
@@ -729,12 +756,78 @@ maxpack compact "D:\games\MyGame [PPSA00000].p5z" -o "D:\games\MyGame compact.p5
 | With a folder | Checks the packs and the indexes. | `maxpack verify "E:\homebrew\PPSA00000"` |
 | `--against SOURCE` | Folders only: also compares it with the original game. The DLC `pack --dlc` put inside (`addcontN/`) are not in it: they are only read from the packs. | `maxpack verify "E:\homebrew\PPSA00000" --against "D:\dumps\MyGame.exfat"` |
 | `--threads N` | Threads. | `--threads 8` |
+| `--quick` | A `.p5z` only: checks that its bytes are the ones it was written with (each volume's and each stored file's SHA-256, and each volume's header), without decompressing the packs: at the speed of the disk. It is what MaxPack for the console runs on a `.p5z` sent to it. Details in [the format](p5z-format.md#the-quick-verify). | `maxpack verify --quick "D:\games\MyGame.p5z"` |
+| `--json` | With `--quick`: the result as one JSON object (`ok`, `bytes`, `total`, `bad_count`, `bad`). | `--quick --json` |
 | `--progress json`, `--control stdin` | As in `pack`. | `--control stdin` |
+
+`verify --quick` ends with, for example, `verify --quick: 18 OK, 0 failed: 3 volumes and 15 files, 2.09 MB
+read (0 s)`, and lists what failed on stderr (`FAILED: ampr_zstd-001.pak: the SHA-256 does not match
+(expected ..., found ...)`).
 
 When it ends it prints, for example, `verify: 216 OK, 0 failed (0 s)`, and then whether the dump it was
 made of is complete (`complete: all 1234 files of the original package`, or how many are missing, or
 `not checked: ...`; see [Whether a dump is complete](#whether-a-dump-is-complete)). If any file fails,
 it exits with code 1; a dump that was not complete is no failure of the `.p5z`.
+
+### `send`: a `.p5z` to the console
+
+`maxpack send` sends a `.p5z` to MaxPack for the console over the network. The console writes it to
+`<drive>/homebrew/` as `<name>.maxpack-recv`, runs the quick verify on it when it has it whole, and only
+then gives it its name, so its library never sees half a game; one that arrived damaged keeps its
+`.maxpack-recv` name and the console says what did not match. If the connection breaks, the PC or the
+console goes off, or you press Ctrl+C, the same command goes on from what the console has.
+
+On the console, turn on Settings > **Receive games from the PC**: its page then shows a 6-digit pairing
+code. Without it the console takes nothing: anyone on the home network could write to its drives.
+
+| Use | What it does | Example |
+|---|---|---|
+| `send <game.p5z> <ps5-ip> --code C` | Sends it to the console's internal storage (or its first drive). | `maxpack send "D:\games\MyGame [PPSA00000].p5z" 192.168.1.20 --code 482913` |
+| `--drive ID` | To another drive of the console: `internal`, `usb0`... | `--drive usb0` |
+| `send --drives <ps5-ip> --code C` | Lists the console's drives with their free space (`--json`: as JSON). | `maxpack send --drives 192.168.1.20 --code 482913` |
+| `<ps5-ip>` | The console's IP address, as its page shows it; `a.b.c.d:port` when it is not on port 8095. | `192.168.1.20` |
+| `MAXPACK_SEND_CODE` | The code can come in this environment variable instead of `--code`, so other programs of the PC do not see it on the command line (the window does that). | |
+| `--json` | One JSON line per event on stdout, as `--progress json`: `started` (the drive, and what the console had already), `progress` of the phases `sending` (with `rate` in bytes a second and `eta` in seconds) and `verifying` (the console's), `retry`, and the `result`. | `--json` |
+| `--control stdin` | `cancel` stops it, and the console deletes what it received. | |
+| `--chunk N`, `--retries N`, `--retry-wait MS` | Bytes per request (default 32 MiB, at most 64 MiB); tries after a broken connection (10); the wait after the first one (1 s, doubling up to 30 s). | `--retries 20` |
+
+While it sends it prints the share, the MB/s and the time left, then the console's verify, and ends
+with `Sent and verified: <name> on <drive> of the console`. Each way it can end has its own exit code
+and message:
+
+| Code | Means |
+|---|---|
+| 0 | Sent, and the console verified it. |
+| 1 | An error on the PC (the `.p5z` cannot be read, is not a whole `.p5z`, or another MaxPack is changing it), or an answer the console should not give. |
+| 2 | Usage. |
+| 3 | No answer from the console after the tries: is MaxPack for the console open, on the same network, at that address? |
+| 4 | Receiving games from the PC is off on the console. |
+| 5 | Wrong pairing code. |
+| 6 | 5 wrong codes in a row: the console takes none from this PC for a minute. |
+| 7 | The `.p5z` is already on that drive. |
+| 8 | The console is busy (another receive, an install, a verify or a test compression). |
+| 9 | Not enough free space on that drive (the `.p5z` and 256 MiB more). |
+| 10 | The drive is FAT32 and the `.p5z` is 4 GiB or more. |
+| 11 | A file name the console does not take: a plain `*.p5z` name of at most 200 bytes, without `/`, `\`, `..` or control characters. |
+| 12 | The console has no such drive. |
+| 13 | It arrived damaged: what did not match is listed (`FAILED: ...`); send it again. |
+| 14 | The receive was cancelled on the console. |
+| 130 | Cancelled here. |
+
+What the console answers, for anyone writing a client (port 8095, the same server as its page, every
+request with the header `X-MaxPack-Code: <6 digits>`; refusals are JSON `{"error":"<code>","detail":"..."}`):
+
+| Request | Answer |
+|---|---|
+| `GET /api/receive/drives` | `{"drives":[{"id":"internal","free":N,"total":N,"fs":"..."},...]}` |
+| `POST /api/receive/start` with `{"name","size","drive"}` | `{"id":"<token>","have":N}`; `have` > 0 when a `.maxpack-recv` of that name and size is there. 409 `exists` or `busy`, 507 `no_space`, 400 `bad_name` or `fat32`, 404 `no_drive` |
+| `PUT /api/receive/data?id=&offset=` with the bytes (64 MiB at most) | `{"have":N}`; `offset` must be `have`, else 409 `offset` with `{"have":N}` |
+| `GET /api/receive/status?id=` | `{"have","size","state":"receiving|verifying|done|failed|cancelled","verify":{"bytes","total","bad":[...]}}` |
+| `POST /api/receive/finish?id=` | 202: the console verifies it; `done` once it has its name, `failed` with what did not match |
+| `POST /api/receive/cancel?id=` | The partial file goes; `cancelled` |
+
+Every route answers 403 `receive_off` while receiving is off, 401 `bad_code` without the right code, and
+429 `locked` for a minute after 5 wrong codes in a row from one address.
 
 ### `info` and `icon`: what a game says
 
@@ -1002,6 +1095,17 @@ drive with "Does not fit: ... more needed".
 
 What to do: free space on that drive. To play a `.p5z` from the internal SSD you need the size of its
 loose files plus 256 MiB; if you free it, the game mounts by itself. Or put the `.p5z` on a USB drive.
+
+### Send to the console: no answer, or the code is refused
+
+- **No answer:** MaxPack for the console must be open on the console, on the same network as the PC, at
+  the address of Settings (its page shows it). A firewall on the PC may block `maxpack-core`.
+- **"Receive games from the PC" is off,** or the code changed: turn it on in MaxPack for the console's
+  Settings and give the 6 digits it shows now. After 5 wrong codes in a row the console takes none from
+  that PC for a minute.
+- **It arrived damaged:** the console keeps it as `<name>.maxpack-recv` and says what did not match.
+  Check the `.p5z` on the PC (`maxpack verify --quick`), then send it again; if the PC copy is damaged
+  too, repair it or compress the game again.
 
 ### A damaged `.p5z`
 
@@ -1303,6 +1407,10 @@ console repository, which identifies games only by these numbers.
   played one on a real PS5. On the PC it is tested end to end: a grown `.p5z` decompresses bit for bit
   and verifies, an update gives the files (and, compacted, the bytes) of packing the new dump, and an
   append cut short at each of its steps leaves the `.p5z` exactly as it was.
+- **Sending a `.p5z` to the console** (`maxpack send`, Send to the console): tested against a stand-in of
+  the console's routes (start, a connection cut in the middle, going on from what the console has, every
+  refusal, a verify that fails), and the quick verify against copies with a byte changed in a volume, a
+  volume header and a loose file; not yet against MaxPack for the console on a real PS5.
 - A side-by-side timing of a `.p5z` against a packed folder, and more games, firmwares and drives.
 - The Windows installer with a double click and the on-screen wizard. If something does not work, use
   the portable zip and report it.

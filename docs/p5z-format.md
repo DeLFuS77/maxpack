@@ -7,7 +7,8 @@ A `.p5z` is a PS5 game already packed into a single file to keep on the PC. It c
   the originals that the folder replaces.
 
 It is written by `maxpack pack --p5z`, grown by `maxpack add` and `maxpack update` (see
-[A `.p5z` that grew](#a-p5z-that-grew-index-version-2)) and read by `unpack`, `verify` and `info`. All
+[A `.p5z` that grew](#a-p5z-that-grew-index-version-2)) and read by `unpack`, `verify` (and
+[`verify --quick`](#the-quick-verify), which MaxPack for the console runs on what it receives) and `info`. All
 integers are little-endian and the CRC is CRC-32 IEEE (zlib's).
 
 ## Layout
@@ -282,3 +283,34 @@ the essentials.
   `archive_id`, `level` and `volume_sums`.
 - **`maxpack.image`:** with that data the payload writes the `maxpack.image` file that `ampr-emu-ng` reads
   to locate the volumes inside the `.p5z`. Its contract is in `docs/p5z-mode.md` of ampr-emu-ng.
+
+## The quick verify
+
+`maxpack verify --quick <game.p5z>` (in C, `mp_p5z_verify_quick` in `src/pack/mp_verify_quick.h`) tells
+whether the bytes of a `.p5z` are the ones it was written with, at the speed of the disk: it never
+decompresses the packs. MaxPack for the console runs it on a `.p5z` it receives from the PC before it
+gives it its name. What it checks:
+
+- the header, the footer and the CRC of the index (as `mp_p5z_open`, which reads a `.p5z` whose append
+  stopped as it was before it, with the journal; it never cuts the file nor touches the journal);
+- each volume record: the SHA-256 of bytes [64, end) of the volume, which the index records, and its
+  64-byte header, which that hash leaves out, against its own CRC, its magic, its id, its size and the
+  `archive_id` of the `.p5z` header (a header written before the `.p5z` grew may count fewer volumes,
+  as ampr-emu-ng's p5z rules allow);
+- every other record (the loose files, the indexes, the runtime, the originals): the SHA-256 of what it
+  stores, decompressing its frames when it is stored in them.
+
+The records are read in the order their regions lie in the file, in one thread. Progress is in bytes of
+the regions read, of what they add up to; a cancel is asked before each piece of 4 MiB at most. It works
+on index version 1 and 2 alike. What only the full verify checks (`maxpack verify`) is that each packed
+file decompresses to the bytes of the original dump.
+
+The report: `ok`, `bytes` and `total`, `version`, how many `volumes` and `files` it checked, and how many
+did not match (`bad_count`), with the first 64 of them: `kind` (`volume`, with its `volume` id, or
+`file`), `path`, `why` (`sha256`: its bytes are not those the index records; `header`: a volume whose
+header is damaged or not of this `.p5z` while its SHA-256 matches; `data`: frames that do not
+decompress; `read`: bytes that could not be read), `expected` and `found` (lowercase hex; `found` is
+`null` for `data` and `read`). A `.p5z` whose header, footer or index is damaged, or that is cut short,
+cannot be checked: it is an error (`MP_QV_ERROR`, `"error":"invalid"` in JSON) with the reason, not a
+report. `--json` prints the report as one object; with `--progress json` it is the `result` line. The
+exit code is 0 when everything matched, 1 otherwise, 130 when cancelled.

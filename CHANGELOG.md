@@ -6,6 +6,34 @@ All notable changes to MaxPack are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Send to the console:** `maxpack send <game.p5z> <ps5-ip> --code <6 digits> [--drive <id>]` sends a
+  `.p5z` to MaxPack for the console over the network, which verifies it when it has it whole and only
+  then gives it its name. It shows the MB/s and the time left, goes on from what the console has after
+  a broken connection (or when the same command runs again), and ends with what the console's verify
+  says, with an exit code and a message for each refusal (receiving off, wrong code, already there,
+  busy, no space, FAT32, file name, no such drive, arrived damaged). `send --drives` lists the console's
+  drives with their free space; `--json` gives progress lines for a front end. In the window: Settings
+  > MaxPack for the console (its IP address and pairing code; the code goes only to `maxpack-core`, in
+  its environment, never into a log or a report), and **Send to the console** on the card of a `.p5z`
+  in Details and on the end card of Compress, with the drive and its free space, the bar, Cancel and
+  the end card; several `.p5z` go one after another. Needs MaxPack for the console with Settings >
+  Receive games from the PC.
+- **Quick verify:** `maxpack verify --quick <game.p5z>` (text and `--json`) checks a `.p5z`'s header,
+  footer and index, each volume's SHA-256 and header, and each stored file's SHA-256, without
+  decompressing the packs: at the speed of the disk. In C, `mp_p5z_verify_quick`
+  (`src/pack/mp_verify_quick.h`), with progress and cancel, for MaxPack for the console to check what it
+  receives. It works on `.p5z` files as packed and grown, and reads one whose append stopped as it was.
+- **Watched folder** (Settings > Watched folder, off by default): while the window is open, each dump
+  folder, image or `.pkg` that arrives at the top of one folder is compressed with the settings of
+  Compress once nothing new in it has changed for a minute, its DLC with it; what is in the destination
+  already is skipped, a game that lacks files of its list stays in the list with its warning, and what
+  was handed over is not again until it changes. **Send them to the console too** sends each `.p5z`
+  made. Windows, macOS and Linux (it looks every 5 seconds).
+- The HTTP client of the engine takes headers of its own and a response as soon as its `Content-Length`
+  has arrived.
+
 ### Fixed
 
 - **Growing a `.p5z` in the window:** a cancel during the verification that follows an update (or DLC

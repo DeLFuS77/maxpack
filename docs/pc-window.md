@@ -402,6 +402,12 @@ Afterwards:
   the packages of the lists that needed another passcode are read again with it. It goes to
   `maxpack-core` as `--passcode` for every game it reads; **Copy report** says whether one was given,
   never which.
+- **MaxPack for the console:** the console's IP address (as its page shows it; `a.b.c.d:port` when it
+  is not on port 8095) and the 6-digit pairing code it shows in its Settings > Receive games from the
+  PC, for [Send to the console](#send-to-the-console). The code is kept in the settings file and goes
+  only to `maxpack-core`, in its environment, never on a command line, into a log or into **Copy
+  report** (which says only whether an address and a code were given).
+- **Watched folder:** one folder, off by default; see [Watched folder](#watched-folder).
 - **Windows Explorer** (Windows only): the right-click menu, Send to › MaxPack and opening `.p5z`
   files with MaxPack (with their covers as thumbnails), each a switch, off until you turn it on. See
   [Windows Explorer](#windows-explorer).
@@ -461,6 +467,50 @@ title ID, a DLC's content ID or a path. For a
 sizes and the volumes filled in and a `?` for what only the console knows. **Report a bug** and **Report
 a game** open the forms of [maxpack-ps5](https://github.com/DeLFuS77/maxpack-ps5/issues) in your
 browser.
+
+### Send to the console
+
+**Send to the console** is on the card of a `.p5z` in Details, and on the end card of Compress when it
+made `.p5z` files (they are added to Details, read, and sent from there).
+
+- **Before:** the console's IP address and pairing code must be in Settings (without them the button
+  says so and opens Settings), and MaxPack for the console must have Settings > Receive games from the
+  PC on.
+- **The card** lists the `.p5z` that go and the console's drives, as it says them: internal storage and
+  each USB drive with its free space of its size; one where they do not fit with the console's margin
+  (256 MiB) says so. The drive chosen is the one of the next time.
+- **While it sends,** each row has its bar in two parts, the bytes and then the console's verify, with
+  the speed and the time left at the foot; several `.p5z` go one after another. If the connection
+  breaks, `maxpack-core` waits a moment and goes on from what the console has. **Cancel** stops it, and
+  the console deletes what it got.
+- **The end card** says how many went and how fast. A row that ended well says that the console
+  verified it; the others say why in words of their own: no answer, receiving off, wrong code (or too
+  many), already there, the console busy, no room, a FAT32 drive, a name it does not take, a drive it
+  no longer has, cancelled on the console, or arrived damaged with what did not match (the console keeps
+  it aside as `<name>.maxpack-recv`; send it again).
+
+### Watched folder
+
+Settings > Watched folder: **Choose…** picks the folder (and turns it on), the switch turns it off and
+on, and **Send them to the console too** sends what it makes. It works while the window is open,
+minimized too: no service stays in the system.
+
+- **What counts:** at the top of the folder only, a dump folder (it has `sce_sys/param.json`; a game
+  also its `eboot.bin`, a DLC not), an image (`.exfat`, `.ffpkg`, `.ffpfs`, `.ffpfsc`) or a `.pkg`.
+  Its subfolders, other files and what MaxPack writes apart (`*.maxpack-tmp`) are not looked at.
+- **When:** the folder is looked at every 5 seconds; what is new goes once nothing new has changed (in
+  size, date or number of files) for a minute, all of it at once, so a game and its DLC go together.
+- **How:** as if dropped on Compress: its row, its bar and the end card, with the destination, level,
+  repair data and originals of Compress; nothing is asked. Without a destination it waits for one. What
+  is in the destination already is skipped ("it is in the destination already"), and nothing is
+  replaced. A game that lacks files of its list (the 1.0.6 check) stays in the list with its warning.
+  When a queue of Compress is running, what arrives joins it.
+- **Never twice:** what was handed over is kept in `watched.json` next to the settings, with what it was
+  then; it is handed over again only once it changes, so a game that failed is tried again only after
+  that.
+- **To the console too:** each `.p5z` the watched folder made goes on to the console of Settings, to
+  the drive chosen last, once its queue ends.
+- **The folder gone** (a USB drive taken out) is said in Settings, and watching goes on when it is back.
 
 ## 5. Repair data
 

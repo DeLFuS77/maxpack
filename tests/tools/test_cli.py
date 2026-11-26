@@ -919,6 +919,7 @@ _, c, _ = info_complete(np5)
 check("info_json_p5z_no_table", c and c["checkable"] is False and c["leftover_count"] == 1, str(c))
 rc, so, _ = run("--help")
 check("help_leave_out_leftovers", "--leave-out-leftovers" in so, so[-1500:])
+
 rc, so, _ = run("--capabilities")
 check("capabilities_completeness", json.loads(so).get("completeness") is True, so)
 
@@ -1248,6 +1249,15 @@ d = json.loads(so or "{}") if rc == 0 else {}
 check("recover_on_info", rc == 0 and d.get("recovered") is True and "was undone" in err and os.path.getsize(jp) == size
       and not os.path.exists(jp + ".maxpack-append") and open(jp, "rb").read() == open(cp, "rb").read(),
       so[-300:] + err[-300:])
+# only a .p5z has a journal of MaxPack: a file named so next to an image is someone else's
+img = fresh(os.path.join(TMP, "journal_image.exfat"))
+shutil.copyfile(BASIC, img)
+with open(img + ".maxpack-append", "wb") as f:
+    f.write(b"not a journal of MaxPack")
+rc, so, err = run("info", "--json", img)
+check("recover_only_p5z", rc == 0 and os.path.exists(img + ".maxpack-append"), err[-300:])
+if os.path.exists(img + ".maxpack-append"):
+    os.remove(img + ".maxpack-append")
 rc, so, _ = run("--capabilities")
 check("capabilities_grow", json.loads(so or "{}").get("grow") is True, so)
 rc, so, _ = run("--help")

@@ -1006,10 +1006,14 @@ static int run_pack(int argc, char **argv) {
 
 // ---- growing a .p5z: add, update, compact ------------------------------------------------------------
 
-// Before a command reads a .p5z: an append that stopped (a power cut, a crash) is undone, and said.
+// Before a command reads a .p5z: an append that stopped (a power cut, a crash) is undone, and said. Only
+// a .p5z grows, so only a file named .p5z can have a journal of MaxPack next to it.
 static int recover_note(const char *path) {
     int what = 0;
     mp_err e = {{0}};
+    size_t n = strlen(path);
+    if (n < 4 || path[n - 4] != '.' || (path[n - 3] | 32) != 'p' || path[n - 2] != '5' || (path[n - 1] | 32) != 'z')
+        return 0;
     if (mp_p5z_recover(path, &what, &e) != 0) {
         fprintf(stderr, "warning: %s\n", e.msg);
         return 0;

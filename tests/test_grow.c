@@ -1243,6 +1243,47 @@ MP_TEST(describe_grown) {
     MP_CHECK(d.grown == 0 && d.unused_bytes == 0);
 }
 
+// ---- review fixes --------------------------------------------------------------------------------
+
+// A .p5z that grew and whose packs are damaged is still described (the window lists it, so it can be
+// verified and repaired): only the room it does not use is not told.
+MP_TEST(describe_grown_damaged_packs) {
+    if (grown_v2(262208, NULL, NULL) != 0) return;
+    mp_err e = {{0}};
+    mp_p5z *p = NULL;
+    uint64_t at = 0;
+    MP_CHECK(mp_p5z_open(G_P5Z, &p, &e) == 0);
+    for (size_t i = 0; p && i < p->nfiles; i++)   // the header of the last volume
+        if (p->files[i].role == MP_ROLE_VOLUME) at = p->files[i].data_off + 30;
+    mp_p5z_close(p);
+    size_t n = 0;
+    uint8_t *b = mpt_slurp(G_P5Z, &n);
+    if (!b || !at || at >= n) return;
+    b[at] ^= 0x01;
+    mpt_clear(TMP "/badpacks.p5z");
+    mpt_put(TMP "/badpacks.p5z", b, n);
+    free(b);
+    mp_describe d;
+    MP_CHECK(mp_describe_path(TMP "/badpacks.p5z", &d, &e) == 0);
+    if (e.msg[0]) fprintf(stderr, "  %s\n", e.msg);
+    MP_CHECK_STR(d.kind, "p5z");
+    MP_CHECK(d.grown == 1 && d.unused_bytes == 0);
+    mp_verify_result vr;
+    MP_CHECK(mp_verify_p5z(TMP "/badpacks.p5z", 2, 0, &vr, &e) == 0 && vr.files_bad > 0);
+}
+
+// Recovery is of a .p5z: next to a folder, a file named as a journal is someone else's and stays.
+MP_TEST(recover_never_touches_a_folder) {
+    mpt_clear(TMP);
+    mp_err e = {{0}};
+    mp_make_dirs(TMP "/afolder", &e);
+    mpt_put(TMP "/afolder" MP_P5Z_JOURNAL, "not ours", 8);
+    int what = -1;
+    MP_CHECK(mp_p5z_recover(TMP "/afolder", &what, &e) == 0);
+    MP_CHECK_EQ_U64(what, MP_RECOVER_NONE);
+    MP_CHECK(mp_path_kind(TMP "/afolder" MP_P5Z_JOURNAL) == 1);
+}
+
 int main(void) {
     MP_RUN(p5z_append_one_file);
     MP_RUN(p5z_copy_all_is_identical);
@@ -1275,5 +1316,7 @@ int main(void) {
     MP_RUN(compact_add_is_fresh);
     MP_RUN(compact_refusals);
     MP_RUN(describe_grown);
+    MP_RUN(describe_grown_damaged_packs);
+    MP_RUN(recover_never_touches_a_folder);
     MP_TEST_MAIN_END();
 }

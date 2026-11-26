@@ -404,7 +404,9 @@ static int describe_p5z(const char *path, mp_describe *d, mp_complete *c, mp_dlc
         if (m->v[i].flags & MP_MANIFEST_PACKED) d->packed_files++;
     }
     d->grown = mp_p5z_grown(p);
-    if (mp_p5z_unused(p, &d->unused_bytes, e) != 0) goto done;
+    // packs that do not open (damaged) are for verify to tell: the room it does not use is just not said
+    int packs_ok = mp_p5z_unused(p, &d->unused_bytes, NULL) == 0;
+    if (!packs_ok) d->unused_bytes = 0;
     uint64_t holes = 0;   // a .p5z that grew: room in its volumes that unpack --folder leaves out
     for (size_t i = 0; i < p->nfiles; i++) {
         if (p->files[i].role != MP_ROLE_ORIGINAL) d->install_size += p->files[i].size;
@@ -414,13 +416,12 @@ static int describe_p5z(const char *path, mp_describe *d, mp_complete *c, mp_dlc
             p->files[i].role == MP_ROLE_IDX3)
             d->loose_bytes += p->files[i].size;
     }
-    if (d->grown && d->volumes) {
-        mp_zpk *z = NULL;
-        if (mp_p5z_zpk(p, &z, e) != 0) goto done;
+    mp_zpk *z = NULL;
+    if (d->grown && d->volumes && packs_ok && mp_p5z_zpk(p, &z, NULL) == 0) {
         holes -= MP_ZPK_VOL_HEADER * d->volumes + mp_zpk_stored_bytes(z);
-        mp_zpk_close(z);
         d->install_size -= holes;
     }
+    mp_zpk_close(z);
     d->files = m->n;
     d->p5z_size = p->size;
     d->packed = 1;   // MaxPack packed it: it carries ampr_zstd.index

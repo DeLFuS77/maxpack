@@ -140,7 +140,9 @@ int mp_p5z_recover(const char *p5z, int *what, mp_err *e) {
     free(fin);
     free(tmp);
     if (!has) return 0;   // what nearly every open finds: one stat, two at most
-    if (mp_path_kind(p5z) != 1) {   // the .p5z is gone: nothing to undo
+    int kind = mp_path_kind(p5z);
+    if (kind == 2) return 0;   // a folder: a file named so next to it is not a journal of ours
+    if (kind == 0) {           // the .p5z is gone: nothing to undo
         p5z_journal_remove(p5z);
         *what = MP_RECOVER_STALE;
         return 0;

@@ -1307,6 +1307,33 @@ MP_TEST(compact_refusals) {
     MP_CHECK(mp_path_kind(TMP "/new.p5z") == 0);
 }
 
+// A malformed .p5z (its CRCs right): volume records with no ampr_zstd.index, or packed files with no packs
+// at all. A copy of it would leave its packed files out without a word: it is refused, nothing written.
+MP_TEST(compact_refuses_volumes_without_packs) {
+    mpt_clear(TMP);
+    if (mpt_pack(GAME, TMP "/x.p5z", 1, NULL) != 0) return;
+    for (int c = 0; c < 2; c++) {
+        size_t n = 0;
+        uint64_t ioff = 0;
+        uint8_t *ix = read_index(TMP "/x.p5z", &n, &ioff);
+        if (!ix) return;
+        uint32_t nf = rd32(ix + 12);
+        for (uint32_t i = 0; i < nf; i++) {   // ampr_zstd.index (and then the volumes) become loose files
+            uint8_t *rec = ix + 56 + 88 * i;
+            if (rec[8] == MP_ROLE_ZPK_INDEX || (c == 1 && rec[8] == MP_ROLE_VOLUME)) rec[8] = MP_ROLE_LOOSE;
+        }
+        put_index(TMP "/x.p5z", TMP "/bad.p5z", ix, n);
+        free(ix);
+        mp_err e = {{0}};
+        uint64_t size = 0;
+        mpt_clear(TMP "/copy.p5z");
+        if (mp_compact(TMP "/bad.p5z", TMP "/copy.p5z", 2, MP_ZPK_VOLUME_LIMIT, 0, &size, &e) == 0)
+            MP_FAIL_("case %d: compacted", c);
+        MP_CHECK_CONTAINS(e.msg, "packs");
+        MP_CHECK(mp_path_kind(TMP "/copy.p5z") == 0);
+    }
+}
+
 // ---- info --json --------------------------------------------------------------------------------------
 
 #include "mp_describe.h"
@@ -1785,5 +1812,6 @@ int main(void) {
     MP_RUN(sums_lines_and_json);
     MP_RUN(play_refuses_volumes_not_its_packs);
     MP_RUN(grow_refuses_packs_not_of_its_header);
+    MP_RUN(compact_refuses_volumes_without_packs);
     MP_TEST_MAIN_END();
 }

@@ -21,8 +21,8 @@ All notable changes to MaxPack are listed here. The format follows
   `docs/releasing.md` says how each release is signed (`minisign -Sm SHA256SUMS -t "MaxPack X.Y.Z"`, then
   `SHA256SUMS.minisig` uploaded to the draft before it is published).
 - **Keyboard shortcuts** in the window: Ctrl+O adds files, Ctrl+Shift+O a folder, Ctrl+Enter starts, Esc
-  cancels the queue once asked, Ctrl+P pauses or resumes, Ctrl+1 to Ctrl+5 open the sections (⌘ on macOS).
-  Settings › Keyboard lists them.
+  cancels the queue once asked, Ctrl+P pauses or resumes, Ctrl+1 to Ctrl+5 open the sections (⌘ on macOS),
+  with any keyboard layout (Russian and Arabic ones too). Settings › Keyboard lists them.
 - **Accessibility:** the bars are progress bars with their value (and whether they are paused), the ✕ of a
   row says which game it takes out, the status of the queue and the notices are read out, and every text
   reads at 4.5:1 at least in both themes (links in a darker blue; coral and amber darker in the light

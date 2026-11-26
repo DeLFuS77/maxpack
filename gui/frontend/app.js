@@ -2410,12 +2410,16 @@ const mac = platform => /mac/i.test(platform || "");
 
 // shortcutOf is what a key pressed does: "addFiles" (Ctrl+O), "addFolder" (Ctrl+Shift+O), "start"
 // (Ctrl+Enter), "cancel" (Esc), "pause" (Ctrl+P), "section:<name>" (Ctrl+1 to Ctrl+5), or "" for nothing;
-// ⌘ does what Ctrl does (macOS). The digits go by the key's place, whatever the keyboard writes there
+// ⌘ does what Ctrl does (macOS). The digits go by the key's place, whatever the keyboard writes there, and
+// so do O and P on a layout without Latin letters
 function shortcutOf(event) {
   const ctrl = event.ctrlKey || event.metaKey;
   if (event.key === "Escape") return ctrl || event.shiftKey || event.altKey ? "" : "cancel";
   if (!ctrl || event.altKey) return "";
-  const key = String(event.key || "").toLowerCase();
+  // the letter printed on the key (AZERTY, Dvorak); with a layout that writes no Latin letters (Russian,
+  // Arabic), the letter of the key's place
+  let key = String(event.key || "").toLowerCase();
+  if (!/^[a-z]$/.test(key)) key = ((/^Key([A-Z])$/.exec(event.code || "") || [])[1] || key).toLowerCase();
   if (key === "o") return event.shiftKey ? "addFolder" : "addFiles";
   if (event.shiftKey) return "";
   if (event.key === "Enter") return "start";

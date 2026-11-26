@@ -22,7 +22,12 @@ func TestPageKeys(t *testing.T) {
     [ctrl("p"), "pause"], [ctrl("1"), "section:compress"], [ctrl("2"), "section:decompress"], [ctrl("3"), "section:verify"],
     [ctrl("4"), "section:details"], [ctrl("5"), "section:rename"], [key("o", { metaKey: true }), "addFiles"],
     [ctrl("6"), ""], [key("o"), ""], [ctrl("o", { altKey: true }), ""], [ctrl("p", { shiftKey: true }), ""], [key("Enter"), ""], [ctrl("Escape"), ""],
-    [ctrl("&", { code: "Digit1", shiftKey: true }), ""], [ctrl("&", { code: "Digit1" }), "section:compress"]];
+    [ctrl("&", { code: "Digit1", shiftKey: true }), ""], [ctrl("&", { code: "Digit1" }), "section:compress"],
+    // a layout that writes no Latin letters (Russian, Arabic): the letter of the key's place
+    [ctrl("щ", { code: "KeyO" }), "addFiles"], [ctrl("Щ", { code: "KeyO", shiftKey: true }), "addFolder"], [ctrl("з", { code: "KeyP" }), "pause"],
+    [ctrl("خ", { code: "KeyO" }), "addFiles"], [ctrl("ح", { code: "KeyP" }), "pause"], [ctrl("ы", { code: "KeyS" }), ""],
+    // a Latin layout (AZERTY, Dvorak): the letter printed on the key, wherever it is
+    [ctrl("o", { code: "KeyS" }), "addFiles"], [ctrl("s", { code: "KeyO" }), ""], [ctrl("p", { code: "KeyR" }), "pause"]];
   for (const [event, want] of cases) if (shortcutOf(event) !== want) say("the shortcut of " + JSON.stringify(event) + ": " + JSON.stringify(shortcutOf(event)) + ", not " + want);
   // what each one does, and that the browser does not take it
   const press = event => { event.preventDefault = () => { event.prevented = true; }; onKey(event); return event; };

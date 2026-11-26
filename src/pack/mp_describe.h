@@ -31,6 +31,10 @@ typedef struct {
     // no eboot.bin (its title_id is then its content ID's, the one pack --dlc checks); dlc_data, one
     // with files of its own outside sce_sys/ (else a license only)
     int dlc, dlc_data;
+    // .p5z: how many times it grew (maxpack add or update; 0 for one as packed) and the bytes it does not use
+    // (mp_p5z_unused)
+    uint32_t grown;
+    uint64_t unused_bytes;
 } mp_describe;
 
 // 0 if it could describe it; -1 with the reason in e.

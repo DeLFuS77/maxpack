@@ -1216,6 +1216,33 @@ MP_TEST(compact_refusals) {
     MP_CHECK(mp_path_kind(TMP "/new.p5z") == 0);
 }
 
+// ---- info --json --------------------------------------------------------------------------------------
+
+#include "mp_describe.h"
+
+MP_TEST(describe_grown) {
+    if (grown_v2(MP_ZPK_VOLUME_LIMIT, NULL, NULL) != 0) return;
+    mp_describe d;
+    mp_err e = {{0}};
+    MP_CHECK(mp_describe_path(G_P5Z, &d, &e) == 0);
+    MP_CHECK_STR(d.kind, "p5z");
+    MP_CHECK_EQ_U64(d.grown, 1);
+    mp_p5z *p = NULL;
+    uint64_t u = 0;
+    MP_CHECK(mp_p5z_open(G_P5Z, &p, &e) == 0 && mp_p5z_unused(p, &u, &e) == 0);
+    mp_p5z_close(p);
+    MP_CHECK(u > 0);
+    MP_CHECK_EQ_U64(d.unused_bytes, u);
+    // what unpack --folder leaves: the volumes without the room they do not use (their headers counted)
+    MP_CHECK(mp_p5z_open(G_P5Z, &p, &e) == 0 && mp_unpack_folder(p, TMP "/d_folder", 2, 0, &e) == 0);
+    mp_p5z_close(p);
+    uint64_t actual = mpt_dir_size(TMP "/d_folder");
+    MP_CHECK(d.install_size >= actual && d.install_size <= actual + 72 * d.volumes);
+    if (mpt_pack(V1, TMP "/plain.p5z", 1, NULL) != 0) return;
+    MP_CHECK(mp_describe_path(TMP "/plain.p5z", &d, &e) == 0);
+    MP_CHECK(d.grown == 0 && d.unused_bytes == 0);
+}
+
 int main(void) {
     MP_RUN(p5z_append_one_file);
     MP_RUN(p5z_copy_all_is_identical);
@@ -1247,5 +1274,6 @@ int main(void) {
     MP_RUN(compact_update_is_fresh);
     MP_RUN(compact_add_is_fresh);
     MP_RUN(compact_refusals);
+    MP_RUN(describe_grown);
     MP_TEST_MAIN_END();
 }

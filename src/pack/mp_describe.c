@@ -403,12 +403,23 @@ static int describe_p5z(const char *path, mp_describe *d, mp_complete *c, mp_dlc
         d->original_size += m->v[i].size;
         if (m->v[i].flags & MP_MANIFEST_PACKED) d->packed_files++;
     }
+    d->grown = mp_p5z_grown(p);
+    if (mp_p5z_unused(p, &d->unused_bytes, e) != 0) goto done;
+    uint64_t holes = 0;   // a .p5z that grew: room in its volumes that unpack --folder leaves out
     for (size_t i = 0; i < p->nfiles; i++) {
         if (p->files[i].role != MP_ROLE_ORIGINAL) d->install_size += p->files[i].size;
         if (p->files[i].role == MP_ROLE_VOLUME) d->volumes++;
+        if (p->files[i].role == MP_ROLE_VOLUME) holes += p->files[i].size;
         if (p->files[i].role == MP_ROLE_LOOSE || p->files[i].role == MP_ROLE_ZPK_INDEX ||
             p->files[i].role == MP_ROLE_IDX3)
             d->loose_bytes += p->files[i].size;
+    }
+    if (d->grown && d->volumes) {
+        mp_zpk *z = NULL;
+        if (mp_p5z_zpk(p, &z, e) != 0) goto done;
+        holes -= MP_ZPK_VOL_HEADER * d->volumes + mp_zpk_stored_bytes(z);
+        mp_zpk_close(z);
+        d->install_size -= holes;
     }
     d->files = m->n;
     d->p5z_size = p->size;

@@ -36,3 +36,6 @@ func renameNew(from, to string) error {
 func inUse(err error) bool {
 	return errors.Is(err, syscall.EBUSY) || errors.Is(err, syscall.ETXTBSY)
 }
+
+// heldByAnother tells whether a rename may work a moment later (the file is busy).
+func heldByAnother(err error) bool { return inUse(err) }

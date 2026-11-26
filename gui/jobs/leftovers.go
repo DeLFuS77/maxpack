@@ -185,6 +185,12 @@ func (l *Leftovers) Found() []Leftover {
 	for _, p := range l.paths() {
 		if _, err := os.Lstat(p); err == nil {
 			left := Leftover{Path: p, Size: SizeOf(p)}
+			// an old one set aside by a swap that was cut short, with nothing at its name: it goes back there
+			if out := strings.TrimSuffix(p, OldSuffix); out != p {
+				if _, err := os.Lstat(out); errors.Is(err, fs.ErrNotExist) {
+					left.Restore = out
+				}
+			}
 			if strings.HasSuffix(p, RepairSuffix) {
 				from, keep := repairFate(p)
 				left.Keep = keep
@@ -206,6 +212,17 @@ func (l *Leftovers) Clean() []string {
 	for _, p := range l.paths() {
 		if _, err := os.Lstat(p); err != nil {
 			continue
+		}
+		if out := strings.TrimSuffix(p, OldSuffix); out != p {
+			if _, err := os.Lstat(out); errors.Is(err, fs.ErrNotExist) {
+				// a swap cut short between its renames: the old one goes back to its name
+				if err := renameNew(p, out); err != nil {
+					failed = append(failed, p+": "+err.Error())
+					continue
+				}
+				l.Remove(p)
+				continue
+			}
 		}
 		if strings.HasSuffix(p, RepairSuffix) {
 			from, keep := repairFate(p)

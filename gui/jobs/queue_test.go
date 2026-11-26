@@ -97,3 +97,29 @@ func TestAddedKeepsItsOriginal(t *testing.T) {
 		t.Errorf("the original went: %v", err)
 	}
 }
+
+// The next game, or that none is left, is told in one look at the queue (M11): while paused, a game that is left
+// is not taken (the Runner holds), and one added meanwhile is never taken without that hold; with none left the
+// queue closes, paused or not.
+func TestQueueNextWhilePaused(t *testing.T) {
+	q := NewQueue([]Plan{{Out: "a"}})
+	if _, _, more, wait := q.take(true); !more || !wait {
+		t.Fatalf("paused, a game left: more %v, wait %v", more, wait)
+	}
+	if i, p, more, wait := q.take(false); !more || wait || i != 0 || p.Out != "a" {
+		t.Fatalf("going on: %d %+v %v %v", i, p, more, wait)
+	}
+	if first, ok := q.Add(Plan{Out: "b"}); !ok || first != 1 {
+		t.Fatalf("added: %d %v", first, ok)
+	}
+	if _, _, more, wait := q.take(true); !more || !wait {
+		t.Errorf("one added while paused is taken without a hold")
+	}
+	q.take(false)
+	if _, _, more, wait := q.take(true); more || wait {
+		t.Errorf("none left: more %v, wait %v", more, wait)
+	}
+	if _, ok := q.Add(Plan{Out: "c"}); ok {
+		t.Error("the queue is not closed")
+	}
+}

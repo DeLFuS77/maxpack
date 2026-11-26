@@ -89,20 +89,10 @@ func (q *Queue) Len() int {
 	return len(q.plans)
 }
 
-// more tells whether a game is left to do (not taken out), without taking it.
-func (q *Queue) more() bool {
-	q.mutex.Lock()
-	defer q.mutex.Unlock()
-	for i := q.next; i < len(q.plans); i++ {
-		if !q.removed[i] {
-			return true
-		}
-	}
-	return false
-}
-
-// take gives the next game to do, past the ones taken out; when there is none the queue closes.
-func (q *Queue) take() (int, Plan, bool) {
+// take gives the next game to do, past the ones taken out; when there is none the queue closes (more is false),
+// paused or not. While paused, a game that is left is not taken: wait says to hold and ask again. One look at
+// the queue for both, so a game added meanwhile is never taken without that hold.
+func (q *Queue) take(paused bool) (i int, p Plan, more, wait bool) {
 	q.mutex.Lock()
 	defer q.mutex.Unlock()
 	for q.next < len(q.plans) && q.removed[q.next] {
@@ -110,9 +100,12 @@ func (q *Queue) take() (int, Plan, bool) {
 	}
 	if q.next >= len(q.plans) {
 		q.closed = true
-		return 0, Plan{}, false
+		return 0, Plan{}, false, false
 	}
-	i := q.next
+	if paused {
+		return 0, Plan{}, true, true
+	}
+	i = q.next
 	q.next++
-	return i, q.plans[i], true
+	return i, q.plans[i], true, false
 }

@@ -98,6 +98,19 @@ type Runner struct {
 	Journal Journal
 	Log     func(line string)
 	Pause   *core.Pause
+	// Redo decides again, when its turn comes and right before the swap, whether a game the watched folder brought
+	// may be made again in place of its .p5z (Plan.ReplaceIf): "" yes, else why not (the window's record of what
+	// it made, see watch.go). Without it, no such game is ever replaced
+	Redo func(p Plan) string
+}
+
+// redoRefused is why the .p5z the watched folder made of p may not be replaced now, "" when it may: the window's
+// record says so, and the file there is still that one.
+func (r *Runner) redoRefused(p Plan) string {
+	if r.Redo == nil || p.ReplaceIf == nil || !p.ReplaceIf.Matches(p.Out) {
+		return "watch_redo_refused"
+	}
+	return r.Redo(p)
 }
 
 // hold waits while the queue is paused, before anything starts; an error once ctx ended.
@@ -204,10 +217,11 @@ func (r *Runner) RunQueue(ctx context.Context, q *Queue, o Options) Summary {
 	for {
 		// the next game waits while paused; cancelled meanwhile, it is cancelled as the others. With none left the
 		// queue ends now, paused or not: nothing would be resumed
-		if q.more() {
+		i, p, more, wait := q.take(r.Pause.On() && ctx.Err() == nil)
+		if wait {
 			r.hold(ctx)
+			continue
 		}
-		i, p, more := q.take()
 		if !more {
 			break
 		}
@@ -292,6 +306,14 @@ func (r *Runner) one(ctx context.Context, i int, p Plan, o Options) outcome {
 	// the drive may be gone (a USB taken out): say so instead of making its folders again
 	if info, err := os.Stat(o.Dest); err != nil || !info.IsDir() {
 		return fail(StateError, "dest_missing")
+	}
+	// the .p5z the watched folder made of it, made again: only while the window's record still says so (fail
+	// closed), decided now before anything is made, and again before the swap
+	redo := len(p.Replace) > 0 && p.ReplaceIf != nil
+	if redo {
+		if why := r.redoRefused(p); why != "" {
+			return fail(StateSkipped, why)
+		}
 	}
 	if p.Tmp == "" {
 		p.Tmp = p.Out + TmpSuffix
@@ -385,19 +407,29 @@ func (r *Runner) one(ctx context.Context, i int, p Plan, o Options) outcome {
 		return fail(StateError, discard("source_changed"))
 	}
 	system.SetHidden(p.Tmp, false)
-	// the .p5z the watched folder made of it is made again only while that very file is there: another file put
-	// there meanwhile stays, and the new one goes
-	if len(p.Replace) > 0 && p.ReplaceIf != nil && !p.ReplaceIf.Matches(p.Out) {
-		r.log("Not in its place, something else is there now: %s", p.Out)
-		return fail(StateError, discard("exists"))
-	}
-	if p.ReplaceIf != nil && len(p.Replace) > 0 {
+	// the .p5z the watched folder made of it is made again only while that very file is there and the window's
+	// record still says so: else the .p5z there stays, and the new one goes
+	var check func(old string) bool
+	if redo {
+		if why := r.redoRefused(p); why != "" {
+			r.log("Not made again in its place, its record or the file there no longer says so: %s", p.Out)
+			return fail(StateSkipped, discard(why))
+		}
+		check = p.ReplaceIf.Matches           // once set aside too (a rename keeps size and date)
 		notes = append(notes, "watch_redone") // it changed after it was compressed: compressed again
 	}
 	if len(p.Replace) > 0 {
 		// the repair data of the old .p5z goes with it: it protected that one
 		oldSet := o.Mode == ModeP5z && par2.Inspect(p.Out).State == par2.StateMatch
-		leftover, err := swap(p.Out, p.Tmp)
+		// the old one is in the journal while it is apart: a cut between the renames puts it back (Clean)
+		r.keep(p.Out + OldSuffix)
+		leftover, err := swapIf(p.Out, p.Tmp, check)
+		if !leftover {
+			r.forget(p.Out + OldSuffix)
+		}
+		if errors.Is(err, errNotTheOne) {
+			return fail(StateSkipped, discard("watch_redo_refused"))
+		}
 		if err != nil {
 			return fail(StateError, discard("swap_failed: "+err.Error()))
 		}

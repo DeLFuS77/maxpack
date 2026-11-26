@@ -416,3 +416,55 @@ func TestSpaceOfTheQueue(t *testing.T) {
 		t.Errorf("verify writes nothing: %+v", short)
 	}
 }
+
+// A swap checks the old one once it is set aside (a rename keeps its size and date): another file there by then
+// goes back to its name, and nothing is replaced (M5).
+func TestSwapChecksTheOld(t *testing.T) {
+	dir := t.TempDir()
+	out, tmp := filepath.Join(dir, "g.p5z"), filepath.Join(dir, "g.p5z"+TmpSuffix)
+	os.WriteFile(out, []byte("the user's"), 0o644)
+	os.WriteFile(tmp, []byte("the new one"), 0o644)
+	if _, err := swapIf(out, tmp, func(string) bool { return false }); !errors.Is(err, errNotTheOne) {
+		t.Fatalf("%v", err)
+	}
+	if data, _ := os.ReadFile(out); string(data) != "the user's" {
+		t.Errorf("out: %q", data)
+	}
+	if _, err := os.Stat(out + OldSuffix); err == nil {
+		t.Error("the old one is left apart")
+	}
+	if _, err := swapIf(out, tmp, func(string) bool { return true }); err != nil {
+		t.Fatal(err)
+	}
+	if data, _ := os.ReadFile(out); string(data) != "the new one" {
+		t.Errorf("swapped: %q", data)
+	}
+}
+
+// What a power cut between the two renames of a swap leaves: the new one apart and the old one apart, and nothing
+// at its name. Clean puts the old one back (it was journaled before the swap), not away (M5).
+func TestCleanPutsTheOldBack(t *testing.T) {
+	dir := t.TempDir()
+	out := filepath.Join(dir, "g.p5z")
+	os.WriteFile(out+OldSuffix, []byte("the one it had"), 0o644)
+	os.WriteFile(out+TmpSuffix, []byte("half of the new one"), 0o644)
+	l := &Leftovers{File: filepath.Join(t.TempDir(), "leftovers.json")}
+	l.Add(out + OldSuffix)
+	l.Add(out + TmpSuffix)
+	found := l.Found()
+	if len(found) != 2 || found[0].Restore != out {
+		t.Fatalf("%+v", found)
+	}
+	if failed := l.Clean(); len(failed) != 0 {
+		t.Fatal(failed)
+	}
+	if data, _ := os.ReadFile(out); string(data) != "the one it had" {
+		t.Errorf("put back: %q", data)
+	}
+	if _, err := os.Stat(out + TmpSuffix); err == nil {
+		t.Error("the half-made one stays")
+	}
+	if len(l.Found()) != 0 {
+		t.Error("still kept")
+	}
+}

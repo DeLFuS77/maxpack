@@ -6,6 +6,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -117,16 +118,65 @@ func TestWatchedMadeAgain(t *testing.T) {
 				os.WriteFile(plans[0].Out, []byte("the user's own .p5z, put there meanwhile"), 0o644)
 			}
 		}
-		(&Runner{Core: os.Args[0], OnItem: onItem}).Run(context.Background(), plans, o)
+		redo := func(p Plan) string { return "" } // the window's record says it is still the one made
+		(&Runner{Core: os.Args[0], OnItem: onItem, Redo: redo}).Run(context.Background(), plans, o)
 		data, _ := os.ReadFile(plans[0].Out)
 		_, leftover := os.Stat(plans[0].Out + TmpSuffix)
+		_, old := os.Stat(plans[0].Out + OldSuffix)
 		switch {
 		case !changed && (state != StateOK || !hasPart(detail, "watch_redone") || !strings.HasPrefix(string(data), "MAXPKP5Z")):
 			t.Errorf("made again: %s %q %q", state, detail, data[:min(len(data), 20)])
-		case changed && (state != StateError || detail != "exists" || string(data) != "the user's own .p5z, put there meanwhile"):
+		case changed && (state != StateSkipped || detail != "watch_redo_refused" || string(data) != "the user's own .p5z, put there meanwhile"):
 			t.Errorf("another file there: %s %q %q", state, detail, data)
-		case leftover == nil:
-			t.Error("what was made is left apart")
+		case leftover == nil || old == nil:
+			t.Error("what was made, or the old one, is left apart")
+		}
+	}
+}
+
+// Fail closed: a redo is decided again from the window's record and the file on disk before anything is made, and
+// again right before the swap. Without the record (the watched folder turned off or changed, the record gone), or
+// with no one to ask, nothing is replaced: the game is skipped, the .p5z there stays, and nothing is made at all
+// when that is known before.
+func TestWatchedRedoFailsClosed(t *testing.T) {
+	t.Setenv(fakecore.Env, "writes")
+	for _, c := range []struct {
+		name   string
+		redo   func(p Plan) string
+		before bool // refused before anything is made
+	}{
+		{"no one to ask", nil, true},
+		{"refused at once", func(Plan) string { return "watch_redo_refused" }, true},
+		{"refused before the swap", nil, false},
+	} {
+		it := source(t, "Starfall Odyssey", "PPSA10001")
+		it.Watched = true
+		o := Options{Mode: ModeP5z, Dest: t.TempDir()}
+		os.WriteFile(PlanCompress([]Item{it}, o, newFS())[0].Out, []byte("what the watched folder made before"), 0o644)
+		plans := PlanCompress([]Item{it}, o, newFS())
+		info, _ := os.Stat(plans[0].Out)
+		plans[0].ReplaceIf = &Fingerprint{Size: info.Size(), Mtime: info.ModTime().UnixNano()}
+		asked := 0
+		redo := c.redo
+		if c.name == "refused before the swap" {
+			redo = func(Plan) string { // yes before it is made; the watched folder turned off meanwhile
+				if asked++; asked == 1 {
+					return ""
+				}
+				return "watch_redo_refused"
+			}
+		}
+		var states []string
+		var detail string
+		r := &Runner{Core: os.Args[0], Redo: redo, OnItem: func(i int, s, d string) { states = append(states, s); detail = d }}
+		r.Run(context.Background(), plans, o)
+		data, _ := os.ReadFile(plans[0].Out)
+		packed := slices.Contains(states, StatePacking)
+		if states[len(states)-1] != StateSkipped || detail != "watch_redo_refused" || string(data) != "what the watched folder made before" || packed == c.before {
+			t.Errorf("%s: %v %q %q", c.name, states, detail, data)
+		}
+		if _, err := os.Stat(plans[0].Out + TmpSuffix); err == nil {
+			t.Errorf("%s: what was made is left apart", c.name)
 		}
 	}
 }

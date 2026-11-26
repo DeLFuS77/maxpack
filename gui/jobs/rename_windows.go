@@ -34,3 +34,7 @@ func renameNew(from, to string) error {
 func inUse(err error) bool {
 	return errors.Is(err, windows.ERROR_SHARING_VIOLATION) || errors.Is(err, windows.ERROR_LOCK_VIOLATION)
 }
+
+// heldByAnother tells whether a rename may work a moment later: another program has the file open without
+// sharing its delete (a sharing violation, or an access denied as some scanners give).
+func heldByAnother(err error) bool { return inUse(err) || errors.Is(err, windows.ERROR_ACCESS_DENIED) }

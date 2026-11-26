@@ -1262,9 +1262,12 @@ function line(name, text) {
 // ---- a queue -------------------------------------------------------------------------------------
 
 // what is sent to the window of a game: no icon, which it does not need; for a game of Compress, the
-// DLC that go inside it (their paths, in the order of the list) and what they take; dlc: those DLC
-// rows, when the caller has them already
-function itemOf(row, dlc = dlcRowsOf(row)) {
+// DLC that go inside it (their paths, in the order of the list) and what they take (itemWith: with those
+// DLC rows, found by the caller)
+function itemOf(row) {
+  return itemWith(row, dlcRowsOf(row));
+}
+function itemWith(row, dlc) {
   // a license adds no files: only the ones with files of their own take room
   return Object.assign({}, row.game, { Icon: "", AddDLC: dlc.map(other => other.path),
     AddDLCSize: dlc.filter(other => other.game.DLCData).reduce((sum, other) => sum + (Number(other.game.OriginalSize) || 0), 0),
@@ -1275,7 +1278,7 @@ function itemOf(row, dlc = dlcRowsOf(row)) {
 // they took and how many of them had files of their own
 function itemsOf(rows) {
   const dlc = rows.map(row => dlcRowsOf(row));
-  const items = rows.map((row, n) => itemOf(row, dlc[n]));
+  const items = rows.map((row, n) => itemWith(row, dlc[n]));
   rows.forEach((row, n) => Object.assign(row, { dlcSent: items[n].AddDLC, dlcSentSize: items[n].AddDLCSize,
     dlcSentData: dlc[n].filter(other => other.game.DLCData).length }));
   return items;

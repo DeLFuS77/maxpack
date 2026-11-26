@@ -589,6 +589,62 @@ MP_TEST(grow_play_lists_every_volume) {
     mp_play_close(pl);
 }
 
+// The game's .p5z with k volume records appended that its packs do not have, as a crafted file would
+// have them: index version 2, every old record kept as it is.
+static int with_extra_volumes(const char *dst, uint32_t k) {
+    mp_err e = {{0}};
+    mpt_clear(TMP);
+    if (mpt_pack(GAME, dst, 1, NULL) != 0) return -1;
+    mp_p5z *p = NULL;
+    mp_wfile *f = NULL;
+    int busy = 0, rc = -1;
+    mp_pack_out out;
+    memset(&out, 0, sizeof out);
+    if (mp_p5z_open(dst, &p, &e) != 0 || mp_wfile_reopen_locked(dst, &f, &busy, &e) != 0 ||
+        p5z_out_append(f, 2, 0, 1, &out, &e) != 0)
+        goto done;
+    uint32_t nvol = 0;
+    for (size_t i = 0; i < p->nfiles; i++) {
+        nvol += p->files[i].role == MP_ROLE_VOLUME;
+        if (p5z_out_keep(&out, p, i, p->files[i].mtime, &e) != 0) goto done;
+    }
+    static const uint8_t body[64] = {0};
+    for (uint32_t v = nvol; v < nvol + k; v++) {
+        uint8_t h[64] = {0};
+        if (out.zpk.vol_begin(out.zpk.ctx, v, &e) != 0 || out.zpk.vol_write(out.zpk.ctx, body, sizeof body, &e) != 0 ||
+            out.zpk.vol_end(out.zpk.ctx, v, &e) != 0 || out.zpk.vol_header(out.zpk.ctx, v, h, &e) != 0)
+            goto done;
+    }
+    rc = out.finish(out.ctx, &p->man, &e);
+done:
+    if (rc) MP_FAIL_("extra volumes: %s", e.msg);
+    if (out.destroy) out.destroy(out.ctx);
+    if (f) mp_wfile_close(f, NULL);
+    mp_p5z_close(p);
+    return rc;
+}
+
+// What maxpack.image is made of on the console: the volumes of the .p5z's packs, every one and no other,
+// and no more than the console takes. A .p5z with a volume its packs do not have, or with more volumes
+// than that, is refused by the console's gatekeeper, though the engine reads its packs.
+MP_TEST(play_refuses_volumes_not_its_packs) {
+    const uint32_t extra[] = {1, P5Z_PLAY_MAX_VOLUMES + 1};
+    for (size_t c = 0; c < sizeof extra / sizeof *extra; c++) {
+        if (with_extra_volumes(A_P5Z, extra[c]) != 0) return;
+        mp_err e = {{0}};
+        mp_p5z *p = NULL;
+        mp_zpk *z = NULL;
+        MP_CHECK(mp_p5z_open(A_P5Z, &p, &e) == 0 && mp_p5z_zpk(p, &z, &e) == 0);   // the engine reads it
+        mp_zpk_close(z);
+        mp_p5z_close(p);
+        char err[256] = "";
+        mp_play *pl = mp_play_open(A_P5Z, err, sizeof err);
+        if (pl) MP_FAIL_("%u volumes more: played", (unsigned)extra[c]);
+        MP_CHECK_CONTAINS(err, "volumes");
+        mp_play_close(pl);
+    }
+}
+
 // The test hook: fails (mode 1) or stops as a power cut would (mode 2) at its call number `at`, and
 // keeps the name of that step.
 static int fault_at, fault_mode, fault_calls;
@@ -1699,5 +1755,6 @@ int main(void) {
     MP_RUN(sums_fresh_pack);
     MP_RUN(sums_grown);
     MP_RUN(sums_lines_and_json);
+    MP_RUN(play_refuses_volumes_not_its_packs);
     MP_TEST_MAIN_END();
 }

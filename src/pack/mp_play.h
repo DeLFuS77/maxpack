@@ -9,8 +9,9 @@
 typedef struct mp_play mp_play;
 
 // Opens a .p5z to play it without installing. Checks header, footer and index (mp_p5z_open), ampr_zstd.index
-// and each volume's header (mp_p5z_zpk, which calls check_volume), and that the .p5z header's archive_id
-// is the index's. NULL with the reason in err (NUL-terminated, truncated to errlen).
+// and each volume's header (mp_p5z_zpk, which calls check_volume), that the .p5z header's archive_id is
+// the index's, and that its volume records are the packs' volumes, at most 256 (what maxpack.image
+// takes). NULL with the reason in err (NUL-terminated, truncated to errlen).
 mp_play *mp_play_open(const char *p5z, char *err, size_t errlen);
 // JSON with malloc (freed with mp_play_free_str):
 // {"title_id","version","name","archive_id":"<32 lowercase hex>","size":<bytes of the .p5z>,

@@ -73,15 +73,21 @@ typedef struct {
     // "verify_failed" (it arrived damaged: the console keeps it with its .maxpack-recv name), "console_cancelled"
     // (cancelled on the console), "console_stopped" (stopped on the console's page: it keeps what arrived),
     // "write_error" (the console could not write it, again and again), "stalled" (nothing moved for
-    // opts.stall_ms: kept), "unreachable" (no answer after the tries), "cancelled" (hooks.cancelled: kept says
-    // whether the console keeps what arrived), "console_error" (an answer this client does not know, or one that
-    // does not move forward), "io" (reading the .p5z here)
+    // opts.stall_ms, or this PC slept that long: kept), "unreachable" (no answer after the tries), "cancelled"
+    // (hooks.cancelled: kept says whether the console keeps what arrived), "delete_failed" (send_discard: the
+    // console could not delete it), "console_error" (an answer this client does not know, or one that does not
+    // move forward), "io" (reading the .p5z here)
     const char *code;
     char detail[512];       // what the console said with it, if anything (control characters replaced)
     char name[256], drive[64];
     uint64_t size, resumed_from, sent;   // the .p5z's size, what the console had already, what went this time
     uint64_t have;          // what the console has of it at the end
-    int kept;               // "cancelled", "console_stopped", "stalled": 1 when the console keeps what arrived
+    // "cancelled", "console_stopped", "stalled", "write_error", and "no_space" when part of it is there already
+    // (taking room): 1 when the console keeps what arrived
+    int kept;
+    int slept;              // "stalled": this PC slept (its clock jumped past opts.stall_ms between two looks)
+    uint64_t need;          // "no_space": how many more bytes the drive would need, when the console says it
+    int deleted;            // mp_send_discard: 1 when there was something to delete (have says how much)
     unsigned retries;       // broken connections it went past
     size_t nbad;            // verify_failed: how many the console listed (at most MP_SEND_MAX_BAD)
     mp_send_bad *bad;       // malloc'd (mp_send_result_free)
@@ -93,9 +99,10 @@ void mp_send_result_free(mp_send_result *r);
 // the console says it is done; -1 with r->code (and e) otherwise.
 int mp_send(const char *path, const mp_send_opts *o, const mp_send_hooks *h, mp_send_result *r, mp_err *e);
 
-// Deletes what the console has received of the .p5z at path on that drive (its .maxpack-recv): starts its
-// receive again and cancels it. 0 when it is gone; -1 with r->code ("exists": the console has it whole, and it
-// is not touched).
+// Deletes what the console has received of the .p5z at path on that drive (its .maxpack-recv), with the console's
+// own request for it: never a start, so a drive that is full does not refuse it. Only the name of path is used.
+// 0 when nothing of it is there any more: r->deleted says whether there was something (r->have, its bytes); the
+// .p5z whole on the console is never touched. -1 with r->code ("busy": a receive of it is at work).
 int mp_send_discard(const char *path, const mp_send_opts *o, mp_send_result *r, mp_err *e);
 
 typedef struct {

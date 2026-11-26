@@ -47,7 +47,8 @@ class Console:
         self.verify_bad = None  # a list of bad items: the verify fails with them
         self.verify_polls = 0
         self.cancel_during_verify = False
-        self.refuse_start = None   # (status, code)
+        self.refuse_start = None   # (status, code) or (status, code, {more fields})
+        self.refuse_resume = None  # the same, only for a start that resumes a paused receive
         self.cut_puts = 0          # PUTs cut short after half their body, with no answer
         self.forget_on_cut = False  # and the console forgets the token, as when its payload starts again
         self.offset_once = None    # the first PUT is answered 409 offset with this have
@@ -68,6 +69,9 @@ class Console:
         self.stuck = False         # PUT answers 200 with the same have and keeps nothing
         self.verify_stuck = False  # the verify never moves
         self.hostile = False       # strings with control characters, and a long list of what failed
+        # contract v3: discard deletes a .maxpack-recv with no start
+        self.discard_fails = False  # the delete fails (500 delete_failed)
+        self.discarded = []        # (drive, name) of each discard asked
 
     def have(self):
         return len(self.partial.get(self.key, b""))
@@ -111,7 +115,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if (method, url.path) == ("POST", "/api/receive/start"):
                 req = json.loads(self.rfile.read(n) or b"{}")
                 if C.refuse_start:
-                    return self.refuse(*C.refuse_start)
+                    return self.refuse(*C.refuse_start[:2], **(C.refuse_start[2] if len(C.refuse_start) > 2 else {}))
+                if C.refuse_resume and C.state == "paused":
+                    more = dict(C.refuse_resume[2]) if len(C.refuse_resume) > 2 else {}
+                    if more.get("have") == "here":
+                        more["have"] = C.have()
+                    return self.refuse(*C.refuse_resume[:2], **more)
                 name, size, drive = req.get("name", ""), req.get("size", -1), req.get("drive", "")
                 if drive not in [d["id"] for d in C.drives]:
                     return self.refuse(404, "no_drive")
@@ -130,6 +139,25 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 C.key, C.size, C.state = key, size, "receiving"
                 C.token = "t%d" % len(C.requests)
                 return self.answer(200, {"id": C.token, "have": C.have()})
+            if (method, url.path) == ("POST", "/api/receive/discard"):
+                req = json.loads(self.rfile.read(n) or b"{}")
+                name, drive = req.get("name", ""), req.get("drive") or "internal"
+                C.discarded.append((drive, name))
+                if drive not in [d["id"] for d in C.drives]:
+                    return self.refuse(404, "no_drive")
+                if not name.endswith(".p5z") or "/" in name or "\\" in name:
+                    return self.refuse(400, "bad_name")
+                key = (drive, name)
+                if C.key == key and C.state in ("receiving", "verifying"):
+                    return self.refuse(409, "busy")
+                if key not in C.partial:
+                    return self.answer(200, {"deleted": False})
+                if C.discard_fails:
+                    return self.refuse(500, "delete_failed")
+                had = len(C.partial.pop(key))
+                if C.key == key:   # a paused receive of it ends: its token is forgotten
+                    C.token, C.state = None, None
+                return self.answer(200, {"deleted": True, "bytes": had})
             if q.get("id") != C.token or C.token is None:
                 self.rfile.read(n)
                 return self.refuse(404, "unknown_id")
@@ -499,8 +527,51 @@ C.reset()
 C.verify_stuck = True
 t0 = time.time()
 rc, so, err = run("send", P5Z, ADDR, "--code", CODE, "--json", "--stall", "2", *SMALL)
-check("v2_stalled", rc == 16 and result(events(so)).get("error") == "stalled" and not C.cancelled and time.time() - t0 < 30,
+check("v2_stalled", rc == 16 and result(events(so)).get("error") == "stalled" and result(events(so)).get("slept") is False
+      and "nothing moved" in err and not C.cancelled and time.time() - t0 < 30,
       "rc=%d %s %s" % (rc, so[-200:], err[-300:]))
+# the PC slept while it sent: its clock jumped past the stall between two looks. Said so, not that nothing moved
+# on the console (the process stopped for 5 s stands for the sleep: from inside it, the clock jumps the same)
+
+
+def hold_process(proc, on):
+    if os.name == "nt":
+        import ctypes
+        call = ctypes.windll.ntdll.NtSuspendProcess if on else ctypes.windll.ntdll.NtResumeProcess
+        call(ctypes.c_void_p(int(proc._handle)))
+    else:
+        import signal
+        os.kill(proc.pid, signal.SIGSTOP if on else signal.SIGCONT)
+
+
+C.reset()
+C.verify_stuck = True
+err_file = open(os.path.join(TMP, "slept.err"), "w+b")
+proc = subprocess.Popen([EXE, "send", P5Z, ADDR, "--code", CODE, "--json", "--stall", "3", *SMALL],
+                        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=err_file)
+got = []
+reader = threading.Thread(target=lambda: got.extend(iter(proc.stdout.readline, b"")), daemon=True)
+reader.start()
+deadline = time.time() + 30
+while time.time() < deadline and not any(b'"verifying"' in line for line in got) and proc.poll() is None:
+    time.sleep(0.02)
+held = proc.poll() is None
+if held:
+    hold_process(proc, True)
+    time.sleep(5)
+    hold_process(proc, False)
+try:
+    proc.wait(timeout=60)
+except subprocess.TimeoutExpired:
+    proc.kill()
+    proc.wait()
+reader.join(timeout=10)
+err_file.seek(0)
+err = err_file.read().decode("utf-8", "replace")
+err_file.close()
+res = result(events(b"".join(got).decode("utf-8", "replace")))
+check("pc_slept", held and proc.returncode == 16 and res.get("error") == "stalled" and res.get("slept") is True and res.get("kept") is True
+      and "slept" in err and "nothing moved" not in err, "rc=%s %s %s" % (proc.returncode, res, err[-300:]))
 # a console never reached: "no answer" after 2 tries, the connect waiting 5 s at most
 t0 = time.time()
 rc, so, err = run("send", P5Z, "10.255.255.1:9", "--code", CODE, "--json")
@@ -567,17 +638,73 @@ proc = subprocess.Popen([EXE, "send", P5Z, "10.255.255.1:9", "--code", CODE, "--
 out, _ = proc.communicate(b"cancel\n", timeout=60)
 res = result(events(out.decode("utf-8", "replace")))
 check("stopped_before_anything_arrived", proc.returncode == 130 and res.get("kept") is False, "rc=%s %s" % (proc.returncode, res))
-# Delete what arrived on the console: started, then cancelled
+# Delete what arrived on the console (contract v3): one request of its own, never a start, so a full drive does
+# not refuse it
 C.reset()
 C.partial[("internal", NAME)] = bytearray(DATA[:5 * 65536])
 C.size = SIZE
+C.drives[0]["free"] = 0
 rc, so, err = run("send", "--discard", P5Z, ADDR, "--code", CODE, "--json")
-check("discard_deletes_what_arrived", rc == 0 and C.cancelled and ("internal", NAME) not in C.partial and json.loads(so or "{}").get("ok") is True,
-      "rc=%d %s %s" % (rc, so, err[-300:]))
+d = json.loads(so or "{}")
+check("discard_deletes_what_arrived", rc == 0 and ("internal", NAME) not in C.partial and d.get("ok") is True
+      and d.get("deleted") is True and d.get("had") == 5 * 65536 and C.discarded == [("internal", NAME)], "rc=%d %s %s" % (rc, so, err[-300:]))
+check("discard_never_starts", not any(r[1] in ("/api/receive/start", "/api/receive/cancel") for r in C.requests), str(C.requests))
+C.reset()
+C.partial[("usb0", NAME)] = bytearray(DATA[:65536])
+rc, so, err = run("send", "--discard", P5Z, ADDR, "--code", CODE, "--drive", "usb0")
+check("discard_text_says_what_went", rc == 0 and "Deleted" in so and ("usb0", NAME) not in C.partial, "rc=%d %s %s" % (rc, so, err[-300:]))
+# nothing of it there: said so, not "deleted"
+C.reset()
+rc, so, err = run("send", "--discard", P5Z, ADDR, "--code", CODE)
+check("discard_nothing_there", rc == 0 and "nothing of it is on the console" in so.lower() and "Deleted" not in so, "rc=%d %s %s" % (rc, so, err[-300:]))
+rc, so, err = run("send", "--discard", P5Z, ADDR, "--code", CODE, "--json")
+d = json.loads(so or "{}")
+check("discard_nothing_there_json", rc == 0 and d.get("ok") is True and d.get("deleted") is False and d.get("had") == 0, "rc=%d %s" % (rc, so))
+# the .p5z whole on the console is never what a discard deletes
 C.reset()
 C.done[("internal", NAME)] = DATA
 rc, so, err = run("send", "--discard", P5Z, ADDR, "--code", CODE)
-check("discard_of_one_there_whole", rc == 7 and not C.cancelled and ("internal", NAME) in C.done, "rc=%d %s" % (rc, err[-300:]))
+check("discard_of_one_there_whole", rc == 0 and ("internal", NAME) in C.done and "nothing of it is on the console" in so.lower(), "rc=%d %s %s" % (rc, so, err[-300:]))
+# a receive of it at work: refused (busy); a paused one is ended
+C.reset()
+C.partial[("internal", NAME)] = bytearray(DATA[:65536])
+C.key, C.size, C.state, C.token = ("internal", NAME), SIZE, "receiving", "t1"
+rc, so, err = run("send", "--discard", P5Z, ADDR, "--code", CODE, "--json")
+check("discard_while_receiving_is_busy", rc == 8 and json.loads(so or "{}").get("error") == "busy" and ("internal", NAME) in C.partial,
+      "rc=%d %s %s" % (rc, so, err[-300:]))
+C.state = "paused"
+rc, so, err = run("send", "--discard", P5Z, ADDR, "--code", CODE)
+check("discard_ends_a_paused_receive", rc == 0 and ("internal", NAME) not in C.partial and C.token is None, "rc=%d %s" % (rc, err[-300:]))
+# the console could not delete it: said, with what it said
+C.reset()
+C.partial[("internal", NAME)] = bytearray(DATA[:65536])
+C.discard_fails = True
+rc, so, err = run("send", "--discard", P5Z, ADDR, "--code", CODE, "--json")
+d = json.loads(so or "{}")
+check("discard_delete_failed", rc == 18 and d.get("error") == "delete_failed" and "could not delete" in err, "rc=%d %s %s" % (rc, so, err[-300:]))
+# only the name goes: what the PC has of it need not be there any more
+gone = os.path.join(TMP, "Gone Game [PPSA10002].p5z")
+C.reset()
+C.partial[("internal", os.path.basename(gone))] = bytearray(b"x" * 1000)
+rc, so, err = run("send", "--discard", gone, ADDR, "--code", CODE)
+check("discard_by_name", rc == 0 and not C.partial, "rc=%d %s %s" % (rc, so, err[-300:]))
+
+# ---- a drive that has no room: what arrived of it before is said, to be deleted (contract v3) ----
+res = refused("no_space_with_what_arrived", "no_space", 9,
+              lambda: setattr(C, "refuse_start", (507, "no_space", {"have": 3 * 65536, "need": 5 * 10**9})), words="arrived")
+check("no_space_keeps_what_arrived", res.get("kept") is True and res.get("have") == 3 * 65536, str(res))
+res = refused("no_space_nothing_arrived", "no_space", 9, lambda: setattr(C, "refuse_start", (507, "no_space", {"have": 0, "need": 10})))
+check("no_space_nothing_kept", res.get("kept") is False and res.get("have") == 0, str(res))
+# a write error (the drive filled up), and its resume refused for space: what arrived stays, and is said
+
+
+def full_on_resume():
+    C.pause_after, C.pause_reason = 2, "write_error"
+    C.refuse_resume = (507, "no_space", {"have": "here", "need": 10**6})
+
+
+res = refused("no_space_on_resume", "no_space", 9, full_on_resume, words="arrived")
+check("no_space_on_resume_keeps", res.get("kept") is True and res.get("have") == 2 * 65536 and C.starts == 1, str(res))
 
 # ---- usage -------------------------------------------------------------------------------------
 rc, _, err = run("send", P5Z, ADDR)

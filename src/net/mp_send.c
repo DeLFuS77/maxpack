@@ -111,6 +111,7 @@ typedef struct {
     unsigned write_errors, pauses;
     int watching;           // the receive began: stalls count
     uint64_t moved_ns, best_have, best_verify;
+    uint64_t look_ns;       // the last look for a stall
 } sender;
 
 static int fail(sender *s, const char *code, const char *fmt, const char *arg) {
@@ -155,14 +156,25 @@ static void have_text(sender *s, char *out, size_t cap) {
     snprintf(out, cap, "%llu of %llu bytes", (unsigned long long)s->best_have, (unsigned long long)s->r->size);
 }
 
-// -1 (and "stalled") once nothing moved for stall_ms since the receive began.
+// -1 (and "stalled") once nothing moved for stall_ms since the receive began. When the clock jumped past
+// stall_ms since the last look (one before each request, and in each short wait), it is this PC that slept (or
+// this program was stopped), not the console that did nothing.
 static int stalled(sender *s) {
-    if (!s->watching || !s->o->stall_ms || mp_now_ns() - s->moved_ns < (uint64_t)s->o->stall_ms * 1000000ull) return 0;
+    uint64_t now = mp_now_ns(), stall = (uint64_t)s->o->stall_ms * 1000000ull;
+    uint64_t gap = s->look_ns && now > s->look_ns ? now - s->look_ns : 0;
+    s->look_ns = now;
+    if (!s->watching || !s->o->stall_ms || now - s->moved_ns < stall) return 0;
     char what[600], had[96];
     have_text(s, had, sizeof had);
+    s->r->kept = 1;
+    if (gap >= stall) {
+        s->r->slept = 1;
+        snprintf(what, sizeof what, "%llu s (the console keeps the %s that arrived; send it again to go on from there)",
+                 (unsigned long long)(gap / 1000000000ull), had);
+        return fail(s, "stalled", "this PC slept while it was sending, for %s", what);
+    }
     snprintf(what, sizeof what, "%u s (it keeps the %s that arrived; send it again to go on from there)",
              s->o->stall_ms / 1000, had);
-    s->r->kept = 1;
     return fail(s, "stalled", "nothing moved on the console for %s", what);
 }
 
@@ -191,7 +203,7 @@ static int stopped_here(sender *s, const char *id) {
 // An answer that is not what was asked for: the console's refusal, as a code and a message.
 static int refused(sender *s, int status, const mp_json *j) {
     static const char *const known[] = {"receive_off", "bad_code", "locked", "exists", "busy",
-                                        "no_space", "fat32", "bad_name", "no_drive"};
+                                        "no_space", "fat32", "bad_name", "no_drive", "delete_failed"};
     char code[64];
     clean(code, sizeof code, str_of(j, "error"));
     clean(s->r->detail, sizeof s->r->detail, str_of(j, "detail"));
@@ -220,9 +232,30 @@ static int refused(sender *s, int status, const mp_json *j) {
     if (!strcmp(c, "busy"))
         return fail(s, c, "the console is busy with another receive, an install, a verify or a test compression: "
                           "send it when that ends%s", NULL);
-    if (!strcmp(c, "no_space"))
+    if (!strcmp(c, "no_space")) {
+        // what of it is on that drive already (contract v3: "have"; a console that does not say it has what arrived
+        // this run) takes room there: it is kept, and said, to be deleted
+        uint64_t had = 0, need = 0;
+        if (u64_of(j, "have", &had) != 0) had = s->watching ? s->best_have : 0;
+        if (had > s->r->size) had = 0;
+        if (u64_of(j, "need", &need) != 0) need = 0;
+        s->r->need = need;
+        char what[400] = "";
+        if (need) snprintf(what, sizeof what, "; the drive lacks %llu bytes", (unsigned long long)need);
+        if (had) {
+            if (had > s->best_have) s->best_have = had;
+            s->r->kept = 1;
+            snprintf(what + strlen(what), sizeof what - strlen(what), "): the %llu of %llu bytes of it that arrived "
+                     "before are there, taking room; delete them (send --discard) to free it",
+                     (unsigned long long)had, (unsigned long long)s->r->size);
+        } else {
+            snprintf(what + strlen(what), sizeof what - strlen(what), ")");
+        }
         return fail(s, c, "that drive of the console has not enough free space (the .p5z needs its size and 256 MiB "
-                          "more)%s", NULL);
+                          "more%s", what);
+    }
+    if (!strcmp(c, "delete_failed"))
+        return fail(s, c, "the console could not delete it: %s", *s->r->detail ? s->r->detail : "it gave no reason");
     if (!strcmp(c, "fat32"))
         return fail(s, c, "that drive of the console is FAT32, which holds no file of 4 GiB or more: send it to an "
                           "exFAT drive%s", NULL);
@@ -563,7 +596,7 @@ static int finish_and_wait(sender *s, char *id, size_t cap, uint64_t *have) {
     return at;
 }
 
-// The name, the file and the drive of a send (or a discard). 0, or -1 with the code.
+// The name, the file (f NULL: only its name, for a discard) and the drive of a send. 0, or -1 with the code.
 static int prepare(sender *s, const char *path, mp_file **f) {
     mp_send_result *r = s->r;
     const char *base = path + strlen(path);
@@ -571,7 +604,7 @@ static int prepare(sender *s, const char *path, mp_file **f) {
     snprintf(r->name, sizeof r->name, "%s", base);
     if (strlen(base) >= sizeof r->name || !mp_send_name_ok(r->name))
         return fail(s, "bad_name", "the console takes only a plain .p5z name of at most 200 bytes: %s", base);
-    if (mp_file_open_read(path, f, s->e) != 0 || mp_file_size(*f, &r->size, s->e) != 0) {
+    if (f && (mp_file_open_read(path, f, s->e) != 0 || mp_file_size(*f, &r->size, s->e) != 0)) {
         r->code = "io";
         return -1;
     }
@@ -660,22 +693,38 @@ int mp_send_discard(const char *path, const mp_send_opts *o, mp_send_result *r, 
     s.o = o;
     s.r = r;
     s.e = e;
-    mp_file *f = NULL;
-    char id[128] = "";
-    uint64_t have = 0;
-    int rc = -1;
-    if (prepare(&s, path, &f) == 0 && start(&s, id, sizeof id, &have) == 0) {
-        r->have = have;
-        char path_c[256];
-        query_id(path_c, sizeof path_c, "/api/receive/cancel", id);
-        int st = 0;
-        mp_json *j = NULL;
-        if (call_retry(&s, id, "POST", path_c, NULL, NULL, 0, have, &st, &j) == 0) {
-            if (st == 200 || st == 202 || st == 204) rc = 0;
-            else refused(&s, st, j);
-            mp_json_free(j);
-        }
+    if (prepare(&s, path, NULL) != 0) return -1;
+    mp_jbuf b = {0};
+    mp_jbuf_raw(&b, "{\"name\":");
+    mp_jbuf_str(&b, r->name);
+    mp_jbuf_raw(&b, ",\"drive\":");
+    mp_jbuf_str(&b, r->drive);
+    mp_jbuf_raw(&b, "}");
+    if (b.oom) {
+        mp_jbuf_free(&b);
+        return fail(&s, "io", "out of memory%s", NULL);
     }
-    mp_file_close(f);
+    int st = 0, rc = -1, deleted = 0;
+    mp_json *j = NULL;
+    int sent = call_retry(&s, NULL, "POST", "/api/receive/discard", NULL, b.p, b.n, 0, &st, &j);
+    mp_jbuf_free(&b);
+    if (sent != 0) return -1;
+    char err[32];
+    clean(err, sizeof err, str_of(j, "error"));
+    if (st == 200 && mp_json_bool(mp_json_get(j, "deleted"), &deleted) == 0) {
+        r->deleted = deleted != 0;
+        if (!r->deleted || u64_of(j, "bytes", &r->have) != 0) r->have = 0;
+        rc = 0;
+    } else if (st == 200) {
+        fail(&s, "console_error", "the console's answer to deleting it cannot be read%s", NULL);
+    } else if (st == 409 && !strcmp(err, "busy")) {
+        fail(&s, "busy", "the console is receiving or verifying %s right now (a send stopped here is paused by the "
+                         "console once no data came for 10 minutes): delete it once it stops", r->name);
+    } else if (st == 404 && strcmp(err, "no_drive") != 0) {
+        fail(&s, "console_error", "this MaxPack for the console cannot delete what a send left there (update it)%s", NULL);
+    } else {
+        refused(&s, st, j);
+    }
+    mp_json_free(j);
     return rc;
 }

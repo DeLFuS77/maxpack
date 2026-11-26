@@ -58,7 +58,7 @@ static void usage(FILE *out) {
             "                     the console, which verifies it when it arrives (verify --quick)\n"
             "  maxpack send --drives <ps5-ip> --code <6 digits> [--json]   the console's drives, free space\n"
             "  maxpack send --discard <game.p5z> <ps5-ip> --code <6 digits> [--drive <id>]   delete what the\n"
-            "                     console received of it\n"
+            "                     console received of it (only its name is used; a .p5z whole there stays)\n"
             "  maxpack --version\n"
             "  maxpack --capabilities   what this version can do, as JSON (for a front end)\n"
             "\n"
@@ -136,8 +136,9 @@ static void usage(FILE *out) {
             "  Exit codes: 0 sent and verified, 1 error, 2 usage, 3 no answer from the console, 4 receiving\n"
             "  is off there, 5 wrong code, 6 too many wrong codes, 7 already there, 8 the console is busy,\n"
             "  9 no space, 10 FAT32 drive, 11 file name, 12 no such drive, 13 arrived damaged, 14 cancelled\n"
-            "  on the console, 15 stopped on the console, 16 nothing moved (stalled), 17 the console cannot write\n"
-            "  it, 130 cancelled (or stopped) here\n"
+            "  on the console, 15 stopped on the console, 16 nothing moved (stalled, or this PC slept), 17 the\n"
+            "  console cannot write it, 18 the console could not delete it (--discard), 130 cancelled (or\n"
+            "  stopped) here\n"
             "\n"
             "Options for analyze:\n"
             "  --sample N%%        sample percentage (default 2%%, at least 1 GiB)\n"
@@ -1884,7 +1885,8 @@ static int run_verify(int argc, char **argv) {
 static int send_exit(const char *code) {
     static const char *const codes[] = {"unreachable", "receive_off", "bad_code", "locked", "exists", "busy",
                                         "no_space", "fat32", "bad_name", "no_drive", "verify_failed",
-                                        "console_cancelled", "console_stopped", "stalled", "write_error"};
+                                        "console_cancelled", "console_stopped", "stalled", "write_error",
+                                        "delete_failed"};
     if (!code) return 0;
     if (!strcmp(code, "cancelled")) return 130;
     for (int i = 0; i < (int)(sizeof codes / sizeof *codes); i++)
@@ -2063,13 +2065,17 @@ static int run_send_discard(const char *p5z, const mp_send_opts *o, int json) {
     }
     char had[32];
     size_text(had, sizeof had, r.have);
-    fprintf(json ? stderr : stdout, "Deleted what the console had of %s on %s (%s)\n", r.name, r.drive, had);
+    if (r.deleted)
+        fprintf(json ? stderr : stdout, "Deleted what the console had of %s on %s (%s)\n", r.name, r.drive, had);
+    else
+        fprintf(json ? stderr : stdout, "Nothing of it is on the console: %s has nothing of %s to delete\n", r.drive,
+                r.name);
     if (json) {
         printf("{\"ok\":true,\"name\":");
         print_json_string(r.name);
         printf(",\"drive\":");
         print_json_string(r.drive);
-        printf(",\"had\":%llu}\n", (unsigned long long)r.have);
+        printf(",\"deleted\":%s,\"had\":%llu}\n", r.deleted ? "true" : "false", (unsigned long long)r.have);
     }
     fflush(stdout);
     return 0;
@@ -2219,6 +2225,7 @@ static int run_send(int argc, char **argv) {
             mp_jbuf_raw(&b, ",\"detail\":");
             mp_jbuf_str(&b, r.detail);
             mp_jbuf_raw(&b, r.kept ? ",\"kept\":true" : ",\"kept\":false");
+            mp_jbuf_raw(&b, r.slept ? ",\"slept\":true" : ",\"slept\":false");
             mp_jbuf_raw(&b, ",\"have\":");
             mp_jbuf_u64(&b, r.have);
             mp_jbuf_raw(&b, ",\"drive\":");

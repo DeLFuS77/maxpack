@@ -552,4 +552,10 @@ texts.pt = {
   detail_original_kept_watched: "o original fica: a pasta vigiada nunca tira nenhum",
   detail_source_changed: "mudou durante a compressão (ainda estava chegando?): nada do que foi feito ficou, e ele é comprimido de novo quando estiver inteiro",
   watchSkipped: name => name + ": um arquivo dele não pode ser aberto, então a pasta vigiada o deixa em paz até que mude",
+  pause: "Pausar",
+  resume: "Retomar",
+  pausedStatus: "Em pausa: o processador e o disco ficam livres para outras coisas. “Retomar” continua de onde parou.",
+  stepPaused: "em pausa",
+  closeTitlePaused: "A fila está em pausa",
+  closeTextPaused: "Uma fila em pausa não pode ser retomada depois que o MaxPack fecha: se você fechar agora, o jogo em andamento é cancelado e o que ele tinha feito pela metade é apagado. Os jogos prontos ficam, e os que esperam não começam.",
 };

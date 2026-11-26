@@ -552,4 +552,10 @@ texts.es = {
   detail_original_kept_watched: "se queda el original: la carpeta vigilada nunca quita ninguno",
   detail_source_changed: "cambió mientras se comprimía (¿seguía llegando?): no se guardó nada de lo hecho, y se comprime otra vez cuando esté entero",
   watchSkipped: name => name + ": no se puede abrir un archivo suyo, así que la carpeta vigilada lo deja en paz hasta que cambie",
+  pause: "Pausar",
+  resume: "Reanudar",
+  pausedStatus: "En pausa: la CPU y el disco quedan libres para otras cosas. «Reanudar» sigue desde donde se quedó.",
+  stepPaused: "en pausa",
+  closeTitlePaused: "La cola está en pausa",
+  closeTextPaused: "Una cola en pausa no se puede reanudar después de cerrar MaxPack: si cierras ahora, el juego en marcha se cancela y se borra lo que tenía a medias. Los juegos hechos se quedan y los que esperan no empiezan.",
 };

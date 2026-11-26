@@ -25,6 +25,7 @@ type pageEvents struct {
 	mutex    sync.Mutex
 	items    []itemEvent
 	progress []progressEvent
+	paused   []bool
 	done     chan jobs.Summary
 }
 
@@ -38,6 +39,8 @@ func (p *pageEvents) emit(event string, data any) {
 		p.items = append(p.items, data.(itemEvent))
 	case "job:progress":
 		p.progress = append(p.progress, data.(progressEvent))
+	case "job:paused":
+		p.paused = append(p.paused, data.(pausedEvent).Paused)
 	case "job:done":
 		p.done <- data.(jobs.Summary)
 	}

@@ -65,6 +65,7 @@
         <div class="bar total" id="total-bar" hidden><div></div></div>
         <div id="status" class="muted" aria-live="polite"></div>
       </div>
+      <button id="pause" class="secondary" hidden></button>
       <button id="cancel" class="secondary" data-t="cancel" hidden></button>
       <button id="start" class="primary big"></button>
     </div>
@@ -385,9 +386,10 @@
 </dialog>
 
 <!-- closing the window while a queue runs: the game at work is cancelled without leaving anything
-     half made, or the window stays open; Escape keeps working -->
+     half made, or the window stays open; Escape keeps working. A paused queue says it cannot be resumed
+     once MaxPack closes -->
 <dialog id="close-dialog" class="warn-dialog" aria-labelledby="close-title" aria-describedby="close-text">
-  <h2 id="close-title"><svg class="warn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 2.8 19.5h18.4z"/><path d="M12 9.5v4.5M12 16.8v.2"/></svg><span data-t="closeTitle"></span></h2>
+  <h2 id="close-title"><svg class="warn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 2.8 19.5h18.4z"/><path d="M12 9.5v4.5M12 16.8v.2"/></svg><span id="close-title-text" data-t="closeTitle"></span></h2>
   <p class="muted" id="close-text" data-t="closeText"></p>
   <form method="dialog" class="dialog-actions"><button value="close" class="danger" data-t="closeYes"></button><button value="stay" class="primary" data-t="closeNo" autofocus></button></form>
 </dialog>

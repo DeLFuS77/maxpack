@@ -552,4 +552,10 @@ texts.ko = {
   detail_original_kept_watched: "원본을 남겼습니다: 감시 폴더는 원본을 치우지 않습니다",
   detail_source_changed: "압축하는 동안 바뀌었습니다(아직 들어오는 중이었나요?): 만든 것은 남기지 않았으며, 온전해지면 다시 압축합니다",
   watchSkipped: name => name + ": 파일 하나를 열 수 없어, 바뀔 때까지 감시 폴더가 건드리지 않습니다",
+  pause: "일시 정지",
+  resume: "다시 시작",
+  pausedStatus: "일시 정지됨: CPU와 디스크를 다른 일에 쓸 수 있습니다. ‘다시 시작’을 누르면 멈춘 곳부터 이어서 합니다.",
+  stepPaused: "일시 정지됨",
+  closeTitlePaused: "대기열이 일시 정지되었습니다",
+  closeTextPaused: "일시 정지된 대기열은 MaxPack을 닫으면 다시 시작할 수 없습니다. 지금 닫으면 처리 중인 게임은 취소되고 절반쯤 만든 것은 삭제됩니다. 완료된 게임은 남고, 대기 중인 게임은 시작되지 않습니다.",
 };

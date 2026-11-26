@@ -218,7 +218,10 @@ func (r *Runner) protect(ctx context.Context, i int, file string, o Options) (ui
 	meter := par2.NewMeter(par2.Making)
 	meter.OnLine, meter.OnProgress = said.add, r.progress(i, "protecting", size)
 	args := par2.CreateArgs(par2.Create{File: file, Index: filepath.Join(tmp, base+".par2"), BlockSize: bs, Recovery: recovery, Threads: o.Threads})
-	code, err := par2.Run(ctx, r.Par2, args, o.LowPriority, meter)
+	if r.hold(ctx) != nil {
+		return fail("repair_data_cancelled")
+	}
+	code, err := par2.Run(ctx, r.Par2, args, o.LowPriority, r.Pause, meter)
 	switch {
 	case errors.Is(err, par2.ErrCancelled) || ctx.Err() != nil:
 		return fail("repair_data_cancelled")
@@ -362,7 +365,10 @@ func (r *Runner) repairOne(ctx context.Context, i int, p Plan, o Options) outcom
 	said := &lastLines{}
 	meter := par2.NewMeter(par2.Repairing)
 	meter.OnLine, meter.OnProgress = said.add, r.progress(i, "repairing", size)
-	code, err := par2.Run(ctx, r.Par2, par2.RepairArgs(par2.Repair{Index: index, Folder: work, Threads: o.Threads}), o.LowPriority, meter)
+	if r.hold(ctx) != nil {
+		return back(StateCancelled, "cancelled")
+	}
+	code, err := par2.Run(ctx, r.Par2, par2.RepairArgs(par2.Repair{Index: index, Folder: work, Threads: o.Threads}), o.LowPriority, r.Pause, meter)
 	result := par2.Outcome(said.lines)
 	switch {
 	case errors.Is(err, par2.ErrCancelled) || ctx.Err() != nil:

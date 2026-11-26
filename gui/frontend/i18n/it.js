@@ -552,4 +552,10 @@ texts.it = {
   detail_original_kept_watched: "l'originale resta: la cartella sorvegliata non ne toglie mai nessuno",
   detail_source_changed: "è cambiato durante la compressione (stava ancora arrivando?): non si è tenuto nulla di ciò che era stato fatto, e verrà compresso di nuovo quando sarà intero",
   watchSkipped: name => name + ": un suo file non si può aprire, quindi la cartella sorvegliata lo lascia stare finché non cambia",
+  pause: "Pausa",
+  resume: "Riprendi",
+  pausedStatus: "In pausa: la CPU e il disco sono liberi per altro. «Riprendi» continua da dove si era fermato.",
+  stepPaused: "in pausa",
+  closeTitlePaused: "La coda è in pausa",
+  closeTextPaused: "Una coda in pausa non si può riprendere dopo la chiusura di MaxPack: se chiudi ora, il gioco in lavorazione viene annullato e ciò che aveva fatto a metà viene eliminato. I giochi finiti restano e quelli in attesa non partono.",
 };

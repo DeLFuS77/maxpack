@@ -80,6 +80,9 @@ const state = {
   job: null,
   busy: false,
   cancelling: false,
+  // the queue running is paused (job:paused), and a pause or a resume was asked and not answered yet
+  paused: false,
+  pausing: false,
   // the runtime of ampr-emu-ng is asked once: after "Go on without it" (runtimeWithout) the window does not insist
   askedRuntime: false,
   // Compare the levels or Measure this PC, at work or the last one: see compareLevels and measurePC
@@ -96,6 +99,9 @@ const state = {
 
 // whether a queue is running: the window took it, and has not said its end yet
 const running = () => !!(state.busy && state.job && state.job.running && !state.job.summary);
+// whether the queue running can pause: one of Compress, Decompress or Verify (what Details does cannot:
+// a send would make the console stop the receive)
+const canPause = () => running() && queues.includes(state.job.section) && !state.cancelling;
 
 // the ampr-emu-ng that comes with MaxPack, as Setup tells it: its path, "" when the window could not
 // put it in its folder; and the runtime a game that lacks one is given: the one chosen in Settings,
@@ -832,6 +838,8 @@ function paintState(row) {
   const segs = tr.querySelector(".segs"), step = tr.querySelector(".step");
   const active = running() && job.rows.includes(row) && working.includes(row.state);
   segs.hidden = !active;
+  segs.classList.toggle("paused", active && state.paused);
+  badge.classList.toggle("paused", active && state.paused);
   step.textContent = "";
   if (active) {
     const steps = stepsOf(job), index = steps.indexOf(row.step), share = stepShare(row);
@@ -841,7 +849,7 @@ function paintState(row) {
       seg.firstElementChild.style.transform = "scaleX(" + (n < index ? 1 : n === index ? share : 0) + ")";
     });
     const phase = row.phase ? t("phase_" + row.phase) : "";
-    step.textContent = [phase, t("percent")(Math.floor(rowShare(row, job) * 100))].filter(Boolean).join(" · ");
+    step.textContent = [phase, t("percent")(Math.floor(rowShare(row, job) * 100)), state.paused ? t("stepPaused") : ""].filter(Boolean).join(" · ");
   }
   // what it saved, once made
   const saved = tr.querySelector(".saved"), game = row.game;
@@ -1151,6 +1159,10 @@ function paintStart() {
     || (section === "rename" && (running() || !list.some(row => row.renameTo && !row.renameBlock && row.state !== "ok")));
   $("cancel").hidden = !running();
   $("cancel").disabled = state.cancelling;
+  // Pause and Resume, for the queues that can
+  $("pause").hidden = !running() || !queues.includes(state.job.section);
+  $("pause").textContent = t(state.paused ? "resume" : "pause");
+  $("pause").disabled = !canPause() || state.pausing;
   for (const id of ["add-files", "add-folder", "empty-files", "empty-folder"]) $(id).disabled = !go.has();
   $("clear").disabled = state.busy || list.length === 0;
 }
@@ -1171,7 +1183,8 @@ function paintSummary() {
     $("summary-text").textContent = t("working")(finished, rows.length, Math.floor(share * 100));
     bar.hidden = false;
     bar.firstElementChild.style.transform = "scaleX(" + share + ")";
-    $("status").textContent = state.cancelling ? t("cancelling")
+    bar.classList.toggle("paused", state.paused);
+    $("status").textContent = state.cancelling ? t("cancelling") : state.paused ? t("pausedStatus")
       : [job.rate > 0 ? t("speed")(size(job.rate)) : "", left >= 1 ? t("timeLeft")(time(Math.round(left))) : ""].filter(Boolean).join(" · ");
     return;
   }
@@ -1832,10 +1845,36 @@ function onProgress(event) {
   paintSummary();
 }
 
+// pause or resume the queue running (Pause, Ctrl+P); the window says it once done (job:paused)
+async function togglePause() {
+  if (!canPause() || state.pausing) return;
+  const on = !state.paused;
+  state.pausing = true;
+  paintStart();
+  try {
+    await go.call(on ? "Pause" : "Resume");
+    onPaused({ paused: on });
+  } catch (error) {
+    toast(message(error));
+  } finally {
+    state.pausing = false;
+    paintStart();
+  }
+}
+// the queue running is paused, or goes on: its rows, its bar and what it says
+function onPaused(event) {
+  state.paused = !!(event && event.paused) && running();
+  if (state.job) for (const row of inQueue(state.job)) paintState(row);
+  paintStart();
+  paintSummary();
+}
+
 function onDone(summary) {
   const job = state.job;
   state.busy = false;
   state.cancelling = false;
+  state.paused = false;
+  state.pausing = false;
   if (!job) { render(); return; }
   job.summary = summary;
   render();
@@ -2271,6 +2310,9 @@ async function renameAll() {
 function askClose() {
   const dialog = $("close-dialog");
   if (dialog.open) return;
+  // a paused queue cannot be resumed once MaxPack closes: it says so
+  $("close-title-text").textContent = t(state.paused ? "closeTitlePaused" : "closeTitle");
+  $("close-text").textContent = t(state.paused ? "closeTextPaused" : "closeText");
   ask(dialog).then(answer => { if (answer === "close") go.call("ConfirmClose").catch(error => toast(message(error))); });
 }
 // the words of the question the window asks with the dialog of the system when the page cannot
@@ -2389,6 +2431,7 @@ function wire() {
   $("done-report").addEventListener("click", () => { const job = state.job; if (job) copyReport(inQueue(job), job.section, job.mode); });
   $("link-bug").addEventListener("click", () => go.call("OpenLink", "bug").catch(error => toast(message(error))));
   $("link-game").addEventListener("click", () => go.call("OpenLink", "game").catch(error => toast(message(error))));
+  $("pause").addEventListener("click", togglePause);
   $("cancel").addEventListener("click", () => {
     state.cancelling = true;
     paintStart();
@@ -2430,6 +2473,7 @@ async function main() {
   go.on("job:item", onItem);
   go.on("job:progress", onProgress);
   go.on("job:done", onDone);
+  go.on("job:paused", onPaused);
   go.on("close:ask", askClose);
   go.on("tool:progress", onToolProgress);
   go.on("tool:level", onToolLevel);

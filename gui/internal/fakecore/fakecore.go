@@ -49,7 +49,16 @@ import (
 //     the console's verify and ends well (writing <p5z>.sent: see send.go), or with the refusal
 //     SendFailEnv names;
 //   - "sends-waits": as "sends", but it waits for cancel while it sends, then ends as cancelled.
+//   - "pauses": verify ends well at once; pack and unpack write part of their output; it tells some
+//     progress and reads its input,
+//     each line kept in the file LinesEnv names: "pause" says {"event":"paused"}, "resume" says
+//     {"event":"resumed"} and ends well (as "writes" does), "cancel" or the end of the input ends as
+//     cancelled.
+//   - "ticks": prints a line every 10 ms, for a minute (to be suspended).
 const Env = "MP_FAKE_CORE"
+
+// LinesEnv is the file where "pauses" keeps each line of its input.
+const LinesEnv = "MP_FAKE_LINES"
 
 // InfoEnv is the file of what "info" says of each game: {"<name>": {<info --json>}, ...}.
 const InfoEnv = "MP_FAKE_INFO"
@@ -202,6 +211,13 @@ func run(mode string, args []string) int {
 		}
 		fmt.Fprintln(os.Stderr, "error: not send:", args)
 		return 2
+	case "pauses":
+		return pauses(args)
+	case "ticks":
+		for end := time.Now().Add(time.Minute); time.Now().Before(end); time.Sleep(10 * time.Millisecond) {
+			fmt.Println("tick")
+		}
+		return 0
 	case "waits":
 		progress()
 		waitCancel()
@@ -306,4 +322,48 @@ func waitCancel() {
 			return
 		}
 	}
+}
+
+// pauses is the mode "pauses" (see Env).
+func pauses(args []string) int {
+	if len(args) > 0 && args[0] == "verify" {
+		fmt.Println(`{"event":"result","ok":true,"files_bad":0}`)
+		return 0
+	}
+	out := output(args)
+	if out != "" {
+		if err := writePart(out, hasArg(args, "--p5z")); err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			return 1
+		}
+	}
+	progress()
+	lines := bufio.NewScanner(os.Stdin)
+	for lines.Scan() {
+		if path := os.Getenv(LinesEnv); path != "" {
+			if f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644); err == nil {
+				fmt.Fprintln(f, lines.Text())
+				f.Close()
+			}
+		}
+		switch lines.Text() {
+		case "pause":
+			fmt.Println(`{"event":"paused"}`)
+		case "resume":
+			fmt.Println(`{"event":"resumed"}`)
+			fmt.Println(`{"event":"result","ok":true,"files_bad":0,"original_size":10,"output_size":8}`)
+			return 0
+		case "cancel":
+			if out != "" {
+				os.RemoveAll(out)
+			}
+			fmt.Println(`{"event":"result","ok":false,"error":"cancelled"}`)
+			return 130
+		}
+	}
+	if out != "" {
+		os.RemoveAll(out)
+	}
+	fmt.Println(`{"event":"result","ok":false,"error":"cancelled"}`)
+	return 130
 }

@@ -151,7 +151,7 @@ func TestRepairRenamedForReal(t *testing.T) {
 	}
 	// par2 verifies it by its own name, wherever its set says it was
 	meter := par2.NewMeter(par2.Making)
-	if code, err := par2.Run(context.Background(), program, par2.VerifyArgs(par2.IndexOf(renamed.Path), renamed.Path, 0), false, meter); err != nil || code > par2.ExitRepairable {
+	if code, err := par2.Run(context.Background(), program, par2.VerifyArgs(par2.IndexOf(renamed.Path), renamed.Path, 0), false, nil, meter); err != nil || code > par2.ExitRepairable {
 		t.Errorf("par2 verify of the renamed one: %d %v", code, err)
 	}
 	size := int64(len(original))

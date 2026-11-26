@@ -123,6 +123,13 @@ func (t *teller) item(i int, state, detail string) {
 	t.app.send("job:item", e)
 }
 
+// restart measures the speed anew: after a pause, the time it stood still is no speed of the engine.
+func (t *teller) restart() {
+	t.mutex.Lock()
+	t.speed.started = false
+	t.mutex.Unlock()
+}
+
 func (t *teller) progress(i int, e core.Event, now time.Time) {
 	t.mutex.Lock()
 	rate := t.speed.add(i, e.Phase, e.Done, now)

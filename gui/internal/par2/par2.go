@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 
 	"github.com/DeLFuS77/maxpack/gui/core"
 )
@@ -72,9 +73,9 @@ func Version(program string) (string, error) {
 
 // Run runs maxpack-par2 with args, low below the other programs (as the engine runs), and gives
 // what it writes to meter. par2 cannot be asked to stop: when ctx ends it is killed, and Run gives
-// ErrCancelled once it ended (what it left half written is for the caller to take away). It gives
-// the exit code of par2.
-func Run(ctx context.Context, program string, args []string, low bool, meter *Meter) (int, error) {
+// ErrCancelled once it ended (what it left half written is for the caller to take away). Nor can it be
+// asked to pause: while pause (which may be nil) is on, it is suspended. It gives the exit code of par2.
+func Run(ctx context.Context, program string, args []string, low bool, pause *core.Pause, meter *Meter) (int, error) {
 	command, started := core.Command(program, args, low)
 	command.Stdout, command.Stderr = meter, meter
 	if err := command.Start(); err != nil {
@@ -83,6 +84,23 @@ func Run(ctx context.Context, program string, args []string, low bool, meter *Me
 	if started != nil {
 		started(command.Process)
 	}
+	// suspended as the pause is, each change taking the pause as it is when its turn comes; once it
+	// ended, never again
+	var mutex sync.Mutex
+	suspended, gone := false, false
+	follow := func() {
+		mutex.Lock()
+		defer mutex.Unlock()
+		switch on := pause.On(); {
+		case gone || on == suspended:
+		case on:
+			suspended = core.Suspend(command.Process) == nil
+		default:
+			suspended = core.Resume(command.Process) != nil
+		}
+	}
+	defer pause.Listen(func(bool) { follow() })()
+	follow()
 	ended := make(chan struct{})
 	go func() {
 		select {
@@ -92,6 +110,9 @@ func Run(ctx context.Context, program string, args []string, low bool, meter *Me
 		}
 	}()
 	err := command.Wait()
+	mutex.Lock()
+	gone = true
+	mutex.Unlock()
 	close(ended)
 	meter.Close()
 	if ctx.Err() != nil {

@@ -449,6 +449,9 @@ func (a *App) Start(section string, items []jobs.Item, opts Choices) error {
 	consent(plans, opts.Replace)
 	ctx, cancel := context.WithCancelCause(context.Background())
 	q := &queue{ctx: ctx, cancel: cancel, done: make(chan struct{}), section: section, o: o, jobs: jobs.NewQueue(plans)}
+	if pausable[section] {
+		q.pause = core.NewPause()
+	}
 	a.mutex.Lock()
 	if a.queue != nil || a.toolCancel != nil {
 		measuring := a.toolCancel != nil
@@ -549,7 +552,8 @@ func (a *App) Unqueue(section string, i int) bool {
 
 // queue is the queue running: its context, how to stop it (with why: core.ErrClosing when the
 // window closes), when the Runner returned (with what it made and did not verify taken away), its
-// section and options, its games, and how far it is (share, with the mutex of its progress).
+// section and options, its games, how far it is (share, with the mutex of its progress) and its pause
+// (nil for a queue that cannot pause).
 type queue struct {
 	ctx     context.Context
 	cancel  context.CancelCauseFunc
@@ -559,6 +563,48 @@ type queue struct {
 	jobs    *jobs.Queue
 	mutex   sync.Mutex
 	share   *share
+	pause   *core.Pause
+}
+
+// pausable are the sections whose queue can pause: Compress, Decompress and Verify (with its repairs and
+// repair data). What Details does (DLC added, an update, a send) cannot: a send would make the console stop
+// the receive.
+var pausable = map[string]bool{"compress": true, "decompress": true, "verify": true}
+
+// pausedEvent is "job:paused": the queue running is paused, or goes on.
+type pausedEvent struct {
+	Paused bool `json:"paused"`
+}
+
+var errNotPausable = errors.New("no queue that can pause is running")
+
+// Pause pauses the queue running: the game at work stops at its next batch (the CPU and the disk go
+// idle, memory stays), and nothing else starts until Resume. The page is told ("job:paused"). Cancel still
+// cancels; closing the window cancels it as when it runs.
+func (a *App) Pause() error { return a.setPaused(true) }
+
+// Resume lets a paused queue go on from where it was.
+func (a *App) Resume() error { return a.setPaused(false) }
+
+func (a *App) setPaused(on bool) error {
+	a.mutex.Lock()
+	q := a.queue
+	a.mutex.Unlock()
+	if q == nil || q.pause == nil || q.ctx.Err() != nil {
+		return errNotPausable
+	}
+	if q.pause.Set(on) {
+		a.send("job:paused", pausedEvent{Paused: on})
+	}
+	return nil
+}
+
+// queuePaused tells whether a queue runs and is paused.
+func (a *App) queuePaused() bool {
+	a.mutex.Lock()
+	q := a.queue
+	a.mutex.Unlock()
+	return q != nil && q.pause.On()
 }
 
 // Cancel stops the queue running: the game at work stops without leaving anything half made,

@@ -50,6 +50,8 @@
 //   ?grow=1             Details with a .p5z that grew twice (by DLC and an update) and one that never did:
 //                       Add DLC… ends well, and Update with a new dump… stops because most of the game
 //                       changed until Update anyway
+//   ?paused=1           the first queue started pauses by itself a moment later, to see it paused (Pause and
+//                       Resume work in any queue of Compress, Decompress and Verify)
 // Start runs a queue made up here: each game packs and verifies in a few seconds (and gets its repair
 // data), the games added meanwhile join it, and the card of the end shows; in Verify the damaged
 // .p5z fails, and Repair and Add repair data run their own steps. Compare levels and Measure this PC tell made-up
@@ -214,6 +216,7 @@ const mock = `
       let done = 0, at = 0;
       emit("job:item", { i, state: steps[0], detail: "" });
       const tick = setInterval(() => {
+        if (q.paused && !q.cancelled) return;
         done = Math.min(total, done + total / 12);
         emit("job:progress", { i, phase: steps[at] === "growing" ? (done < total / 2 ? "comparing" : "packing") : steps[at], done, total, rate: 310 * 1048576 });
         if (done < total) return;
@@ -265,7 +268,13 @@ const mock = `
     };
     q.items.forEach((item, i) => emit("job:item", { i, state: "waiting", detail: "" }));
     setTimeout(step, 300);
+    // ?paused=1: the first queue pauses by itself, as Pause does
+    if (query.get("paused") && !pausedOnce && ["compress", "decompress", "verify"].includes(q.section)) {
+      pausedOnce = true;
+      setTimeout(() => { if (queue === q) App.Pause(); }, 1300);
+    }
   }
+  let pausedOnce = false;
   // Compare the levels and Measure this PC: a few steps told as the engine tells them, then the result;
   // a cancel ends them as cancelled
   let tool = null;
@@ -361,6 +370,14 @@ const mock = `
     },
     Unqueue: async (section, i) => { if (!queue || i < queue.at) return false; queue.removed[i] = true; return true; },
     Cancel: async () => { if (queue) queue.cancelled = true; },
+    Pause: async () => {
+      if (!queue || !["compress", "decompress", "verify"].includes(queue.section)) throw new Error("no queue that can pause is running");
+      if (!queue.paused) { queue.paused = true; emit("job:paused", { paused: true }); }
+    },
+    Resume: async () => {
+      if (!queue || !["compress", "decompress", "verify"].includes(queue.section)) throw new Error("no queue that can pause is running");
+      if (queue.paused) { queue.paused = false; emit("job:paused", { paused: false }); }
+    },
     Leftovers: async () => (query.get("leftovers") ? [{ Path: "E:\\\\Starfall Odyssey [PPSA10001].p5z.maxpack-tmp", Size: 3123456789 }, { Path: "E:\\\\homebrew\\\\PPSA10003.maxpack-tmp", Size: 41234567890 },
       { Path: "E:\\\\Iron Harbor [PPSA10002].p5z.maxpack-repair", Size: 148800000000, Restore: "E:\\\\Iron Harbor [PPSA10002].p5z", Keep: false }] : []),
     CleanLeftovers: async () => [],

@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"math"
+	"sync"
 	"time"
 
 	"github.com/DeLFuS77/maxpack/gui/core"
@@ -22,10 +23,10 @@ type extras struct {
 // the progress of a queue is told in this many parts
 const taskbarParts = 10000
 
-// run does the plans with the Runner and the extras: the PC stays awake meanwhile, the taskbar
-// shows the progress of the whole queue as the page counts it (see share; never going back), the
-// page is told how each game goes (job:item, job:progress), and one notice tells the summary at
-// the end. The original of a game removed once checked is written in the log, and what a game
+// run does the plans with the Runner and the extras: the PC stays awake meanwhile (but while the
+// queue is paused), the taskbar shows the progress of the whole queue as the page counts it (see share;
+// never going back) and whether it is paused, the page is told how each game goes (job:item,
+// job:progress), and one notice tells the summary at the end. The original of a game removed once checked is written in the log, and what a game
 // writes apart in the journal of the leftovers.
 func (a *App) run(ctx context.Context, plans []jobs.Plan, o jobs.Options) jobs.Summary {
 	return a.runQueue(ctx, &queue{o: o, jobs: jobs.NewQueue(plans)})
@@ -44,8 +45,16 @@ func (a *App) runQueue(ctx context.Context, q *queue) jobs.Summary {
 	if x.Notify == nil {
 		x.Notify = a.notify
 	}
+	// the PC is kept awake while the queue works, not while it is paused
+	var awake sync.Mutex
 	release := x.Awake()
-	defer release()
+	defer func() {
+		awake.Lock()
+		defer awake.Unlock()
+		if release != nil {
+			release()
+		}
+	}()
 
 	const total = taskbarParts
 	q.mutex.Lock()
@@ -58,15 +67,20 @@ func (a *App) runQueue(ctx context.Context, q *queue) jobs.Summary {
 	queue := q.share
 	q.mutex.Unlock()
 	mutex := &q.mutex
-	shown, told := uint64(0), false
-	// show tells the taskbar how far the queue is, when that changed; with the mutex held
+	shown, shownState, told := uint64(0), "", false
+	// show tells the taskbar how far the queue is and whether it is paused, when that changed; with the
+	// mutex held
 	show := func() {
 		done := min(total, uint64(math.Round(queue.value()*total)))
-		if told && done == shown {
+		state := "normal"
+		if q.pause.On() {
+			state = "paused"
+		}
+		if told && done == shown && state == shownState {
 			return
 		}
-		shown, told = done, true
-		x.Taskbar("normal", done, total)
+		shown, shownState, told = done, state, true
+		x.Taskbar(state, done, total)
 	}
 	mutex.Lock()
 	show()
@@ -84,11 +98,29 @@ func (a *App) runQueue(ctx context.Context, q *queue) jobs.Summary {
 	if j := a.journal(); j != nil {
 		journal = j
 	}
+	// paused or going on again: the taskbar says it, the PC may sleep meanwhile, and the speed is measured
+	// anew from where it goes on
+	defer q.pause.Listen(func(bool) {
+		awake.Lock()
+		switch paused := q.pause.On(); {
+		case paused && release != nil:
+			release()
+			release = nil
+		case !paused && release == nil:
+			release = x.Awake()
+		}
+		awake.Unlock()
+		mutex.Lock()
+		show()
+		mutex.Unlock()
+		page.restart()
+	})()
 	runner := &jobs.Runner{
 		Core:    path,
 		Par2:    program,
 		Journal: journal,
 		Log:     a.log,
+		Pause:   q.pause,
 		OnEvent: func(i int, e core.Event) {
 			if e.Total > 0 {
 				mutex.Lock()

@@ -224,6 +224,10 @@ td.remove button { padding: 2px 8px; }
 @keyframes sheen { from { transform: translateX(0); } to { transform: translateX(350%); } }
 .seg div::after, .bar div::after { content: ""; position: absolute; top: 0; bottom: 0; left: -40%; width: 40%; background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .5), transparent); animation: sheen 1.7s ease-in-out infinite; }
 .step { font-size: 12px; color: var(--muted); margin-top: 4px; font-variant-numeric: tabular-nums; }
+/* a paused queue: its bars stand still and lose their color, and the dot of a game at work stops blinking */
+.segs.paused .seg div, .bar.paused div { filter: saturate(.3); }
+.segs.paused .seg div::after, .bar.paused div::after, .badge.work.paused::before { animation: none; }
+.segs.paused .seg div::after, .bar.paused div::after { opacity: 0; }
 /* what a game saved: it pops in once, when the game is made */
 .saved { font-size: 13px; font-weight: 800; color: var(--ok); margin-top: 4px; font-variant-numeric: tabular-nums; transform-origin: 0 50%; }
 @keyframes pop { from { opacity: 0; transform: scale(.5); } }

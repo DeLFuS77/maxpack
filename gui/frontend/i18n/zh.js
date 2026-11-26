@@ -552,4 +552,10 @@ texts.zh = {
   detail_original_kept_watched: "原件保留：监视文件夹从不移走原件",
   detail_source_changed: "它在压缩期间发生了变化（还在传入吗？）：所做的内容均未保留，待其完整后会重新压缩",
   watchSkipped: name => name + "：它的某个文件无法打开，因此监视文件夹在它变化前不会处理它",
+  pause: "暂停",
+  resume: "继续",
+  pausedStatus: "已暂停：CPU 和磁盘已空出，可以做别的事。点“继续”会从停下的地方接着做。",
+  stepPaused: "已暂停",
+  closeTitlePaused: "队列已暂停",
+  closeTextPaused: "MaxPack 关闭后，已暂停的队列无法继续：如果现在关闭，正在处理的游戏会被取消，做到一半的内容会被删除。已完成的游戏会保留，等待中的游戏不会开始。",
 };

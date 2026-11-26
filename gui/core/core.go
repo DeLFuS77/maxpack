@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -37,8 +38,8 @@ var ErrClosing = errors.New("the window is closing")
 // info --json says whether a game has every file of the original package, and pack takes
 // --leave-out-leftovers; "dlc": pack takes --dlc, and info --json says what a DLC is and the DLC a
 // game carries; "grow": add, update and compact grow a .p5z by appending, and info --json says how
-// many times one grew.
-var Required = []string{"progress_json", "control_stdin", "max_file_size", "info_json", "icon", "packs", "content_id", "levels", "measure", "images", "fpkg", "passcode", "completeness", "dlc", "grow"}
+// many times one grew; "pause": --control stdin takes "pause" and "resume".
+var Required = []string{"progress_json", "control_stdin", "max_file_size", "info_json", "icon", "packs", "content_id", "levels", "measure", "images", "fpkg", "passcode", "completeness", "dlc", "grow", "pause"}
 
 // passcode is the one of Settings › FPKG passcode ("" is the default, which the engine knows).
 var passcode atomic.Value
@@ -152,8 +153,8 @@ func parse(line []byte) (Event, bool) {
 	return Event{Kind: numbers.Event, Phase: numbers.Phase, Done: numbers.Done, Total: numbers.Total, Raw: raw}, true
 }
 
-// Run runs the engine with args plus --progress json --control stdin, and gives each progress to
-// onEvent (which may be nil). When ctx ends it asks the engine to cancel, closes its input and
+// Run runs the engine with args plus --progress json --control stdin, and gives each line but the result
+// to onEvent (which may be nil): its progress, and "paused" and "resumed" as it pauses (RunOptions.Pause). When ctx ends it asks the engine to cancel, closes its input and
 // waits for it, up to CancelGrace; an engine that does not stop by then is killed, and Run gives a
 // result of its own ({"ok": false, "error": "cancelled"}) with code 130, as an engine that
 // cancelled would. When ctx ends with the cause ErrClosing the engine is never killed. It gives
@@ -169,6 +170,9 @@ type RunOptions struct {
 	Low bool
 	// Env are variables ("NAME=value") the engine gets in its environment as well as the window's
 	Env []string
+	// Pause, when there is one, is the pause of the queue: the engine is told "pause" on its input while
+	// it is on (also when it starts so), and "resume" once it is off
+	Pause *Pause
 }
 
 // RunWith is Run with options.
@@ -193,6 +197,43 @@ func RunWith(ctx context.Context, core string, args []string, options RunOptions
 	if started != nil {
 		started(command.Process)
 	}
+	// what the engine is told on its input: the pause as it is now, and cancel; never after it is closed
+	var input sync.Mutex
+	inputClosed := false
+	say := func(line string) {
+		input.Lock()
+		defer input.Unlock()
+		if !inputClosed {
+			stdin.Write([]byte(line + "\n"))
+		}
+	}
+	closeInput := func() {
+		input.Lock()
+		defer input.Unlock()
+		if !inputClosed {
+			inputClosed = true
+			stdin.Close()
+		}
+	}
+	if options.Pause != nil {
+		// each change says the pause as it is when its turn comes, so the last line said is the last state
+		tell := func() {
+			input.Lock()
+			defer input.Unlock()
+			if inputClosed {
+				return
+			}
+			if options.Pause.On() {
+				stdin.Write([]byte("pause\n"))
+			} else {
+				stdin.Write([]byte("resume\n"))
+			}
+		}
+		defer options.Pause.Listen(func(bool) { tell() })()
+		if options.Pause.On() {
+			tell()
+		}
+	}
 	ended := make(chan struct{})
 	stopped := make(chan struct{})
 	var killed atomic.Bool
@@ -200,8 +241,8 @@ func RunWith(ctx context.Context, core string, args []string, options RunOptions
 		defer close(stopped)
 		select {
 		case <-ctx.Done():
-			stdin.Write([]byte("cancel\n"))
-			stdin.Close()
+			say("cancel")
+			closeInput()
 			if errors.Is(context.Cause(ctx), ErrClosing) {
 				<-ended
 				return
@@ -213,7 +254,7 @@ func RunWith(ctx context.Context, core string, args []string, options RunOptions
 				command.Process.Kill()
 			}
 		case <-ended:
-			stdin.Close()
+			closeInput()
 		}
 	}()
 

@@ -11,12 +11,16 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/DeLFuS77/maxpack/gui/core"
 )
 
 // The test binary stands in for maxpack-par2 when fakeEnv says how: "slow" tells some progress and
-// waits a minute (to be killed); "fails" says why and ends with code 3.
+// waits a minute (to be killed); "fails" says why and ends with code 3; "ticks" says a line every 10 ms,
+// for a minute.
 const fakeEnv = "MP_FAKE_PAR2"
 
 func TestMain(m *testing.M) {
@@ -28,6 +32,11 @@ func TestMain(m *testing.M) {
 	case "fails":
 		fmt.Print("Invalid option specified: -x\r\n")
 		os.Exit(3)
+	case "ticks":
+		for end := time.Now().Add(time.Minute); time.Now().Before(end); time.Sleep(10 * time.Millisecond) {
+			fmt.Print("tick\r\n")
+		}
+		os.Exit(0)
 	}
 	os.Exit(m.Run())
 }
@@ -68,11 +77,11 @@ func TestRunTellsAndEnds(t *testing.T) {
 	var lines []string
 	meter := NewMeter(Making)
 	meter.OnLine = func(line string) { lines = append(lines, line) }
-	code, err := Run(context.Background(), self(t), nil, false, meter)
+	code, err := Run(context.Background(), self(t), nil, false, nil, meter)
 	if err != nil || code != 3 || len(lines) != 1 || lines[0] != "Invalid option specified: -x" {
 		t.Errorf("code %d, %v, %q", code, err, lines)
 	}
-	if _, err := Run(context.Background(), filepath.Join(t.TempDir(), "none"), nil, false, NewMeter(Making)); err == nil {
+	if _, err := Run(context.Background(), filepath.Join(t.TempDir(), "none"), nil, false, nil, NewMeter(Making)); err == nil {
 		t.Error("a program that is not there ran")
 	}
 }
@@ -83,7 +92,7 @@ func TestRunCancelKills(t *testing.T) {
 	meter := NewMeter(Making)
 	meter.OnProgress = func(uint64) { cancel() }
 	start := time.Now()
-	_, err := Run(ctx, self(t), nil, true, meter)
+	_, err := Run(ctx, self(t), nil, true, nil, meter)
 	if !errors.Is(err, ErrCancelled) {
 		t.Errorf("cancelled: %v", err)
 	}
@@ -121,7 +130,7 @@ func makeReal(t *testing.T, program, file string, percent int) {
 	var out bytes.Buffer
 	meter := NewMeter(Making)
 	meter.OnLine = func(line string) { out.WriteString(line + "\n") }
-	code, err := Run(context.Background(), program, CreateArgs(Create{File: file, Index: filepath.Join(folder, filepath.Base(file)+".par2"), BlockSize: bs, Recovery: rec}), false, meter)
+	code, err := Run(context.Background(), program, CreateArgs(Create{File: file, Index: filepath.Join(folder, filepath.Base(file)+".par2"), BlockSize: bs, Recovery: rec}), false, nil, meter)
 	if err != nil || code != 0 {
 		t.Fatalf("par2 create: %d, %v: %s", code, err, out.String())
 	}
@@ -168,5 +177,61 @@ func TestCreateRealSet(t *testing.T) {
 	}
 	if want := filepath.Base(file) + ".vol"; !strings.HasPrefix(filepath.Base(info.Volumes[0]), want) {
 		t.Errorf("recovery file %q", info.Volumes[0])
+	}
+}
+
+// While the queue is paused, par2 is suspended (it cannot be told to pause): it says nothing more until
+// the pause ends, and a cancel while suspended still ends it.
+func TestRunSuspendedWhilePaused(t *testing.T) {
+	t.Setenv(fakeEnv, "ticks")
+	pause := core.NewPause()
+	var mutex sync.Mutex
+	ticks := 0
+	meter := NewMeter(Making)
+	meter.OnLine = func(string) {
+		mutex.Lock()
+		ticks++
+		mutex.Unlock()
+	}
+	count := func() int {
+		mutex.Lock()
+		defer mutex.Unlock()
+		return ticks
+	}
+	waitFor := func(what string, cond func() bool) {
+		t.Helper()
+		for end := time.Now().Add(10 * time.Second); !cond(); time.Sleep(5 * time.Millisecond) {
+			if time.Now().After(end) {
+				t.Fatal(what)
+			}
+		}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ended := make(chan error, 1)
+	go func() {
+		_, err := Run(ctx, self(t), nil, false, pause, meter)
+		ended <- err
+	}()
+	waitFor("it never ticked", func() bool { return count() >= 5 })
+	pause.Set(true)
+	time.Sleep(150 * time.Millisecond)
+	at := count()
+	time.Sleep(400 * time.Millisecond)
+	if now := count(); now != at {
+		t.Fatalf("par2 went on while paused: %d -> %d", at, now)
+	}
+	pause.Set(false)
+	waitFor("par2 did not go on once resumed", func() bool { return count() > at+3 })
+	pause.Set(true)
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+	select {
+	case err := <-ended:
+		if !errors.Is(err, ErrCancelled) {
+			t.Fatalf("cancelled while suspended: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("a suspended par2 was not stopped by the cancel")
 	}
 }

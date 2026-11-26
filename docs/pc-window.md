@@ -160,6 +160,20 @@ the Dock (macOS), and when it ends the system notifies you. The portable version
 notify: to send notifications it would have to register in the Windows registry, and the portable one
 writes nothing there.
 
+**Pause** (next to **Cancel**, in Compress, Decompress and Verify) frees the PC for something else
+without losing anything:
+- the game at work stops at its next batch: each thread ends the block it has (a few MiB), then nothing
+  more is read, compressed or written, so the CPU and the disk are idle; the memory it uses stays;
+- nothing else starts: not the next game, nor the verification or the repair data of this one
+  (`maxpack-par2`, which cannot be told to pause, is suspended);
+- the bars stand still, the status says "Paused", the taskbar shows it paused, the watched folder is
+  not looked at, and the PC may go to sleep meanwhile;
+- **Resume** goes on from where it stopped, and what is made is the same as without the pause;
+- **Cancel** while paused cancels as usual. A paused queue cannot be resumed once MaxPack closes:
+  closing the window says so before it cancels it.
+
+Low priority (Settings) is still there apart: it keeps the work going, but behind everything else.
+
 Cancelling, or closing the window while work is running, stops the current game without leaving
 anything half made or unverified:
 - what it had written is deleted, and the destination is left as it was: without the game if it was

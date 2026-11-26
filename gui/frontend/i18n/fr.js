@@ -552,4 +552,10 @@ texts.fr = {
   detail_original_kept_watched: "l'original est gardé : le dossier surveillé n'en retire jamais aucun",
   detail_source_changed: "il a changé pendant sa compression (arrivait-il encore ?) : rien de ce qui a été fait n'est gardé, et il sera compressé à nouveau une fois entier",
   watchSkipped: name => name + " : un de ses fichiers ne peut pas être ouvert, le dossier surveillé le laisse donc tranquille jusqu'à ce qu'il change",
+  pause: "Pause",
+  resume: "Reprendre",
+  pausedStatus: "En pause : le processeur et le disque sont libres pour autre chose. « Reprendre » repart de là où il s’est arrêté.",
+  stepPaused: "en pause",
+  closeTitlePaused: "La file est en pause",
+  closeTextPaused: "Une file en pause ne peut pas être reprise après la fermeture de MaxPack : si vous fermez maintenant, le jeu en cours est annulé et ce qu’il avait fait à moitié est supprimé. Les jeux terminés restent et ceux qui attendent ne démarrent pas.",
 };

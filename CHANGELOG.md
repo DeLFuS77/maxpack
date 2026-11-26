@@ -13,7 +13,10 @@ All notable changes to MaxPack are listed here. The format follows
   threads end the block they have and take no other, and nothing more is read or written, so the CPU and
   the disk are free; memory stays. Resuming goes on from there with the same result. With `--progress
   json` they say `{"event":"paused"}` and `{"event":"resumed"}`; a cancel while paused cancels. In C,
-  `mp_pause_set` (`src/analyze/mp_parallel.h`).
+  `mp_pause_set` (`src/analyze/mp_parallel.h`). In the window, **Pause** and **Resume** next to Cancel in
+  Compress, Decompress and Verify: nothing else starts while paused (`maxpack-par2`, which cannot pause, is
+  suspended), the taskbar shows it paused, the watched folder waits, and the PC may sleep. Closing the
+  window with a paused queue says it cannot be resumed after MaxPack closes.
 - **Send to the console:** `maxpack send <game.p5z> <ps5-ip> --code <6 digits> [--drive <id>]` sends a
   `.p5z` to MaxPack for the console over the network, which verifies it when it has it whole and only
   then gives it its name. It shows the MB/s and the time left, goes on from what the console has after

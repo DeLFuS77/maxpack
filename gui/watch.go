@@ -173,6 +173,15 @@ func (a *App) watchLoop(w *watching, every time.Duration) {
 	done, _ := w.watcher.Kept()
 	kept := len(done)
 	for {
+		// while a queue is paused the folder is not looked at: the disk stays free
+		if a.queuePaused() {
+			select {
+			case <-w.stop:
+				return
+			case <-tick.C:
+			}
+			continue
+		}
 		found, err := w.watcher.Poll()
 		status := WatchStatus{Folder: w.folder, Existing: w.watcher.ExistingCount()}
 		switch {

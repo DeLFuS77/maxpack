@@ -87,7 +87,9 @@ type Journal interface {
 // Runner runs the plans one at a time. OnEvent gets the progress of the engine (and of par2) for the
 // game i of the plans; OnItem, each change of its state, and with an error or a skip, why. Journal,
 // when there is one, is told what is written apart; Log gets a line for each original removed or
-// kept. Par2 is maxpack-par2, "" when there is none (then no repair data is made).
+// kept. Par2 is maxpack-par2, "" when there is none (then no repair data is made). Pause, when there is
+// one, is the pause of the queue: while it is on, the engine at work pauses, maxpack-par2 is suspended,
+// and no game, step or run of either starts.
 type Runner struct {
 	Core    string
 	Par2    string
@@ -95,6 +97,15 @@ type Runner struct {
 	OnItem  func(i int, state, detail string)
 	Journal Journal
 	Log     func(line string)
+	Pause   *core.Pause
+}
+
+// hold waits while the queue is paused, before anything starts; an error once ctx ended.
+func (r *Runner) hold(ctx context.Context) error {
+	if err := r.Pause.Wait(ctx); err != nil {
+		return err
+	}
+	return ctx.Err()
 }
 
 func (r *Runner) item(i int, state, detail string) {
@@ -125,7 +136,10 @@ func (r *Runner) forget(path string) {
 // engine runs one command of the engine; ok is whether it said so. onEvent, when given, sees
 // each line first.
 func (r *Runner) engine(ctx context.Context, i int, args []string, o Options, onEvent func(core.Event)) (result core.Event, ok bool, failure string) {
-	options := core.RunOptions{Low: o.LowPriority}
+	if r.hold(ctx) != nil {
+		return result, false, "cancelled"
+	}
+	options := core.RunOptions{Low: o.LowPriority, Pause: r.Pause}
 	if len(args) > 0 && args[0] == "send" && o.ConsoleCode != "" {
 		options.Env = []string{SendCodeEnv + "=" + o.ConsoleCode}
 	}
@@ -188,6 +202,8 @@ func (r *Runner) RunQueue(ctx context.Context, q *Queue, o Options) Summary {
 		r.item(i, StateWaiting, "")
 	}
 	for {
+		// the next game waits while paused; cancelled meanwhile, it is cancelled as the others
+		r.hold(ctx)
 		i, p, more := q.take()
 		if !more {
 			break

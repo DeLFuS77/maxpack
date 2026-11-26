@@ -552,4 +552,10 @@ texts.en = {
   detail_original_kept_watched: "the original is kept: the watched folder never takes one away",
   detail_source_changed: "it changed while it was being compressed (was it still arriving?): nothing made of it was kept, and it is compressed again once it is whole",
   watchSkipped: name => name + ": a file of it cannot be opened, so the watched folder leaves it alone until it changes",
+  pause: "Pause",
+  resume: "Resume",
+  pausedStatus: "Paused: the CPU and the disk are free for other things. Resume goes on from where it stopped.",
+  stepPaused: "paused",
+  closeTitlePaused: "The queue is paused",
+  closeTextPaused: "A paused queue cannot be resumed after MaxPack closes: if you close now, the game at work is cancelled and what it half made is deleted. The games done stay, and the ones waiting do not start.",
 };

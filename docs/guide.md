@@ -246,6 +246,9 @@ What it does by itself:
   `.ffpfsc` is compressed already, so it is less than against the game in it.
 - **Cancel** stops the game in progress, deletes what it had written and leaves the destination as it
   was.
+- **Pause** stops the work at its next batch, so the CPU and the disk are free for something else, and
+  starts nothing new; **Resume** goes on from there. It is in Decompress and Verify too. A paused queue
+  cannot be resumed after MaxPack closes.
 
 ### Decompress ([details](pc-window.md#3-decompress-and-verify))
 
@@ -1335,7 +1338,8 @@ the queue starts, or choose **Delete them for good** in Settings.
 
 ### Cancelling
 
-- **In the window,** **Cancel** (or closing the window while work is running) deletes what had been
+- **In the window,** **Pause** stops the work without losing anything, and **Resume** goes on from there
+  (not after MaxPack closes). **Cancel** (or closing the window while work is running) deletes what had been
   written and leaves the destination as it was; with **Replace**, the old one stays intact. Games that
   were waiting do not start, and the ones already done stay. It can take a few seconds. If something
   cannot be deleted, the row says so, with the path: "what was half written could not be deleted".

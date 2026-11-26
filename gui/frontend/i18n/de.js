@@ -552,4 +552,10 @@ texts.de = {
   detail_original_kept_watched: "das Original bleibt: Der überwachte Ordner nimmt nie eines weg",
   detail_source_changed: "es hat sich während der Komprimierung geändert (kam es noch an?): Nichts davon wurde behalten, und es wird erneut komprimiert, sobald es vollständig ist",
   watchSkipped: name => name + ": Eine seiner Dateien lässt sich nicht öffnen, daher lässt der überwachte Ordner es in Ruhe, bis es sich ändert",
+  pause: "Pausieren",
+  resume: "Fortsetzen",
+  pausedStatus: "Pausiert: CPU und Datenträger sind für anderes frei. „Fortsetzen“ macht dort weiter, wo es aufgehört hat.",
+  stepPaused: "pausiert",
+  closeTitlePaused: "Die Warteschlange ist pausiert",
+  closeTextPaused: "Eine pausierte Warteschlange lässt sich nach dem Schließen von MaxPack nicht fortsetzen: Wenn Sie jetzt schließen, wird das laufende Spiel abgebrochen und das Halbfertige gelöscht. Fertige Spiele bleiben, wartende starten nicht.",
 };

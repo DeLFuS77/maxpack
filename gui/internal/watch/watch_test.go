@@ -120,7 +120,7 @@ func TestWaitsUntilQuiet(t *testing.T) {
 }
 
 // What ended is remembered (Done, which the window keeps between runs): the same, unchanged, is not handed
-// again; one that went away and came back is.
+// again; one that went away (missing from 3 listings in a row) and came back is.
 func TestHandedIsRemembered(t *testing.T) {
 	dir := t.TempDir()
 	write(t, filepath.Join(dir, "a.pkg"), "x")
@@ -141,9 +141,11 @@ func TestHandedIsRemembered(t *testing.T) {
 		t.Errorf("a new run hands it again: %v", found)
 	}
 	os.Remove(filepath.Join(dir, "a.pkg"))
-	again.Poll()
-	if len(again.Done) != 0 {
-		t.Errorf("gone, still remembered: %v", again.Done)
+	for i := 1; i <= 3; i++ {
+		again.Poll()
+		if gone := len(again.Done) == 0; gone != (i == 3) {
+			t.Errorf("gone from %d listings, remembered: %v", i, again.Done)
+		}
 	}
 	write(t, filepath.Join(dir, "a.pkg"), "x")
 	again.Poll()

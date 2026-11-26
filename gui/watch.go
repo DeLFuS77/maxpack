@@ -48,12 +48,13 @@ type watchFound struct {
 	Paths []string `json:"paths"`
 }
 
-// watching is the watcher at work: how to stop it, when it stopped, what it watches and its state.
+// watching is the watcher at work: how to stop it, what it watches and its state; gone (with keepMutex) once it
+// was stopped, from when it keeps nothing more.
 type watching struct {
 	stop    chan struct{}
-	done    chan struct{}
 	folder  string
 	watcher *watch.Watcher
+	gone    bool
 }
 
 type watchedJSON struct {
@@ -91,18 +92,18 @@ func keptOf(folder string) (kept watchedJSON, ok bool) {
 }
 
 // keepMutex keeps two writers of watched.json (the watcher's looks, a game's end, Compress the N already there)
-// from writing it at once.
+// from writing it at once, and one stopped from writing it after.
 var keepMutex sync.Mutex
 
-func keepWatched(folder string, w *watch.Watcher) {
+func keepWatched(w *watching) {
 	keepMutex.Lock()
 	defer keepMutex.Unlock()
 	path, err := watchedPath()
-	if err != nil {
+	if err != nil || w.gone {
 		return
 	}
-	done, existing := w.Kept()
-	data, err := json.Marshal(watchedJSON{Folder: folder, Done: done, Existing: existing})
+	done, existing := w.watcher.Kept()
+	data, err := json.Marshal(watchedJSON{Folder: w.folder, Done: done, Existing: existing})
 	if err != nil {
 		return
 	}
@@ -159,14 +160,19 @@ func (a *App) rewatch(snapshot bool) WatchStatus {
 	} else {
 		watcher.Snapshot = true
 	}
-	w := &watching{stop: make(chan struct{}), done: make(chan struct{}), folder: folder, watcher: watcher}
+	w := &watching{stop: make(chan struct{}), folder: folder, watcher: watcher}
 	a.watch = w
+	a.watchLoops.Add(1)
 	go a.watchLoop(w, every)
 	return WatchStatus{Folder: folder}
 }
 
 func (a *App) watchLoop(w *watching, every time.Duration) {
-	defer close(w.done)
+	defer a.watchLoops.Done()
+	poll := a.watchPoll
+	if poll == nil {
+		poll = (*watch.Watcher).Poll
+	}
 	tick := time.NewTicker(every)
 	defer tick.Stop()
 	told, existing := WatchStatus{Error: "-"}, -1
@@ -182,7 +188,13 @@ func (a *App) watchLoop(w *watching, every time.Duration) {
 			}
 			continue
 		}
-		found, err := w.watcher.Poll()
+		found, err := poll(w.watcher)
+		// stopped meanwhile (the window closes, another folder): it tells and keeps nothing more
+		select {
+		case <-w.stop:
+			return
+		default:
+		}
 		status := WatchStatus{Folder: w.folder, Existing: w.watcher.ExistingCount()}
 		switch {
 		case errors.Is(err, watch.ErrGone):
@@ -195,7 +207,7 @@ func (a *App) watchLoop(w *watching, every time.Duration) {
 			told = status
 		}
 		if done, _ := w.watcher.Kept(); len(done) != kept || status.Existing != existing {
-			keepWatched(w.folder, w.watcher)
+			keepWatched(w)
 			kept, existing = len(done), status.Existing
 		}
 		if len(found) > 0 {
@@ -226,7 +238,7 @@ func (a *App) WatchEnded(path string, final bool) {
 	if w := a.watcher(); w != nil {
 		w.watcher.Ended(path, final)
 		if final {
-			keepWatched(w.folder, w.watcher)
+			keepWatched(w)
 		}
 	}
 }
@@ -239,11 +251,12 @@ func (a *App) WatchTakeExisting() int {
 		return 0
 	}
 	taken := w.watcher.TakeExisting()
-	keepWatched(w.folder, w.watcher)
+	keepWatched(w)
 	return taken
 }
 
-// stopWatch stops the watcher, and waits for it.
+// stopWatch stops the watcher. It does not wait for a look at work (a share that dropped may take long): that
+// one ends on its own, and tells and keeps nothing.
 func (a *App) stopWatch() {
 	a.watchMutex.Lock()
 	defer a.watchMutex.Unlock()
@@ -255,7 +268,9 @@ func (a *App) stopWatchLocked() {
 		return
 	}
 	close(a.watch.stop)
-	<-a.watch.done
+	keepMutex.Lock()
+	a.watch.gone = true
+	keepMutex.Unlock()
 	a.watch = nil
 }
 

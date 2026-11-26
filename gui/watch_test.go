@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DeLFuS77/maxpack/gui/internal/watch"
 	"github.com/DeLFuS77/maxpack/gui/settings"
 )
 
@@ -69,7 +70,7 @@ func TestWatchSnapshotAndArrivals(t *testing.T) {
 	saveSettings(t, func(s *settings.Settings) { s.WatchFolder = folder })
 	events := &watchEvents{}
 	a := watchApp(events)
-	defer a.stopWatch()
+	defer a.stopWatchWait()
 	if status := a.StartWatch(); status.Folder != "" {
 		t.Fatalf("off: %+v", status)
 	}
@@ -113,7 +114,7 @@ func TestWatchOldStateIsASnapshot(t *testing.T) {
 	events := &watchEvents{}
 	a := watchApp(events)
 	a.StartWatch()
-	defer a.stopWatch()
+	defer a.stopWatchWait()
 	time.Sleep(300 * time.Millisecond)
 	if found := events.waitFound(t, 0); len(found) != 0 || events.lastStatus().Existing != 1 {
 		t.Errorf("found %v, status %+v", found, events.lastStatus())
@@ -134,19 +135,19 @@ func TestWatchDoneOnlyWhenEnded(t *testing.T) {
 	never := makeDump(t, folder, "Never", "PPSA10002", "Never")
 	found := events.waitFound(t, 3*time.Second)
 	if len(found) != 1 || len(found[0]) != 2 {
-		a.stopWatch()
+		a.stopWatchWait()
 		t.Fatalf("found: %v", found)
 	}
 	a.WatchEnded(ran, true)
 	a.WatchEnded(never, false)
-	a.stopWatch()
+	a.stopWatchWait()
 	if _, err := os.Stat(filepath.Join(must(settings.Dir()), watchedFile)); err != nil {
 		t.Errorf("what ended is not kept: %v", err)
 	}
 	again := &watchEvents{}
 	b := watchApp(again)
 	b.StartWatch()
-	defer b.stopWatch()
+	defer b.stopWatchWait()
 	found = again.waitFound(t, 3*time.Second)
 	if len(found) != 1 || len(found[0]) != 1 || found[0][0] != never {
 		t.Errorf("the next run: %v", found)
@@ -161,7 +162,7 @@ func TestWatchGone(t *testing.T) {
 	events := &watchEvents{}
 	a := watchApp(events)
 	a.StartWatch()
-	defer a.stopWatch()
+	defer a.stopWatchWait()
 	time.Sleep(100 * time.Millisecond)
 	os.MkdirAll(folder, 0o755)
 	time.Sleep(100 * time.Millisecond)
@@ -177,4 +178,58 @@ func must(s string, err error) string {
 		panic(err)
 	}
 	return s
+}
+
+// stopWatchWait stops the watcher and waits for every one at work to end (only the tests wait: the window does
+// not, see TestWatchStopDoesNotWait).
+func (a *App) stopWatchWait() {
+	a.stopWatch()
+	a.watchLoops.Wait()
+}
+
+// Closing the window, or choosing another folder, does not wait for a look at the folder that is slow (a share
+// that dropped, its timeouts): the watcher at work is left to end on its own, and it tells and keeps nothing more.
+func TestWatchStopDoesNotWait(t *testing.T) {
+	useSettings(t, t.TempDir())
+	folder := t.TempDir()
+	saveSettings(t, func(s *settings.Settings) { s.WatchOn, s.WatchFolder = true, folder })
+	events := &watchEvents{}
+	a := watchApp(events)
+	blocked, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	a.watchPoll = func(w *watch.Watcher) ([]string, error) {
+		if w.Folder == folder {
+			once.Do(func() { close(blocked); <-release })
+		}
+		return w.Poll()
+	}
+	a.StartWatch()
+	<-blocked
+	makeDump(t, folder, "Late", "PPSA10001", "Late")
+	other := t.TempDir()
+	stopped := make(chan struct{})
+	go func() {
+		s, _ := settings.Load()
+		s.WatchFolder = other
+		a.SetSettings(s)
+		a.stopWatch()
+		close(stopped)
+	}()
+	select {
+	case <-stopped:
+	case <-time.After(5 * time.Second):
+		t.Fatal("changing the folder or closing waits for the look at work")
+	}
+	events.mutex.Lock()
+	told := len(events.status)
+	events.mutex.Unlock()
+	close(release)
+	a.watchLoops.Wait()
+	events.mutex.Lock()
+	defer events.mutex.Unlock()
+	for _, status := range events.status[told:] {
+		if status.Folder == folder {
+			t.Errorf("the watcher stopped told %+v", status)
+		}
+	}
 }

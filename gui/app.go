@@ -16,6 +16,7 @@ import (
 	"github.com/DeLFuS77/maxpack/gui/internal/par2"
 	"github.com/DeLFuS77/maxpack/gui/internal/system"
 	"github.com/DeLFuS77/maxpack/gui/internal/update"
+	"github.com/DeLFuS77/maxpack/gui/internal/watch"
 	"github.com/DeLFuS77/maxpack/gui/jobs"
 	"github.com/DeLFuS77/maxpack/gui/settings"
 
@@ -76,11 +77,14 @@ type App struct {
 	runtimePath string
 
 	// the watched folder (see watch.go): the watcher at work, whether the page listens, and how often and how
-	// long when not the ones of watch.go (the tests)
+	// long when not the ones of watch.go (the tests); the watchers still at work (one stopped ends its look on
+	// its own), and the stand-in of the tests for a look
 	watchMutex             sync.Mutex
 	watch                  *watching
 	watchListening         bool
 	watchEvery, watchQuiet time.Duration
+	watchLoops             sync.WaitGroup
+	watchPoll              func(*watch.Watcher) ([]string, error)
 
 	// the question of the console's drives at work (see send.go), and how long it may take when not drivesTimeout
 	drivesCancel  context.CancelFunc

@@ -78,6 +78,7 @@ type Watcher struct {
 	skipped  map[string]string // could not be read: not tried again while it stays so
 	said     []string          // skipped, not yet told (TakeSkipped)
 	seen     map[string]seen
+	missing  map[string]int // listings in a row that did not have it
 }
 
 type seen struct {
@@ -243,6 +244,13 @@ func Signature(path string) (sig string, busy, unreadable bool) {
 // ErrGone is the error of Poll when the folder is not there (or is not a folder).
 var ErrGone = errors.New("the watched folder is not there")
 
+// list is how the folder is listed (a variable so the tests can stand in for a share that is slow or drops).
+var list = os.ReadDir
+
+// forgetAfter is how many listings in a row something known must be missing from before it is forgotten: a
+// listing of a share that drops may miss entries once.
+const forgetAfter = 3
+
 func (w *Watcher) init() {
 	if w.Done == nil {
 		w.Done = map[string]string{}
@@ -251,37 +259,42 @@ func (w *Watcher) init() {
 		w.Existing = map[string]string{}
 	}
 	if w.seen == nil {
-		w.seen, w.inflight, w.skipped = map[string]seen{}, map[string]string{}, map[string]string{}
+		w.seen, w.inflight, w.skipped, w.missing = map[string]seen{}, map[string]string{}, map[string]string{}, map[string]int{}
 	}
 }
 
 // Poll looks at the folder once. It gives what is new (not ended nor handed over this run as it is now, and not
 // there when the watcher was turned on), all of it at once, when none of it has changed for Quiet and a look
 // through its files finds none still being written: a dump and its DLC that arrive together go together. One
-// whose files cannot be opened is skipped after a few looks (TakeSkipped), and holds back nothing else. What goes
-// away is forgotten.
+// whose files cannot be opened is skipped after a few looks (TakeSkipped), and holds back nothing else. What is
+// missing from forgetAfter listings in a row is forgotten; a listing that fails forgets nothing. The listing and
+// the look through the files are made without holding the watcher: what the page says meanwhile (Ended,
+// TakeExisting...) does not wait for them.
 func (w *Watcher) Poll() ([]string, error) {
-	w.mutex.Lock()
-	defer w.mutex.Unlock()
-	w.init()
 	if info, err := os.Stat(w.Folder); err != nil || !info.IsDir() {
 		return nil, ErrGone
 	}
-	entries, err := os.ReadDir(w.Folder)
+	entries, err := list(w.Folder)
 	if err != nil {
 		return nil, err
 	}
+	type entry struct{ path, sig string }
+	var listed []entry
+	for _, e := range entries {
+		path := filepath.Join(w.Folder, e.Name())
+		if candidate(path, e) {
+			listed = append(listed, entry{path, cheap(path, e)})
+		}
+	}
+	w.mutex.Lock()
+	w.init()
 	now, here := w.now(), map[string]bool{}
 	var pending []string
 	quiet := true
-	for _, entry := range entries {
-		path := filepath.Join(w.Folder, entry.Name())
-		if !candidate(path, entry) {
-			continue
-		}
+	for _, e := range listed {
+		path, sig := e.path, e.sig
 		k := key(path)
 		here[k] = true
-		sig := cheap(path, entry)
 		if s, ok := w.seen[k]; !ok || s.sig != sig {
 			w.seen[k] = seen{sig: sig, since: now}
 		}
@@ -304,43 +317,78 @@ func (w *Watcher) Poll() ([]string, error) {
 		}
 	}
 	w.Snapshot = false
-	for _, m := range []map[string]string{w.Done, w.Existing, w.inflight, w.skipped} {
-		for k := range m {
-			if !here[k] {
-				delete(m, k)
-			}
-		}
-	}
-	for k := range w.seen {
-		if !here[k] {
-			delete(w.seen, k)
-		}
-	}
+	w.forgetMissing(here)
+	w.mutex.Unlock()
 	if !quiet || len(pending) == 0 {
 		return nil, nil
 	}
 	// the last look, through the files: one still being written, or whose listing was not current, waits (a
 	// minute more); one that cannot be opened is looked at again, then skipped; the others go
+	type look struct {
+		strong           string
+		busy, unreadable bool
+	}
+	looks := make([]look, len(pending))
+	for i, path := range pending {
+		looks[i].strong, looks[i].busy, looks[i].unreadable = Signature(path)
+	}
+	w.mutex.Lock()
+	defer w.mutex.Unlock()
 	var whole []string
-	for _, path := range pending {
+	for i, path := range pending {
 		k := key(path)
-		s := w.seen[k]
-		strong, busy, unreadable := Signature(path)
-		switch {
-		case unreadable && !busy:
+		s, ok := w.seen[k]
+		if !ok {
+			continue
+		}
+		switch l := looks[i]; {
+		case l.unreadable && !l.busy:
 			if s.tries++; s.tries >= unreadableTries {
 				w.skipped[k] = s.sig
 				w.said = append(w.said, path)
 			}
 			w.seen[k] = s
-		case busy || (strong != s.sig && strong != s.strong):
-			w.seen[k] = seen{sig: s.sig, strong: strong, since: now}
+		case l.busy || (l.strong != s.sig && l.strong != s.strong):
+			w.seen[k] = seen{sig: s.sig, strong: l.strong, since: now}
 		default:
 			w.inflight[k] = s.sig
 			whole = append(whole, path)
 		}
 	}
 	return whole, nil
+}
+
+// forgetMissing forgets what was not in forgetAfter listings in a row (here is what this one had), with the
+// watcher held.
+func (w *Watcher) forgetMissing(here map[string]bool) {
+	known := map[string]bool{}
+	for _, m := range []map[string]string{w.Done, w.Existing, w.inflight, w.skipped} {
+		for k := range m {
+			known[k] = true
+		}
+	}
+	for k := range w.seen {
+		known[k] = true
+	}
+	for k := range w.missing {
+		if !known[k] {
+			delete(w.missing, k)
+		}
+	}
+	for k := range known {
+		if here[k] {
+			delete(w.missing, k)
+			continue
+		}
+		if w.missing[k]++; w.missing[k] < forgetAfter {
+			continue
+		}
+		for _, m := range []map[string]string{w.Done, w.Existing, w.inflight, w.skipped} {
+			delete(m, k)
+		}
+		delete(w.seen, k)
+		delete(w.missing, k)
+	}
 }
 
 // Ended says how what was handed over ended: final (compressed, failed, or in the destination already) makes it

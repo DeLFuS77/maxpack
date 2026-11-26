@@ -159,7 +159,7 @@ func TestWatchWaitsWhilePaused(t *testing.T) {
 	saveSettings(t, func(s *settings.Settings) { s.WatchFolder, s.WatchOn = folder, true })
 	events := &watchEvents{}
 	a := watchApp(events)
-	defer a.stopWatch()
+	defer a.stopWatchWait()
 	pause := core.NewPause()
 	a.queue = &queue{section: "compress", pause: pause, done: make(chan struct{})}
 	a.queue.ctx, a.queue.cancel = contextForTest()

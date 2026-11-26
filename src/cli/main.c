@@ -1433,13 +1433,21 @@ static int cmd_info_sums(const char *path) {
     return 0;
 }
 
-// info --play: what the console needs to play the .p5z without installing it.
+// info --play: what the console needs to play the .p5z without installing it, which its maxpack.image can
+// hold (the console checks that too, and says so).
 static int cmd_info_play(const char *path) {
     recover_note(path);
     char err[512] = {0};
     mp_play *p = mp_play_open(path, err, sizeof err);
     if (!p) {
         fprintf(stderr, "error: %s\n", err);
+        return 1;
+    }
+    size_t nvol = mp_play_volume_count(p);
+    if (nvol > MP_PLAY_MAX_VOLUMES) {
+        mp_play_close(p);
+        fprintf(stderr, "error: the .p5z has %zu volumes, more than the console takes (%u)\n", nvol,
+                MP_PLAY_MAX_VOLUMES);
         return 1;
     }
     char *j = mp_play_json(p);

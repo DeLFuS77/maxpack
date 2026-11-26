@@ -645,6 +645,61 @@ MP_TEST(play_refuses_volumes_not_its_packs) {
     }
 }
 
+// A .p5z with more volumes than the console takes, all of them its packs' (pack with a small volume
+// limit): the engine plays it, so that the console can say what is wrong with it (too many volumes, not
+// damaged), and info --play refuses it (test_cli).
+MP_TEST(play_opens_more_volumes_than_the_console_takes) {
+    mpt_clear(TMP);
+    const uint32_t nvol = P5Z_PLAY_MAX_VOLUMES + 1;
+    mpt_put_text(TMP "/many/sce_sys/param.json", "{\"titleId\":\"PPSA00000\",\"contentVersion\":\"01.000.000\"}");
+    mpt_put_text(TMP "/many/eboot.bin", "eboot");
+    // one block of the packs that does not compress per volume
+    size_t big = (size_t)nvol * MP_BLOCK_V1;
+    uint8_t *b = malloc(big);
+    if (!b) return;
+    uint32_t x = 2463534242u;
+    for (size_t i = 0; i < big; i++) {
+        x ^= x << 13;
+        x ^= x >> 17;
+        x ^= x << 5;
+        b[i] = (uint8_t)x;
+    }
+    mpt_put(TMP "/many/data/big.bin", b, big);
+    free(b);
+    mp_err e = {{0}};
+    mp_pack_opts o;
+    mp_pack_opts_default(&o);
+    o.level = 1;
+    o.threads = 4;
+    o.progress = 0;
+    o.volume_limit = MP_ZPK_VOL_HEADER + MP_BLOCK_V1;
+    mp_pack_out out;
+    mp_pack_result r;
+    if (mp_pack_out_p5z(TMP "/many.p5z", 4, &out, &e) != 0) {
+        MP_FAIL_("%s", e.msg);
+        return;
+    }
+    int rc = mp_pack_run(TMP "/many", &out, &o, &r, &e);
+    out.destroy(out.ctx);
+    if (rc) {
+        MP_FAIL_("pack: %s", e.msg);
+        return;
+    }
+    MP_CHECK_EQ_U64(r.volumes, nvol);
+    char err[256] = "";
+    mp_play *pl = mp_play_open(TMP "/many.p5z", err, sizeof err);
+    if (!pl) {
+        MP_FAIL_("refused: %s", err);
+        return;
+    }
+    char *j = mp_play_json(pl);
+    char last[64];
+    snprintf(last, sizeof last, "{\"id\":%u,", nvol - 1);
+    MP_CHECK(j && strstr(j, last));
+    mp_play_free_str(j);
+    mp_play_close(pl);
+}
+
 // The test hook: fails (mode 1) or stops as a power cut would (mode 2) at its call number `at`, and
 // keeps the name of that step.
 static int fault_at, fault_mode, fault_calls;
@@ -1843,6 +1898,7 @@ int main(void) {
     MP_RUN(sums_grown);
     MP_RUN(sums_lines_and_json);
     MP_RUN(play_refuses_volumes_not_its_packs);
+    MP_RUN(play_opens_more_volumes_than_the_console_takes);
     MP_RUN(grow_refuses_packs_not_of_its_header);
     MP_RUN(compact_refuses_volumes_without_packs);
     MP_RUN(grown_unpack_folder_progress_ends_at_total);

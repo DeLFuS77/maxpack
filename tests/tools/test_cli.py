@@ -7,6 +7,7 @@ Usage: test_cli.py <maxpack> <fixtures folder> <temporary folder>
 import json
 import math
 import os
+import random
 import re
 import shutil
 import subprocess
@@ -524,6 +525,33 @@ check("volume_limit_minimo", rc == 0 and os.path.isfile(os.path.join(vmin, "ampr
 for bad in ("0", str(64 + (256 << 10) - 1), "4294901761", "abc", "-1", "512k", ""):
     rc, _, _ = run("pack", BASIC, "-o", os.path.join(TMP, "vl_bad"), "--volume-limit", bad)
     check("volume_limit_%s_sale_2" % (bad or "vacio"), rc == 2 and not os.path.exists(os.path.join(TMP, "vl_bad")), str(rc))
+
+# More volumes than the console takes (256, what maxpack.image holds): info --play refuses the .p5z and
+# says why; the engine's own reader (mp_play_open) leaves that verdict to the console. One block of
+# random bytes per volume, at the smallest volume limit.
+many = os.path.join(TMP, "many_game")
+rmtree(many)
+os.makedirs(os.path.join(many, "sce_sys"))
+os.makedirs(os.path.join(many, "data"))
+with open(os.path.join(many, "sce_sys", "param.json"), "w") as f:
+    f.write('{"titleId":"PPSA00000","contentVersion":"01.000.000"}')
+with open(os.path.join(many, "eboot.bin"), "wb") as f:
+    f.write(b"eboot")
+with open(os.path.join(many, "data", "big.bin"), "wb") as f:
+    f.write(random.Random(257).randbytes(257 << 18))
+many_p5z = os.path.join(TMP, "many.p5z")
+if os.path.exists(many_p5z):
+    os.remove(many_p5z)
+rc, _, err = run("pack", many, "-o", many_p5z, "--p5z", "--level", "1", "--volume-limit", str(64 + (256 << 10)))
+_, human, _ = run("info", many_p5z)
+m = re.search(r"in (\d+) volumes", human)
+check("pack_257_volumes", rc == 0 and m is not None and int(m.group(1)) == 257, "rc=%d %s %s" % (rc, err[-200:], human[-300:]))
+rc, so, err = run("info", "--play", many_p5z)
+check("info_play_more_than_256_volumes", rc == 1 and so == "" and "257 volumes" in err and "256" in err,
+      "rc=%d %s %s" % (rc, so[:200], err[-300:]))
+rmtree(many)
+if os.path.exists(many_p5z):
+    os.remove(many_p5z)
 
 # A param.json without a titleId (or that cannot be read) gives a .p5z without a TITLE_ID: pack warns about it.
 noid = os.path.join(TMP, "noid_game")

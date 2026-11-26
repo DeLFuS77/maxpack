@@ -30,7 +30,9 @@ All notable changes to MaxPack are listed here. The format follows
   of one with volumes or packed files but no `ampr_zstd.index` (it wrote a copy without them), `add` and
   `update` of one whose header names another `archive_id` or level than its packs (what grew would not
   open), and `info --play` (`mp_play_open`, what MaxPack for the console plays through) of one whose
-  volume records are not the volumes of its packs, or more than 256.
+  volume records are not the volumes of its packs. `info --play` also refuses a `.p5z` of more than 256
+  volumes, the most `maxpack.image` takes; `mp_play_open` leaves that to the console, which says "too
+  many volumes" rather than "damaged".
 - **Covers:** the reader of the thumbnail provider reads an icon's frames only as large as zstd makes
   them, and at most 64, so a hostile `.p5z` cannot make the Explorer read far more than an icon.
 - **Uninstall:** with the Explorer still holding the thumbnail provider, the uninstaller left

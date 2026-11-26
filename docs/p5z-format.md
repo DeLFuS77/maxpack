@@ -265,8 +265,10 @@ the essentials.
   `length` bytes long, 64 B header included.
 - **Opening:** before playing, the header, the footer, the index, `ampr_zstd.index` and the header of
   every volume are checked, and so are that the `archive_id` in the `.p5z` header is the one in
-  `ampr_zstd.index`, and that the volume records are the volumes of `ampr_zstd.index`, as many and at
-  most 256 (what `maxpack.image` takes).
+  `ampr_zstd.index`, and that the volume records are the volumes of `ampr_zstd.index`, as many.
+  `maxpack.image` takes at most 256 volumes: the console checks that itself and says "too many
+  volumes", and `info --play` refuses a `.p5z` with more; `mp_play_open` does not (the console would
+  take its refusal for a damaged file).
 - **What the console reads:** `maxpack info --play <game.p5z>` writes as JSON the title, the version, the
   `archive_id`, the size of the `.p5z`, the loose files (`loose`, with `loose_bytes` as the sum) and the
   volumes (`volumes`, with `id`, `offset` and `length`). In C, the same is in `mp_play_open`,

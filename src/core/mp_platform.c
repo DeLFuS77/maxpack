@@ -4,6 +4,8 @@
 #define _POSIX_C_SOURCE 200809L
 #if defined(__APPLE__)
 #define _DARWIN_C_SOURCE
+#elif defined(__FreeBSD__) || defined(__PROSPERO__)
+#define __BSD_VISIBLE 1   // flock and its LOCK_ names, which _POSIX_C_SOURCE hides there
 #endif
 #endif
 

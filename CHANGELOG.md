@@ -6,6 +6,40 @@ All notable changes to MaxPack are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **Growing a `.p5z` in the window:** a cancel during the verification that follows an update (or DLC
+  added) said "Cancelled", although the `.p5z` had grown already, and the same update tried again then
+  failed with `same_version`. The row now says that it grew and was not verified, ends as done, and
+  Details reads it again. An update no longer warns that it "may not fit" for the size of the whole new
+  dump: what it adds is known only once the engine compared it, and the engine stops before writing
+  anything when that does not fit.
+- **FAT32:** a game under 4 GiB whose DLC take it over 4 GiB gets the FAT32 warning before starting (and
+  `--max-file-size` when you go on), instead of failing as it is written.
+- **Compress with DLC:** the foot of the list counts the DLC apart from the games ("2 games, 2 DLC"),
+  and **Copy report** of a game made counts the DLC that went inside it, not the DLC rows the list has
+  now.
+- **A `dlc_emu.ini` written by hand** is listed (Details, `info --json`) as dlc_emu reads it: comments
+  after `#`, spaces inside the brackets, keys the same without `_`, `-` and case, a `[PSAC]` without
+  `mount_point` in `addcont0`, `addcont1`... as dlc_emu puts it, and the entries dlc_emu skips (a content
+  ID or a label it does not take, a label already taken, a mount point of 16 characters or more) left
+  out.
+- `unpack --folder` of a `.p5z` that grew: its progress ended below 100 %, as it counted the room
+  between the chunks, which is not written.
+- A malformed `.p5z` (its CRCs right, as a crafted one has them) is refused where it was not: `compact`
+  of one with volumes or packed files but no `ampr_zstd.index` (it wrote a copy without them), `add` and
+  `update` of one whose header names another `archive_id` or level than its packs (what grew would not
+  open), and `info --play` (`mp_play_open`, what MaxPack for the console plays through) of one whose
+  volume records are not the volumes of its packs, or more than 256.
+- **Covers:** the reader of the thumbnail provider reads an icon's frames only as large as zstd makes
+  them, and at most 64, so a hostile `.p5z` cannot make the Explorer read far more than an icon.
+- **Uninstall:** with the Explorer still holding the thumbnail provider, the uninstaller left
+  `maxpack-thumbs.dll` and the install folder behind. It now moves the DLL to the temporary folder (sets
+  it aside in the folder when that is on another drive), and never leaves a delete at a restart on the
+  DLL's own path, which would take the DLL of a later install.
+- The switch **Open .p5z files with MaxPack**, in the installer and in Settings, says that it also shows
+  each `.p5z` with its game's cover in the Explorer, in the eleven languages.
+
 ## [1.0.7] - 2026-11-26
 
 ### Added

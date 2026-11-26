@@ -166,6 +166,7 @@ function newRow(path, section) {
   tr.querySelector(".to-update").addEventListener("click", () => growRow(row, "update"));
   tr.querySelector(".grow-anyway").addEventListener("click", () => growAnyway(row));
   tr.querySelector(".to-send").addEventListener("click", () => sendRows([row]));
+  tr.querySelector(".send-discard").addEventListener("click", () => discardOnConsole(row));
   // the entrance of a row and the pop of what it saved play once: a row put back in the list
   // (every render puts them all back) does not play them again
   tr.addEventListener("animationend", event => {
@@ -655,7 +656,7 @@ function growFacts(game) {
 // made again counts as good)
 function goodNote(row) {
   if (row.state !== "ok") return false;
-  if (/^(repaired|repair_not_needed|sent)$/.test(row.detail)) return true;
+  if (/^(repaired|repair_not_needed|sent|send_discarded)$/.test(row.detail)) return true;
   return /^(grown|nothing_to_do)(; repair_redone)?$/.test(row.detail);
 }
 
@@ -788,6 +789,11 @@ function paintRow(row) {
     button.textContent = t(key);
     button.disabled = state.busy;
   }
+  // what a send that did not end left on the console can be deleted from there, once asked
+  const discard = tr.querySelector(".send-discard");
+  discard.hidden = !leftOnConsole(row);
+  discard.textContent = t("sendDiscard");
+  discard.disabled = state.busy;
   const anyway = tr.querySelector(".grow-anyway");
   anyway.hidden = !canGrowAnyway(row);
   anyway.textContent = t("growAnyway");
@@ -1599,16 +1605,39 @@ function madeP5z(job) {
 // its end card
 async function sendRows(rows) {
   rows = rows.filter(row => row.game && row.game.Kind === "p5z");
-  if (state.busy || !rows.length) return;
+  if (!rows.length) return;
+  if (state.busy) { toast(t("sendBusy")); return; }
   if (!validConsoleIp(state.settings.ConsoleIP) || !validConsoleCode(state.settings.ConsoleCode)) {
     toast(t("sendNoConsole"));
     setSection("settings");
     return;
   }
-  toast(t("sendAsking"));
-  const view = await go.call("ConsoleDrives").catch(error => ({ drives: [], error: "io", message: message(error) }));
-  if (view.error || !view.drives || !view.drives.length) { toast(sendErrorText(view.error || "no_drive", view.message)); return; }
+  // the dialog opens at once, asking the console for its drives: Cancel stops the question, and nothing
+  // else starts meanwhile
   $("send-list").replaceChildren(...rows.map(row => line(row.game.Name || baseName(row.path), size(sendSize(row)))));
+  $("send-drives").replaceChildren();
+  $("send-asking").hidden = false;
+  $("send-asking").textContent = t("sendAsking");
+  $("send-go").disabled = true;
+  state.busy = true;
+  render();
+  const answer = ask($("send-dialog"));
+  let view = null;
+  try {
+    view = await Promise.race([go.call("ConsoleDrives").catch(error => ({ drives: [], error: "io", message: message(error) })), answer.then(() => null)]);
+  } finally {
+    if (!view) go.call("CancelConsoleDrives").catch(() => {});
+    state.busy = false;
+    render();
+  }
+  if (!view) return;
+  if (view.error || !view.drives || !view.drives.length) {
+    if ($("send-dialog").open) $("send-dialog").close("cancel");
+    toast(sendErrorText(view.error || "no_drive", view.message));
+    return;
+  }
+  $("send-asking").hidden = true;
+  $("send-go").disabled = false;
   const last = load("sendDrive", "");
   const chosen = view.drives.some(drive => drive.id === last) ? last : (view.drives.find(drive => driveFits(drive, rows)) || view.drives[0]).id;
   $("send-drives").replaceChildren(...view.drives.map(drive => {
@@ -1625,11 +1654,35 @@ async function sendRows(rows) {
     label.append(input, text);
     return label;
   }));
-  if (await ask($("send-dialog")) !== "send") return;
+  if (await answer !== "send") return;
   const picked = document.querySelector('input[name="send-drive"]:checked');
   const drive = picked ? picked.value : chosen;
   save("sendDrive", drive);
+  for (const row of rows) row.sentDrive = drive;
   startQueue("send", rows, { Drive: drive });
+}
+
+// a send that did not end with the game on the console, where what arrived stays (stopped here or on the
+// console, cut off, stalled, a write error, or arrived damaged): it can be deleted there
+const leftOnConsole = row => row.section === "details" && !!row.game && row.game.Kind === "p5z"
+  && /^send_(kept|console_stopped|stalled|write_error|unreachable|verify_failed)(:|$)/.test(row.detail || "");
+// Delete what arrived on the console: asked first, as it cannot be undone (the next send starts from nothing)
+async function discardOnConsole(row) {
+  if (!leftOnConsole(row)) return;
+  if (state.busy) { toast(t("sendBusy")); return; }
+  $("discard-text").textContent = t("discardText")(row.game.Name || baseName(row.path));
+  if (await ask($("discard-dialog")) !== "delete") return;
+  state.busy = true;
+  render();
+  try {
+    const view = await go.call("DiscardOnConsole", row.path, row.sentDrive || load("sendDrive", "")).catch(error => ({ error: "io", message: message(error) }));
+    if (view.error) { toast(sendErrorText(view.error, view.message)); return; }
+    row.detail = "send_discarded";
+    toast(t("discardDone")(row.game.Name || baseName(row.path)));
+  } finally {
+    state.busy = false;
+    render();
+  }
 }
 
 // the end card of Compress: the .p5z it made go to Details, and from there to the console once read

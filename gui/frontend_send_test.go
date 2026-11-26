@@ -55,6 +55,17 @@ console.log(vm.runInContext(` + "`" + `(() => {
   const job = { section: "compress", mode: "p5z", rows: [{ state: "ok", out: "D:/a.p5z" }, { state: "error", out: "" }, { state: "ok", out: "D:/b.p5z", unqueued: true }] };
   if (madeP5z(job).join() !== "D:/a.p5z") say("the .p5z made: " + madeP5z(job));
   if (madeP5z(Object.assign({}, job, { mode: "folder" })).length || madeP5z(Object.assign({}, job, { section: "details" })).length) say("folders or Details are sent");
+  // what a send that did not end leaves on the console can be deleted there, and only that
+  const left = d => ({ section: "details", game: { Kind: "p5z" }, detail: d });
+  for (const d of ["send_kept", "send_console_stopped", "send_stalled", "send_write_error", "send_unreachable", "send_verify_failed: ampr_zstd-001.pak"])
+    if (!leftOnConsole(left(d))) say("not left on the console: " + d);
+  for (const d of ["sent", "send_exists", "send_bad_code", "send_discarded", "", "send_no_space"])
+    if (leftOnConsole(left(d))) say("left on the console: " + d);
+  if (leftOnConsole(Object.assign(left("send_kept"), { section: "compress" }))) say("a row of Compress");
+  for (const code of ["kept", "console_stopped", "stalled", "write_error", "discarded"])
+    if (detailText("send_" + code) !== t("detail_send_" + code)) say("the detail send_" + code);
+  if (!goodNote({ state: "ok", detail: "send_discarded" }) && goodNote({ state: "cancelled", detail: "send_kept" })) say("good news");
+  if (typeof t("discardText")("x") !== "string" || t("discardText")("Copper Vale").indexOf("Copper Vale") < 0) say("discardText");
   // the code is never in what the page sends of a game, nor in a report
   if (JSON.stringify(itemOf(row)).includes("ConsoleCode")) say("the item carries the code");
   return problems.join("\\n");

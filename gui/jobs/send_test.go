@@ -87,7 +87,8 @@ func TestSendFailures(t *testing.T) {
 	o := sendOptions()
 	for code, want := range map[string]string{"bad_code": "send_bad_code", "receive_off": "send_receive_off", "no_space": "send_no_space",
 		"exists": "send_exists", "busy": "send_busy", "unreachable": "send_unreachable", "console_cancelled": "send_console_cancelled",
-		"verify_failed": "send_verify_failed: ampr_zstd-001.pak", "p5z_busy": "busy", "invalid": "send_invalid", "fat32": "send_fat32"} {
+		"verify_failed": "send_verify_failed: ampr_zstd-001.pak", "p5z_busy": "busy", "invalid": "send_invalid", "fat32": "send_fat32",
+		"console_stopped": "send_console_stopped", "stalled": "send_stalled", "write_error": "send_write_error"} {
 		t.Setenv(fakecore.SendFailEnv, code)
 		rec := newRecorder()
 		sum := (&Runner{Core: os.Args[0], OnItem: rec.item}).Run(context.Background(), PlanSend(items, o), o)
@@ -97,7 +98,8 @@ func TestSendFailures(t *testing.T) {
 	}
 }
 
-// Cancelled while it sends: the engine stops (and the console deletes what it got), the game is cancelled.
+// Cancelled while it sends: the engine stops and the console keeps what it got (the next send goes on from
+// there): the game is cancelled, "send_kept". The window never asks the engine to delete it on a cancel.
 func TestSendCancelled(t *testing.T) {
 	t.Setenv(fakecore.Env, "sends-waits")
 	dir := t.TempDir()
@@ -112,7 +114,10 @@ func TestSendCancelled(t *testing.T) {
 		}
 	}
 	sum := (&Runner{Core: os.Args[0], OnItem: onItem}).Run(ctx, PlanSend(items, o), o)
-	if state, _ := rec.last(0); state != StateCancelled || sum.Cancelled != 1 {
-		t.Errorf("%v %+v", rec.states[0], sum)
+	if state, detail := rec.last(0); state != StateCancelled || detail != "send_kept" || sum.Cancelled != 1 {
+		t.Errorf("%v %q %+v", rec.states[0], detail, sum)
+	}
+	if args, _ := os.ReadFile(items[0].Path + ".args"); strings.Contains(string(args), "--delete-on-cancel") {
+		t.Errorf("the window asked the engine to delete on a cancel: %s", args)
 	}
 }

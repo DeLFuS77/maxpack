@@ -6,16 +6,22 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // SendFailEnv makes "send" of the modes "sends" end with that code, as the real one ends with each refusal
 // of the console (and "verify_failed" with what the console found wrong).
 const SendFailEnv = "MP_FAKE_SEND_FAIL"
 
+// DrivesWaitEnv makes "send --drives" wait that many milliseconds before it answers (a console far away).
+const DrivesWaitEnv = "MP_FAKE_DRIVES_WAIT"
+
 // sendExit is the exit code of the real one for each code (maxpack send's usage).
 var sendExit = map[string]int{"unreachable": 3, "receive_off": 4, "bad_code": 5, "locked": 6, "exists": 7, "busy": 8,
-	"no_space": 9, "fat32": 10, "bad_name": 11, "no_drive": 12, "verify_failed": 13, "console_cancelled": 14}
+	"no_space": 9, "fat32": 10, "bad_name": 11, "no_drive": 12, "verify_failed": 13, "console_cancelled": 14,
+	"console_stopped": 15, "stalled": 16, "write_error": 17}
 
 // send is "send" of the modes "sends" and "sends-waits": --drives lists two drives; a .p5z is "sent" (the
 // engine writes <p5z>.sent with the address, drive and code it was given), with the progress of the bytes
@@ -34,6 +40,9 @@ func send(mode string, args []string) int {
 		fail = "bad_code"
 	}
 	if hasArg(args, "--drives") {
+		if wait, _ := strconv.Atoi(os.Getenv(DrivesWaitEnv)); wait > 0 {
+			time.Sleep(time.Duration(wait) * time.Millisecond)
+		}
 		if fail != "" {
 			fmt.Printf("{\"ok\":false,\"error\":%q,\"message\":\"the console says %s\"}\n", fail, fail)
 			return sendExit[fail]
@@ -42,9 +51,31 @@ func send(mode string, args []string) int {
 			`{"id":"usb0","free":1500000000000,"total":2000000000000,"fs":"exfat"}]}`)
 		return 0
 	}
+	if hasArg(args, "--discard") {
+		var rest []string
+		for _, a := range args[1:] {
+			if a != "--discard" {
+				rest = append(rest, a)
+			}
+		}
+		if fail != "" || len(rest) < 2 {
+			fmt.Printf("{\"ok\":false,\"error\":%q,\"message\":\"no\"}\n", fail)
+			return sendExit[fail]
+		}
+		drive := ""
+		for i := 0; i+1 < len(rest); i++ {
+			if rest[i] == "--drive" {
+				drive = rest[i+1]
+			}
+		}
+		os.WriteFile(rest[0]+".discarded", []byte("drive "+drive+" code "+code), 0o644)
+		fmt.Println(`{"ok":true,"name":"x.p5z","drive":"` + drive + `","had":4096}`)
+		return 0
+	}
 	if len(args) < 3 {
 		return 2
 	}
+	os.WriteFile(args[1]+".args", []byte(strings.Join(args, " ")), 0o644)
 	p5z, address, drive := args[1], args[2], ""
 	for i := 0; i+1 < len(args); i++ {
 		if args[i] == "--drive" {
@@ -61,7 +92,7 @@ func send(mode string, args []string) int {
 	fmt.Printf("{\"event\":\"progress\",\"phase\":\"sending\",\"done\":%d,\"total\":%d,\"rate\":1000000,\"eta\":1}\n", size/2, size)
 	if mode == "sends-waits" {
 		waitCancel()
-		fmt.Println(`{"event":"result","ok":false,"error":"cancelled"}`)
+		fmt.Println(`{"event":"result","ok":false,"error":"cancelled","kept":true}`)
 		return 130
 	}
 	switch fail {

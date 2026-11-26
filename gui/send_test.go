@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/DeLFuS77/maxpack/gui/core"
 	"github.com/DeLFuS77/maxpack/gui/internal/fakecore"
@@ -195,5 +196,55 @@ func TestSendReal(t *testing.T) {
 	defer console.mu.Unlock()
 	if !bytes.Equal(console.got.Bytes(), want) || console.name != filepath.Base(out) || console.drive != "internal" || console.badCode != 0 {
 		t.Errorf("the console got %d bytes of %d, %q on %q, %d bad codes", console.got.Len(), len(want), console.name, console.drive, console.badCode)
+	}
+}
+
+// Delete what arrived on the console: the engine is asked (send --discard) with the code in its environment;
+// what the console says goes back to the page.
+func TestDiscardOnConsole(t *testing.T) {
+	t.Setenv(fakecore.Env, "sends")
+	withConsole(t, "192.168.1.20")
+	p5z := touch(t, t.TempDir(), "Game [PPSA10001].p5z", 100)
+	a := &App{core: os.Args[0]}
+	view := a.DiscardOnConsole(p5z, "usb0")
+	if view.Error != "" || view.Had != 4096 {
+		t.Fatalf("%+v", view)
+	}
+	if said, _ := os.ReadFile(p5z + ".discarded"); string(said) != "drive usb0 code "+consoleCode {
+		t.Errorf("the engine was given %q", said)
+	}
+	t.Setenv(fakecore.SendFailEnv, "exists")
+	if view := a.DiscardOnConsole(p5z, "usb0"); view.Error != "exists" {
+		t.Errorf("there whole: %+v", view)
+	}
+	saveSettings(t, func(s *settings.Settings) {})
+	if view := a.DiscardOnConsole(p5z, ""); view.Error != "no_console" {
+		t.Errorf("no console: %+v", view)
+	}
+}
+
+// Asking the console for its drives can be cancelled, and gives up after its time: the page never waits for
+// minutes on a console that is not there.
+func TestConsoleDrivesCancelAndTimeout(t *testing.T) {
+	t.Setenv(fakecore.Env, "sends")
+	t.Setenv(fakecore.DrivesWaitEnv, "20000")
+	withConsole(t, "192.168.1.20")
+	a := &App{core: os.Args[0]}
+	done := make(chan DrivesView, 1)
+	go func() { done <- a.ConsoleDrives() }()
+	time.Sleep(300 * time.Millisecond)
+	a.CancelConsoleDrives()
+	select {
+	case view := <-done:
+		if view.Error != "cancelled" {
+			t.Errorf("cancelled: %+v", view)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the cancel did not stop it")
+	}
+	a.drivesTimeout = 300 * time.Millisecond
+	start := time.Now()
+	if view := a.ConsoleDrives(); view.Error != "unreachable" || time.Since(start) > 10*time.Second {
+		t.Errorf("timeout: %+v after %v", view, time.Since(start))
 	}
 }

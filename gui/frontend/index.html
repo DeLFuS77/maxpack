@@ -295,6 +295,7 @@
           <button class="link add-dlc" hidden></button>
           <button class="link repair" hidden></button>
           <button class="link grow-anyway" hidden></button>
+          <button class="link send-discard" hidden></button>
         </div>
       </div>
     </td>
@@ -420,8 +421,16 @@
   <p class="muted" id="send-text" data-t="sendText"></p>
   <ul class="space-list" id="send-list"></ul>
   <h3 id="send-drive-name" data-t="sendDrive"></h3>
+  <p class="muted" id="send-asking" aria-live="polite"></p>
   <div role="radiogroup" aria-labelledby="send-drive-name" id="send-drives"></div>
   <form method="dialog" class="dialog-actions"><button value="cancel" class="quiet" data-t="cancel"></button><button value="send" id="send-go" class="primary" data-t="sendGo" autofocus></button></form>
+</dialog>
+
+<!-- Delete what arrived on the console: what a send stopped left there goes, once the user says so -->
+<dialog id="discard-dialog" class="warn-dialog" aria-labelledby="discard-title" aria-describedby="discard-text">
+  <h2 id="discard-title"><svg class="warn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 2.8 19.5h18.4z"/><path d="M12 9.5v4.5M12 16.8v.2"/></svg><span data-t="discardTitle"></span></h2>
+  <p class="muted" id="discard-text"></p>
+  <form method="dialog" class="dialog-actions"><button value="keep" class="primary" data-t="discardKeep" autofocus></button><button value="delete" class="danger" data-t="discardGo"></button></form>
 </dialog>
 
 <!-- Compare the levels on this PC: the engine packs a sample of the game at each level and tells

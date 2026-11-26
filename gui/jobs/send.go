@@ -5,7 +5,8 @@ package jobs
 // Sending a .p5z to the console (Details › Send to the console, and the end card of Compress): the engine
 // sends it (maxpack send) to MaxPack for the console, which verifies it when it has it whole and only then
 // gives it its name. Nothing is written on the PC. If the connection breaks the engine goes on from what
-// the console has; cancelled, the console deletes what it got.
+// the console has. Cancelled (or the window closed), the console keeps what arrived and the next send goes on
+// from there: only Delete what arrived on the console (App.DiscardOnConsole) deletes it.
 
 import (
 	"context"
@@ -46,7 +47,13 @@ func PlanSend(items []Item, o Options) []Plan {
 // another MaxPack is changing); a .p5z that arrived damaged says what the console found wrong.
 func sendFailure(code string, result core.Event) string {
 	switch code {
-	case "cancelled", "io", "bad_input":
+	case "cancelled":
+		// stopped here: the console keeps what arrived (the window never tells the engine to delete it)
+		if kept, _ := result.Raw["kept"].(bool); kept {
+			return "send_kept"
+		}
+		return code
+	case "io", "bad_input":
 		return code
 	case "p5z_busy":
 		return "busy"

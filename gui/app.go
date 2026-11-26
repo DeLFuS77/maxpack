@@ -76,6 +76,10 @@ type App struct {
 	watch                  *watching
 	watchListening         bool
 	watchEvery, watchQuiet time.Duration
+
+	// the question of the console's drives at work (see send.go), and how long it may take when not drivesTimeout
+	drivesCancel  context.CancelFunc
+	drivesTimeout time.Duration
 }
 
 // Setup is what the page shows before anything is chosen.

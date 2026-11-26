@@ -1051,6 +1051,102 @@ MP_TEST(add_refusals) {
     free(orig);
 }
 
+// ---- update: a new dump of the game --------------------------------------------------------------
+
+static int pack_folder_to(const char *src, const char *dst) { return mpt_pack(src, dst, 0, NULL); }
+
+MP_TEST(update_same_as_fresh_pack) {
+    mpt_clear(TMP);
+    make_versions();
+    if (mpt_pack(V1, G_P5Z, 1, NULL) != 0 || mpt_pack(V2, TMP "/fresh.p5z", 1, NULL) != 0) return;
+    mp_grow_opts o = quiet_opts();
+    // v2 changes most of this small game: asked for (the rule is update_refusals')
+    mp_grow_result r;
+    mp_err e = {{0}};
+    MP_CHECK(mp_grow_update(G_P5Z, V2, &o, &r, &e) == 0);
+    if (e.msg[0]) fprintf(stderr, "  %s\n", e.msg);
+    MP_CHECK_STR(r.old_version, "01.000.000");
+    MP_CHECK_STR(r.new_version, "01.001.000");
+    MP_CHECK_STR(r.title_id, "PPSA00000");
+    if (unpack_original_to(G_P5Z, TMP "/g_orig") != 0 || unpack_original_to(TMP "/fresh.p5z", TMP "/f_orig") != 0)
+        return;
+    MP_CHECK(mpt_dirs_equal(V2, TMP "/g_orig", NULL));
+    MP_CHECK(mpt_dirs_equal(TMP "/f_orig", TMP "/g_orig", NULL));
+    // the console folder of the updated .p5z is the one pack --folder makes of v2, packs and all
+    if (pack_folder_to(V2, TMP "/v2_folder") != 0) return;
+    mp_p5z *p = NULL;
+    MP_CHECK(mp_p5z_open(G_P5Z, &p, &e) == 0);
+    MP_CHECK(p && mp_unpack_folder(p, TMP "/g_folder", 2, 0, &e) == 0);
+    mp_p5z_close(p);
+    MP_CHECK(mpt_dirs_equal(TMP "/v2_folder", TMP "/g_folder", "*.pak"));
+}
+
+MP_TEST(update_keeps_dlc) {
+    mpt_clear(TMP);
+    make_versions();
+    const char *one[] = {DLC_DATA};
+    if (pack_dlc_p5z(V1, one, 1, G_P5Z, MP_ZPK_VOLUME_LIMIT) != 0) return;
+    if (pack_dlc_p5z(V2, one, 1, TMP "/fresh.p5z", MP_ZPK_VOLUME_LIMIT) != 0) return;
+    mp_grow_opts o = quiet_opts();
+    mp_grow_result r;
+    mp_err e = {{0}};
+    MP_CHECK(mp_grow_update(G_P5Z, V2, &o, &r, &e) == 0);
+    if (e.msg[0]) fprintf(stderr, "  %s\n", e.msg);
+    if (unpack_original_to(G_P5Z, TMP "/g_orig") != 0 || unpack_original_to(TMP "/fresh.p5z", TMP "/f_orig") != 0)
+        return;
+    MP_CHECK(mpt_dirs_equal(TMP "/f_orig", TMP "/g_orig", NULL));
+    MP_CHECK(mp_path_kind(TMP "/g_orig/addcont0/data/dlc1.bin") == 1 && mp_path_kind(TMP "/g_orig/dlc_emu.ini") == 1);
+    // a new dump with files where the DLC are: refused, not mixed
+    copy_tree(V2, TMP "/v2dlc");
+    put_dated(TMP "/v2dlc/addcont0/mine.bin", "x", 1, 1700000000);
+    if (pack_dlc_p5z(V1, one, 1, TMP "/h.p5z", MP_ZPK_VOLUME_LIMIT) != 0) return;
+    MP_CHECK(mp_grow_update(TMP "/h.p5z", TMP "/v2dlc", &o, &r, &e) != 0);
+    MP_CHECK_STR(r.code, "dlc_refused");
+}
+
+MP_TEST(update_refusals) {
+    mpt_clear(TMP);
+    make_versions();
+    if (mpt_pack(V1, G_P5Z, 1, NULL) != 0) return;
+    size_t olen = 0;
+    uint8_t *orig = mpt_slurp(G_P5Z, &olen);
+    mp_grow_opts o = quiet_opts();
+    o.force = 0;
+    mp_grow_result r;
+    mp_err e = {{0}};
+    // the same version
+    MP_CHECK(mp_grow_update(G_P5Z, V1, &o, &r, &e) != 0);
+    MP_CHECK_STR(r.code, "same_version");
+    // another game
+    copy_tree(V2, TMP "/other");
+    const char *pj = "{\"titleId\": \"PPSA99999\", \"contentVersion\": \"01.001.000\"}";
+    put_dated(TMP "/other/sce_sys/param.json", pj, strlen(pj), 1700000000);
+    MP_CHECK(mp_grow_update(G_P5Z, TMP "/other", &o, &r, &e) != 0);
+    MP_CHECK_STR(r.code, "other_game");
+    // no title ID
+    const char *pn = "{\"contentVersion\": \"01.001.000\"}";
+    put_dated(TMP "/other/sce_sys/param.json", pn, strlen(pn), 1700000000);
+    MP_CHECK(mp_grow_update(G_P5Z, TMP "/other", &o, &r, &e) != 0);
+    MP_CHECK_STR(r.code, "no_title_id");
+    // more than half of it changed: refused, then done when asked
+    copy_tree(V2, TMP "/v3");
+    size_t n = 0;
+    uint8_t *b = mpt_slurp(V1 "/data/big.bin", &n);
+    for (int k = 0; k < 3; k++) {
+        char path[256];
+        snprintf(path, sizeof path, TMP "/v3/data/more%d.bin", k);
+        put_dated(path, b, n, 1700200000 + k);
+    }
+    free(b);
+    MP_CHECK(mp_grow_update(G_P5Z, TMP "/v3", &o, &r, &e) != 0);
+    MP_CHECK_STR(r.code, "mostly_changed");
+    MP_CHECK(starts_with(G_P5Z, orig, olen) && size_of(G_P5Z) == olen);
+    o.force = 1;
+    MP_CHECK(mp_grow_update(G_P5Z, TMP "/v3", &o, &r, &e) == 0);
+    MP_CHECK(unpack_original_to(G_P5Z, TMP "/g_orig") == 0 && mpt_dirs_equal(TMP "/v3", TMP "/g_orig", NULL));
+    free(orig);
+}
+
 int main(void) {
     MP_RUN(p5z_append_one_file);
     MP_RUN(p5z_copy_all_is_identical);
@@ -1075,5 +1171,8 @@ int main(void) {
     MP_RUN(add_dlc_unpack_original);
     MP_RUN(add_second_dlc_numbering);
     MP_RUN(add_refusals);
+    MP_RUN(update_same_as_fresh_pack);
+    MP_RUN(update_keeps_dlc);
+    MP_RUN(update_refusals);
     MP_TEST_MAIN_END();
 }

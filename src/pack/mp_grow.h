@@ -64,6 +64,14 @@ int mp_grow_run(const char *p5z, mp_source *dump, mp_grow_known known, void *kct
 int mp_grow_add(const char *p5z, const char *const *dlc, size_t n, const mp_grow_opts *o, mp_grow_result *r,
                 mp_err *e);
 
+// update: the .p5z becomes the new dump at dump (a folder, an image or a package), which must be of the same
+// game (the title ID of its param.json, "other_game"; none, "no_title_id") in another version
+// ("same_version"). Only its new and changed files are stored; what it no longer has leaves the .p5z's
+// indexes. The DLC the .p5z carries (its dlc_emu.ini written by MaxPack and the addcontN/ it lists) stay,
+// unless the new dump has a dlc_emu.ini of its own; files of the dump where they are stop it ("dlc_refused").
+// More than half of the game's bytes to store stops it ("mostly_changed") unless o->force.
+int mp_grow_update(const char *p5z, const char *dump, const mp_grow_opts *o, mp_grow_result *r, mp_err *e);
+
 // Tests only: called at every step of an append; 0 goes on, 1 fails there as an error would (the .p5z is
 // taken back), 2 stops there as a power cut would (nothing is undone, the journal stays). Nothing but the
 // tests sets it.

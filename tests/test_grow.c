@@ -1443,6 +1443,47 @@ MP_TEST(update_refuses_non_game) {
     free(orig);
 }
 
+// The console's verify of a game installed from a .p5z that grew later: the install is what the .p5z
+// was then, not damaged; it is not compared with the records of what it grew into.
+MP_TEST(install_verify_after_growth) {
+    mpt_clear(TMP);
+    make_versions();
+    if (mpt_pack(V1, G_P5Z, 1, NULL) != 0) return;
+    static uint8_t rt[4096];
+    memcpy(rt + 64, "AMPRZPK1", 8);
+    static const char *drives[] = {TMP "/usb1"};
+    mp_inst_env env;
+    mp_inst_env_default(&env);
+    env.internal = TMP "/internal";
+    env.drive_candidates = drives;
+    env.ndrive_candidates = 1;
+    env.runtime.data = rt;
+    env.runtime.len = sizeof rt;
+    env.runtime.mtime = 1700000000;
+    env.runtime.version = "test";
+    env.notify = inst_note;
+    mp_err e = {{0}};
+    mp_make_dirs(TMP "/internal", &e);
+    mp_inst_req q;
+    memset(&q, 0, sizeof q);
+    q.p5z_path = G_P5Z;
+    q.dest_root = TMP "/internal";
+    mp_inst_result ir;
+    memset(&ir, 0, sizeof ir);
+    MP_CHECK(mp_inst_install(&env, &q, &ir, &e) == 0);
+    if (e.msg[0]) fprintf(stderr, "  %s\n", e.msg);
+    mp_inst_result_free(&ir);
+    mp_inst_verify_result vr;
+    MP_CHECK(mp_inst_verify(&env, "PPSA00000", &vr, &e) == 0);
+    MP_CHECK(vr.files_bad == 0 && vr.p5z_checked);   // against the .p5z it was made from
+    mp_grow_opts o = quiet_opts();
+    mp_grow_result r;
+    MP_CHECK(mp_grow_update(G_P5Z, V2, &o, &r, &e) == 0);
+    MP_CHECK(mp_inst_verify(&env, "PPSA00000", &vr, &e) == 0);
+    MP_CHECK_EQ_U64(vr.files_bad, 0);
+    MP_CHECK(!vr.p5z_checked);
+}
+
 int main(void) {
     MP_RUN(p5z_append_one_file);
     MP_RUN(p5z_copy_all_is_identical);
@@ -1481,5 +1522,6 @@ int main(void) {
     MP_RUN(recover_keeps_committed);
     MP_RUN(recover_unreadable_journal_kept);
     MP_RUN(update_refuses_non_game);
+    MP_RUN(install_verify_after_growth);
     MP_TEST_MAIN_END();
 }

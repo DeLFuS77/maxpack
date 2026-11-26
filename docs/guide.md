@@ -777,8 +777,10 @@ level and volume limit. A `.p5z` that grew lists its old volumes as they were an
 `sce_sys/param.json` and no `eboot.bin`); then `dlc_data` says whether it has files of its own (else it
 is a license only), and its `title_id` is the one in its content ID, the one `pack --dlc` checks. `dlc`
 lists the DLC a game carries, as its own `dlc_emu.ini` says them (`[]` when it has none, or one that
-cannot be read or passes 32 KiB): each with its `content_id`, `data` (files of its own), `folder` (where
-they are, `""` for a license) and the `size` and `files` in that folder:
+cannot be read or passes 32 KiB), read as dlc_emu reads it, so one written by hand lists what dlc_emu
+takes (comments after `#`, a `[PSAC]` without `mount_point` in `addcont0`, `addcont1`... as dlc_emu puts
+it, an entry dlc_emu skips left out): each with its `content_id`, `data` (files of its own), `folder`
+(where they are, `""` for a license) and the `size` and `files` in that folder:
 
 ```
 "content":"game","dlc_data":false,"dlc":[{"content_id":"UP0000-PPSA00000_00-ABCDEFGHIJKLMNOP","data":true,"folder":"addcont0","size":312196,"files":6}]

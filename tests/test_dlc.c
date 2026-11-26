@@ -550,22 +550,21 @@ MP_TEST(describe_carried) {
 MP_TEST(parse_hostile) {
     mp_dlc_list l;
     // \r\n, spaces, no final newline, a section of another kind, keys it does not know, a line with no
-    // '=', a content ID of 35 characters (skipped), a mount point too long for dlc_emu (no folder)
+    // '=', a content ID of 35 characters (skipped), a mount point too long for dlc_emu (skipped: dlc_emu
+    // does not take the DLC)
     const char *ini = "\xef\xbb\xbf[PSAC]\r\n content_id = " DATA_CID " \r\nmount_point=/app0/addcont0\r\n\r\n"
                       "[PSCONS]\ncontent_id=UP0000-PPSA00000_00-MAXPACKCONSUME01\n"
                       "[PSAL]\nnonsense\nlabel=X\ncontent_id=UP0000-PPSA00000_00-MAXPACKSHORT001\n"
                       "[PSAC]\ncontent_id=UP0000-PPSA00000_00-MAXPACKLONGMOUNT\nmount_point=/app0/addcont0/deeper\n"
                       "[PSAL]\ncontent_id=" LICENSE_CID;
     MP_CHECK(mp_dlc_parse(ini, strlen(ini), &l) == 0);
-    MP_CHECK_EQ_U64(l.n, 3);
-    if (l.n == 3) {
+    MP_CHECK_EQ_U64(l.n, 2);
+    if (l.n == 2) {
         MP_CHECK_STR(l.v[0].content_id, DATA_CID);
         MP_CHECK(l.v[0].data);
         MP_CHECK_STR(l.v[0].folder, "addcont0");
-        MP_CHECK_STR(l.v[1].content_id, "UP0000-PPSA00000_00-MAXPACKLONGMOUNT");
-        MP_CHECK_STR(l.v[1].folder, "");
-        MP_CHECK_STR(l.v[2].content_id, LICENSE_CID);
-        MP_CHECK(!l.v[2].data);
+        MP_CHECK_STR(l.v[1].content_id, LICENSE_CID);
+        MP_CHECK(!l.v[1].data);
     }
     mp_dlc_list_free(&l);
     // over 32 KiB: dlc_emu reads none of it
@@ -590,6 +589,82 @@ MP_TEST(parse_hostile) {
     free(b);
 }
 
+// A dlc_emu.ini written by hand, read as dlc_emu 0.3 reads it (what Details and info --json list):
+// '#' starts a comment, on a section's line too; the brackets and the keys take spaces, and a key is the
+// same without '_', '-' and case; a content ID dlc_emu does not take (36 characters, the 16 after its last
+// '-' letters and digits) is skipped, so are a label it does not take and one already taken; a mount point
+// of 16 characters or more is skipped; a [PSAC] with no mount_point gets /app0/addcont<n>, n counting the
+// ones that got one so.
+MP_TEST(parse_as_dlc_emu) {
+    mp_dlc_list l;
+    const char *ini = "# the DLC of the game\n"
+                      "[PSAC] # the expansion\n"
+                      "Content-ID = UP0000-PPSA00000_00-MAXPACKCOMMENT01 # its content ID\n"
+                      "MOUNT_POINT=/app0/addcont3\n"
+                      "[ PSAC ]\n"
+                      "contentid=UP0000-PPSA00000_00-MAXPACKSPACES001\n"
+                      "[psal]\n"
+                      "content_id=UP0000-PPSA00000_00-MAXPACKBAD!LABEL\n"
+                      "[PSAL]\n"
+                      "content_id=UP0000-PPSA00000_00-MAXPACKLICENSE02\n"
+                      "[PSAL]\n"
+                      "content_id=UP0000-PPSA00001_00-MAXPACKLICENSE02\n"
+                      "[PSAL]\n"
+                      "content_id=UP0000-PPSA00000_00-MAXPACKOWNLABEL1\n"
+                      "label=MAXPACKCOMMENT01\n"
+                      "[PSAL]\n"
+                      "content_id=UP0000-PPSA00000_00-MAXPACKBADLABEL1\n"
+                      "entitlement_label=not-one\n"
+                      "[PSAC]\n"
+                      "content_id=UP0000-PPSA00000_00-MAXPACKAUTOMOUNT\n"
+                      "[PSAC]\n"
+                      "content_id=UP0000-PPSA00000_00-MAXPACKMOUNTLONG\n"
+                      "mount_point=/app0/addcont10000\n";
+    MP_CHECK(mp_dlc_parse(ini, strlen(ini), &l) == 0);
+    MP_CHECK_EQ_U64(l.n, 4);
+    if (l.n == 4) {
+        MP_CHECK_STR(l.v[0].content_id, "UP0000-PPSA00000_00-MAXPACKCOMMENT01");
+        MP_CHECK(l.v[0].data);
+        MP_CHECK_STR(l.v[0].folder, "addcont3");
+        MP_CHECK_STR(l.v[1].content_id, "UP0000-PPSA00000_00-MAXPACKSPACES001");
+        MP_CHECK(l.v[1].data);
+        MP_CHECK_STR(l.v[1].folder, "addcont0");
+        MP_CHECK_STR(l.v[2].content_id, "UP0000-PPSA00000_00-MAXPACKLICENSE02");
+        MP_CHECK(!l.v[2].data);
+        MP_CHECK_STR(l.v[3].content_id, "UP0000-PPSA00000_00-MAXPACKAUTOMOUNT");
+        MP_CHECK(l.v[3].data);
+        MP_CHECK_STR(l.v[3].folder, "addcont1");
+    }
+    mp_dlc_list_free(&l);
+    // a section with no ']', or with no name: dlc_emu reads none of the file
+    const char *open = "[PSAC]\ncontent_id=" DATA_CID "\nmount_point=/app0/addcont0\n[PSAL\ncontent_id=" LICENSE_CID "\n";
+    MP_CHECK(mp_dlc_parse(open, strlen(open), &l) == 0 && l.n == 0);
+    mp_dlc_list_free(&l);
+    const char *unnamed = "[PSAC]\ncontent_id=" DATA_CID "\nmount_point=/app0/addcont0\n[ ]\n";
+    MP_CHECK(mp_dlc_parse(unnamed, strlen(unnamed), &l) == 0 && l.n == 0);
+    mp_dlc_list_free(&l);
+    // what MaxPack writes reads as it did
+    mp_dlc v[2];
+    memset(v, 0, sizeof v);
+    snprintf(v[0].content_id, sizeof v[0].content_id, "%s", DATA_CID);
+    v[0].data = 1;
+    snprintf(v[0].folder, sizeof v[0].folder, "addcont0");
+    snprintf(v[1].content_id, sizeof v[1].content_id, "%s", LICENSE_CID);
+    size_t n = 0;
+    char *ours = mp_dlc_ini(v, 2, &n);
+    MP_CHECK(ours && mp_dlc_parse(ours, n, &l) == 0 && l.n == 2);
+    if (l.n == 2) {
+        MP_CHECK_STR(l.v[0].folder, "addcont0");
+        MP_CHECK(!l.v[1].data);
+        size_t m = 0;
+        char *again = mp_dlc_ini(l.v, l.n, &m);
+        MP_CHECK(again && m == n && !memcmp(again, ours, n));
+        free(again);
+    }
+    mp_dlc_list_free(&l);
+    free(ours);
+}
+
 int main(void) {
     MP_RUN(merge_basic);
     MP_RUN(merge_twice);
@@ -603,5 +678,6 @@ int main(void) {
     MP_RUN(describe_dlc);
     MP_RUN(describe_carried);
     MP_RUN(parse_hostile);
+    MP_RUN(parse_as_dlc_emu);
     MP_TEST_MAIN_END();
 }

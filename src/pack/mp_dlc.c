@@ -362,13 +362,15 @@ int mp_dlc_attach(mp_source **game, const char *const *paths, size_t n, mp_dlc_l
         }
         goto done;
     }
-    // where their folders go must be free in the game
+    // where their folders go must be free in the game: no folder, nor a file, of that name
     for (size_t i = 0; i < mp_source_count(g); i++) {
         const char *p = mp_source_entry(g, i)->path;
         for (size_t k = 0; k < n; k++) {
-            if (!v[k].data || !in_folder(p, v[k].folder)) continue;
-            mp_err_set(e, "the game already has %.*s/, where its DLC %s would go", (int)strlen(v[k].folder), p,
-                       v[k].content_id);
+            if (!v[k].data) continue;
+            int file = ieq(p, v[k].folder);
+            if (!file && !in_folder(p, v[k].folder)) continue;
+            mp_err_set(e, "the game already has %.*s%s, where its DLC %s would go", (int)strlen(v[k].folder), p,
+                       file ? " (a file)" : "/", v[k].content_id);
             goto done;
         }
     }

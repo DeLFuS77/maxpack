@@ -346,6 +346,9 @@ MP_TEST(dlc_refusals) {
     const char *folder[] = {"AddCont0/x.bin"};
     write_game(TMP "/g_addcont", folder, 1);
     refused("a folder of its own where the DLC go", TMP "/g_addcont", data, 1, "dlc_refused", "already has AddCont0/");
+    const char *file[] = {"addcont0"};
+    write_game(TMP "/g_addcont_file", file, 1);
+    refused("a file of its own where the DLC go", TMP "/g_addcont_file", data, 1, "dlc_refused", "already has addcont0");
     // names in another case are the same names: a game with EBOOT.BIN is no DLC; a DLC whose files are
     // in Sce_Sys/ is one
     mpt_clear(TMP "/dlc_caps");

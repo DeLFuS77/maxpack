@@ -464,7 +464,7 @@ texts.ko = {
   factUnused: "사용하지 않는 공간",
   unusedFact: amount => amount + " · 업데이트로 대체된 파일이 차지하던 공간",
   recoveredToast: name => name + ": 중간에 멈춘 변경을 되돌려 원래 상태입니다",
-  nextGrow: "콘솔용 MaxPack으로 .p5z에서 바로 플레이하세요. 추가된 .p5z에는 ampr-emu-ng v0.5.2-maxpack.1 이상이 필요합니다.",
+  nextGrow: "콘솔용 MaxPack으로 .p5z에서 바로 플레이하세요. 추가된 .p5z에는 ampr-emu-ng v0.5.1-maxpack.2 이상이 필요합니다.",
   detail_grown: "완료: .p5z에는 새로운 것만 들어갔고 검증도 통과했습니다",
   detail_nothing_to_do: "이미 모두 들어 있어 아무것도 추가하지 않았습니다",
   detail_repair_redone: "복구 데이터를 다시 만들었습니다",

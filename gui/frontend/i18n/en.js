@@ -464,7 +464,7 @@ texts.en = {
   factUnused: "Space not in use",
   unusedFact: amount => amount + " · what the files an update replaced took",
   recoveredToast: name => name + ": a change that stopped halfway was undone, and it is as it was",
-  nextGrow: "Play it from the .p5z with MaxPack for the console: a .p5z that grew needs ampr-emu-ng v0.5.2-maxpack.1 or later.",
+  nextGrow: "Play it from the .p5z with MaxPack for the console: a .p5z that grew needs ampr-emu-ng v0.5.1-maxpack.2 or later.",
   detail_grown: "done: only what is new went into the .p5z, and it verifies",
   detail_nothing_to_do: "it had all of that already: nothing was added",
   detail_repair_redone: "its repair data was made again",

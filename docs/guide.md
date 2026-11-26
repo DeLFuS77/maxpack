@@ -701,7 +701,7 @@ maxpack compact "D:\games\MyGame [PPSA00000].p5z" -o "D:\games\MyGame compact.p5
   because another program had it open: `journal_left`, and a warning), the next open keeps the `.p5z`
   as it grew and deletes the file. Leave that file where it is, next to its `.p5z` and with its name.
 - **The console:** a `.p5z` that grew has an index of version 2, and its packs need ampr-emu-ng
-  `v0.5.2-maxpack.1` or later (its p5z mode takes chunks in any order and room between them): play it
+  `v0.5.1-maxpack.2` or later (its p5z mode takes chunks in any order and room between them): play it
   from the `.p5z` with MaxPack for the console. The installer of the console refuses it (`grown_p5z`);
   `unpack --folder` lays its volumes out again, so the folder it gives works anywhere.
 - **Repair data:** the PAR2 data of a `.p5z` no longer match it once it grew: the command line says so,
@@ -1296,7 +1296,7 @@ console repository, which identifies games only by these numbers.
 - **DLC inside a `.p5z`** (`pack --dlc`): that a game reads a DLC with files of its own from
   `/app0/addcont0` inside a `.p5z` has not been tried on a real PS5 yet; only licenses written by hand in
   a `dlc_emu.ini`.
-- **A `.p5z` that grew** (`add`, `update`): its packs need ampr-emu-ng `v0.5.2-maxpack.1` with the p5z
+- **A `.p5z` that grew** (`add`, `update`): its packs need ampr-emu-ng `v0.5.1-maxpack.2` with the p5z
   rules for chunks in any order, not released yet, and MaxPack for the console with it; neither has
   played one on a real PS5. On the PC it is tested end to end: a grown `.p5z` decompresses bit for bit
   and verifies, an update gives the files (and, compacted, the bytes) of packing the new dump, and an

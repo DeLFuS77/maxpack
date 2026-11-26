@@ -464,7 +464,7 @@ texts.de = {
   factUnused: "Ungenutzter Platz",
   unusedFact: amount => amount + " · was die Dateien belegten, die ein Update ersetzt hat",
   recoveredToast: name => name + ": Eine halb abgebrochene Änderung wurde rückgängig gemacht, alles ist wie vorher",
-  nextGrow: "Spielen Sie sie aus der .p5z mit MaxPack für die Konsole: Eine erweiterte .p5z braucht ampr-emu-ng v0.5.2-maxpack.1 oder neuer.",
+  nextGrow: "Spielen Sie sie aus der .p5z mit MaxPack für die Konsole: Eine erweiterte .p5z braucht ampr-emu-ng v0.5.1-maxpack.2 oder neuer.",
   detail_grown: "fertig: nur Neues kam in die .p5z, und sie besteht die Prüfung",
   detail_nothing_to_do: "das alles hatte sie schon: nichts wurde hinzugefügt",
   detail_repair_redone: "ihre Reparaturdaten wurden neu erstellt",

@@ -149,7 +149,7 @@ changes) never pack the game again: they **append** to the `.p5z`.
   old volumes; a changed or new one points to the new volumes; a removed one is in neither. So the
   chunks of a volume may no longer be in the index's order, room that no chunk uses is left in the old
   volumes, and an old volume can end up with no chunk at all. That is what ampr-emu-ng's **p5z mode**
-  takes (its `docs/p5z-mode.md`, "Growing a `.p5z`"), from `v0.5.2-maxpack.1`.
+  takes (its `docs/p5z-mode.md`, "Growing a `.p5z`"), from `v0.5.1-maxpack.2`.
 - The manifest is the new dump's: its files, sizes, dates and SHA-256. A file that did not change
   keeps its record (only its date changes when the dump's did).
 

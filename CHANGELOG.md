@@ -19,7 +19,7 @@ All notable changes to MaxPack are listed here. The format follows
   index and footer; nothing before the old end is written again. The new index is of **version 2**
   (`prev_size` and `grown` after version 1's fields), which readers of before refuse; a `.p5z` that never
   grew stays of version 1, byte for byte. Its packs follow ampr-emu-ng's p5z rules (chunks in any order,
-  room between them, headers that count fewer volumes), which need ampr-emu-ng `v0.5.2-maxpack.1`; at
+  room between them, headers that count fewer volumes), which need ampr-emu-ng `v0.5.1-maxpack.2`; at
   most 256 volumes. Tested on the PC end to end; not yet on a PS5.
 - **Cut short, nothing lost.** Before appending, MaxPack writes `<name>.p5z.maxpack-append` (the size and
   footer the `.p5z` had). A failure or a cancel cuts the `.p5z` back exactly; after a power cut, every

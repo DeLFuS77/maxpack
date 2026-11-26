@@ -85,7 +85,7 @@ static void usage(FILE *out) {
             "\n"
             "add and update grow the .p5z by appending to it (nothing before its end is written again); if\n"
             "they stop, or the power goes, the next command that opens it leaves it as it was. A .p5z that\n"
-            "grew needs an ampr-emu-ng that takes it (p5z mode, v0.5.2-maxpack.1 or later); compact makes a\n"
+            "grew needs an ampr-emu-ng that takes it (p5z mode, v0.5.1-maxpack.2 or later); compact makes a\n"
             "copy as a fresh pack writes it, which any one takes. Their options:\n"
             "  --dlc DLC          add: a DLC to put in, as pack --dlc takes it (can be repeated); the ones\n"
             "                     with files of their own go to the addcontN/ after the game's last\n"

@@ -464,7 +464,7 @@ texts.fr = {
   factUnused: "Espace inutilisé",
   unusedFact: amount => amount + " · ce que prenaient les fichiers qu'une mise à jour a remplacés",
   recoveredToast: name => name + " : une modification arrêtée à mi-chemin a été annulée, il est comme avant",
-  nextGrow: "Lancez-le depuis le .p5z avec MaxPack pour la console : un .p5z agrandi a besoin d'ampr-emu-ng v0.5.2-maxpack.1 ou plus récent.",
+  nextGrow: "Lancez-le depuis le .p5z avec MaxPack pour la console : un .p5z agrandi a besoin d'ampr-emu-ng v0.5.1-maxpack.2 ou plus récent.",
   detail_grown: "terminé : seul le nouveau est entré dans le .p5z, et il se vérifie",
   detail_nothing_to_do: "il avait déjà tout cela : rien n'a été ajouté",
   detail_repair_redone: "ses données de réparation ont été refaites",

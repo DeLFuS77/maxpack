@@ -467,7 +467,7 @@ texts.ar = {
   factUnused: "مساحة غير مستخدمة",
   unusedFact: amount => amount + " · ما كانت تشغله الملفات التي استبدلها تحديث",
   recoveredToast: name => name + ": أُلغي تغيير توقف في منتصفه، وهو كما كان",
-  nextGrow: "شغّله من ملف ‎.p5z‎ باستخدام MaxPack لجهاز اللعب: يحتاج ملف ‎.p5z‎ الموسَّع إلى ampr-emu-ng v0.5.2-maxpack.1 أو أحدث.",
+  nextGrow: "شغّله من ملف ‎.p5z‎ باستخدام MaxPack لجهاز اللعب: يحتاج ملف ‎.p5z‎ الموسَّع إلى ampr-emu-ng v0.5.1-maxpack.2 أو أحدث.",
   detail_grown: "تم: لم يدخل ملف ‎.p5z‎ إلا الجديد، ويجتاز التحقق",
   detail_nothing_to_do: "كان يحتوي على كل ذلك بالفعل: لم يُضف شيء",
   detail_repair_redone: "أُعيد إنشاء بيانات الإصلاح الخاصة به",

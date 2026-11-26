@@ -464,7 +464,7 @@ texts.it = {
   factUnused: "Spazio non usato",
   unusedFact: amount => amount + " · ciò che occupavano i file sostituiti da un aggiornamento",
   recoveredToast: name => name + ": una modifica rimasta a metà è stata annullata, ed è com'era",
-  nextGrow: "Avvialo dal .p5z con MaxPack per la console: un .p5z ampliato richiede ampr-emu-ng v0.5.2-maxpack.1 o successivo.",
+  nextGrow: "Avvialo dal .p5z con MaxPack per la console: un .p5z ampliato richiede ampr-emu-ng v0.5.1-maxpack.2 o successivo.",
   detail_grown: "fatto: nel .p5z è andato solo il nuovo, e si verifica",
   detail_nothing_to_do: "aveva già tutto questo: non è stato aggiunto nulla",
   detail_repair_redone: "i suoi dati di riparazione sono stati rifatti",

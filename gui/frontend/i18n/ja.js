@@ -464,7 +464,7 @@ texts.ja = {
   factUnused: "未使用の領域",
   unusedFact: amount => amount + " · 更新で置き換えられたファイルが使っていた分",
   recoveredToast: name => name + ": 途中で止まった変更を元に戻しました。元のままです",
-  nextGrow: "コンソール版 MaxPack で .p5z からそのままプレイしてください。追記した .p5z には ampr-emu-ng v0.5.2-maxpack.1 以降が必要です。",
+  nextGrow: "コンソール版 MaxPack で .p5z からそのままプレイしてください。追記した .p5z には ampr-emu-ng v0.5.1-maxpack.2 以降が必要です。",
   detail_grown: "完了: .p5z に入ったのは新しい分だけで、検証にも通りました",
   detail_nothing_to_do: "すべて入っていたため、何も追加していません",
   detail_repair_redone: "修復データを作り直しました",

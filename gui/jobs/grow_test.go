@@ -74,6 +74,18 @@ func TestPlanGrow(t *testing.T) {
 	if plans := PlanGrow([]Item{none}, Options{Mode: ModeUpdate}, newFS()); plans[0].Block != "nothing_given" {
 		t.Errorf("nothing given: %+v", plans[0])
 	}
+	// with little room: DLC added are all new, and may not fit; what an update adds is known only once the
+	// engine compared it, and the engine stops before writing when that does not fit, so the size of the
+	// whole new dump is no reason to warn
+	little := fakeFS{free: 1000, typ: "NTFS"}
+	it.Grow = []string{dlc}
+	if p := PlanGrow([]Item{it}, Options{Mode: ModeAddDLC}, little)[0]; !hasWarning(p, "may_not_fit") {
+		t.Errorf("DLC of 3000 bytes with 1000 free: %v", p.Warnings)
+	}
+	it.Grow = []string{dump}
+	if p := PlanGrow([]Item{it}, Options{Mode: ModeUpdate}, little)[0]; hasWarning(p, "may_not_fit") || p.Block != "" {
+		t.Errorf("an update of a dump of 5000 bytes with 1000 free: %v %q", p.Warnings, p.Block)
+	}
 }
 
 // The Runner: the .p5z grows in its place and is verified; with repair data of its own before, it gets

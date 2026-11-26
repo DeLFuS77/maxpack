@@ -21,7 +21,10 @@ import (
 // PlanGrow plans adding the DLC of each item (Grow) to its .p5z (ModeAddDLC), or making it the new dump
 // in Grow[0] (ModeUpdate). Out is the .p5z itself; Need is what is given, the most it may add. Anything
 // but a .p5z cannot go ("not_p5z"), nor one with nothing given ("nothing_given"). On FAT32 the engine
-// is told to stop before the .p5z would pass 4 GiB, as it is told when compressing.
+// is told to stop before the .p5z would pass 4 GiB, as it is told when compressing. DLC that may not fit
+// are warned of (may_not_fit): all they have is new. An update is not: what it adds is known only once
+// the engine compared the new dump, and the engine then stops before writing anything if that does not
+// fit (no_space).
 func PlanGrow(items []Item, o Options, fs FS) []Plan {
 	plans := make([]Plan, len(items))
 	for i, it := range items {
@@ -61,7 +64,7 @@ func PlanGrow(items []Item, o Options, fs FS) []Plan {
 			a = append(a, "--max-file-size", strconv.FormatUint(fat32Max, 10))
 		}
 		p.Args = a
-		if free, err := fs.Free(it.Path); err == nil && p.Need > free {
+		if free, err := fs.Free(it.Path); err == nil && o.Mode != ModeUpdate && p.Need > free {
 			p.Warnings = append(p.Warnings, "may_not_fit")
 		}
 		plans[i] = p

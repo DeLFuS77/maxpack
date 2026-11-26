@@ -99,18 +99,27 @@ static void read_blocks(void *arg) {
 // Blocks in the ring: enough for every thread to have several ahead of the one being written.
 static size_t ring_slots(unsigned threads) { return (size_t)threads * 4 + 4; }
 
-int mp_zpk_write(mp_source *src, const uint32_t *files, size_t n, const mp_zpk_opts *o,
-                 const mp_zpk_sink *sink, uint8_t **index, size_t *index_len, uint8_t (*sha)[32],
-                 mp_zpk_stats *st, mp_err *e) {
-    *index = NULL;
-    *index_len = 0;
-    memset(st, 0, sizeof *st);
+void mp_zpk_chunks_free(mp_zpk_chunks *c) {
+    if (!c) return;
+    free(c->chunks);
+    free(c->first);
+    free(c->vol_size);
+    memset(c, 0, sizeof *c);
+}
+
+int mp_zpk_write_chunks(mp_source *src, const uint32_t *files, size_t n, const mp_zpk_opts *o,
+                        const mp_zpk_sink *sink, mp_zpk_chunks *out, uint8_t (*sha)[32], mp_err *e) {
+    memset(out, 0, sizeof *out);
     if (o->level < 1 || o->level > 22) {
         mp_err_set(e, "zstd level outside 1..22: %d", o->level);
         return -1;
     }
     if (o->volume_limit < MP_ZPK_VOL_HEADER + MP_BLOCK_V1 || o->volume_limit > MP_ZPK_VOLUME_LIMIT) {
         mp_err_set(e, "invalid volume limit");
+        return -1;
+    }
+    if (o->first_volume >= MP_ZPK_MAX_VOLUMES) {
+        mp_err_set(e, "the pack would need more than %u volumes", MP_ZPK_MAX_VOLUMES);
         return -1;
     }
     unsigned threads = o->threads ? o->threads : 1;
@@ -132,7 +141,7 @@ int mp_zpk_write(mp_source *src, const uint32_t *files, size_t n, const mp_zpk_o
         fo[i].pos = i;
     }
     qsort(fo, n, sizeof *fo, cmp_ford);
-    uint64_t nchunks = 0, strings = 0, logical = 0;
+    uint64_t nchunks = 0, logical = 0;
     for (size_t i = 0; i < n; i++) {
         if (i && strcmp(fo[i - 1].path, fo[i].path) == 0) {
             mp_err_set(e, "repeated path: %s", fo[i].path);
@@ -141,7 +150,6 @@ int mp_zpk_write(mp_source *src, const uint32_t *files, size_t n, const mp_zpk_o
         }
         fo[i].first = nchunks;
         nchunks += (fo[i].size + MP_BLOCK_V1 - 1) / MP_BLOCK_V1;
-        strings += strlen(fo[i].path);
         logical += fo[i].size;
     }
     if (nchunks >= 0xFFFFFFFFull) {
@@ -153,6 +161,7 @@ int mp_zpk_write(mp_source *src, const uint32_t *files, size_t n, const mp_zpk_o
     size_t nslots = ring_slots(threads);
     uint64_t *chunk_rec = malloc((size_t)(nchunks ? nchunks : 1) * sizeof *chunk_rec);
     uint64_t *vol_size = calloc(MP_ZPK_MAX_VOLUMES, sizeof *vol_size);
+    uint64_t *first = malloc((n ? n : 1) * sizeof *first);
     item *items = calloc(nslots, sizeof *items);
     uint8_t *inbuf = malloc(nslots * MP_BLOCK_V1);
     cctx_set cs = {items, calloc(threads, sizeof(ZSTD_CCtx *)), ZSTD_compressBound(MP_BLOCK_V1), o->level};
@@ -165,8 +174,9 @@ int mp_zpk_write(mp_source *src, const uint32_t *files, size_t n, const mp_zpk_o
     memset(&rd, 0, sizeof rd);
     int rc = -1, failed = 0;
     uint64_t gchunk = 0, stored_total = 0, cur_off = 0;
-    int64_t cur_vol = -1;
-    if (!chunk_rec || !vol_size || !items || !inbuf || !cs.cctx || !outbuf || !order || !osha) goto oom;
+    int64_t cur = -1;   // the volume being written, counted from o->first_volume
+    uint32_t base = o->first_volume;
+    if (!chunk_rec || !vol_size || !first || !items || !inbuf || !cs.cctx || !outbuf || !order || !osha) goto oom;
     for (unsigned t = 0; t < threads; t++)
         if (!(cs.cctx[t] = ZSTD_createCCtx())) goto oom;
     for (size_t b = 0; b < nslots; b++) {
@@ -202,20 +212,20 @@ int mp_zpk_write(mp_source *src, const uint32_t *files, size_t n, const mp_zpk_o
             break;
         }
         if (mp_cancel_check(e) != 0) break;
-        if (cur_vol < 0 || cur_off + it->out_len > o->volume_limit) {
-            if (cur_vol >= 0) {
-                vol_size[cur_vol] = cur_off;
-                if (sink->vol_end(sink->ctx, (uint32_t)cur_vol, e) != 0) break;
+        if (cur < 0 || cur_off + it->out_len > o->volume_limit) {
+            if (cur >= 0) {
+                vol_size[cur] = cur_off;
+                if (sink->vol_end(sink->ctx, base + (uint32_t)cur, e) != 0) break;
             }
-            if (++cur_vol >= (int64_t)MP_ZPK_MAX_VOLUMES) {
+            if (base + (uint64_t)(++cur) >= MP_ZPK_MAX_VOLUMES) {
                 mp_err_set(e, "the pack would need more than %u volumes", MP_ZPK_MAX_VOLUMES);
                 break;
             }
-            if (sink->vol_begin(sink->ctx, (uint32_t)cur_vol, e) != 0) break;
+            if (sink->vol_begin(sink->ctx, base + (uint32_t)cur, e) != 0) break;
             cur_off = MP_ZPK_VOL_HEADER;
         }
         if (sink->vol_write(sink->ctx, it->codec ? it->out : it->in, it->out_len, e) != 0) break;
-        chunk_rec[gchunk++] = cur_off | (uint64_t)cur_vol << 32 | (uint64_t)(it->out_len - 1) << 44 |
+        chunk_rec[gchunk++] = cur_off | (uint64_t)(base + (uint32_t)cur) << 32 | (uint64_t)(it->out_len - 1) << 44 |
                               (uint64_t)it->codec << 62;
         cur_off += it->out_len;
         stored_total += it->out_len;
@@ -238,81 +248,21 @@ int mp_zpk_write(mp_source *src, const uint32_t *files, size_t n, const mp_zpk_o
                    (unsigned long long)nchunks);
         goto done;
     }
-    uint32_t nvol = (uint32_t)(cur_vol + 1);
-    if (cur_vol >= 0) {
-        vol_size[cur_vol] = cur_off;
-        if (sink->vol_end(sink->ctx, (uint32_t)cur_vol, e) != 0) goto done;
+    if (cur >= 0) {
+        vol_size[cur] = cur_off;
+        if (sink->vol_end(sink->ctx, base + (uint32_t)cur, e) != 0) goto done;
     }
-
-    // 4. Index: header, files, blocks, volumes, strings.
-    uint64_t chunks_off = MP_ZPK_HEADER + 32ull * n, vols_off = chunks_off + 8 * nchunks,
-             strings_off = vols_off + 8ull * nvol, total = strings_off + strings;
-    uint8_t *d = calloc(1, (size_t)total);
-    if (!d) goto oom;
-    uint32_t path_off = 0;
-    for (size_t i = 0; i < n; i++) {
-        uint8_t *r = d + MP_ZPK_HEADER + 32 * i;
-        size_t pl = strlen(fo[i].path);
-        wr64(r, fo[i].hash);
-        wr64(r + 8, fo[i].size);
-        wr32(r + 16, (uint32_t)fo[i].first);
-        wr32(r + 20, path_off);
-        wr16(r + 24, (uint16_t)pl);
-        memcpy(d + strings_off + path_off, fo[i].path, pl);
-        path_off += (uint32_t)pl;
-    }
-    for (uint64_t c = 0; c < nchunks; c++) wr64(d + chunks_off + 8 * c, chunk_rec[c]);
-    for (uint32_t v = 0; v < nvol; v++) wr64(d + vols_off + 8ull * v, vol_size[v]);
-    // deterministic archive_id: SHA-256("MAXPACK1" + tables).
-    mp_sha256 s;
-    uint8_t digest[32];
-    mp_sha256_init(&s);
-    mp_sha256_update(&s, "MAXPACK1", 8);
-    mp_sha256_update(&s, d + MP_ZPK_HEADER, (size_t)(total - MP_ZPK_HEADER));
-    mp_sha256_final(&s, digest);
-    memcpy(d, "AMPRZPK1", 8);
-    wr32(d + 8, 1);
-    wr32(d + 12, MP_ZPK_HEADER);
-    d[16] = 18;
-    d[17] = (uint8_t)o->level;
-    wr32(d + 20, nvol);
-    memcpy(d + 24, digest, 16);
-    wr64(d + 40, n);
-    wr64(d + 48, nchunks);
-    wr64(d + 56, MP_ZPK_HEADER);
-    wr64(d + 64, chunks_off);
-    wr64(d + 72, vols_off);
-    wr64(d + 80, strings_off);
-    wr64(d + 88, strings);
-    wr64(d + 96, logical);
-    uint32_t body_crc = mp_crc32(d + MP_ZPK_HEADER, (size_t)(total - MP_ZPK_HEADER), 0);
-    uint32_t head_crc = mp_crc32(d, MP_ZPK_HEADER, 0);   // with 112..120 still zero
-    wr32(d + 112, body_crc);
-    wr32(d + 116, head_crc);
-    // 5. Volume headers.
-    for (uint32_t v = 0; v < nvol; v++) {
-        uint8_t h[64] = {0};
-        memcpy(h, "AMPRZDT1", 8);
-        wr32(h + 8, 1);
-        wr32(h + 12, MP_ZPK_VOL_HEADER);
-        wr32(h + 16, v);
-        wr32(h + 20, nvol);
-        memcpy(h + 24, digest, 16);
-        wr64(h + 40, vol_size[v] - MP_ZPK_VOL_HEADER);
-        wr32(h + 60, mp_crc32(h, 64, 0));
-        if (sink->vol_header(sink->ctx, v, h, e) != 0) {
-            free(d);
-            goto done;
-        }
-    }
-    st->files = n;
-    st->chunks = nchunks;
-    st->volumes = nvol;
-    st->logical = logical;
-    st->stored = stored_total;
-    memcpy(st->archive_id, digest, 16);
-    *index = d;
-    *index_len = (size_t)total;
+    for (size_t i = 0; i < n; i++) first[fo[i].pos] = fo[i].first;
+    out->chunks = chunk_rec;
+    out->nchunks = nchunks;
+    out->first = first;
+    out->vol_size = vol_size;
+    out->nvol = (uint32_t)(cur + 1);
+    out->logical = logical;
+    out->stored = stored_total;
+    chunk_rec = NULL;
+    first = NULL;
+    vol_size = NULL;
     rc = 0;
     goto done;
 oom:
@@ -325,12 +275,185 @@ done:
     free(cs.cctx);
     free(chunk_rec);
     free(vol_size);
+    free(first);
     free(items);
     free(inbuf);
     free(outbuf);
     free(order);
     free(osha);
     free(fo);
+    return rc;
+}
+
+typedef struct {
+    uint64_t hash;
+    const mp_zpk_entry *en;
+} bent;
+
+static int cmp_bent(const void *a, const void *b) {
+    const bent *x = a, *y = b;
+    if (x->hash != y->hash) return x->hash < y->hash ? -1 : 1;
+    return strcmp(x->en->path, y->en->path);
+}
+
+void mp_zpk_volume_header(uint32_t vol, uint32_t nvol, const uint8_t aid[16], uint64_t size, uint8_t h[64]) {
+    memset(h, 0, 64);
+    memcpy(h, "AMPRZDT1", 8);
+    wr32(h + 8, 1);
+    wr32(h + 12, MP_ZPK_VOL_HEADER);
+    wr32(h + 16, vol);
+    wr32(h + 20, nvol);
+    memcpy(h + 24, aid, 16);
+    wr64(h + 40, size - MP_ZPK_VOL_HEADER);
+    wr32(h + 60, mp_crc32(h, 64, 0));
+}
+
+int mp_zpk_build_index(mp_zpk_entry *v, size_t n, const uint64_t *vol_size, uint32_t nvol, int level,
+                       const uint8_t *archive_id, uint8_t **index, size_t *len, uint8_t aid[16], mp_err *e) {
+    *index = NULL;
+    *len = 0;
+    if (level < 1 || level > 22 || nvol > MP_ZPK_MAX_VOLUMES) {
+        mp_err_set(e, "zstd level outside 1..22 or too many volumes");
+        return -1;
+    }
+    bent *b = malloc((n ? n : 1) * sizeof *b);
+    if (!b) {
+        mp_err_set(e, "out of memory");
+        return -1;
+    }
+    uint64_t nchunks = 0, strings = 0, logical = 0;
+    for (size_t i = 0; i < n; i++) {
+        if (mp_pack_path_check(v[i].path, e) != 0) {
+            free(b);
+            return -1;
+        }
+        b[i].hash = mp_zpk_path_hash(v[i].path);
+        b[i].en = &v[i];
+        nchunks += (v[i].size + MP_BLOCK_V1 - 1) / MP_BLOCK_V1;
+        strings += strlen(v[i].path);
+        logical += v[i].size;
+    }
+    qsort(b, n, sizeof *b, cmp_bent);
+    for (size_t i = 1; i < n; i++)
+        if (!strcmp(b[i - 1].en->path, b[i].en->path)) {
+            mp_err_set(e, "repeated path: %s", b[i].en->path);
+            free(b);
+            return -1;
+        }
+    if (nchunks >= 0xFFFFFFFFull || (nchunks == 0) != (nvol == 0)) {
+        mp_err_set(e, nchunks ? "too many blocks for a pack (%llu)" : "a pack with volumes and no blocks",
+                   (unsigned long long)nchunks);
+        free(b);
+        return -1;
+    }
+    // Index: header, files, blocks, volumes, strings.
+    uint64_t chunks_off = MP_ZPK_HEADER + 32ull * n, vols_off = chunks_off + 8 * nchunks,
+             strings_off = vols_off + 8ull * nvol, total = strings_off + strings;
+    uint8_t *d = calloc(1, (size_t)total);
+    if (!d) {
+        free(b);
+        mp_err_set(e, "out of memory");
+        return -1;
+    }
+    uint32_t path_off = 0;
+    uint64_t at = 0;
+    for (size_t i = 0; i < n; i++) {
+        const mp_zpk_entry *en = b[i].en;
+        uint8_t *r = d + MP_ZPK_HEADER + 32 * i;
+        size_t pl = strlen(en->path);
+        uint64_t cnt = (en->size + MP_BLOCK_V1 - 1) / MP_BLOCK_V1;
+        wr64(r, b[i].hash);
+        wr64(r + 8, en->size);
+        wr32(r + 16, (uint32_t)at);
+        wr32(r + 20, path_off);
+        wr16(r + 24, (uint16_t)pl);
+        memcpy(d + strings_off + path_off, en->path, pl);
+        path_off += (uint32_t)pl;
+        for (uint64_t k = 0; k < cnt; k++) wr64(d + chunks_off + 8 * (at + k), en->chunks[k]);
+        at += cnt;
+    }
+    for (uint32_t k = 0; k < nvol; k++) wr64(d + vols_off + 8ull * k, vol_size[k]);
+    free(b);
+    if (archive_id) {
+        memcpy(aid, archive_id, 16);
+    } else {   // deterministic archive_id: SHA-256("MAXPACK1" + tables).
+        mp_sha256 s;
+        uint8_t digest[32];
+        mp_sha256_init(&s);
+        mp_sha256_update(&s, "MAXPACK1", 8);
+        mp_sha256_update(&s, d + MP_ZPK_HEADER, (size_t)(total - MP_ZPK_HEADER));
+        mp_sha256_final(&s, digest);
+        memcpy(aid, digest, 16);
+    }
+    memcpy(d, "AMPRZPK1", 8);
+    wr32(d + 8, 1);
+    wr32(d + 12, MP_ZPK_HEADER);
+    d[16] = 18;
+    d[17] = (uint8_t)level;
+    wr32(d + 20, nvol);
+    memcpy(d + 24, aid, 16);
+    wr64(d + 40, n);
+    wr64(d + 48, nchunks);
+    wr64(d + 56, MP_ZPK_HEADER);
+    wr64(d + 64, chunks_off);
+    wr64(d + 72, vols_off);
+    wr64(d + 80, strings_off);
+    wr64(d + 88, strings);
+    wr64(d + 96, logical);
+    uint32_t body_crc = mp_crc32(d + MP_ZPK_HEADER, (size_t)(total - MP_ZPK_HEADER), 0);
+    uint32_t head_crc = mp_crc32(d, MP_ZPK_HEADER, 0);   // with 112..120 still zero
+    wr32(d + 112, body_crc);
+    wr32(d + 116, head_crc);
+    *index = d;
+    *len = (size_t)total;
+    return 0;
+}
+
+int mp_zpk_write(mp_source *src, const uint32_t *files, size_t n, const mp_zpk_opts *o,
+                 const mp_zpk_sink *sink, uint8_t **index, size_t *index_len, uint8_t (*sha)[32],
+                 mp_zpk_stats *st, mp_err *e) {
+    *index = NULL;
+    *index_len = 0;
+    memset(st, 0, sizeof *st);
+    mp_zpk_opts oo = *o;
+    oo.first_volume = 0;
+    mp_zpk_chunks c;
+    if (mp_zpk_write_chunks(src, files, n, &oo, sink, &c, sha, e) != 0) return -1;
+    mp_zpk_entry *v = malloc((n ? n : 1) * sizeof *v);
+    int rc = -1;
+    uint8_t aid[16];
+    if (!v) {
+        mp_err_set(e, "out of memory");
+        goto done;
+    }
+    for (size_t k = 0; k < n; k++) {
+        const mp_entry *en = mp_source_entry(src, files[k]);
+        v[k].path = en->path;
+        v[k].size = en->size;
+        v[k].chunks = c.chunks + c.first[k];
+    }
+    if (mp_zpk_build_index(v, n, c.vol_size, c.nvol, o->level, NULL, index, index_len, aid, e) != 0) goto done;
+    // Volume headers.
+    for (uint32_t k = 0; k < c.nvol; k++) {
+        uint8_t h[64];
+        mp_zpk_volume_header(k, c.nvol, aid, c.vol_size[k], h);
+        if (sink->vol_header(sink->ctx, k, h, e) != 0) {
+            free(*index);
+            *index = NULL;
+            *index_len = 0;
+            goto done;
+        }
+    }
+    st->files = n;
+    st->chunks = c.nchunks;
+    st->volumes = c.nvol;
+    st->logical = c.logical;
+    st->stored = c.stored;
+    memcpy(st->archive_id, aid, 16);
+    rc = 0;
+done:
+    free(v);
+    mp_zpk_chunks_free(&c);
     return rc;
 }
 

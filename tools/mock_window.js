@@ -45,6 +45,8 @@
 //   ?console=1          Settings has a console (an IP address and a pairing code): Send to the console, on
 //                       the card of a .p5z and at the end of Compress, asks it for its drives and sends;
 //                       ?console=refused: the console refuses the code
+//   ?watch=1            Settings watches D:\incoming: two games of the list arrive in it a moment after the page
+//                       opens (one whole, one that lacks files of its list) and Compress takes the whole one
 //   ?grow=1             Details with a .p5z that grew twice (by DLC and an update) and one that never did:
 //                       Add DLC… ends well, and Update with a new dump… stops because most of the game
 //                       changed until Update anyway
@@ -73,7 +75,8 @@ const mock = `
   const settings = { Lang: query.get("lang") || "", Theme: "system", Runtime: query.get("runtime") || "", LastDest: "E:\\\\", Mode: query.get("mode") === "folder" ? "folder" : "p5z", Level: 19,
     DeleteOriginals: !!query.get("delete"), DeletePermanently: query.get("delete") === "good", LowPriority: !!query.get("low"), NameTemplate: query.get("template") || templates[0],
     Threads: Number(query.get("threads")) || 0, RepairData: !!query.get("repair"), RepairPercent: Number(query.get("percent")) || 5, KeepLeftovers: false,
-    ConsoleIP: query.get("console") ? "192.168.1.20" : "", ConsoleCode: query.get("console") ? "482913" : "" };
+    ConsoleIP: query.get("console") ? "192.168.1.20" : "", ConsoleCode: query.get("console") ? "482913" : "",
+    WatchOn: !!query.get("watch"), WatchFolder: query.get("watch") ? "D:\\\\incoming" : "", WatchSend: false };
   if (query.get("nodest")) settings.LastDest = "";
   const builtIn = query.get("nobuiltin") ? {} : { builtInRuntime: "C:\\\\Users\\\\user\\\\AppData\\\\Roaming\\\\MaxPack\\\\ampr-emu-ng\\\\libSceAmpr.sprx", builtInRuntimeVersion: "v0.5.1-maxpack.2" };
   const games = {
@@ -334,6 +337,11 @@ const mock = `
     CloseTexts: async () => {}, TellLanguage: async () => {}, ConfirmClose: async () => {},
     Plan: async (section, items, opts) => items.map(item => Object.assign(plan(item, opts), opts.Mode === "repair" && !(repairs[item.Path] && repairs[item.Path].state === "match") ? { Block: "no_repair_data" } : {})),
     Space: async (section, items, opts) => (query.get("space") ? [{ Root: "E:\\\\", Need: 322390000000, Free: 118200000000 }] : []),
+    StartWatch: async () => {
+      if (settings.WatchOn) setTimeout(() => emit("watch:found", { paths: ["D:\\\\dumps\\\\Starfall.Odyssey-PPSA10001", "D:\\\\dumps\\\\Iron.Harbor-PPSA10002.exfat"] }), 1500);
+      return { folder: settings.WatchOn ? settings.WatchFolder : "", error: "" };
+    },
+    ChooseWatchFolder: async () => "D:\\\\incoming",
     ConsoleDrives: async () => (query.get("console") === "refused" ? { drives: [], error: "bad_code", message: "" }
       : { drives: [{ id: "internal", free: 412e9, total: 825e9, fs: "ufs" }, { id: "usb0", free: 1.6e12, total: 2e12, fs: "exfat" }, { id: "usb1", free: 2e9, total: 64e9, fs: "exfat" }], error: "", message: "" }),
     Start: async (section, items, opts) => {

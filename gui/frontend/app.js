@@ -55,7 +55,8 @@ const takes = {
 };
 const defaultTemplate = "{title} [{id}]";
 const defaults = { Lang: "", Theme: "system", Runtime: "", LastDest: "", Mode: "p5z", Level: 19, DeleteOriginals: false, DeletePermanently: false, LowPriority: false, NameTemplate: defaultTemplate, Threads: 0,
-  RepairData: false, RepairPercent: 5, Passcode: "", KeepLeftovers: false, ConsoleIP: "", ConsoleCode: "" };
+  RepairData: false, RepairPercent: 5, Passcode: "", KeepLeftovers: false, ConsoleIP: "", ConsoleCode: "",
+  WatchOn: false, WatchFolder: "", WatchSend: false };
 // the shares of repair data the window offers (a PAR2 set next to each .p5z)
 const percents = [1, 5, 10];
 
@@ -88,6 +89,9 @@ const state = {
   explorer: { available: false, menu: "", sendTo: "", files: "", filesOther: false },
   // a place of the Explorer is being added or removed: its switches wait
   explorerBusy: false,
+  // the watched folder as the window tells it (StartWatch, watch:status): the folder, and why it cannot
+  // be looked at ("gone", "unreadable"; "" when it can)
+  watch: { folder: "", error: "" },
 };
 
 // whether a queue is running: the window took it, and has not said its end yet
@@ -201,7 +205,8 @@ function nextDescribe() {
         paintStart();
         // a game added to the section whose queue runs joins it (not a repair, nor repair data being
         // added: a game is not given those unasked); one of Rename shows its new name
-        if (row.game && running() && state.job.section === row.section && !state.job.rows.includes(row) && !["repair", "protect"].includes(state.job.mode)) join(row);
+        if (row.game && running() && state.job.section === row.section && !state.job.rows.includes(row) && !["repair", "protect"].includes(state.job.mode) && !row.watched) join(row);
+        if (row.watched) watchSoon();
         if (row.section === "rename") planRenames();
         nextDescribe();
       });
@@ -1020,6 +1025,15 @@ function paintSettings() {
     $("passcode-bad").hidden = true;
   }
   $("pref-leftovers").checked = !s.KeepLeftovers;
+  // the watched folder: on only with a folder; what it makes may go to the console too
+  $("pref-watch").checked = !!s.WatchOn && !!s.WatchFolder;
+  $("pref-watch").disabled = !s.WatchFolder;
+  $("pref-watch-folder").textContent = s.WatchFolder || t("watchNoFolder");
+  $("pref-watch-status").hidden = !(s.WatchOn && state.watch.error);
+  $("pref-watch-status").textContent = state.watch.error === "gone" ? t("watchGone") : t("watchUnreadable");
+  $("pref-watch-send").checked = !!s.WatchSend;
+  $("pref-watch-send").disabled = !s.WatchOn;
+  $("pref-watch-send-row").classList.toggle("off", !s.WatchOn);
   // the console a .p5z is sent to: one being typed stays as it is
   if (document.activeElement !== $("pref-console-ip")) {
     $("pref-console-ip").value = s.ConsoleIP || "";
@@ -1319,13 +1333,14 @@ function readyRows(section, kind) {
 // plan asks the window what the queue would do, and the user what needs a choice: FAT32, the
 // runtime of ampr-emu-ng, games that cannot go to the destination. It gives the plans, or null
 // when the user stops it.
-async function plan(section, rows, opts) {
+async function plan(section, rows, opts, auto) {
   for (;;) {
     const plans = await go.call("Plan", section, rows.map(itemOf), opts);
     const names = n => plans[n].Item.Name;
     // FAT32: a .p5z of more than 4 GiB does not fit; the folder does
     const big = plans.map((p, n) => n).filter(n => plans[n].Block === "fat32_too_big");
-    if (big.length) {
+    // the watched folder asks nothing: what cannot go is left out, with why
+    if (big.length && !auto) {
       $("fat32-list").replaceChildren(...big.map(n => line(names(n), size(plans[n].Item.OriginalSize))));
       const answer = await ask($("fat32-dialog"));
       if (answer === "folder") { keep({ Mode: "folder" }); opts.Mode = "folder"; render(); continue; }
@@ -1336,7 +1351,7 @@ async function plan(section, rows, opts) {
     // plays) and only without the built-in one: chosen and kept in the settings, or not given, and
     // then said clearly
     const lacking = plans.map((p, n) => n).filter(n => (plans[n].Warnings || []).includes("needs_runtime"));
-    if (section === "compress" && opts.Mode === "folder" && lacking.length && !opts.Runtime && !builtInRuntime() && !state.askedRuntime) {
+    if (section === "compress" && opts.Mode === "folder" && lacking.length && !opts.Runtime && !builtInRuntime() && !state.askedRuntime && !auto) {
       $("runtime-list").replaceChildren(...lacking.map(n => line(names(n), plans[n].Item.TitleID || "")));
       const answer = await ask($("runtime-dialog"));
       if (answer === "choose") {
@@ -1349,7 +1364,7 @@ async function plan(section, rows, opts) {
     }
     // what cannot go to this destination (or be repaired, or get repair data)
     const blocked = plans.map((p, n) => n).filter(n => plans[n].Block);
-    if (blocked.length) {
+    if (blocked.length && !auto) {
       $("block-list").replaceChildren(...blocked.map(n => line(names(n), detailText(plans[n].Block))));
       $("block-skip").hidden = blocked.length === plans.length;
       $("block-dest").hidden = !writes.includes(section);
@@ -1368,11 +1383,14 @@ async function plan(section, rows, opts) {
 
 // startQueue starts the queue of the section open; kind "protect" adds repair data to the .p5z of
 // Verify, and "repair" repairs the damaged ones with theirs (the ones given, or all that can be)
-async function startQueue(kind, only, extra) {
-  const section = grows.includes(kind) || kind === "send" ? "details" : kind ? "verify" : state.section;
+async function startQueue(kind, only, extra, auto) {
+  const section = grows.includes(kind) || kind === "send" ? "details" : kind ? "verify" : auto ? "compress" : state.section;
   if (state.busy || !(queues.includes(section) || grows.includes(kind) || kind === "send")) return;
   // a DLC still being read would be left out of its game
-  if (section === "compress" && readingRows(section).length) { toast(t("readingWait")(readingRows(section).length)); return; }
+  if (section === "compress" && readingRows(section).length) {
+    if (auto) watchSoon(); else toast(t("readingWait")(readingRows(section).length));
+    return;
+  }
   const rows = only || readyRows(section, kind);
   if (!rows.length) { toast(kind === "repair" ? t("repairNothing") : kind === "protect" ? t("protectNothing") : t("nothingToDo")); return; }
   const mode = kind || modeOf(section);
@@ -1380,11 +1398,12 @@ async function startQueue(kind, only, extra) {
   const own = grows.includes(mode) && rows[0].repair && rows[0].repair.state === "match" ? Number(rows[0].repair.percent) || 0 : 0;
   const repair = mode === "p5z" ? repairOf() : mode === "protect" ? Number(state.settings.RepairPercent) || 5 : own;
   const opts = { Mode: mode, Dest: "", Level: Number(state.settings.Level) || 19, Runtime: state.settings.Runtime || "", ContinueFat32: false, Replace: [],
-    DeleteOriginals: section === "compress" && state.deleteOriginals, DeleteNoBin: false, Repair: repair, Drive: "" };
+    DeleteOriginals: section === "compress" && (auto ? !!state.settings.DeleteOriginals : state.deleteOriginals), DeleteNoBin: false, Repair: repair, Drive: "" };
   Object.assign(opts, extra || {});
   if (writes.includes(section)) {
-    opts.Dest = state.settings.LastDest || await chooseDest();
-    if (!opts.Dest) return;
+    // the watched folder asks nothing: without a destination it waits for one
+    opts.Dest = state.settings.LastDest || (auto ? "" : await chooseDest());
+    if (!opts.Dest) { if (auto) toast(t("watchNoDest")); return; }
   }
   // nothing else starts while the questions are asked; once the window takes the queue, the page
   // stays busy until job:done (which may even come before Start answers)
@@ -1392,7 +1411,7 @@ async function startQueue(kind, only, extra) {
   render();
   let job = null, started = false, again = "";
   try {
-    const plans = await plan(section, rows, opts);
+    const plans = await plan(section, rows, opts, auto);
     if (!plans) return;
     // what is in the way: replaced (said what goes and how much it takes) or skipped
     const going = [], skipped = [];
@@ -1402,7 +1421,8 @@ async function startQueue(kind, only, extra) {
       const row = rows[n];
       if (p.Block) { skipped.push([row, p.Block]); continue; }
       if ((p.Replace || []).length) {
-        let answer = all;
+        // the watched folder never replaces: what is in the destination already is not done again
+        let answer = auto ? "watch" : all;
         if (!answer) {
           asked++;
           $("replace-text").textContent = t("replaceText")(p.Item.Name);
@@ -1416,19 +1436,26 @@ async function startQueue(kind, only, extra) {
         }
         if (answer === "cancel") return;
         if (answer === "skip") { skipped.push([row, "skipped_by_user"]); continue; }
+        if (answer === "watch") { skipped.push([row, "watch_exists"]); continue; }
         opts.Replace.push(p.Out);
       }
       going.push(n);
     }
-    if (!going.length) { toast(t("nothingToDo")); return; }
-    // the originals that go once checked: said with what each takes and where it goes
-    if (opts.DeleteOriginals) {
+    if (!going.length) {
+      for (const [row, detail] of auto ? skipped : []) Object.assign(row, { state: "skipped", detail });
+      if (!auto) toast(t("nothingToDo"));
+      return;
+    }
+    // the originals that go once checked: said with what each takes and where it goes (the watched
+    // folder does as Settings says, and keeps the ones that cannot go to the recycle bin)
+    if (opts.DeleteOriginals && !auto) {
       const answer = await askOriginals(going.map(n => plans[n]), opts);
       if (answer === "cancel") return;
       if (answer === "keep") opts.DeleteOriginals = false;
     }
     // the space of the whole queue, by drive, before anything starts
     const short = await go.call("Space", section, going.map(n => rows[n]).map(itemOf), opts).catch(() => []);
+    if (short && short.length && auto) { toast(t("watchNoSpace")); return; }
     if (short && short.length) {
       $("space-list").replaceChildren(...short.map(drive => line(ltr(drive.Root), t("spaceLine")(size(drive.Need), size(drive.Free)))));
       // a repair writes a whole copy next to the .p5z: without room for it, it does not start
@@ -1442,14 +1469,14 @@ async function startQueue(kind, only, extra) {
     // what to know before it starts: two games to one place, no ID (the space was told above)
     const told = w => w === "duplicate_target" || w === "no_title_id";
     const warned = going.filter(n => (plans[n].Warnings || []).some(told));
-    if (warned.length) {
+    if (warned.length && !auto) {
       $("warn-list").replaceChildren(...warned.map(n => line(plans[n].Item.Name, plans[n].Warnings.filter(told).map(w => t("warn_" + w)).join(" · "))));
       if (await ask($("warn-dialog")) !== "go") return;
     }
     // the games left out are said in the list; the others wait for their turn
     for (const [row, detail] of skipped) Object.assign(row, { state: "skipped", detail, out: "", outSize: 0, warnings: [] });
     job = { section, mode: opts.Mode, repair: opts.Repair, dest: opts.Dest, runtime: opts.Runtime || builtInRuntime(), rows: going.map(n => rows[n]), shown: 0, rate: 0,
-      opts: Object.assign({}, opts, { Replace: [] }), deletes: opts.DeleteOriginals, early: {} };
+      opts: Object.assign({}, opts, { Replace: [] }), deletes: opts.DeleteOriginals, early: {}, watched: !!auto };
     for (const n of going) {
       Object.assign(rows[n], { state: "waiting", detail: "", step: "", phase: "", offset: 0, done: 0, total: 0, out: "", outSize: 0, repairSize: 0,
         warnings: plans[n].Warnings || [] });
@@ -1469,7 +1496,7 @@ async function startQueue(kind, only, extra) {
     render();
   }
   // another destination was chosen for the space: the queue is planned again with it
-  if (again && !started) startQueue(kind, only, extra);
+  if (again && !started) startQueue(kind, only, extra, auto);
 }
 
 // askOriginals says which originals go once checked, and asks: "delete", "keep" or "cancel". It
@@ -1508,7 +1535,8 @@ async function joinQueue() {
   job.joining = true;
   try {
     let keepOriginals = false;
-    if (job.deletes) {
+    // what the watched folder brings follows the queue's originals, unasked (Settings says what becomes of them)
+    if (job.deletes && !rows.every(row => row.watched)) {
       const plans = await go.call("Plan", job.section, rows.map(itemOf), Object.assign({}, job.opts, { DeleteOriginals: true }));
       const opts = { DeleteNoBin: false };
       const answer = await askOriginals(plans, opts);
@@ -1616,6 +1644,71 @@ async function sendMade(job) {
   sendRows(rowsOf());
 }
 
+// ---- the watched folder ------------------------------------------------------------------------------
+
+// what arrived in the watched folder, whole (watch:found): it goes to Compress as if it had been dropped on
+// it, and is compressed with its settings once read; one that came back changed goes again
+function onWatchFound(event) {
+  const paths = (event && event.paths) || [];
+  if (!paths.length) return;
+  const wanted = new Set(paths.map(pathKey));
+  for (const row of state.lists.compress) {
+    if (!wanted.has(pathKey(row.path)) || (running() && state.job.rows.includes(row) && !ended.includes(row.state))) continue;
+    Object.assign(row, { state: "", detail: "", game: null, error: "", watchHeld: false });
+    describe(row);
+  }
+  addPaths("compress", paths);
+  for (const row of state.lists.compress) if (wanted.has(pathKey(row.path))) row.watched = true;
+  toast(t("watchFound")(paths.length));
+  watchSoon();
+}
+// the watched rows that are not done, and of those the games that can go now: read, whole (one that lacks
+// files of its list stays in the list with its warning, held) and not compressed already; a DLC goes inside
+// its game, never alone
+const watchedRows = () => state.lists.compress.filter(row => row.watched && (!row.state || row.state === "queued"));
+const incomplete = game => missingOf(game) > 0 || (fromDumpTool(game && game.Completeness) && copyProblems(game.Completeness).length > 0);
+function watchReady(rows) {
+  const ready = [];
+  for (const row of rows) {
+    if (!readRow(row) || row.state || isDlc(row.game) || row.game.Packed) continue;
+    if (incomplete(row.game)) {
+      if (!row.watchHeld) Object.assign(row, { watchHeld: true, detail: "watch_incomplete" });
+      continue;
+    }
+    if (!row.watchHeld) ready.push(row);
+  }
+  return ready;
+}
+let watchTimer = 0;
+function watchSoon() {
+  clearTimeout(watchTimer);
+  watchTimer = setTimeout(watchTick, 400);
+}
+function watchTick() {
+  const rows = watchedRows();
+  // all of them read first: a DLC must find its game
+  if (rows.some(row => !row.game && !row.error)) return;
+  const ready = watchReady(rows);
+  for (const row of rows) paintRow(row);
+  if (!ready.length) return;
+  if (running() && state.job.section === "compress") { for (const row of ready) join(row); return; }
+  if (state.busy) return; // the end of what runs tries again
+  startQueue("", ready, undefined, true);
+}
+// what the watched folder made, once its queue ended, goes to the console too: to the drive last chosen
+async function sendWatched(job) {
+  const paths = madeP5z(job).filter(path => job.rows.some(row => row && row.watched && row.out === path));
+  if (!paths.length) { watchSoon(); return; }
+  if (!validConsoleIp(state.settings.ConsoleIP) || !validConsoleCode(state.settings.ConsoleCode)) { toast(t("sendNoConsole")); watchSoon(); return; }
+  addPaths("details", paths);
+  const wanted = new Set(paths.map(pathKey));
+  const rowsOf = () => state.lists.details.filter(row => wanted.has(pathKey(row.path)));
+  for (let waited = 0; waited < 120 && rowsOf().some(row => !row.game && !row.error); waited++) await new Promise(done => setTimeout(done, 250));
+  const rows = rowsOf().filter(row => row.game && row.game.Kind === "p5z");
+  if (rows.length && !state.busy) startQueue("send", rows, { Drive: load("sendDrive", "") }, true);
+  else watchSoon();
+}
+
 // ---- what the window tells of a queue -----------------------------------------------------------
 
 function onItem(event) {
@@ -1658,6 +1751,8 @@ function onDone(summary) {
   // a .p5z that grew is read again: its version, its DLC, how many times it grew, its repair data
   if (grows.includes(job.mode)) for (const row of job.rows) if (row && row.state === "ok" && state.lists.details.includes(row)) describe(row);
   if (job.mode === "repair") toast(t("repairedCount")(summary.Repaired || 0));
+  if (job.watched && state.settings.WatchSend && madeP5z(job).length) sendWatched(job);
+  else watchSoon();
   if (job.mode === "protect") toast(t("protectedCount")(summary.Protected || 0));
 }
 
@@ -2165,6 +2260,12 @@ function wire() {
       if (ok(value) && value !== (state.settings[key] || "")) keep({ [key]: value });
     });
   }
+  // the watched folder: chosen (and turned on), turned on and off, and whether what it makes goes to the console
+  $("pref-watch-choose").addEventListener("click", () => go.call("ChooseWatchFolder").then(path => {
+    if (path) { keep({ WatchFolder: path, WatchOn: true }); state.watch.error = ""; render(); }
+  }, error => toast(message(error))));
+  $("pref-watch").addEventListener("change", () => { keep({ WatchOn: $("pref-watch").checked }); state.watch.error = ""; render(); });
+  $("pref-watch-send").addEventListener("change", () => keep({ WatchSend: $("pref-watch-send").checked }));
   // the end card of Compress sends what it made
   $("done-send").addEventListener("click", () => { const job = state.job; $("done-dialog").close(); sendMade(job); });
   // what dump tools leave behind goes, unless Settings keeps it; the cards of Details say it
@@ -2240,6 +2341,8 @@ async function main() {
   go.on("tool:progress", onToolProgress);
   go.on("tool:level", onToolLevel);
   go.on("tool:trial", onToolTrial);
+  go.on("watch:found", onWatchFound);
+  go.on("watch:status", status => { state.watch = status || { folder: "", error: "" }; if (state.section === "settings") paintSettings(); });
   go.onDrop((x, y, paths) => dropped(paths));
   try {
     state.setup = await go.call("Setup");
@@ -2257,6 +2360,8 @@ async function main() {
   addSent(await go.call("PendingFiles").catch(() => null));
   loadExplorer();
   offerLeftovers();
+  // the watched folder, now that the page listens
+  go.call("StartWatch").then(status => { state.watch = status || state.watch; }, () => {});
 }
 
 // what a run cut short (a crash, a power cut) left apart is offered for deletion as MaxPack opens

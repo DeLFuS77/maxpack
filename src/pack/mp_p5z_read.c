@@ -461,6 +461,16 @@ int mp_p5z_info(const mp_p5z *p, FILE *out) {
     fprintf(out, "Packs:      zstd level %d, %s -> %s in %llu volumes\n", p->man.level, b, c,
             (unsigned long long)vols);
     fprintf(out, ".p5z:       %s\n", d);
+    if (p->version == 2) {
+        uint64_t unused = 0;
+        fprintf(out, "Grown:      %u %s (DLC or an update added to it)\n", p->grown, p->grown == 1 ? "time" : "times");
+        if (mp_p5z_unused((mp_p5z *)p, &unused, NULL) == 0) {
+            char u[32];
+            size_text(unused, u);
+            fprintf(out, "Unused:     %s%s\n", u,
+                    unused ? " (maxpack compact <game.p5z> -o <new.p5z> makes a copy without it)" : "");
+        }
+    }
     return ferror(out) ? -1 : 0;
 }
 

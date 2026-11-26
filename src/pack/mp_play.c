@@ -216,7 +216,13 @@ char *mp_play_json(mp_play *p) {
         sb_u64(&s, v[i].len);
         sb_str(&s, "}");
     }
-    sb_str(&s, "]}");
+    sb_str(&s, "]");
+    // a .p5z that grew needs ampr-emu-ng's p5z rules (and says so); one as packed says what it always said
+    if (z->version == 2) {
+        sb_str(&s, ",\"index_version\":2,\"grown\":");
+        sb_u64(&s, z->grown);
+    }
+    sb_str(&s, "}");
     free(v);
     if (s.oom) {
         free(s.b);

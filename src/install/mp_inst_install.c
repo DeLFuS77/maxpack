@@ -612,6 +612,16 @@ int mp_inst_install(const mp_inst_env *env, const mp_inst_req *req, mp_inst_resu
         set_result(r, MP_INST_FAILED, "bad_p5z");
         return -1;
     }
+    // a .p5z that grew has its packs as only ampr-emu-ng's p5z mode reads them: as a folder they would not mount
+    if (mp_p5z_version(p) == 2) {
+        mp_p5z_close(p);
+        free(f.path);
+        mp_inst_existing_free(ex, nex);
+        mp_err_set(e, "this .p5z grew (DLC or an update were added to it): play it from the .p5z, or make a compact "
+                      "copy of it on the PC (maxpack compact) to install it");
+        set_result(r, MP_INST_FAILED, "grown_p5z");
+        return -1;
+    }
     rt_plan rp;
     int prc = plan_runtime(env, p, &rp, e);
     if (prc != 0) {

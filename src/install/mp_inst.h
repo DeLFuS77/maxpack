@@ -110,7 +110,7 @@ enum { MP_INST_DONE = 0, MP_INST_STOPPED, MP_INST_NEEDS_CONFIRM, MP_INST_NO_SPAC
 typedef struct {
     int status;
     const char *code;   // "done" "stopped" "needs_confirm" "no_space" "bad_p5z" "bad_dest"
-                        // "no_runtime" "io_error" "bad_source"
+                        // "no_runtime" "io_error" "bad_source" "grown_p5z"
     char title_id[16];
     char final_dir[1024];
     uint64_t need, avail;

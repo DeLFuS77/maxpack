@@ -13,6 +13,7 @@
 #include "mp_p5z_icon.h"
 #include "mp_p5z_internal.h"
 #include "mp_play.h"
+#include "mp_inst.h"
 
 #define TMP MP_TEST_TMP "/grow"
 #define GAME MP_FIXTURES_DIR "/game"
@@ -736,6 +737,186 @@ MP_TEST(grow_nothing_changed) {
     free(orig);
 }
 
+// ---- the readers of a .p5z that grew -------------------------------------------------------------
+
+// v1 packed with small volumes and grown to v2 at G_P5Z.
+static int grown_v2(uint64_t limit, uint8_t **orig, size_t *olen) {
+    mpt_clear(TMP);
+    make_versions();
+    if (mpt_pack_vol(V1, G_P5Z, 1, NULL, limit) != 0) return -1;
+    if (orig) *orig = mpt_slurp(G_P5Z, olen);
+    mp_grow_opts o = quiet_opts();
+    o.volume_limit = limit;
+    mp_grow_result r;
+    mp_err e = {{0}};
+    if (grow_with(G_P5Z, V2, &o, &r, &e) != 0) {
+        MP_FAIL_("grow: %s", e.msg);
+        return -1;
+    }
+    return 0;
+}
+
+// unpack --folder of a .p5z that grew lays its volumes out again: the folder pack --folder makes of v2,
+// which ampr-emu-ng mounts outside p5z mode too.
+MP_TEST(grown_unpack_folder_equals_pack_dir) {
+    if (grown_v2(262208, NULL, NULL) != 0) return;
+    if (mpt_pack_vol(V2, TMP "/v2_folder", 0, NULL, 262208) != 0) return;
+    mp_err e = {{0}};
+    mp_p5z *p = NULL;
+    MP_CHECK(mp_p5z_open(G_P5Z, &p, &e) == 0);
+    if (!p) return;
+    MP_CHECK(mp_unpack_folder_ex(p, TMP "/g_folder", 262208, 2, 0, &e) == 0);
+    if (e.msg[0]) fprintf(stderr, "  %s\n", e.msg);
+    mp_p5z_close(p);
+    MP_CHECK(mpt_dirs_equal(TMP "/v2_folder", TMP "/g_folder", "*.pak"));
+    mp_verify_result vr;
+    MP_CHECK(mp_verify_folder(TMP "/g_folder", V2, 2, 0, &vr, &e) == 0);
+    MP_CHECK_EQ_U64(vr.files_bad, 0);
+    // and with the volumes of a real game (4 GiB), what unpack --folder gives: one here
+    MP_CHECK(mp_p5z_open(G_P5Z, &p, &e) == 0);
+    MP_CHECK(p && mp_unpack_folder(p, TMP "/g_folder4", 2, 0, &e) == 0);
+    mp_p5z_close(p);
+    MP_CHECK(mp_path_kind(TMP "/g_folder4/ampr_zstd-000.pak") == 1 && mp_path_kind(TMP "/g_folder4/ampr_zstd-001.pak") == 0);
+    MP_CHECK(mp_verify_folder(TMP "/g_folder4", V2, 2, 0, &vr, &e) == 0);
+    MP_CHECK_EQ_U64(vr.files_bad, 0);
+}
+
+MP_TEST(grown_verify_catches_damage) {
+    if (grown_v2(262208, NULL, NULL) != 0) return;
+    mp_err e = {{0}};
+    mp_p5z *p = NULL;
+    uint64_t at = 0;
+    MP_CHECK(mp_p5z_open(G_P5Z, &p, &e) == 0);
+    for (size_t i = 0; p && i < p->nfiles; i++)   // the last volume, a new one
+        if (p->files[i].role == MP_ROLE_VOLUME) at = p->files[i].data_off + 100;
+    mp_p5z_close(p);
+    size_t n = 0;
+    uint8_t *b = mpt_slurp(G_P5Z, &n);
+    if (!b || at >= n) return;
+    b[at] ^= 0x40;
+    mpt_clear(TMP "/bad.p5z");
+    mpt_put(TMP "/bad.p5z", b, n);
+    free(b);
+    mp_verify_result vr;
+    MP_CHECK(mp_verify_p5z(TMP "/bad.p5z", 2, 0, &vr, &e) == 0);
+    MP_CHECK(vr.files_bad > 0);
+}
+
+MP_TEST(grown_unused) {
+    uint8_t *orig = NULL;
+    size_t olen = 0;
+    if (grown_v2(MP_ZPK_VOLUME_LIMIT, &orig, &olen) != 0) return;
+    mp_err e = {{0}};
+    mp_p5z *v1 = NULL, *p = NULL;
+    uint64_t u1 = 1, u = 0;
+    mpt_clear(TMP "/orig.p5z");
+    mpt_put(TMP "/orig.p5z", orig, olen);
+    MP_CHECK(mp_p5z_open(TMP "/orig.p5z", &v1, &e) == 0 && mp_p5z_unused(v1, &u1, &e) == 0);
+    MP_CHECK_EQ_U64(u1, 0);
+    MP_CHECK(mp_p5z_open(G_P5Z, &p, &e) == 0 && mp_p5z_unused(p, &u, &e) == 0);
+    // what v2 no longer uses of v1: its index and footer, the regions of the loose files and originals it
+    // changed or removed (and the old ampr_emu.index, ampr_zstd.index), the chunks of the packed ones
+    uint64_t want = v1 ? v1->index_len + P5Z_FOOTER : 0;
+    for (size_t i = 0; v1 && p && i < v1->nfiles; i++) {
+        const p5z_file *f = &v1->files[i];
+        if (f->role == MP_ROLE_VOLUME) continue;
+        int kept = 0;
+        for (size_t k = 0; k < p->nfiles; k++) kept |= p->files[k].data_off == f->data_off && p->files[k].role == f->role;
+        if (!kept) want += f->data_len;
+    }
+    mp_zpk *z1 = NULL, *z2 = NULL;
+    if (v1 && p && mp_p5z_zpk(v1, &z1, &e) == 0 && mp_p5z_zpk(p, &z2, &e) == 0) {
+        for (size_t i = 0; i < mp_zpk_count(z1); i++) {
+            uint64_t cnt = 0, cnt2 = 0;
+            const uint64_t *c = mp_zpk_file_chunks(z1, i, &cnt);
+            long j = mp_zpk_find(z2, mp_zpk_path(z1, i));
+            const uint64_t *c2 = j >= 0 ? mp_zpk_file_chunks(z2, (size_t)j, &cnt2) : NULL;
+            if (c && !(c2 && cnt2 == cnt && !memcmp(c, c2, cnt * 8)))
+                for (uint64_t k = 0; k < cnt; k++) want += ((c[k] >> 44) & 0x3FFFF) + 1;
+        }
+    }
+    mp_zpk_close(z1);
+    mp_zpk_close(z2);
+    MP_CHECK(u > 0);
+    MP_CHECK_EQ_U64(u, want);
+    mp_p5z_close(v1);
+    mp_p5z_close(p);
+    free(orig);
+}
+
+MP_TEST(play_json_says_index_version) {
+    if (grown_v2(262208, NULL, NULL) != 0) return;
+    char err[256] = "";
+    mp_play *pl = mp_play_open(G_P5Z, err, sizeof err);
+    char *j = pl ? mp_play_json(pl) : NULL;
+    MP_CHECK(j && strstr(j, ",\"index_version\":2,\"grown\":1}"));
+    mp_play_free_str(j);
+    mp_play_close(pl);
+    // a .p5z as packed says what it said before
+    if (mpt_pack(V1, TMP "/plain.p5z", 1, NULL) != 0) return;
+    pl = mp_play_open(TMP "/plain.p5z", err, sizeof err);
+    j = pl ? mp_play_json(pl) : NULL;
+    MP_CHECK(j && !strstr(j, "index_version") && !strstr(j, "grown") && strstr(j, "]}"));
+    mp_play_free_str(j);
+    mp_play_close(pl);
+}
+
+MP_TEST(p5z_info_says_grown) {
+    if (grown_v2(MP_ZPK_VOLUME_LIMIT, NULL, NULL) != 0) return;
+    mp_err e = {{0}};
+    mp_p5z *p = NULL;
+    MP_CHECK(mp_p5z_open(G_P5Z, &p, &e) == 0);
+    if (!p) return;
+    mpt_clear(TMP "/info.txt");
+    FILE *f = fopen(TMP "/info.txt", "w");
+    MP_CHECK(f && mp_p5z_info(p, f) == 0);
+    if (f) fclose(f);
+    mp_p5z_close(p);
+    size_t n = 0;
+    char *t = (char *)mpt_slurp(TMP "/info.txt", &n);
+    if (t) t[n] = 0;
+    MP_CHECK_CONTAINS(t, "Grown:      1 time");
+    MP_CHECK_CONTAINS(t, "Unused:     ");
+    MP_CHECK_CONTAINS(t, "maxpack compact");
+    free(t);
+}
+
+static void inst_note(void *ctx, const char *msg) {
+    (void)ctx;
+    (void)msg;
+}
+
+// The installer leaves the packs of a .p5z as a folder, which a grown one's are not: it refuses it.
+MP_TEST(install_refuses_grown) {
+    if (grown_v2(MP_ZPK_VOLUME_LIMIT, NULL, NULL) != 0) return;
+    static uint8_t rt[4096];
+    memcpy(rt + 64, "AMPRZPK1", 8);
+    static const char *drives[] = {TMP "/usb1"};
+    mp_inst_env env;
+    mp_inst_env_default(&env);
+    env.internal = TMP "/internal";
+    env.drive_candidates = drives;
+    env.ndrive_candidates = 1;
+    env.runtime.data = rt;
+    env.runtime.len = sizeof rt;
+    env.runtime.mtime = 1700000000;
+    env.runtime.version = "test";
+    env.notify = inst_note;
+    mp_err e = {{0}};
+    mp_make_dirs(TMP "/internal", &e);
+    mp_inst_req q;
+    memset(&q, 0, sizeof q);
+    q.p5z_path = G_P5Z;
+    q.dest_root = TMP "/internal";
+    mp_inst_result r;
+    memset(&r, 0, sizeof r);
+    MP_CHECK(mp_inst_install(&env, &q, &r, &e) != 0);
+    MP_CHECK(r.status == MP_INST_FAILED);
+    MP_CHECK_STR(r.code, "grown_p5z");
+    MP_CHECK_CONTAINS(e.msg, "maxpack compact");
+    mp_inst_result_free(&r);
+}
+
 int main(void) {
     MP_RUN(p5z_append_one_file);
     MP_RUN(p5z_copy_all_is_identical);
@@ -751,5 +932,11 @@ int main(void) {
     MP_RUN(grow_fault_every_step);
     MP_RUN(grow_refuses);
     MP_RUN(grow_nothing_changed);
+    MP_RUN(grown_unpack_folder_equals_pack_dir);
+    MP_RUN(grown_verify_catches_damage);
+    MP_RUN(grown_unused);
+    MP_RUN(play_json_says_index_version);
+    MP_RUN(p5z_info_says_grown);
+    MP_RUN(install_refuses_grown);
     MP_TEST_MAIN_END();
 }

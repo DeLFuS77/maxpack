@@ -487,6 +487,61 @@ p.stdin.close()
 p.wait(timeout=120)
 check("control_stdin_pause_eof", paused and p.returncode == 130 and not os.path.exists(cpause), "rc=%s" % p.returncode)
 
+# Lines of pause and resume come from another thread than the result: they never split a line. Many of them,
+# all the while, and every line on stdout is whole JSON, the result last.
+for attempt in range(3):
+    flood = os.path.join(TMP, "flood.p5z")
+    if os.path.isfile(flood):
+        os.remove(flood)
+    p = subprocess.Popen([EXE, "pack", BIG, "-o", flood, "--p5z", "--threads", "2", "--level", "1", "--progress", "json",
+                          "--control", "stdin"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    lines = Lines(p)
+
+    def toggle(proc):
+        try:
+            while proc.poll() is None:
+                proc.stdin.write(b"pause\nresume\n" * 50)
+                proc.stdin.flush()
+        except OSError:
+            pass
+
+    writer = threading.Thread(target=toggle, args=(p,), daemon=True)
+    writer.start()
+    p.wait(timeout=300)
+    writer.join(timeout=10)
+    lines.thread.join(timeout=10)
+    broken = []
+    for line in lines.all():
+        try:
+            json.loads(line)
+        except ValueError:
+            broken.append(line)
+    evs = [json.loads(l) for l in lines.all() if l not in broken]
+    ok = not broken and p.returncode == 0 and last_result(evs).get("ok") is True
+    check("control_stdin_pause_lines_whole_%d" % attempt, ok, "rc=%s broken=%s" % (p.returncode, broken[:3]))
+
+# measure and analyze --levels time what they do: they take no pause (it would put its wait in their figures).
+mtool = os.path.join(TMP, "measure_nopause")
+rmtree(mtool)
+os.makedirs(mtool)
+for what, args in (("measure", ["measure", mtool, "--seconds", "0.2", "--level", "1"]),
+                   ("levels", ["analyze", BIG, "--levels", "1,3", "--full", "--threads", "1"])):
+    p = subprocess.Popen([EXE, *args, "--progress", "json", "--control", "stdin"],
+                         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    lines = Lines(p)
+    p.stdin.write(b"pause\n")
+    p.stdin.flush()
+    try:
+        p.wait(timeout=60)
+        ended = True
+    except subprocess.TimeoutExpired:
+        p.kill()
+        ended = False
+    lines.thread.join(timeout=10)
+    evs = json_lines("\n".join(lines.all()))
+    check("control_stdin_no_pause_" + what, ended and p.returncode == 0 and last_result(evs).get("ok") is True
+          and not any(e.get("event") == "paused" for e in evs), "ended=%s rc=%s %s" % (ended, p.returncode, lines.all()[-2:]))
+
 # ---- analyze --levels: the levels compared on this PC ---------------------------------------------
 LEVEL_ROW = re.compile(r"^ +(\d+) +\d+\.\d\d [KMGT]?B +-?\d+\.\d % ", re.M)
 rc, out, err = run("analyze", BASIC, "--levels", "--threads", "2")

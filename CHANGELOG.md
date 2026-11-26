@@ -29,7 +29,7 @@ All notable changes to MaxPack are listed here. The format follows
   window is not in front is told by a notice of the system with its sound; where there is no notice (the
   portable version) or it makes none (Linux), by a short sound of MaxPack. In front, only the end card.
 - **Pause and resume:** `--control stdin` takes the lines `pause` and `resume` (pack, unpack, verify,
-  add, update, compact, analyze --levels and measure). A pause stops the work at its next batch: the
+  add, update and compact; not analyze --levels and measure, which time what they do, nor send). A pause stops the work at its next batch: the
   threads end the block they have and take no other, and nothing more is read or written, so the CPU and
   the disk are free; memory stays. Resuming goes on from there with the same result. With `--progress
   json` they say `{"event":"paused"}` and `{"event":"resumed"}`; a cancel while paused cancels. In C,

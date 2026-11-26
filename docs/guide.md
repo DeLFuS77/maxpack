@@ -658,9 +658,10 @@ is already closed (for example with `< /dev/null`), it cancels at once. The line
 at its next batch: each thread ends the block it has (a few MiB) and takes no other, and nothing more is
 read or written, so the CPU and the disk are free while the memory stays as it is. `resume` goes on from
 there, and the result is the same as without the pause. With `--progress json` they say
-`{"event":"paused"}` and `{"event":"resumed"}`; a `cancel` (or the end of the input) while paused cancels
-as usual. `unpack`, `verify` (also `--quick`), `add`, `update`, `compact`, `analyze --levels` and
-`measure` take them too; `send` does not. The result line also has
+`{"event":"paused"}` and `{"event":"resumed"}` (never after the `result` line); a `cancel` (or the end of
+the input) while paused cancels as usual. `unpack`, `verify` (also `--quick`), `add`, `update` and
+`compact` take them too. `analyze --levels` and `measure` do not, as a pause would go into what they
+time, and neither does `send`. The result line also has
 `left_out_files` and `left_out_bytes`, `dlc_data`, `dlc_license` and `dlc_bytes` (the DLC put inside,
 below) and `completeness`.
 

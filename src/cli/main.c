@@ -112,7 +112,8 @@ static void usage(FILE *out) {
             "  --control stdin    read from stdin: the line \"cancel\" or closing the input cancels; \"pause\"\n"
             "                     stops the work at its next batch (the CPU and the disk go idle, memory\n"
             "                     stays) and \"resume\" goes on from there; with --progress json each one\n"
-            "                     says {\"event\":\"paused\"} or {\"event\":\"resumed\"}\n"
+            "                     says {\"event\":\"paused\"} or {\"event\":\"resumed\"}; analyze --levels and\n"
+            "                     measure take no pause (it would go into what they time)\n"
             "  Exit codes: 0 ok, 1 error, 2 usage, 130 cancelled\n"
             "\n"
             "send: MaxPack for the console shows the code in Settings > \"Receive games from the PC\", which\n"
@@ -187,14 +188,21 @@ static void json_progress(void *ctx, const char *phase, uint64_t done, uint64_t 
     fflush(stdout);
 }
 
+// The lines of the control thread (paused, resumed) and the result line are written one at a time, so neither
+// splits the other, and nothing comes after the result. NULL until the control thread starts.
+static mp_mutex *g_out;
+
 // "result" line: ok and, on failure, the code; extra is already-formatted fields (with a leading comma) or "".
 static void json_result(int ok, const char *err, const char *extra) {
-    if (g_result_done) return;
-    g_result_done = 1;
-    printf("{\"event\":\"result\",\"ok\":%s", ok ? "true" : "false");
-    if (err) printf(",\"error\":\"%s\"", err);
-    printf("%s}\n", extra ? extra : "");
-    fflush(stdout);
+    if (g_out) mp_mutex_lock(g_out);
+    if (!g_result_done) {
+        g_result_done = 1;
+        printf("{\"event\":\"result\",\"ok\":%s", ok ? "true" : "false");
+        if (err) printf(",\"error\":\"%s\"", err);
+        printf("%s}\n", extra ? extra : "");
+        fflush(stdout);
+    }
+    if (g_out) mp_mutex_unlock(g_out);
 }
 
 static void control_thread(void *arg) {
@@ -220,10 +228,12 @@ static void control_thread(void *arg) {
             int pause = !strcmp(line, "pause"), resume = !strcmp(line, "resume");
             if ((pause || resume) && !g_no_pause) {
                 mp_pause_set(pause);
-                if (g_json) {
+                if (g_out) mp_mutex_lock(g_out);
+                if (g_json && !g_result_done) {
                     printf("{\"event\":\"%s\"}\n", pause ? "paused" : "resumed");
                     fflush(stdout);
                 }
+                if (g_out) mp_mutex_unlock(g_out);
             }
             n = 0;
         } else if (c != '\r' && n < sizeof line - 1) {
@@ -246,6 +256,7 @@ static void start_json_and_control(void) {
         mp_progress_set_hook(&h);
     }
     if (g_control) {
+        g_out = mp_mutex_new();   // never freed: the control thread may outlive the command
         mp_thread *t = NULL;
         mp_thread_start(&t, control_thread, NULL);   // never joined: it may stay blocked reading
     }
@@ -758,6 +769,7 @@ static int run_levels(int argc, char **argv) {
         goto out;
     }
     if (json && (rc = check_json_target(src, json)) != 0) goto out;
+    g_no_pause = 1;   // it times what it does: a pause would go into its figures
     start_json_and_control();
     if (g_json) o.on_level = on_level_json;
     mp_levels_report r;
@@ -2367,6 +2379,7 @@ static int run_measure(int argc, char **argv) {
         if (!ok) return bad_usage("--json must be a file in a folder that exists", json);
     }
     o.dir = dir;
+    g_no_pause = 1;   // it times what it does: a pause would go into its figures
     start_json_and_control();
     if (g_json) o.on_trial = on_trial_json;
     mp_bench_report r;

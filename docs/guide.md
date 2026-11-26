@@ -385,8 +385,10 @@ there, one after another). Give the console's IP address and its pairing code on
 MaxPack for the console; the console must have Settings > **Receive games from the PC** on. A card
 shows the console's drives with their free space (one where they do not fit says so); the bar says the
 speed and the time left, then the console's verify, and the end card how it went. If the connection
-breaks it goes on from what the console has; **Cancel** stops it, and the console deletes what it got.
-The code goes only to `maxpack-core`, in its environment: never into a log nor into **Copy report**.
+breaks it goes on from what the console has. **Cancel**, or closing the window, stops it and the console
+keeps what arrived: the next send goes on from there. **Delete what arrived on the console**, on the row,
+deletes it there, once you say so. The code goes only to `maxpack-core`, in its environment: never into a log
+nor into **Copy report**.
 
 ### Watched folder ([details](pc-window.md#watched-folder))
 
@@ -395,11 +397,16 @@ Settings > **Watched folder**, off until you choose a folder and turn it on: whi
 `.pkg` that arrives at the top of that folder goes to Compress as if you had dropped it there, once
 nothing new in the folder has changed for a minute (so a game and its DLC that arrive together go
 together, the DLC inside it). It is compressed with the settings of Compress: the destination, the
-level, the repair data, and the originals deleted when that is on (those the recycle bin cannot take
-stay). It never replaces: what is in the destination already is skipped. A game that lacks files of its
-list stays in the list with its warning instead. What was handed over once is not again until it changes
-(MaxPack keeps that in `watched.json` next to its settings), so what failed is tried again only once it
-changes. With **Send them to the console too**, each `.p5z` made goes on to the console, to the drive
+level and the repair data. Its original goes only when Settings > Delete the originals once checked is on, and
+then only to the recycle bin, never for good whatever Settings says (those the bin cannot take stay), and only
+when the dump was complete by its list (every file, of its size) and is, file by file, as it was when its
+compression began: else it stays, and its row says why. It never replaces: what is in the destination already
+is skipped. A game that lacks files of its list stays in the list with its warning instead. Turning it on, or
+choosing another folder, takes what is there as not new: Settings offers to compress it. What ended (compressed,
+failed or skipped as there) is not handed over again until it changes (MaxPack keeps that in `watched.json`
+next to its settings); what never ran (no destination, cancelled, the window closed) comes again the next time.
+A file another program still has open for writing (Windows), a `.part`, `.crdownload` or `.!qB` download, or an
+empty placeholder is still arriving. With **Send them to the console too**, each `.p5z` made goes on to the console, to the drive
 chosen last. The subfolders are not looked into, and nothing runs with the window closed: what arrived
 meanwhile is found when it opens.
 
@@ -775,21 +782,28 @@ it exits with code 1; a dump that was not complete is no failure of the `.p5z`.
 `<drive>/homebrew/` as `<name>.maxpack-recv`, runs the quick verify on it when it has it whole, and only
 then gives it its name, so its library never sees half a game; one that arrived damaged keeps its
 `.maxpack-recv` name and the console says what did not match. If the connection breaks, the PC or the
-console goes off, or you press Ctrl+C, the same command goes on from what the console has.
+console goes off, you press Ctrl+C or you cancel, the console keeps what arrived and the same command goes on
+from there. A receive the console pauses (idle for 10 minutes, or a write error) is started again by itself;
+one stopped on the console's page is not (exit code 15), and goes on when you send it again. Only `--discard`,
+or `--delete-on-cancel` with a cancel, makes the console delete what it received.
 
 On the console, turn on Settings > **Receive games from the PC**: its page then shows a 6-digit pairing
-code. Without it the console takes nothing: anyone on the home network could write to its drives.
+code. Without it the console takes nothing: anyone on the home network could write to its drives. The code
+travels in clear on the home network (there is no encryption), so another device there could read it.
 
 | Use | What it does | Example |
 |---|---|---|
 | `send <game.p5z> <ps5-ip> --code C` | Sends it to the console's internal storage (or its first drive). | `maxpack send "D:\games\MyGame [PPSA00000].p5z" 192.168.1.20 --code 482913` |
 | `--drive ID` | To another drive of the console: `internal`, `usb0`... | `--drive usb0` |
 | `send --drives <ps5-ip> --code C` | Lists the console's drives with their free space (`--json`: as JSON). | `maxpack send --drives 192.168.1.20 --code 482913` |
-| `<ps5-ip>` | The console's IP address, as its page shows it; `a.b.c.d:port` when it is not on port 8095. | `192.168.1.20` |
+| `send --discard <game.p5z> <ps5-ip> --code C` | Deletes what the console received of it (its `.maxpack-recv`) on that drive (`--drive`). A `.p5z` that is there whole is not touched (exit code 7). | `maxpack send --discard "D:\games\MyGame [PPSA00000].p5z" 192.168.1.20 --code 482913` |
+| `<ps5-ip>` | The console's IP address, as its page shows it (no leading zeros); `a.b.c.d:port` when it is not on port 8095. | `192.168.1.20` |
 | `MAXPACK_SEND_CODE` | The code can come in this environment variable instead of `--code`, so other programs of the PC do not see it on the command line (the window does that). | |
-| `--json` | One JSON line per event on stdout, as `--progress json`: `started` (the drive, and what the console had already), `progress` of the phases `sending` (with `rate` in bytes a second and `eta` in seconds) and `verifying` (the console's), `retry`, and the `result`. | `--json` |
-| `--control stdin` | `cancel` stops it, and the console deletes what it received. | |
-| `--chunk N`, `--retries N`, `--retry-wait MS` | Bytes per request (default 32 MiB, at most 64 MiB); tries after a broken connection (10); the wait after the first one (1 s, doubling up to 30 s). | `--retries 20` |
+| `--json` | One JSON line per event on stdout, as `--progress json`: `started` (the drive, and what the console had already), `progress` of the phases `sending` (with `rate` in bytes a second and `eta` in seconds) and `verifying` (the console's), `retry`, `paused`, and the `result` (with `kept` and `have` when it did not end: whether the console keeps what arrived, and how much). | `--json` |
+| `--control stdin` | `cancel` stops it, and the console keeps what arrived; so does the end of the input (a window closed or gone). | |
+| `--delete-on-cancel` | With `--control stdin`: `cancel` makes the console delete what it received (the end of the input still keeps it). Off by default. | |
+| `--chunk N`, `--retries N`, `--retry-wait MS` | Bytes per request (default 32 MiB, at most 64 MiB); tries after a broken connection (10, but 1 while the console has never answered: "no answer" in about 11 s; any answer begins the count again); the wait after the first one (1 s, doubling up to 30 s; at most 30000). The connect waits 5 s at most. | `--retries 20` |
+| `--stall S` | What the console has, and its verify, not moving for S seconds stops it, and the console keeps what arrived (default 300). | `--stall 600` |
 
 While it sends it prints the share, the MB/s and the time left, then the console's verify, and ends
 with `Sent and verified: <name> on <drive> of the console`. Each way it can end has its own exit code
@@ -812,7 +826,10 @@ and message:
 | 12 | The console has no such drive. |
 | 13 | It arrived damaged: what did not match is listed (`FAILED: ...`); send it again. |
 | 14 | The receive was cancelled on the console. |
-| 130 | Cancelled here. |
+| 15 | It was stopped on the console's page: the console keeps what arrived; send it again to go on. |
+| 16 | Nothing moved on the console for `--stall` seconds: it keeps what arrived. |
+| 17 | The console could not write it to that drive, again and again (full, read-only or failing). |
+| 130 | Cancelled or stopped here (`kept` in the JSON says whether the console keeps what arrived). |
 
 What the console answers, for anyone writing a client (port 8095, the same server as its page, every
 request with the header `X-MaxPack-Code: <6 digits>`; refusals are JSON `{"error":"<code>","detail":"..."}`):
@@ -822,12 +839,17 @@ request with the header `X-MaxPack-Code: <6 digits>`; refusals are JSON `{"error
 | `GET /api/receive/drives` | `{"drives":[{"id":"internal","free":N,"total":N,"fs":"..."},...]}` |
 | `POST /api/receive/start` with `{"name","size","drive"}` | `{"id":"<token>","have":N}`; `have` > 0 when a `.maxpack-recv` of that name and size is there. 409 `exists` or `busy`, 507 `no_space`, 400 `bad_name` or `fat32`, 404 `no_drive` |
 | `PUT /api/receive/data?id=&offset=` with the bytes (64 MiB at most) | `{"have":N}`; `offset` must be `have`, else 409 `offset` with `{"have":N}` |
-| `GET /api/receive/status?id=` | `{"have","size","state":"receiving|verifying|done|failed|cancelled","verify":{"bytes","total","bad":[...]}}` |
+| `GET /api/receive/status?id=` | `{"have","size","state":"receiving|verifying|done|failed|cancelled|paused","reason":"idle|write_error|stopped","verify":{"bytes","total","bad":[...]}}` |
 | `POST /api/receive/finish?id=` | 202: the console verifies it; `done` once it has its name, `failed` with what did not match |
 | `POST /api/receive/cancel?id=` | The partial file goes; `cancelled` |
 
 Every route answers 403 `receive_off` while receiving is off, 401 `bad_code` without the right code, and
-429 `locked` for a minute after 5 wrong codes in a row from one address.
+429 `locked` for a minute after 5 wrong codes in a row from one address. A paused receive (idle, a write error,
+or stopped on the console's page) answers PUT and finish with 409 `paused` (its `reason` and `have`), and a
+`start` with the same name and size resumes it; a token the console does not know (it restarted, or the receive
+ended) gets 404 `unknown_id`, and the PC starts it again, never after a `stopped`. The PC strips control
+characters from everything the console sends, keeps at most 64 items of what failed and 1024 bytes of any
+string.
 
 ### `info` and `icon`: what a game says
 

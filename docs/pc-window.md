@@ -481,8 +481,14 @@ made `.p5z` files (they are added to Details, read, and sent from there).
   (256 MiB) says so. The drive chosen is the one of the next time.
 - **While it sends,** each row has its bar in two parts, the bytes and then the console's verify, with
   the speed and the time left at the foot; several `.p5z` go one after another. If the connection
-  breaks, `maxpack-core` waits a moment and goes on from what the console has. **Cancel** stops it, and
-  the console deletes what it got.
+  breaks, `maxpack-core` waits a moment and goes on from what the console has; a receive the console
+  pauses (idle, a write error) is started again, one stopped on the console is not. **Cancel**, or closing
+  the window, stops it: the console keeps what arrived, and the next send goes on from there.
+- **Delete what arrived on the console** shows on a row whose send stopped, was stopped on the console,
+  stalled, could not be written, got no answer or arrived damaged: it asks first, then the console deletes
+  what it received of it, and the next send starts from nothing.
+- **Asking for the drives** opens the card at once with "Asking the console for its drives…": **Cancel**
+  stops the question, and it gives up after 30 s (a console never reached says "no answer" in about 11 s).
 - **The end card** says how many went and how fast. A row that ended well says that the console
   verified it; the others say why in words of their own: no answer, receiving off, wrong code (or too
   many), already there, the console busy, no room, a FAT32 drive, a name it does not take, a drive it
@@ -491,8 +497,9 @@ made `.p5z` files (they are added to Details, read, and sent from there).
 
 ### Watched folder
 
-Settings > Watched folder: **Choose…** picks the folder (and turns it on), the switch turns it off and
-on, and **Send them to the console too** sends what it makes. It works while the window is open,
+Settings > Watched folder: **Choose…** picks the folder, the switch turns it on and off, and **Send them
+to the console too** sends what it makes. Turning it on, or choosing another folder, takes a snapshot: what is
+there then is not new, and **Compress the N already there** compresses it when you ask. It works while the window is open,
 minimized too: no service stays in the system.
 
 - **What counts:** at the top of the folder only, a dump folder (it has `sce_sys/param.json`; a game
@@ -500,14 +507,23 @@ minimized too: no service stays in the system.
   Its subfolders, other files and what MaxPack writes apart (`*.maxpack-tmp`) are not looked at.
 - **When:** the folder is looked at every 5 seconds; what is new goes once nothing new has changed (in
   size, date or number of files) for a minute, all of it at once, so a game and its DLC go together.
-- **How:** as if dropped on Compress: its row, its bar and the end card, with the destination, level,
-  repair data and originals of Compress; nothing is asked. Without a destination it waits for one. What
+- **How:** as if dropped on Compress: its row, its bar and the end card, with the destination, level and
+  repair data of Compress; nothing is asked.
+- **Its original** goes only when Settings > Delete the originals once checked is on (whatever the queue it
+  joins does with the others), and then to the recycle bin only, never for good; one the bin cannot take
+  stays. It goes only when its list said it was complete (every file, of its size) and it is, file by file
+  (read through each file), as it was when its compression began; else it stays and the row says why ("it
+  changed while it was compressed", "its list does not say it is complete"). Without a destination it waits for one. What
   is in the destination already is skipped ("it is in the destination already"), and nothing is
   replaced. A game that lacks files of its list (the 1.0.6 check) stays in the list with its warning.
   When a queue of Compress is running, what arrives joins it.
-- **Never twice:** what was handed over is kept in `watched.json` next to the settings, with what it was
-  then; it is handed over again only once it changes, so a game that failed is tried again only after
-  that.
+- **Never twice:** what ended (compressed, failed, or skipped as in the destination already) is kept in
+  `watched.json` next to the settings, with what it was then; it is handed over again only once it changes.
+  What never ran (no destination, no room, cancelled, the window closed) is tried again the next time it is
+  stable: those waiting in Compress every 30 s and when a destination is chosen, the others in the next run.
+- **Still arriving:** on Windows each file is read through itself (a listing may lag behind a file being
+  written), and one another program still holds open for writing is still arriving; a `.part`, `.crdownload`,
+  `.!qB` or `.!ut` download, or an empty file in place of a download, is never a game.
 - **To the console too:** each `.p5z` the watched folder made goes on to the console of Settings, to
   the drive chosen last, once its queue ends.
 - **The folder gone** (a USB drive taken out) is said in Settings, and watching goes on when it is back.

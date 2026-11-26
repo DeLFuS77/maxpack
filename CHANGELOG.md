@@ -11,7 +11,8 @@ All notable changes to MaxPack are listed here. The format follows
 - **Send to the console:** `maxpack send <game.p5z> <ps5-ip> --code <6 digits> [--drive <id>]` sends a
   `.p5z` to MaxPack for the console over the network, which verifies it when it has it whole and only
   then gives it its name. It shows the MB/s and the time left, goes on from what the console has after
-  a broken connection (or when the same command runs again), and ends with what the console's verify
+  a broken connection, a pause of the console or a stop (Ctrl+C, a cancel, the window closed: the console
+  keeps what arrived; `--delete-on-cancel` and `send --discard` delete it), and ends with what the console's verify
   says, with an exit code and a message for each refusal (receiving off, wrong code, already there,
   busy, no space, FAT32, file name, no such drive, arrived damaged). `send --drives` lists the console's
   drives with their free space; `--json` gives progress lines for a front end. In the window: Settings
@@ -27,10 +28,13 @@ All notable changes to MaxPack are listed here. The format follows
   receives. It works on `.p5z` files as packed and grown, and reads one whose append stopped as it was.
 - **Watched folder** (Settings > Watched folder, off by default): while the window is open, each dump
   folder, image or `.pkg` that arrives at the top of one folder is compressed with the settings of
-  Compress once nothing new in it has changed for a minute, its DLC with it; what is in the destination
-  already is skipped, a game that lacks files of its list stays in the list with its warning, and what
-  was handed over is not again until it changes. **Send them to the console too** sends each `.p5z`
-  made. Windows, macOS and Linux (it looks every 5 seconds).
+  Compress once nothing new in it has changed for a minute (and, on Windows, no program holds a file of it
+  open for writing; downloads at work are left alone), its DLC with it; what is in the destination already
+  is skipped, a game that lacks files of its list stays in the list with its warning, and what ended is not
+  handed over again until it changes. What is there when it is turned on is offered, not compressed. Its
+  originals go to the recycle bin only when Settings says so, never for good, and only when the dump was
+  complete by its list and did not change while it was compressed. **Send them to the console too** sends
+  each `.p5z` made. Windows, macOS and Linux (it looks every 5 seconds).
 - The HTTP client of the engine takes headers of its own and a response as soon as its `Content-Length`
   has arrived.
 

@@ -89,6 +89,18 @@ func (q *Queue) Len() int {
 	return len(q.plans)
 }
 
+// more tells whether a game is left to do (not taken out), without taking it.
+func (q *Queue) more() bool {
+	q.mutex.Lock()
+	defer q.mutex.Unlock()
+	for i := q.next; i < len(q.plans); i++ {
+		if !q.removed[i] {
+			return true
+		}
+	}
+	return false
+}
+
 // take gives the next game to do, past the ones taken out; when there is none the queue closes.
 func (q *Queue) take() (int, Plan, bool) {
 	q.mutex.Lock()

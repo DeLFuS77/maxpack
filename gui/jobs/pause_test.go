@@ -146,3 +146,28 @@ func TestCancelWhilePaused(t *testing.T) {
 		}
 	}
 }
+
+// Paused when its last game ends, a queue has nothing left to hold: it ends at once (its end card, notice and
+// sound come then), not after a Resume with nothing to resume. Games still waiting are held, as before.
+func TestPausedAtTheLastGameEnds(t *testing.T) {
+	t.Setenv(fakecore.Env, "writes")
+	o := Options{Mode: ModeP5z, Dest: t.TempDir()}
+	plans := PlanCompress([]Item{item("Starfall Odyssey", "PPSA10001", 10)}, o, newFS())
+	pause := core.NewPause()
+	said := &told{}
+	r := &Runner{Core: os.Args[0], Pause: pause, OnItem: func(i int, state, detail string) {
+		said.item(i, state, detail)
+		if state == StateOK {
+			pause.Set(true)
+		}
+	}}
+	done := runPaused(r, context.Background(), plans, o)
+	select {
+	case sum := <-done:
+		if sum.Done != 1 {
+			t.Errorf("%+v, %s", sum, said.all())
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatalf("a queue with nothing left waits for Resume: %s", said.all())
+	}
+}

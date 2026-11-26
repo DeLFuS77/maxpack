@@ -105,3 +105,11 @@ func TestPageBusySaysWho(t *testing.T) {
 		}
 	}
 }
+
+// The choice of what to add to a .p5z (Add DLC, Update) warns of nothing: it is not drawn as a warning.
+func TestPageGrowChoiceIsNoWarning(t *testing.T) {
+	found := regexp.MustCompile(`<dialog id="grow-dialog"([^>]*)>`).FindStringSubmatch(readPage(t, "index.html"))
+	if found == nil || strings.Contains(found[1], "warn-dialog") || !strings.Contains(found[1], "tool-dialog") {
+		t.Errorf("the grow dialog: %q", found)
+	}
+}

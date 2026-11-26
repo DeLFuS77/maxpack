@@ -202,8 +202,11 @@ func (r *Runner) RunQueue(ctx context.Context, q *Queue, o Options) Summary {
 		r.item(i, StateWaiting, "")
 	}
 	for {
-		// the next game waits while paused; cancelled meanwhile, it is cancelled as the others
-		r.hold(ctx)
+		// the next game waits while paused; cancelled meanwhile, it is cancelled as the others. With none left the
+		// queue ends now, paused or not: nothing would be resumed
+		if q.more() {
+			r.hold(ctx)
+		}
 		i, p, more := q.take()
 		if !more {
 			break

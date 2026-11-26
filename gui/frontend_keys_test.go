@@ -52,6 +52,17 @@ func TestPageKeys(t *testing.T) {
   $("cancel-dialog").open = false;
   press(key("Escape", { target: { tagName: "INPUT" } }));
   if ($("cancel-dialog").open) say("Esc in a field asks to cancel");
+  for (const target of [{ tagName: "INPUT", type: "text" }, { tagName: "INPUT", type: "search" }, { tagName: "TEXTAREA" }, { tagName: "SELECT" }]) {
+    press(key("Escape", { target }));
+    if ($("cancel-dialog").open) { say("Esc while typing asks to cancel: " + JSON.stringify(target)); $("cancel-dialog").open = false; }
+  }
+  // a checkbox, a radio, a range or a switch with the focus takes no typing: Esc asks, as anywhere
+  for (const target of [{ tagName: "INPUT", type: "checkbox" }, { tagName: "INPUT", type: "radio" }, { tagName: "INPUT", type: "range" },
+    { tagName: "INPUT", type: "checkbox", role: "switch" }]) {
+    press(key("Escape", { target }));
+    if (!$("cancel-dialog").open) say("Esc on a " + target.type + " does not ask to cancel");
+    $("cancel-dialog").open = false;
+  }
   const query = document.querySelector;
   document.querySelector = selector => (selector === "dialog[open]" ? {} : null);
   press(key("Escape"));

@@ -27,19 +27,13 @@ static void dockBadge(const char *text) {
 */
 import "C"
 
-import (
-	"fmt"
-	"unsafe"
-)
+import "unsafe"
 
 // SetTaskbarProgress shows the progress of the work on the icon of the Dock as a percentage
-// ("42%"): state is "normal" while working; "none", "error" or any other clears it.
+// ("42%"): state is "normal" while working, "paused" while paused (it stays); "none", "error" or any
+// other clears it.
 func SetTaskbarProgress(state string, done uint64, total uint64) {
-	text := ""
-	if state == "normal" && total > 0 {
-		text = fmt.Sprintf("%d%%", min(done, total)*100/total)
-	}
-	c := C.CString(text)
+	c := C.CString(badgeText(state, done, total))
 	defer C.free(unsafe.Pointer(c))
 	C.dockBadge(c)
 }

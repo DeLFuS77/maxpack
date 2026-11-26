@@ -83,3 +83,18 @@ func TestFolderLines(t *testing.T) {
 		t.Error("nothing chosen gives folders")
 	}
 }
+
+// The text of the Dock's badge on macOS: the percentage while working, and while paused too (the work is not
+// over); nothing once it ended or failed.
+func TestDockBadge(t *testing.T) {
+	for _, c := range []struct {
+		state       string
+		done, total uint64
+		want        string
+	}{{"normal", 42, 100, "42%"}, {"paused", 42, 100, "42%"}, {"paused", 200, 100, "100%"}, {"none", 42, 100, ""},
+		{"error", 100, 100, ""}, {"normal", 0, 0, ""}} {
+		if got := badgeText(c.state, c.done, c.total); got != c.want {
+			t.Errorf("%s %d/%d: %q, not %q", c.state, c.done, c.total, got, c.want)
+		}
+	}
+}

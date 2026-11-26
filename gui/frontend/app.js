@@ -2490,7 +2490,10 @@ function paintKeys() {
 function onKey(event) {
   const action = shortcutOf(event);
   if (!action || document.querySelector("dialog[open]")) return;
-  const typing = event.target && /^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName || "");
+  // typing: a field that takes text (a checkbox, a radio, a range or a switch takes none, and Esc works there)
+  const target = event.target || {};
+  const typing = /^(TEXTAREA|SELECT)$/.test(target.tagName || "") || !!target.isContentEditable
+    || (target.tagName === "INPUT" && !/^(checkbox|radio|range|button|submit|reset|color|file)$/i.test(target.type || ""));
   if (action === "cancel" && (typing || !running())) return;
   const works = state.section !== "settings";
   if (action === "addFiles" || action === "addFolder") {

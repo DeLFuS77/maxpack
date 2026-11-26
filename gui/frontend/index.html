@@ -219,8 +219,12 @@
       <section class="pref-group">
         <h2 data-t="prefWatch"></h2>
         <div class="pref-item">
-          <div class="pref-text"><b id="watch-name" data-t="watchOn"></b><small data-t="watchHint"></small><small class="pref-path" id="pref-watch-folder"></small><small class="pref-status warning" id="pref-watch-status" hidden></small></div>
+          <div class="pref-text"><b id="watch-name" data-t="watchOn"></b><small data-t="watchHint"></small><small data-t="watchOriginalsHint"></small><small class="pref-path" id="pref-watch-folder"></small><small class="pref-status warning" id="pref-watch-status" hidden></small></div>
           <div class="pref-buttons"><button id="pref-watch-choose" data-t="choose"></button><input id="pref-watch" class="switch" type="checkbox" role="switch" aria-labelledby="watch-name"></div>
+        </div>
+        <div class="pref-item sub" id="pref-watch-existing-row" hidden>
+          <div class="pref-text"><small data-t="watchExistingHint"></small></div>
+          <div class="pref-buttons"><button id="pref-watch-existing"></button></div>
         </div>
         <div class="pref-item sub" id="pref-watch-send-row">
           <div class="pref-text"><b id="watch-send-name" data-t="watchSend"></b><small data-t="watchSendHint"></small></div>

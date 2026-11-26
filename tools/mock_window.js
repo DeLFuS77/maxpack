@@ -341,6 +341,8 @@ const mock = `
       if (settings.WatchOn) setTimeout(() => emit("watch:found", { paths: ["D:\\\\dumps\\\\Starfall.Odyssey-PPSA10001", "D:\\\\dumps\\\\Iron.Harbor-PPSA10002.exfat"] }), 1500);
       return { folder: settings.WatchOn ? settings.WatchFolder : "", error: "" };
     },
+    WatchEnded: async () => {},
+    WatchTakeExisting: async () => [],
     ChooseWatchFolder: async () => "D:\\\\incoming",
     CancelConsoleDrives: async () => {},
     DiscardOnConsole: async () => ({ had: 123456789, error: "", message: "" }),

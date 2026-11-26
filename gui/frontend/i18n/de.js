@@ -545,4 +545,10 @@ texts.de = {
   detail_send_stalled: "5 Minuten lang hat sich auf der Konsole nichts bewegt: Sie behält das Angekommene; senden Sie es erneut, um fortzufahren",
   detail_send_write_error: "die Konsole konnte es immer wieder nicht auf dieses Laufwerk schreiben: Ist es voll, schreibgeschützt oder defekt?",
   detail_send_discarded: "das auf der Konsole Angekommene wurde gelöscht",
+  watchOriginalsHint: "Seine Originale gehen nur, wenn Komprimieren sie löscht (Einstellungen › Originale nach der Prüfung löschen), und dann nur in den Papierkorb, nie endgültig, und nur, wenn der Dump laut seiner Liste vollständig ist und sich seit Beginn der Komprimierung nicht geändert hat. Einschalten oder einen anderen Ordner wählen lässt in Ruhe, was schon darin ist.",
+  watchExisting: n => n === 1 ? "Das 1 schon vorhandene komprimieren" : "Die " + n + " schon vorhandenen komprimieren",
+  watchExistingHint: "Was beim Einschalten im Ordner war, wird nur komprimiert, wenn Sie es verlangen.",
+  watchExistingToast: n => n === 1 ? "1 Spiel ist schon im überwachten Ordner: Einstellungen › Überwachter Ordner kann es komprimieren" : n + " Spiele sind schon im überwachten Ordner: Einstellungen › Überwachter Ordner kann sie komprimieren",
+  detail_original_kept_changed: "das Original bleibt: Es hat sich während der Komprimierung geändert (kam es noch an?)",
+  detail_original_kept_unchecked: "das Original bleibt: Seine Liste sagt nicht, dass es vollständig ist, jede Datei in ihrer Größe",
 };

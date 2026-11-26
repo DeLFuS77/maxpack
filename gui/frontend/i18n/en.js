@@ -545,4 +545,10 @@ texts.en = {
   detail_send_stalled: "nothing moved on the console for 5 minutes: it keeps what arrived; send it again to go on",
   detail_send_write_error: "the console could not write it to that drive, again and again: is it full, read-only or failing?",
   detail_send_discarded: "what arrived on the console was deleted",
+  watchOriginalsHint: "Its originals go only when Compress deletes them (Settings › Delete the originals once checked), and then only to the recycle bin, never for good, and only when the dump is complete by its list and unchanged since its compression began. Turning it on, or choosing another folder, leaves alone what is there already.",
+  watchExisting: n => n === 1 ? "Compress the 1 already there" : "Compress the " + n + " already there",
+  watchExistingHint: "What was in the folder when it was turned on is not compressed unless you ask.",
+  watchExistingToast: n => n === 1 ? "1 game is in the watched folder already: Settings › Watched folder can compress it" : n + " games are in the watched folder already: Settings › Watched folder can compress them",
+  detail_original_kept_changed: "the original is kept: it changed while it was compressed (was it still arriving?)",
+  detail_original_kept_unchecked: "the original is kept: its list does not say it is complete, with every file of its size",
 };

@@ -545,4 +545,10 @@ texts.zh = {
   detail_send_stalled: "主机上 5 分钟没有任何进展：它保留已到达的部分；再次发送即可继续",
   detail_send_write_error: "主机多次无法写入该磁盘：它是否已满、只读或出现故障？",
   detail_send_discarded: "已到达主机的部分已删除",
+  watchOriginalsHint: "只有当「压缩」删除原件时（设置 › 校验后删除原件），原件才会被移走，而且只进回收站，绝不永久删除；并且只在转储按其列表完整、且自开始压缩以来没有变化时。开启它或选择另一个文件夹，不会动其中已有的内容。",
+  watchExisting: n => "压缩已有的 " + n + " 个",
+  watchExistingHint: "开启时文件夹中已有的内容，除非你要求，否则不会被压缩。",
+  watchExistingToast: n => "监视文件夹中已有 " + n + " 个游戏：可在 设置 › 监视文件夹 中压缩它们",
+  detail_original_kept_changed: "原件保留：它在压缩期间发生了变化（还在传入吗？）",
+  detail_original_kept_unchecked: "原件保留：其列表未表明它完整、且每个文件大小都对",
 };

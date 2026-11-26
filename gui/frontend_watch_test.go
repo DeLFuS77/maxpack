@@ -57,6 +57,14 @@ console.log(vm.runInContext(` + "`" + `(() => {
   onWatchFound({ paths: ["D:/w/New"] });
   if (state.lists.compress.length !== 2 || state.lists.compress[0].state !== "" || state.lists.compress[0].detail !== "") say("changed: " + JSON.stringify(state.lists.compress[0].state));
   if (t("watchFound")(1) === t("watchFound")(3)) say("watchFound does not count");
+  // the window is told which rows the watched folder brought, and how each ended
+  if (itemOf(row("D:/w/G", game())).Watched !== true || itemOf(Object.assign(row("D:/w/G", game()), { section: "details" })).Watched !== false
+    || itemOf(row("D:/w/G", game(), { watched: false })).Watched !== false) say("Watched in the item");
+  for (const [st, detail, final] of [["ok", "", true], ["error", "verify_failed", true], ["skipped", "watch_exists", true],
+    ["cancelled", "", false], ["skipped", "fat32_too_big", false]])
+    if (watchFinal({ state: st, detail }) !== final) say("final: " + st + " " + detail);
+  if (typeof t("watchExisting")(3) !== "string" || t("watchExisting")(3).indexOf("3") < 0) say("watchExisting");
+  for (const code of ["original_kept_changed", "original_kept_unchecked"]) if (detailText(code) !== t("detail_" + code)) say("the detail " + code);
   return problems.join("\\n");
 })()` + "`" + `, context));
 `

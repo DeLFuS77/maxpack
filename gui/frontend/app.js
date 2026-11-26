@@ -91,7 +91,7 @@ const state = {
   explorerBusy: false,
   // the watched folder as the window tells it (StartWatch, watch:status): the folder, and why it cannot
   // be looked at ("gone", "unreadable"; "" when it can)
-  watch: { folder: "", error: "" },
+  watch: { folder: "", error: "", existing: 0 },
 };
 
 // whether a queue is running: the window took it, and has not said its end yet
@@ -1040,6 +1040,9 @@ function paintSettings() {
   $("pref-watch-send").checked = !!s.WatchSend;
   $("pref-watch-send").disabled = !s.WatchOn;
   $("pref-watch-send-row").classList.toggle("off", !s.WatchOn);
+  const existing = s.WatchOn ? Number(state.watch.existing) || 0 : 0;
+  $("pref-watch-existing-row").hidden = !existing;
+  $("pref-watch-existing").textContent = t("watchExisting")(existing);
   // the console a .p5z is sent to: one being typed stays as it is
   if (document.activeElement !== $("pref-console-ip")) {
     $("pref-console-ip").value = s.ConsoleIP || "";
@@ -1258,7 +1261,7 @@ async function previewNames(template) {
 
 async function chooseDest() {
   const dest = await go.call("ChooseDest").catch(error => { toast(message(error)); return ""; });
-  if (dest) { keep({ LastDest: dest }); render(); }
+  if (dest) { keep({ LastDest: dest }); render(); watchSoon(); }
   return dest || "";
 }
 
@@ -1304,7 +1307,9 @@ function itemWith(row, dlc) {
   return Object.assign({}, row.game, { Icon: "", AddDLC: dlc.map(other => other.path),
     AddDLCSize: dlc.filter(other => other.game.DLCData).reduce((sum, other) => sum + (Number(other.game.OriginalSize) || 0), 0),
     // a .p5z of Details that grows: the DLC to add, or the new dump, and whether to go on with most of it changed
-    Grow: row.section === "details" && row.grow ? row.grow.slice() : [], Force: row.section === "details" && !!row.force });
+    Grow: row.section === "details" && row.grow ? row.grow.slice() : [], Force: row.section === "details" && !!row.force,
+    // the watched folder brought it: its original follows Settings, to the recycle bin at most, once checked again
+    Watched: row.section === "compress" && !!row.watched });
 }
 // the items of the games a queue starts with or takes, each game told which DLC went inside it, what
 // they took and how many of them had files of their own
@@ -1448,7 +1453,7 @@ async function startQueue(kind, only, extra, auto) {
       going.push(n);
     }
     if (!going.length) {
-      for (const [row, detail] of auto ? skipped : []) Object.assign(row, { state: "skipped", detail });
+      for (const [row, detail] of auto ? skipped : []) { Object.assign(row, { state: "skipped", detail }); watchEnded(row); }
       if (!auto) toast(t("nothingToDo"));
       return;
     }
@@ -1480,7 +1485,7 @@ async function startQueue(kind, only, extra, auto) {
       if (await ask($("warn-dialog")) !== "go") return;
     }
     // the games left out are said in the list; the others wait for their turn
-    for (const [row, detail] of skipped) Object.assign(row, { state: "skipped", detail, out: "", outSize: 0, warnings: [] });
+    for (const [row, detail] of skipped) { Object.assign(row, { state: "skipped", detail, out: "", outSize: 0, warnings: [] }); watchEnded(row); }
     job = { section, mode: opts.Mode, repair: opts.Repair, dest: opts.Dest, runtime: opts.Runtime || builtInRuntime(), rows: going.map(n => rows[n]), shown: 0, rate: 0,
       opts: Object.assign({}, opts, { Replace: [] }), deletes: opts.DeleteOriginals, early: {}, watched: !!auto };
     for (const n of going) {
@@ -1541,7 +1546,8 @@ async function joinQueue() {
   job.joining = true;
   try {
     let keepOriginals = false;
-    // what the watched folder brings follows the queue's originals, unasked (Settings says what becomes of them)
+    // what the watched folder brings is not asked about: its originals follow Settings, whatever this queue
+    // does with the others (jobs/watched.go), to the recycle bin at most
     if (job.deletes && !rows.every(row => row.watched)) {
       const plans = await go.call("Plan", job.section, rows.map(itemOf), Object.assign({}, job.opts, { DeleteOriginals: true }));
       const opts = { DeleteNoBin: false };
@@ -1707,7 +1713,7 @@ function onWatchFound(event) {
   const wanted = new Set(paths.map(pathKey));
   for (const row of state.lists.compress) {
     if (!wanted.has(pathKey(row.path)) || (running() && state.job.rows.includes(row) && !ended.includes(row.state))) continue;
-    Object.assign(row, { state: "", detail: "", game: null, error: "", watchHeld: false });
+    Object.assign(row, { state: "", detail: "", game: null, error: "", watchHeld: false, watchTold: "" });
     describe(row);
   }
   addPaths("compress", paths);
@@ -1731,6 +1737,21 @@ function watchReady(rows) {
     if (!row.watchHeld) ready.push(row);
   }
   return ready;
+}
+// the window is told how a watched game ended: done (compressed, failed, in the destination already) until it
+// changes; anything else (cancelled, skipped for another reason) comes again in the next run
+const watchFinal = row => row.state === "ok" || row.state === "error" || (row.state === "skipped" && row.detail === "watch_exists");
+function watchEnded(row) {
+  if (!row.watched || !ended.includes(row.state) || row.watchTold === row.state) return;
+  row.watchTold = row.state;
+  go.call("WatchEnded", row.path, watchFinal(row)).catch(() => {});
+}
+// what was in the watched folder when it was turned on: compressed only when asked
+async function takeExisting() {
+  const paths = await go.call("WatchTakeExisting").catch(error => { toast(message(error)); return []; });
+  state.watch.existing = 0;
+  render();
+  if (paths && paths.length) onWatchFound({ paths });
 }
 let watchTimer = 0;
 function watchSoon() {
@@ -1776,6 +1797,7 @@ function onItem(event) {
   row.detail = event.detail || "";
   if (event.out) Object.assign(row, { out: event.out, outSize: event.size || 0, homebrew: !!event.homebrew });
   row.repairSize = event.repair || 0;
+  watchEnded(row);
   paintRow(row);
   paintSummary();
   // a .p5z repaired, or given repair data: what it has next to it now
@@ -2315,10 +2337,11 @@ function wire() {
   }
   // the watched folder: chosen (and turned on), turned on and off, and whether what it makes goes to the console
   $("pref-watch-choose").addEventListener("click", () => go.call("ChooseWatchFolder").then(path => {
-    if (path) { keep({ WatchFolder: path, WatchOn: true }); state.watch.error = ""; render(); }
+    if (path) { keep({ WatchFolder: path }); state.watch.error = ""; render(); }
   }, error => toast(message(error))));
   $("pref-watch").addEventListener("change", () => { keep({ WatchOn: $("pref-watch").checked }); state.watch.error = ""; render(); });
   $("pref-watch-send").addEventListener("change", () => keep({ WatchSend: $("pref-watch-send").checked }));
+  $("pref-watch-existing").addEventListener("click", takeExisting);
   // the end card of Compress sends what it made
   $("done-send").addEventListener("click", () => { const job = state.job; $("done-dialog").close(); sendMade(job); });
   // what dump tools leave behind goes, unless Settings keeps it; the cards of Details say it
@@ -2395,7 +2418,13 @@ async function main() {
   go.on("tool:level", onToolLevel);
   go.on("tool:trial", onToolTrial);
   go.on("watch:found", onWatchFound);
-  go.on("watch:status", status => { state.watch = status || { folder: "", error: "" }; if (state.section === "settings") paintSettings(); });
+  go.on("watch:status", status => {
+    const before = Number(state.watch.existing) || 0;
+    state.watch = status || { folder: "", error: "", existing: 0 };
+    // what was there when it was turned on is said once, and offered in Settings
+    if (Number(state.watch.existing) > 0 && !before) toast(t("watchExistingToast")(Number(state.watch.existing)));
+    if (state.section === "settings") paintSettings();
+  });
   go.onDrop((x, y, paths) => dropped(paths));
   try {
     state.setup = await go.call("Setup");
@@ -2413,8 +2442,9 @@ async function main() {
   addSent(await go.call("PendingFiles").catch(() => null));
   loadExplorer();
   offerLeftovers();
-  // the watched folder, now that the page listens
-  go.call("StartWatch").then(status => { state.watch = status || state.watch; }, () => {});
+  // the watched folder, now that the page listens; what waits (no destination, no room) is tried again now and then
+  go.call("StartWatch").then(status => { state.watch = Object.assign({ existing: 0 }, status || state.watch); }, () => {});
+  setInterval(() => { if (watchedRows().some(row => !row.state && !row.watchHeld)) watchSoon(); }, 30000);
 }
 
 // what a run cut short (a crash, a power cut) left apart is offered for deletion as MaxPack opens

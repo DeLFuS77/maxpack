@@ -64,7 +64,7 @@ func pageCodes() []string {
 		"verify_failed", "files_bad", "exit", "cancelled", "io",
 		// what became of an original once checked
 		"original_trashed", "original_deleted", "original_kept_no_bin", "original_kept_too_big",
-		"original_kept_too_long", "original_not_removed",
+		"original_kept_too_long", "original_not_removed", "original_kept_changed", "original_kept_unchecked",
 		// Rename
 		"same_name", "name_taken", "duplicate_target", "cannot_read", "in_use", "gone",
 		// the engine; a DLC that stops a game (pack --dlc)

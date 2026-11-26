@@ -545,4 +545,10 @@ texts.es = {
   detail_send_stalled: "nada se movió en la consola en 5 minutos: guarda lo que llegó; envíalo otra vez para seguir",
   detail_send_write_error: "la consola no pudo escribirlo en ese disco, una y otra vez: ¿está lleno, protegido contra escritura o fallando?",
   detail_send_discarded: "se borró lo que llegó a la consola",
+  watchOriginalsHint: "Sus originales solo se van si Comprimir los borra (Ajustes › Borrar los originales una vez comprobados), y entonces solo a la papelera, nunca para siempre, y solo si el volcado está completo según su lista y no cambió desde que empezó a comprimirse. Encenderla, o elegir otra carpeta, deja en paz lo que ya hay.",
+  watchExisting: n => n === 1 ? "Comprimir el 1 que ya está" : "Comprimir los " + n + " que ya están",
+  watchExistingHint: "Lo que había en la carpeta al encenderla no se comprime salvo que lo pidas.",
+  watchExistingToast: n => n === 1 ? "Ya hay 1 juego en la carpeta vigilada: Ajustes › Carpeta vigilada puede comprimirlo" : "Ya hay " + n + " juegos en la carpeta vigilada: Ajustes › Carpeta vigilada puede comprimirlos",
+  detail_original_kept_changed: "se queda el original: cambió mientras se comprimía (¿seguía llegando?)",
+  detail_original_kept_unchecked: "se queda el original: su lista no dice que esté completo, con cada archivo de su tamaño",
 };

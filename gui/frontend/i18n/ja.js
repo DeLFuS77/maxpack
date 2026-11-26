@@ -255,7 +255,7 @@ texts.ja = {
   explorerSendTo: "送る › MaxPack",
   explorerSendToHint: "右クリックの「送る」に MaxPack を加え、複数のゲームを一度に渡せます。",
   explorerFiles: ".p5z ファイルを MaxPack で開く",
-  explorerFilesHint: ".p5z をダブルクリックすると詳細が表示され、「検証」と「展開」を選べます。",
+  explorerFilesHint: ".p5z をダブルクリックすると詳細が表示され、「検証」と「展開」を選べます。エクスプローラーでは各 .p5z にそのゲームのカバーが表示されます。",
   explorerOther: ".p5z ファイルはまだ別のプログラムで開かれます。この選択は Windows があなたに任せています。「プログラムから開く › 別のプログラムを選択 › 常に使う」で一度 MaxPack を選んでください。",
   explorerMoved: "別の MaxPack のコピー、または移動する前のこのコピー用に設定されています。オンにすると、このコピーを指すようになります。",
   explorerFor: "どれもオンにするまではオフです。あなただけに適用され、管理者権限は不要で、オフにするか MaxPack をアンインストールすると消えます。",

@@ -255,7 +255,7 @@ texts.es = {
   explorerSendTo: "Enviar a › MaxPack",
   explorerSendToHint: "MaxPack en Enviar a, al hacer clic derecho, para darle varios juegos a la vez.",
   explorerFiles: "Abrir los .p5z con MaxPack",
-  explorerFilesHint: "Un doble clic en un .p5z muestra sus detalles, con Verificar y Descomprimir.",
+  explorerFilesHint: "Un doble clic en un .p5z muestra sus detalles, con Verificar y Descomprimir; y el Explorador muestra cada .p5z con la portada de su juego.",
   explorerOther: "Otro programa sigue abriendo los .p5z, y Windows te deja esa elección a ti: elige MaxPack una vez en Abrir con › Elegir otra aplicación › Siempre.",
   explorerMoved: "Está puesto para otra copia de MaxPack, o para esta antes de moverla: actívalo para que apunte a esta.",
   explorerFor: "Cada uno está apagado hasta que lo actives. Es solo para ti, no necesita administrador y se quita al apagarlo o al desinstalar MaxPack.",

@@ -283,6 +283,14 @@ func TestInstallerScript(t *testing.T) {
 			}
 		}
 	}
+	// the switch of .p5z files is also the one of their covers, and says so, in the installer (with room
+	// for three lines) and in Settings
+	if !strings.Contains(installerEnglish("OptFilesHint"), "cover") || !strings.Contains(script, `${NSD_CreateLabel} 12u 92u 288u 28u "$(OptFilesHint)"`) {
+		t.Errorf("the installer's switch of .p5z files does not say it gives their covers: %q", installerEnglish("OptFilesHint"))
+	}
+	if hint := regexp.MustCompile(`(?m)^  explorerFilesHint: "(.*)",\r?$`).FindStringSubmatch(readPage(t, "i18n/en.js")); hint == nil || !strings.Contains(hint[1], "cover") {
+		t.Errorf("the switch of .p5z files in Settings does not say it gives their covers: %q", hint)
+	}
 	// the languages of the installer give the codes of the window
 	for _, lang := range settings.Languages[1:] {
 		if !strings.Contains(script, `StrCpy $1 "`+lang+`"`) {

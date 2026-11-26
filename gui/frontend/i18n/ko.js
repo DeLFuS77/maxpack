@@ -255,7 +255,7 @@ texts.ko = {
   explorerSendTo: "보내기 › MaxPack",
   explorerSendToHint: "오른쪽 클릭의 ‘보내기’에 MaxPack을 넣어, 여러 게임을 한 번에 넘길 수 있습니다.",
   explorerFiles: ".p5z 파일을 MaxPack으로 열기",
-  explorerFilesHint: ".p5z를 두 번 클릭하면 세부 정보가 ‘검증’, ‘압축 해제’와 함께 나타납니다.",
+  explorerFilesHint: ".p5z를 두 번 클릭하면 세부 정보가 ‘검증’, ‘압축 해제’와 함께 나타나고, 파일 탐색기는 각 .p5z를 그 게임의 표지로 보여 줍니다.",
   explorerOther: "다른 프로그램이 아직 .p5z 파일을 엽니다. Windows는 이 선택을 사용자에게 맡깁니다. ‘연결 프로그램 › 다른 앱 선택 › 항상’에서 MaxPack을 한 번 선택하세요.",
   explorerMoved: "다른 MaxPack 사본, 또는 옮기기 전의 이 사본에 맞춰져 있습니다. 켜면 이 사본을 가리키게 됩니다.",
   explorerFor: "각 항목은 직접 켜기 전까지 꺼져 있습니다. 현재 사용자에게만 적용되고 관리자 권한이 필요 없으며, 끄거나 MaxPack을 제거하면 사라집니다.",

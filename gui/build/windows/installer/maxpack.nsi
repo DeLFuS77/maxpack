@@ -183,17 +183,17 @@ LangString OptFiles ${LANG_ITALIAN} "Apri i file .p5z con MaxPack"
 LangString OptFiles ${LANG_KOREAN} ".p5z 파일을 MaxPack으로 열기"
 LangString OptFiles ${LANG_ARABIC} "فتح ملفات ‎.p5z‎ باستخدام MaxPack"
 
-LangString OptFilesHint ${LANG_ENGLISH} "A double click on a .p5z shows its details. A program that already opens them keeps them."
-LangString OptFilesHint ${LANG_RUSSIAN} "Двойной щелчок по .p5z показывает его сведения. Программа, которая уже их открывает, остаётся."
-LangString OptFilesHint ${LANG_SIMPCHINESE} "双击 .p5z 会显示它的详情。已经打开它们的程序会保留。"
-LangString OptFilesHint ${LANG_GERMAN} "Ein Doppelklick auf eine .p5z-Datei zeigt ihre Details. Ein Programm, das sie schon öffnet, behält sie."
-LangString OptFilesHint ${LANG_SPANISH} "Un doble clic en un .p5z muestra sus detalles. Un programa que ya los abre los conserva."
-LangString OptFilesHint ${LANG_FRENCH} "Un double clic sur un .p5z affiche ses détails. Un programme qui les ouvre déjà les garde."
-LangString OptFilesHint ${LANG_JAPANESE} ".p5z をダブルクリックすると詳細が表示されます。すでに開いているプログラムはそのままです。"
-LangString OptFilesHint ${LANG_PORTUGUESEBR} "Um clique duplo em um .p5z mostra os detalhes. Um programa que já os abre continua com eles."
-LangString OptFilesHint ${LANG_ITALIAN} "Un doppio clic su un .p5z ne mostra i dettagli. Un programma che già li apre li tiene."
-LangString OptFilesHint ${LANG_KOREAN} ".p5z를 두 번 클릭하면 세부 정보가 나타납니다. 이미 여는 프로그램은 그대로 유지됩니다."
-LangString OptFilesHint ${LANG_ARABIC} "النقر المزدوج على ملف ‎.p5z‎ يعرض تفاصيله. البرنامج الذي يفتحها الآن يبقى كما هو."
+LangString OptFilesHint ${LANG_ENGLISH} "A double click on a .p5z shows its details, and the Explorer shows its game's cover. A program that already opens them keeps them."
+LangString OptFilesHint ${LANG_RUSSIAN} "Двойной щелчок по .p5z показывает его сведения, а Проводник показывает обложку его игры. Программа, которая уже их открывает, остаётся."
+LangString OptFilesHint ${LANG_SIMPCHINESE} "双击 .p5z 会显示它的详情，资源管理器会显示其游戏的封面。已经打开它们的程序会保留。"
+LangString OptFilesHint ${LANG_GERMAN} "Ein Doppelklick auf eine .p5z-Datei zeigt ihre Details, und der Explorer zeigt das Cover ihres Spiels. Ein Programm, das sie schon öffnet, behält sie."
+LangString OptFilesHint ${LANG_SPANISH} "Un doble clic en un .p5z muestra sus detalles, y el Explorador muestra la portada de su juego. Un programa que ya los abre los conserva."
+LangString OptFilesHint ${LANG_FRENCH} "Un double clic sur un .p5z affiche ses détails, et l'Explorateur montre la jaquette de son jeu. Un programme qui les ouvre déjà les garde."
+LangString OptFilesHint ${LANG_JAPANESE} ".p5z をダブルクリックすると詳細が表示され、エクスプローラーにはそのゲームのカバーが表示されます。すでに開いているプログラムはそのままです。"
+LangString OptFilesHint ${LANG_PORTUGUESEBR} "Um clique duplo em um .p5z mostra os detalhes, e o Explorador de Arquivos mostra a capa do jogo. Um programa que já os abre continua com eles."
+LangString OptFilesHint ${LANG_ITALIAN} "Un doppio clic su un .p5z ne mostra i dettagli, ed Esplora file mostra la copertina del suo gioco. Un programma che già li apre li tiene."
+LangString OptFilesHint ${LANG_KOREAN} ".p5z를 두 번 클릭하면 세부 정보가 나타나고, 파일 탐색기에 그 게임의 표지가 표시됩니다. 이미 여는 프로그램은 그대로 유지됩니다."
+LangString OptFilesHint ${LANG_ARABIC} "النقر المزدوج على ملف ‎.p5z‎ يعرض تفاصيله، ويعرض مستكشف الملفات غلاف لعبته. البرنامج الذي يفتحها الآن يبقى كما هو."
 
 LangString ExplorerFailed ${LANG_ENGLISH} "MaxPack could not add itself to the Explorer: turn it on in Settings › Windows Explorer."
 LangString ExplorerFailed ${LANG_RUSSIAN} "MaxPack не смог добавить себя в Проводник: включите это в настройках, раздел «Проводник Windows»."
@@ -276,7 +276,7 @@ Function ExplorerPage
   ${NSD_CreateCheckbox} 0u 80u 300u 10u "$(OptFiles)"
   Pop $FilesBox
   ${NSD_SetState} $FilesBox $FilesState
-  ${NSD_CreateLabel} 12u 92u 288u 20u "$(OptFilesHint)"
+  ${NSD_CreateLabel} 12u 92u 288u 28u "$(OptFilesHint)"
   Pop $0
   nsDialogs::Show
 FunctionEnd

@@ -255,7 +255,7 @@ texts.zh = {
   explorerSendTo: "发送到 › MaxPack",
   explorerSendToHint: "在右键菜单的“发送到”中加入 MaxPack，可以一次交给它多个游戏。",
   explorerFiles: "用 MaxPack 打开 .p5z 文件",
-  explorerFilesHint: "双击 .p5z 会显示它的详情，并提供“校验”和“解压”。",
+  explorerFilesHint: "双击 .p5z 会显示它的详情，并提供“校验”和“解压”；资源管理器会以其游戏的封面显示每个 .p5z。",
   explorerOther: "仍有其他程序打开 .p5z 文件，Windows 把这个选择留给你：在“打开方式 › 选择其他应用 › 始终”中选择一次 MaxPack。",
   explorerMoved: "它属于另一份 MaxPack，或属于移动之前的这一份：打开它，使其指向这一份。",
   explorerFor: "每一项在你打开之前都是关闭的。它只对你生效，不需要管理员权限，关闭它或卸载 MaxPack 后就会移除。",

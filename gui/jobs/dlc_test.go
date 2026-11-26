@@ -82,7 +82,7 @@ func TestCompressWithDLCReal(t *testing.T) {
 		t.Fatalf("the license: %+v, %v", license, err)
 	}
 	game.AddDLC = []string{data.Path, license.Path}
-	game.AddDLCSize = data.OriginalSize + license.OriginalSize
+	game.AddDLCSize = data.OriginalSize // what goes inside: the license adds no files
 	o := Options{Mode: ModeP5z, Dest: dest, Level: 3}
 	r := &Runner{Core: engine}
 	sum := r.Run(context.Background(), PlanCompress([]Item{game}, o, SystemFS()), o)
@@ -92,6 +92,11 @@ func TestCompressWithDLCReal(t *testing.T) {
 	entries, _ := os.ReadDir(dest)
 	if len(entries) != 1 {
 		t.Fatalf("made: %v", entries)
+	}
+	// what it saved is against the package's file and what went inside it, as the .p5z holds both
+	size, before := SizeOf(filepath.Join(dest, entries[0].Name())), game.SizeBefore()+game.AddDLCSize
+	if want := before - min(before, size); sum.Saved != want {
+		t.Errorf("saved %d, not %d (%d before, %d made)", sum.Saved, want, before, size)
 	}
 	made, err := Describe(engine, filepath.Join(dest, entries[0].Name()))
 	if err != nil || len(made.DLC) != 2 || !made.DLC[0].Data || made.DLC[0].Folder != "addcont0" || made.DLC[1].Data {

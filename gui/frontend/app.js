@@ -152,6 +152,7 @@ function newRow(path, section) {
   tr.querySelector(".remove button").addEventListener("click", () => removeRow(row));
   tr.querySelector(".report").addEventListener("click", () => copyReport([row], row.section));
   tr.querySelector(".compare").addEventListener("click", () => compareLevels(row));
+  tr.querySelector(".add-dlc").addEventListener("click", () => addDlcTo(row));
   tr.querySelector(".to-verify").addEventListener("click", () => takeTo(row, "verify"));
   tr.querySelector(".to-decompress").addEventListener("click", () => takeTo(row, "decompress"));
   tr.querySelector(".repair").addEventListener("click", () => startQueue("repair", [row]));
@@ -183,6 +184,8 @@ function nextDescribe() {
       .finally(() => {
         describing--;
         paintRow(row);
+        // in Compress a DLC goes inside the games of its title ID: what each row says may change
+        if (row.section === "compress") for (const other of state.lists.compress) if (other !== row) paintRow(other);
         paintSummary();
         paintStart();
         // a game added to the section whose queue runs joins it (not a repair, nor repair data being
@@ -355,11 +358,14 @@ function progressOf(job) {
 // what a game is, by the kind the engine gives it: a folder (a dump, or compressed), a .p5z, or an
 // image, which the engine tells by its contents whatever its extension says
 function kindName(game) {
+  let name;
   switch (game.Kind) {
     case "p5z": return ".p5z";
-    case "folder": case "": case undefined: return game.Packed ? t("kindPacked") : t("kindDump");
+    case "folder": case "": case undefined: name = game.Packed ? t("kindPacked") : t("kindDump"); break;
+    default: name = imageName(game.Kind);
   }
-  return imageName(game.Kind);
+  // a DLC, with files of its own or a license only
+  return isDlc(game) ? name + " · " + t(game.DLCData ? "kindDlc" : "kindDlcLicense") : name;
 }
 // an image by its kind: exFAT, UFS2, PFS, a PFS container that holds one of them, or a PS5 package
 function imageName(kind) {
@@ -378,6 +384,12 @@ const imageKinds = { exfat: ".exfat", ufs2: ".ffpkg", pfs: ".ffpfs", pfsc: ".ffp
 // 0 for an image whose file is not known: nothing is claimed for it
 function sizeBefore(game) {
   return Number(imageKinds[game.Kind] ? game.ImageSize : game.OriginalSize) || 0;
+}
+// the same for a game of a queue, with the DLC that went inside it, which what was made holds too (as
+// the window counts what it saved); 0 when the game's is not known
+function beforeOf(row) {
+  const before = sizeBefore(row.game);
+  return before ? before + (Number(row.dlcSentSize) || 0) : 0;
 }
 // a compressed image (a PFS container, or a PFS image whose files are PFSC-compressed) takes less
 // than the game in it, so what a level saves against the game is more than against its file; a PS5
@@ -401,6 +413,15 @@ function vsImage(game, made) {
 function rowWarnings(row) {
   const game = row.game, list = [];
   if (!game) return list;
+  // a DLC of Compress: why it goes inside no game, or not inside the one that started without it
+  if (row.section === "compress" && isDlc(game)) {
+    const games = gameRowsOf(row);
+    if (!firstOfItsId(row)) list.push(t("dlcTwin"));
+    else if (!games.length) list.push(t("dlcNoGame")(titleOf(game)));
+    const late = games.filter(other => running() && state.job.rows.includes(other) && !(other.dlcSent || []).includes(row.path));
+    if (firstOfItsId(row) && late.length) list.push(t("dlcLate")(late.map(other => other.game.Name).join(", ")));
+    return list;
+  }
   if (row.section === "compress" && game.Packed) list.push(t("detail_already_packed"));
   // a dump that lacks files of the original game makes a backup that lacks them too: said before
   // it is packed, which it still is
@@ -505,6 +526,56 @@ function completeLineText(row) {
   return c.Missing ? t("incompleteLine")(c.Missing, c.Listed) : t("completeLine")(c.Listed);
 }
 
+// ---- DLC: they go inside their game ----------------------------------------------------------------
+
+// a DLC (a package of additional content, or a dumped DLC folder), as the engine tells it: it is never
+// compressed alone, but inside each game of its title ID in Compress
+const isDlc = game => !!game && game.Content === "dlc";
+// the title ID a game or a DLC goes by: its own, else its content ID's ("PPSA00000" of
+// "UP0000-PPSA00000_00-..."), as the engine matches them
+const titleOf = game => (game && (game.TitleID || String(game.ContentID || "").slice(7, 16))) || "";
+const readRow = row => !!row.game && !row.error;
+// whether a DLC row of Compress is the first of the list with its content ID: another one with it is
+// the same DLC, which goes once
+const firstOfItsId = row => state.lists.compress.find(other => readRow(other) && isDlc(other.game) && other.game.ContentID === row.game.ContentID) === row;
+// the games of Compress a DLC row goes inside: read, of its title, not compressed already
+function gameRowsOf(row) {
+  const id = titleOf(row.game);
+  if (!id || !firstOfItsId(row)) return [];
+  return state.lists.compress.filter(other => readRow(other) && !isDlc(other.game) && !other.game.Packed && titleOf(other.game) === id);
+}
+// the DLC rows that go inside a game of Compress, in the order of the list, once each
+function dlcRowsOf(row) {
+  if (row.section !== "compress" || !readRow(row) || isDlc(row.game) || row.game.Packed) return [];
+  const id = titleOf(row.game);
+  return id ? state.lists.compress.filter(other => readRow(other) && isDlc(other.game) && titleOf(other.game) === id && firstOfItsId(other)) : [];
+}
+const dlcCountOf = row => dlcRowsOf(row).length;
+// the line of a DLC of Compress: the games it goes inside, or went inside once they are made; "" for
+// one that goes in none (its warning says why)
+function dlcLineText(row) {
+  if (row.section !== "compress" || !readRow(row) || !isDlc(row.game)) return "";
+  const games = gameRowsOf(row);
+  if (!games.length) return "";
+  const names = list => list.map(other => other.game.Name).join(", ");
+  const made = games.filter(other => other.state === "ok" && (other.dlcSent || []).includes(row.path));
+  return made.length === games.length ? t("dlcPackedInto")(names(made)) : t("dlcGoesWith")(names(games));
+}
+// the facts of Details of the DLC a game carries (a .p5z made with them), as [name, value]: how many,
+// and each one with its content ID and what it has
+function dlcFacts(game) {
+  const list = (game && game.DLC) || [];
+  if (!list.length) return [];
+  const data = list.filter(d => d.Data).length;
+  return [[t("factDlc"), t("dlcCarried")(data, list.length - data)],
+    ...list.map((d, n) => ["DLC " + (n + 1), d.ContentID + " · " + (d.Data ? t("dlcFactData")(size(d.Size), d.Folder) : t("dlcFactLicense"))])];
+}
+// the row button: DLC packages chosen go to Compress, and each one inside the game of its title ID
+async function addDlcTo() {
+  const paths = await go.call("ChooseDLC").catch(error => { toast(message(error)); return []; });
+  if (paths && paths.length) addPaths("compress", paths);
+}
+
 function fact(list, name, value) {
   const dt = document.createElement("dt"), dd = document.createElement("dd");
   dt.textContent = name;
@@ -524,6 +595,7 @@ function paintFacts(row) {
   fact(facts, t("factVersion"), game.Version || "—");
   fact(facts, t("factFiles"), String(game.Files || 0));
   for (const [name, value] of completenessFacts(game)) fact(facts, name, value);
+  for (const [name, value] of dlcFacts(game)) fact(facts, name, value);
   fact(facts, t("factOriginal"), size(game.OriginalSize));
   // an image: what its file takes, less than the game when it is PFSC-compressed; a package, its
   // file, Kraken-compressed or not
@@ -579,16 +651,16 @@ function paintRow(row) {
   const title = tr.querySelector(".title");
   title.textContent = game ? game.Name : baseName(row.path);
   // its ID, version and what it is; until read, that it is being read, or where it is
-  const file = tr.querySelector(".file");
-  if (game) file.textContent = [game.TitleID, game.Version && t("versionOf")(game.Version), kindName(game)].filter(Boolean).join(" · ");
+  const file = tr.querySelector(".file"), dlc = dlcCountOf(row);
+  if (game) file.textContent = [game.TitleID, game.Version && t("versionOf")(game.Version), kindName(game), dlc && t("withDlc")(dlc)].filter(Boolean).join(" · ");
   else file.textContent = row.error ? row.path : t("reading");
   tr.querySelector(".size").textContent = game ? size(game.OriginalSize) : "";
 
   // once made: the size before and after (compressed), and where it is
   const sizes = tr.querySelector(".sizes"), where = tr.querySelector(".where");
   // what it took before (an image's file) and takes now
-  sizes.hidden = !(row.section === "compress" && game && row.outSize && row.state === "ok" && sizeBefore(game));
-  if (!sizes.hidden) sizes.textContent = size(sizeBefore(game)) + " → " + size(row.outSize) + (row.repairSize ? " · " + t("withRepair")(size(row.repairSize)) : "");
+  sizes.hidden = !(row.section === "compress" && game && row.outSize && row.state === "ok" && beforeOf(row));
+  if (!sizes.hidden) sizes.textContent = size(beforeOf(row)) + " → " + size(row.outSize) + (row.repairSize ? " · " + t("withRepair")(size(row.repairSize)) : "");
   const completeLine = tr.querySelector(".complete-line"), completeText = completeLineText(row);
   completeLine.hidden = !completeText;
   completeLine.textContent = completeText;
@@ -601,8 +673,11 @@ function paintRow(row) {
   repairButton.hidden = !canRepair(row) || !hasPar2();
   repairButton.textContent = t("repairButton");
   repairButton.disabled = state.busy;
-  where.hidden = !row.out;
+  // a DLC of Compress: the games it goes inside
+  const goesWith = dlcLineText(row);
+  where.hidden = !row.out && !goesWith;
   if (row.out) where.textContent = t("madeAt")(row.out);
+  else if (goesWith) where.textContent = goesWith;
   if (row.section === "rename") {
     const to = row.renameTo && !row.renameBlock && row.state !== "ok" ? baseName(row.renameTo) : "";
     const now = row.state === "ok" ? baseName(row.path) : "";
@@ -621,6 +696,10 @@ function paintRow(row) {
   compare.hidden = !canCompare(row) || (running() && state.job.rows.includes(row));
   compare.textContent = t("compareRow");
   compare.disabled = state.busy;
+  // DLC packages for a game of Compress (a dumped DLC folder comes with Add folder, or dropped)
+  const addDlc = tr.querySelector(".add-dlc");
+  addDlc.hidden = !(row.section === "compress" && readRow(row) && !isDlc(game) && !game.Packed && row.state !== "ok") || (running() && state.job.rows.includes(row));
+  addDlc.textContent = t("addDlc");
 
   const warnings = rowWarnings(row), warn = tr.querySelector(".list-warn");
   warn.hidden = !warnings.length;
@@ -661,7 +740,7 @@ function paintState(row) {
   }
   // what it saved, once made
   const saved = tr.querySelector(".saved"), game = row.game;
-  const before = game ? sizeBefore(game) : 0;
+  const before = game ? beforeOf(row) : 0;
   const smaller = row.section === "compress" && row.state === "ok" && game && row.outSize && row.outSize < before;
   const savedText = smaller ? t("smallerBy")(Math.round((1 - row.outSize / before) * 100)) : "";
   if (savedText && !saved.textContent) saved.classList.add("pop");
@@ -940,7 +1019,7 @@ function paintStart() {
   const start = $("start"), acts = queues.includes(section) || section === "rename";
   start.hidden = !acts || (running() && section !== "rename");
   start.textContent = acts ? t(section) : "";
-  start.disabled = state.busy || !go.has() || !!(state.setup && state.setup.coreError) || !list.some(row => row.game)
+  start.disabled = state.busy || !go.has() || !!(state.setup && state.setup.coreError) || !list.some(row => row.game && !(section === "compress" && isDlc(row.game)))
     || (section === "rename" && (running() || !list.some(row => row.renameTo && !row.renameBlock && row.state !== "ok")));
   $("cancel").hidden = !running();
   $("cancel").disabled = state.cancelling;
@@ -1082,8 +1161,21 @@ function line(name, text) {
 
 // ---- a queue -------------------------------------------------------------------------------------
 
-// what is sent to the window of a game: no icon, which it does not need
-const itemOf = row => Object.assign({}, row.game, { Icon: "" });
+// what is sent to the window of a game: no icon, which it does not need; for a game of Compress, the
+// DLC that go inside it (their paths, in the order of the list) and what they take
+function itemOf(row) {
+  const dlc = dlcRowsOf(row);
+  // a license adds no files: only the ones with files of their own take room
+  return Object.assign({}, row.game, { Icon: "", AddDLC: dlc.map(other => other.path),
+    AddDLCSize: dlc.filter(other => other.game.DLCData).reduce((sum, other) => sum + (Number(other.game.OriginalSize) || 0), 0) });
+}
+// the items of the games a queue starts with or takes, each game told which DLC went inside it and
+// what they took
+function itemsOf(rows) {
+  const items = rows.map(itemOf);
+  rows.forEach((row, n) => Object.assign(row, { dlcSent: items[n].AddDLC, dlcSentSize: items[n].AddDLCSize }));
+  return items;
+}
 
 function modeOf(section) {
   if (section === "compress") return state.settings.Mode === "folder" ? "folder" : "p5z";
@@ -1098,7 +1190,8 @@ function readyRows(section, kind) {
   if (kind === "repair") return state.lists.verify.filter(canRepair);
   return state.lists[section].filter(row => {
     if (!row.game || row.state === "ok") return false;
-    if (section === "compress" && row.game.Packed) return false;
+    // a DLC goes inside its game, never alone
+    if (section === "compress" && (row.game.Packed || isDlc(row.game))) return false;
     if (section === "verify" && !row.game.Packed) return false;
     return true;
   });
@@ -1240,7 +1333,7 @@ async function startQueue(kind, only) {
     job.running = true;
     state.job = job;
     state.cancelling = false;
-    await go.call("Start", section, job.rows.map(itemOf), opts);
+    await go.call("Start", section, itemsOf(job.rows), opts);
     started = true;
   } catch (error) {
     toast(message(error));
@@ -1286,7 +1379,7 @@ async function joinQueue() {
   const job = state.job;
   if (!running() || job.joining) return;
   const rows = toJoin.splice(0).filter(row => row.game && state.lists[job.section].includes(row) && !job.rows.includes(row)
-    && row.state !== "ok" && !(job.section === "compress" && row.game.Packed) && !(job.section === "verify" && !row.game.Packed));
+    && row.state !== "ok" && !(job.section === "compress" && (row.game.Packed || isDlc(row.game))) && !(job.section === "verify" && !row.game.Packed));
   if (!rows.length) return;
   job.joining = true;
   try {
@@ -1298,7 +1391,7 @@ async function joinQueue() {
       if (answer === "cancel" || !running()) return;
       keepOriginals = answer === "keep" || plans.some(p => p.NoBin && !opts.DeleteNoBin);
     }
-    const first = await go.call("Append", job.section, rows.map(itemOf), [], keepOriginals);
+    const first = await go.call("Append", job.section, itemsOf(rows), [], keepOriginals);
     rows.forEach((row, n) => {
       job.rows[first + n] = row;
       Object.assign(row, { state: "queued", detail: "", step: "", phase: "", offset: 0, done: 0, total: 0, out: "", outSize: 0, warnings: [], unqueued: false });
@@ -1426,8 +1519,8 @@ function doneSizes(job) {
   let before = 0, after = 0;
   for (const row of job.rows) {
     if (row.state !== "ok") continue;
-    if (!row.game || !row.outSize || !sizeBefore(row.game)) return null;
-    before += sizeBefore(row.game);
+    if (!row.game || !row.outSize || !beforeOf(row)) return null;
+    before += beforeOf(row);
     after += row.outSize;
   }
   return before > 0 ? { before, after } : null;
@@ -1504,7 +1597,15 @@ function gameReport(row) {
     OriginalSize: game.OriginalSize || 0, InstallSize: game.InstallSize || 0,
     P5zSize: game.P5zSize || 0, OutSize: ran.outSize || 0, Volumes: game.Volumes || 0, Files: game.Files || 0,
     HasZstdRuntime: !!game.HasZstdRuntime, HasRuntime: !!game.HasRuntime, State: ran.state || "", Detail: ran.detail || "", Out: ran.out || "",
-    Completeness: completenessCounts(game.Completeness) };
+    Completeness: completenessCounts(game.Completeness), ...dlcCounts(row) };
+}
+// how many DLC a game goes with (in Compress) or carries (a .p5z), and how many of them have files of
+// their own: counts only, never their content IDs
+function dlcCounts(row) {
+  const going = dlcRowsOf(row);
+  if (going.length) return { DLC: going.length, DLCData: going.filter(other => other.game.DLCData).length };
+  const carried = (row.game && row.game.DLC) || [];
+  return { DLC: carried.length, DLCData: carried.filter(d => d.Data).length };
 }
 // of what the engine said against the list of the original package's files, the counts alone
 function completenessCounts(c) {
@@ -1523,7 +1624,7 @@ function copyReport(rows, section, mode) {
 // the threads of this PC, as the window says them (the page alone knows the browser's guess)
 const cpuThreads = () => (state.setup && state.setup.cpuThreads) || navigator.hardwareConcurrency || 1;
 // a game of Compress whose levels can be compared: read, and not compressed already
-const canCompare = row => row.section === "compress" && !!row.game && !row.game.Packed && !row.error;
+const canCompare = row => row.section === "compress" && !!row.game && !row.game.Packed && !row.error && !isDlc(row.game);
 // what the window says of a comparison or a measure that did not end well
 function toolError(error) {
   if (error === "cancelled") return t("state_cancelled");

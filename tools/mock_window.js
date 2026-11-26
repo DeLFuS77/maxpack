@@ -39,6 +39,9 @@
 //                       and, without that list, against the dump tool's (ampr_emu.index): a copy with every
 //                       file it wrote, and a damaged one (Compress warns of it too); and a .pkg, complete
 //                       against the table its builder made
+//   ?dlc=1              Compress with two DLC of Starfall Odyssey (a package with files of its own and a
+//                       license-only folder), the same package again and a DLC of a game not in the list;
+//                       a game's Add DLC gives two more; Details with a .p5z made with two DLC
 // Start runs a queue made up here: each game packs and verifies in a few seconds (and gets its repair
 // data), the games added meanwhile join it, and the card of the end shows; in Verify the damaged
 // .p5z fails, and Repair and Add repair data run their own steps. Compare levels and Measure this PC tell made-up
@@ -125,6 +128,23 @@ const mock = `
   games[foreign] = { TitleID: "PPSA10003", Name: "Neon Meridian", Version: "01.000.000", ContentID: "UP0003-PPSA10003_00-NEONMERIDIAN0000", Kind: "p5z", OriginalSize: 133590000000, HasZstdRuntime: true, Icon: "", Packed: true,
     InstallSize: 6400000000, P5zSize: 61000000000, Files: 3811, PackedFiles: 3770, Volumes: 15, HasRuntime: true };
   for (const file of [good, damaged, foreign]) games[file].Completeness = listOf[file];
+  // DLC (?dlc=1): of Starfall Odyssey, the same package once more, one of a game not in the list, two
+  // more of Lost Signal for its Add DLC, and a .p5z made with two
+  const dlc = (id, cid, name, data, kind, size) => ({ TitleID: id, Name: name, Version: "01.000.000", ContentID: cid, Kind: kind, OriginalSize: size, HasZstdRuntime: false,
+    Icon: "", Packed: false, Content: "dlc", DLCData: data, DLC: [], ImageSize: kind === "fpkg" ? Math.round(size * 0.9) : 0 });
+  const dlcShown = ["D:\\\\dlc\\\\Starfall Odyssey - Bonus Pack.pkg", "D:\\\\dlc\\\\Starfall Odyssey - Season Pass", "D:\\\\dlc\\\\copy\\\\Starfall Odyssey - Bonus Pack.pkg",
+    "D:\\\\dlc\\\\Harbor Lights Expansion.pkg"];
+  games[dlcShown[0]] = dlc("PPSA10001", "EP0001-PPSA10001_00-STARFALLBONUS001", "Starfall Odyssey: Bonus Pack", true, "fpkg", 2140000000);
+  games[dlcShown[1]] = dlc("PPSA10001", "EP0001-PPSA10001_00-STARFALLSEASON01", "Starfall Odyssey: Season Pass", false, "folder", 48000);
+  games[dlcShown[2]] = Object.assign({}, games[dlcShown[0]]);
+  games[dlcShown[3]] = dlc("PPSA10009", "EP0009-PPSA10009_00-HARBORLIGHTS0001", "Harbor Lights Expansion", true, "fpkg", 5300000000);
+  const dlcChosen = ["D:\\\\dlc\\\\Lost Signal - Chapter Two.pkg", "D:\\\\dlc\\\\Lost Signal - Soundtrack.pkg"];
+  games[dlcChosen[0]] = dlc("PPSA10004", "JP0004-PPSA10004_00-LOSTSIGNALCHAP02", "Lost Signal: Chapter Two", true, "fpkg", 3900000000);
+  games[dlcChosen[1]] = dlc("PPSA10004", "JP0004-PPSA10004_00-LOSTSIGNALMUSIC1", "Lost Signal: Soundtrack", false, "fpkg", 61000);
+  const p5zDlc = "E:\\\\Starfall Odyssey [PPSA10001] with DLC.p5z";
+  games[p5zDlc] = Object.assign({}, games[p5z], { OriginalSize: 10530000000, P5zSize: 5210000000, Files: 2299,
+    DLC: [{ ContentID: "EP0001-PPSA10001_00-STARFALLBONUS001", Data: true, Folder: "addcont0", Size: 2140000000 },
+      { ContentID: "EP0001-PPSA10001_00-STARFALLSEASON01", Data: false, Folder: "", Size: 0 }] });
   const completeShown = ["D:\\\\dumps\\\\Starfall.Odyssey-PPSA10001", "D:\\\\dumps\\\\Iron.Harbor-PPSA10002.exfat", "D:\\\\dumps\\\\Neon Meridian-PPSA10003",
     "D:\\\\more\\\\Lost Signal-PPSA10004", "D:\\\\dumps\\\\Quiet Tide [PPSA10005].ffpfsc", "D:\\\\more\\\\Glass Orbit.ffpkg",
     "D:\\\\pkgs\\\\Copper Vale-PPSA10007.pkg", good, damaged, foreign];
@@ -259,6 +279,7 @@ const mock = `
     SetSettings: async next => { Object.assign(settings, next); if (!validTemplate(settings.NameTemplate)) settings.NameTemplate = templates[0]; },
     PendingFiles: async () => (query.get("opened") ? { compress: [], verify: [], details: [p5z], show: "details" } : query.get("empty") ? null
       : query.get("images") ? { compress: first, verify: [], details: imagesShown, show: "details" }
+      : query.get("dlc") ? { compress: [dlcShown[0], ...first, "D:\\\\more\\\\Lost Signal-PPSA10004", ...dlcShown.slice(1)], verify: [], details: [p5zDlc, dlcShown[0]], show: "compress" }
       : query.get("complete") ? { compress: first.concat(["D:\\\\more\\\\Glass Orbit.ffpkg", "D:\\\\pkgs\\\\Copper Vale-PPSA10007.pkg"]), verify: [good, damaged, foreign], details: completeShown, show: "details" }
       : { compress: first, verify: query.get("verify") ? [good, damaged, foreign] : [], details: query.get("verify") ? [damaged] : [], show: query.get("verify") ? "verify" : "" }),
     RepairInfo: async file => repairs[file] || { state: /\\.p5z$/i.test(file) ? "none" : "", percent: 0, blocks: 0, blockSize: 0, capacity: 0, bytes: 0 },
@@ -272,6 +293,7 @@ const mock = `
         PackedFiles: packed ? 2119 : 0, Volumes: packed ? 1 : 0, HasRuntime: packed || !!game.HasZstdRuntime }, game, { Repair: repairs[file] || { state: /\\.p5z$/i.test(file) ? "none" : "" } });
     },
     ChooseFiles: async () => Object.keys(games).slice(4), ChooseFolder: async () => Object.keys(games), ChooseDest: async () => "E:\\\\", ChooseRuntime: async () => "",
+    ChooseDLC: async () => dlcChosen,
     CloseTexts: async () => {}, TellLanguage: async () => {}, ConfirmClose: async () => {},
     Plan: async (section, items, opts) => items.map(item => Object.assign(plan(item, opts), opts.Mode === "repair" && !(repairs[item.Path] && repairs[item.Path].state === "match") ? { Block: "no_repair_data" } : {})),
     Space: async (section, items, opts) => (query.get("space") ? [{ Root: "E:\\\\", Need: 322390000000, Free: 118200000000 }] : []),

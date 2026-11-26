@@ -331,7 +331,9 @@ input.passcode:focus { outline: 2px solid var(--focus); outline-offset: 0; }
 .hint.plain { margin: 0; }
 label.check.top { margin-top: 0; align-items: flex-start; }
 label.check.top input { margin-top: 2px; }
-.game button.link.report, .game button.link.compare, .game button.link.repair { margin-top: 6px; font-size: 12px; }
+.game button.link.report, .game button.link.compare, .game button.link.repair, .game button.link.add-dlc { margin-top: 6px; font-size: 12px; }
+/* a game's Add DLC beside its Compare levels */
+.game button.link.compare:not([hidden]) + button.link.add-dlc { margin-inline-start: 14px; }
 .pref-buttons .segmented { margin-top: 0; }
 /* the card of a .p5z in Details, as a double click on one opens it: Verify and Decompress */
 .card-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }

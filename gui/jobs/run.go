@@ -326,10 +326,13 @@ func (r *Runner) one(ctx context.Context, i int, p Plan, o Options) outcome {
 			return fail(state, discard(failure))
 		}
 		// against what the game took before: an image's file, what the disk gets back (an .ffpfsc is
-		// compressed, and the game in it is bigger than the file), else the game the engine read
+		// compressed, and the game in it is bigger than the file), else the game the engine read; and,
+		// as what was made holds them too, the DLC that went inside it (the engine's count has them)
 		if original, output := number(result, "original_size"), number(result, "output_size"); compress {
 			if IsImage(p.Item.Kind) {
-				original = p.Item.SizeBefore()
+				if original = p.Item.SizeBefore(); original > 0 {
+					original += p.Item.AddDLCSize
+				}
 			}
 			if original > output {
 				saved = original - output

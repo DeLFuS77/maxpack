@@ -67,8 +67,8 @@ func pageCodes() []string {
 		"original_kept_too_long", "original_not_removed",
 		// Rename
 		"same_name", "name_taken", "duplicate_target", "cannot_read", "in_use", "gone",
-		// the engine
-		"bad_input", "too_big",
+		// the engine; a DLC that stops a game (pack --dlc)
+		"bad_input", "too_big", "dlc_has_ini", "dlc_too_many", "dlc_refused",
 		// the repair data of a .p5z: made, added, and used to repair it (jobs/repair.go)
 		"repair_data_failed", "repair_data_cancelled", "repair_data_other", "repair_data_unreadable", "repair_data_same",
 		"no_par2", "not_p5z", "no_repair_data", "repair_folder_exists", "repair_no_space", "repair_failed",

@@ -42,6 +42,9 @@
 //   ?dlc=1              Compress with two DLC of Starfall Odyssey (a package with files of its own and a
 //                       license-only folder), the same package again and a DLC of a game not in the list;
 //                       a game's Add DLC gives two more; Details with a .p5z made with two DLC
+//   ?console=1          Settings has a console (an IP address and a pairing code): Send to the console, on
+//                       the card of a .p5z and at the end of Compress, asks it for its drives and sends;
+//                       ?console=refused: the console refuses the code
 //   ?grow=1             Details with a .p5z that grew twice (by DLC and an update) and one that never did:
 //                       Add DLC… ends well, and Update with a new dump… stops because most of the game
 //                       changed until Update anyway
@@ -69,7 +72,8 @@ const mock = `
   const templates = ["{title} [{id}]", "{title} [{id}] [v{version}]", "{title} [{id}] [{region}] [v{version}]"];
   const settings = { Lang: query.get("lang") || "", Theme: "system", Runtime: query.get("runtime") || "", LastDest: "E:\\\\", Mode: query.get("mode") === "folder" ? "folder" : "p5z", Level: 19,
     DeleteOriginals: !!query.get("delete"), DeletePermanently: query.get("delete") === "good", LowPriority: !!query.get("low"), NameTemplate: query.get("template") || templates[0],
-    Threads: Number(query.get("threads")) || 0, RepairData: !!query.get("repair"), RepairPercent: Number(query.get("percent")) || 5, KeepLeftovers: false };
+    Threads: Number(query.get("threads")) || 0, RepairData: !!query.get("repair"), RepairPercent: Number(query.get("percent")) || 5, KeepLeftovers: false,
+    ConsoleIP: query.get("console") ? "192.168.1.20" : "", ConsoleCode: query.get("console") ? "482913" : "" };
   if (query.get("nodest")) settings.LastDest = "";
   const builtIn = query.get("nobuiltin") ? {} : { builtInRuntime: "C:\\\\Users\\\\user\\\\AppData\\\\Roaming\\\\MaxPack\\\\ampr-emu-ng\\\\libSceAmpr.sprx", builtInRuntimeVersion: "v0.5.1-maxpack.2" };
   const games = {
@@ -195,7 +199,7 @@ const mock = `
       const i = q.at++, item = q.items[i], total = item.OriginalSize, mode = q.opts.Mode;
       // the steps of the game in this queue, as the window does them
       const grows = mode === "add_dlc" || mode === "update";
-      const steps = mode === "verify" ? ["verifying"] : mode === "repair" ? ["repairing", "verifying"] : mode === "protect" ? ["verifying", "protecting"]
+      const steps = mode === "send" ? ["sending", "verifying"] : mode === "verify" ? ["verifying"] : mode === "repair" ? ["repairing", "verifying"] : mode === "protect" ? ["verifying", "protecting"]
         : grows ? (q.opts.Repair ? ["growing", "verifying", "protecting"] : ["growing", "verifying"])
         : mode === "p5z" && q.opts.Repair ? ["packing", "verifying", "protecting"] : ["packing", "verifying"];
       // an update of most of the game stops at once, until the user says to go on
@@ -212,6 +216,12 @@ const mock = `
         if (done < total) return;
         if (at + 1 < steps.length) { at++; done = 0; emit("job:item", { i, state: steps[at], detail: "" }); return; }
         clearInterval(tick);
+        if (mode === "send") {
+          q.sum.Done++;
+          emit("job:item", { i, state: "ok", detail: "sent" });
+          step();
+          return;
+        }
         if (grows) {
           games[item.Path] = Object.assign({}, games[item.Path], { Grown: (games[item.Path] && games[item.Path].Grown || 0) + 1, UnusedBytes: 512000000 });
           q.sum.Done++;
@@ -324,6 +334,8 @@ const mock = `
     CloseTexts: async () => {}, TellLanguage: async () => {}, ConfirmClose: async () => {},
     Plan: async (section, items, opts) => items.map(item => Object.assign(plan(item, opts), opts.Mode === "repair" && !(repairs[item.Path] && repairs[item.Path].state === "match") ? { Block: "no_repair_data" } : {})),
     Space: async (section, items, opts) => (query.get("space") ? [{ Root: "E:\\\\", Need: 322390000000, Free: 118200000000 }] : []),
+    ConsoleDrives: async () => (query.get("console") === "refused" ? { drives: [], error: "bad_code", message: "" }
+      : { drives: [{ id: "internal", free: 412e9, total: 825e9, fs: "ufs" }, { id: "usb0", free: 1.6e12, total: 2e12, fs: "exfat" }, { id: "usb1", free: 2e9, total: 64e9, fs: "exfat" }], error: "", message: "" }),
     Start: async (section, items, opts) => {
       queue = { section, items: items.slice(), opts, at: 0, removed: {}, keep: {}, started: Date.now(), sum: { Done: 0, Failed: 0, Skipped: 0, Cancelled: 0, NoZstdRuntime: 0, Saved: 0, Top: [], Duration: 0, Trashed: 0, Deleted: 0, Kept: 0, TrashedSize: 0, DeletedSize: 0,
         Protected: 0, Unprotected: 0, ProtectedSize: 0, Repaired: 0 } };

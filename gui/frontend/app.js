@@ -35,7 +35,7 @@ const go = {
 const queues = ["compress", "decompress", "verify"];
 const writes = ["compress", "decompress"];
 const ended = ["ok", "error", "skipped", "cancelled"];
-const working = ["packing", "verifying", "unpacking", "protecting", "repairing", "growing"];
+const working = ["packing", "verifying", "unpacking", "protecting", "repairing", "growing", "sending"];
 // what the card of a .p5z in Details does to it: DLC added, or a new dump of its game (see growRow)
 const grows = ["add_dlc", "update"];
 // the states of a game of a queue that did not start: there from the start, or added while it runs
@@ -55,7 +55,7 @@ const takes = {
 };
 const defaultTemplate = "{title} [{id}]";
 const defaults = { Lang: "", Theme: "system", Runtime: "", LastDest: "", Mode: "p5z", Level: 19, DeleteOriginals: false, DeletePermanently: false, LowPriority: false, NameTemplate: defaultTemplate, Threads: 0,
-  RepairData: false, RepairPercent: 5, Passcode: "", KeepLeftovers: false };
+  RepairData: false, RepairPercent: 5, Passcode: "", KeepLeftovers: false, ConsoleIP: "", ConsoleCode: "" };
 // the shares of repair data the window offers (a PAR2 set next to each .p5z)
 const percents = [1, 5, 10];
 
@@ -161,6 +161,7 @@ function newRow(path, section) {
   tr.querySelector(".to-add-dlc").addEventListener("click", () => growRow(row, "add_dlc"));
   tr.querySelector(".to-update").addEventListener("click", () => growRow(row, "update"));
   tr.querySelector(".grow-anyway").addEventListener("click", () => growAnyway(row));
+  tr.querySelector(".to-send").addEventListener("click", () => sendRows([row]));
   // the entrance of a row and the pop of what it saved play once: a row put back in the list
   // (every render puts them all back) does not play them again
   tr.addEventListener("animationend", event => {
@@ -334,6 +335,8 @@ function stepsOf(job) {
   if (mode === "protect") return ["verifying", "protecting"];
   if (mode === "repair") return ["repairing", "verifying"];
   if (grows.includes(mode)) return job.repair ? ["growing", "verifying", "protecting"] : ["growing", "verifying"];
+  // a .p5z sent: its bytes go to the console, which then verifies them
+  if (mode === "send") return ["sending", "verifying"];
   return ["unpacking"];
 }
 // how far the step at work is, from 0 to 1: the phases of a step follow one another (copying the
@@ -356,7 +359,7 @@ const inQueue = job => job.rows.filter(row => row && !row.unqueued);
 function progressOf(job) {
   let whole = 0, done = 0;
   for (const row of inQueue(job)) {
-    const weight = stepsOf(job).length * Math.max(1, row.game ? row.game.OriginalSize : 1);
+    const weight = stepsOf(job).length * Math.max(1, row.game ? (job.mode === "send" ? sendSize(row) : row.game.OriginalSize) : 1);
     whole += weight;
     done += rowShare(row, job) * weight;
   }
@@ -467,7 +470,7 @@ function partText(part) {
   if (found) return t("detail_repair_not_possible")(+found[1]);
   found = /^exit_(-?\d+)$/.exec(part);
   if (found) return t("detail_exit")(+found[1]);
-  found = /^([a-z_]+)(?:: ([\s\S]*))?$/.exec(part);
+  found = /^([a-z][a-z0-9_]*)(?:: ([\s\S]*))?$/.exec(part);
   if (found && typeof texts.en["detail_" + found[1]] === "string") {
     const rest = found[2] || "";
     if (found[1] === "verify_failed") return t("detail_verify_failed") + (rest ? ": " + partText(rest) : "");
@@ -647,7 +650,7 @@ function growFacts(game) {
 // made again counts as good)
 function goodNote(row) {
   if (row.state !== "ok") return false;
-  if (/^(repaired|repair_not_needed)$/.test(row.detail)) return true;
+  if (/^(repaired|repair_not_needed|sent)$/.test(row.detail)) return true;
   return /^(grown|nothing_to_do)(; repair_redone)?$/.test(row.detail);
 }
 
@@ -775,7 +778,7 @@ function paintRow(row) {
   card.querySelector(".to-verify").textContent = t("verify");
   card.querySelector(".to-decompress").textContent = t("decompress");
   // and what makes it grow: DLC added to it, or a new dump of its game
-  for (const [cls, key] of [[".to-add-dlc", "addDlcCard"], [".to-update", "updateCard"]]) {
+  for (const [cls, key] of [[".to-add-dlc", "addDlcCard"], [".to-update", "updateCard"], [".to-send", "sendCard"]]) {
     const button = card.querySelector(cls);
     button.textContent = t(key);
     button.disabled = state.busy;
@@ -1017,6 +1020,15 @@ function paintSettings() {
     $("passcode-bad").hidden = true;
   }
   $("pref-leftovers").checked = !s.KeepLeftovers;
+  // the console a .p5z is sent to: one being typed stays as it is
+  if (document.activeElement !== $("pref-console-ip")) {
+    $("pref-console-ip").value = s.ConsoleIP || "";
+    $("console-ip-bad").hidden = true;
+  }
+  if (document.activeElement !== $("pref-console-code")) {
+    $("pref-console-code").value = s.ConsoleCode || "";
+    $("console-code-bad").hidden = true;
+  }
   // the threads Compress gives the engine: all of them, or the ones a measure found
   const cpu = cpuThreads();
   $("pref-threads").textContent = s.Threads > 0 ? t("threadsSome")(s.Threads, cpu) : t("threadsAll")(cpu);
@@ -1356,9 +1368,9 @@ async function plan(section, rows, opts) {
 
 // startQueue starts the queue of the section open; kind "protect" adds repair data to the .p5z of
 // Verify, and "repair" repairs the damaged ones with theirs (the ones given, or all that can be)
-async function startQueue(kind, only) {
-  const section = grows.includes(kind) ? "details" : kind ? "verify" : state.section;
-  if (state.busy || !(queues.includes(section) || grows.includes(kind))) return;
+async function startQueue(kind, only, extra) {
+  const section = grows.includes(kind) || kind === "send" ? "details" : kind ? "verify" : state.section;
+  if (state.busy || !(queues.includes(section) || grows.includes(kind) || kind === "send")) return;
   // a DLC still being read would be left out of its game
   if (section === "compress" && readingRows(section).length) { toast(t("readingWait")(readingRows(section).length)); return; }
   const rows = only || readyRows(section, kind);
@@ -1368,7 +1380,8 @@ async function startQueue(kind, only) {
   const own = grows.includes(mode) && rows[0].repair && rows[0].repair.state === "match" ? Number(rows[0].repair.percent) || 0 : 0;
   const repair = mode === "p5z" ? repairOf() : mode === "protect" ? Number(state.settings.RepairPercent) || 5 : own;
   const opts = { Mode: mode, Dest: "", Level: Number(state.settings.Level) || 19, Runtime: state.settings.Runtime || "", ContinueFat32: false, Replace: [],
-    DeleteOriginals: section === "compress" && state.deleteOriginals, DeleteNoBin: false, Repair: repair };
+    DeleteOriginals: section === "compress" && state.deleteOriginals, DeleteNoBin: false, Repair: repair, Drive: "" };
+  Object.assign(opts, extra || {});
   if (writes.includes(section)) {
     opts.Dest = state.settings.LastDest || await chooseDest();
     if (!opts.Dest) return;
@@ -1456,7 +1469,7 @@ async function startQueue(kind, only) {
     render();
   }
   // another destination was chosen for the space: the queue is planned again with it
-  if (again && !started) startQueue(kind, only);
+  if (again && !started) startQueue(kind, only, extra);
 }
 
 // askOriginals says which originals go once checked, and asks: "delete", "keep" or "cancel". It
@@ -1521,6 +1534,88 @@ async function joinQueue() {
   }
 }
 
+// ---- Send to the console ----------------------------------------------------------------------------
+
+// the console of Settings: an IP address (four numbers of 0 to 255, and maybe ":port") and the pairing
+// code it shows (6 digits); the window checks them again (settings.go)
+const validConsoleIp = ip => {
+  const found = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?::(\d{1,5}))?$/.exec(String(ip));
+  return !!found && found.slice(1, 5).every(n => Number(n) <= 255) && (found[5] === undefined || (Number(found[5]) >= 1 && Number(found[5]) <= 65535));
+};
+const validConsoleCode = code => /^\d{6}$/.test(String(code));
+// what a .p5z of Details takes to send
+const sendSize = row => Number(row.game && (row.game.P5zSize || row.game.OriginalSize)) || 0;
+// the room the console keeps on a drive beyond the .p5z (the contract's margin)
+const sendMargin = 256 * 1024 * 1024;
+// a drive of the console as the send dialog says it: its name, and its free space of its size
+function driveText(drive) {
+  const usb = /^usb(\d+)$/.exec(drive.id || "");
+  const name = drive.id === "internal" ? t("driveInternal") : usb ? t("driveUsb")(Number(usb[1]) + 1) : String(drive.id || "");
+  return t("driveLine")(name, size(Number(drive.free) || 0), size(Number(drive.total) || 0));
+}
+// whether the .p5z of rows fit on a drive, with the console's margin
+const driveFits = (drive, rows) => (Number(drive.free) || 0) >= rows.reduce((sum, row) => sum + sendSize(row), 0) + sendMargin;
+// why the console could not be asked or refused, in the page's words
+function sendErrorText(code, words) {
+  const key = code === "no_console" ? "detail_no_console" : "detail_send_" + code;
+  return typeof texts.en[key] === "string" ? t(key) : t("detail_other") + ": " + (words || code || "");
+}
+// the .p5z a queue of Compress made well, which its end card can send
+function madeP5z(job) {
+  if (!job || job.section !== "compress" || job.mode !== "p5z") return [];
+  return inQueue(job).filter(row => row.state === "ok" && /\.p5z$/i.test(row.out || "")).map(row => row.out);
+}
+
+// sendRows sends .p5z of Details to the console of Settings, one after another: its drives are asked for,
+// one is chosen in the send dialog (with its free space), and the queue goes with its bar, its cancel and
+// its end card
+async function sendRows(rows) {
+  rows = rows.filter(row => row.game && row.game.Kind === "p5z");
+  if (state.busy || !rows.length) return;
+  if (!validConsoleIp(state.settings.ConsoleIP) || !validConsoleCode(state.settings.ConsoleCode)) {
+    toast(t("sendNoConsole"));
+    setSection("settings");
+    return;
+  }
+  toast(t("sendAsking"));
+  const view = await go.call("ConsoleDrives").catch(error => ({ drives: [], error: "io", message: message(error) }));
+  if (view.error || !view.drives || !view.drives.length) { toast(sendErrorText(view.error || "no_drive", view.message)); return; }
+  $("send-list").replaceChildren(...rows.map(row => line(row.game.Name || baseName(row.path), size(sendSize(row)))));
+  const last = load("sendDrive", "");
+  const chosen = view.drives.some(drive => drive.id === last) ? last : (view.drives.find(drive => driveFits(drive, rows)) || view.drives[0]).id;
+  $("send-drives").replaceChildren(...view.drives.map(drive => {
+    const label = document.createElement("label"), input = document.createElement("input"), text = document.createElement("span");
+    const name = document.createElement("b"), room = document.createElement("small");
+    label.className = "choice" + (driveFits(drive, rows) ? "" : " no-room");
+    input.type = "radio";
+    input.name = "send-drive";
+    input.value = drive.id;
+    input.checked = drive.id === chosen;
+    name.textContent = driveText(drive);
+    room.textContent = driveFits(drive, rows) ? (drive.fs || "") : t("sendNoRoom");
+    text.append(name, room);
+    label.append(input, text);
+    return label;
+  }));
+  if (await ask($("send-dialog")) !== "send") return;
+  const picked = document.querySelector('input[name="send-drive"]:checked');
+  const drive = picked ? picked.value : chosen;
+  save("sendDrive", drive);
+  startQueue("send", rows, { Drive: drive });
+}
+
+// the end card of Compress: the .p5z it made go to Details, and from there to the console once read
+async function sendMade(job) {
+  const paths = madeP5z(job);
+  if (!paths.length) return;
+  addPaths("details", paths);
+  setSection("details");
+  const wanted = new Set(paths.map(pathKey));
+  const rowsOf = () => state.lists.details.filter(row => wanted.has(pathKey(row.path)));
+  for (let waited = 0; waited < 120 && rowsOf().some(row => !row.game && !row.error); waited++) await new Promise(done => setTimeout(done, 250));
+  sendRows(rowsOf());
+}
+
 // ---- what the window tells of a queue -----------------------------------------------------------
 
 function onItem(event) {
@@ -1559,7 +1654,7 @@ function onDone(summary) {
   if (!job) { render(); return; }
   job.summary = summary;
   render();
-  if ((writes.includes(job.section) || grows.includes(job.mode)) && summary.Done + summary.Failed > 0) showDone(job, summary);
+  if ((writes.includes(job.section) || grows.includes(job.mode) || job.mode === "send") && summary.Done + summary.Failed > 0) showDone(job, summary);
   // a .p5z that grew is read again: its version, its DLC, how many times it grew, its repair data
   if (grows.includes(job.mode)) for (const row of job.rows) if (row && row.state === "ok" && state.lists.details.includes(row)) describe(row);
   if (job.mode === "repair") toast(t("repairedCount")(summary.Repaired || 0));
@@ -1583,7 +1678,7 @@ function showDone(job, summary) {
   $("done-stats").textContent = summaryLine(summary);
   // the time it took, the games done, and how fast it went through them on average
   // (a .p5z that grew went through what was added to it, not the whole game: no speed is claimed)
-  const through = grows.includes(job.mode) ? 0 : inQueue(job).filter(row => row.state === "ok" && row.game).reduce((sum, row) => sum + row.game.OriginalSize, 0);
+  const through = grows.includes(job.mode) ? 0 : inQueue(job).filter(row => row.state === "ok" && row.game).reduce((sum, row) => sum + (job.mode === "send" ? sendSize(row) : row.game.OriginalSize), 0);
   $("done-tile-time").textContent = time(seconds);
   $("done-tile-games").textContent = String(summary.Done || 0);
   $("done-tile-speed").textContent = seconds > 0 && through ? t("speed")(size(through / seconds)) : "—";
@@ -1617,6 +1712,8 @@ function showDone(job, summary) {
   const lacking = job.section === "compress" ? summary.NoZstdRuntime || 0 : 0;
   $("done-runtime").hidden = !lacking;
   $("done-runtime").textContent = lacking ? (job.runtime ? t("doneRuntimeWrong")(lacking) : t("doneNoRuntime")(lacking)) : "";
+  // the .p5z made can go to the console from here
+  $("done-send").hidden = !madeP5z(job).length;
   const dialog = $("done-dialog");
   dialog.classList.toggle("failed", !summary.Done);
   const sizes = summary.Saved > 0 ? doneSizes(job) : null;
@@ -1688,6 +1785,7 @@ function burst() {
 function nextStep(job) {
   if (job.mode === "p5z") return t("nextP5z");
   if (grows.includes(job.mode)) return t("nextGrow");
+  if (job.mode === "send") return t("nextSend");
   if (job.mode === "original") return t("nextOriginal")(job.dest);
   const made = job.rows.filter(row => row.state === "ok" && row.out);
   const away = made.filter(row => !row.homebrew);
@@ -2057,6 +2155,18 @@ function wire() {
           describe(row);
         }
   });
+  // the console's address and code: kept once each one is one (or empty, none)
+  for (const [id, bad, valid, key] of [["pref-console-ip", "console-ip-bad", validConsoleIp, "ConsoleIP"], ["pref-console-code", "console-code-bad", validConsoleCode, "ConsoleCode"]]) {
+    const ok = value => value === "" || valid(value);
+    $(id).addEventListener("input", () => { $(bad).hidden = ok($(id).value.trim()); });
+    $(id).addEventListener("change", () => {
+      const value = $(id).value.trim();
+      $(bad).hidden = ok(value);
+      if (ok(value) && value !== (state.settings[key] || "")) keep({ [key]: value });
+    });
+  }
+  // the end card of Compress sends what it made
+  $("done-send").addEventListener("click", () => { const job = state.job; $("done-dialog").close(); sendMade(job); });
   // what dump tools leave behind goes, unless Settings keeps it; the cards of Details say it
   $("pref-leftovers").addEventListener("change", () => { keep({ KeepLeftovers: !$("pref-leftovers").checked }); render(); });
   $("pref-delete").addEventListener("change", () => { keep({ DeleteOriginals: $("pref-delete").checked }); state.deleteOriginals = $("pref-delete").checked; render(); });

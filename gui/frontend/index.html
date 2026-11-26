@@ -202,6 +202,19 @@
         </div>
         <p class="hint pref-path" id="pref-log"></p>
       </section>
+      <!-- the console a .p5z is sent to: its address and the pairing code it shows; the code goes only to
+           the engine (in its environment), never into a log or a report -->
+      <section class="pref-group">
+        <h2 data-t="prefConsole"></h2>
+        <div class="pref-item">
+          <div class="pref-text"><b id="console-ip-name" data-t="consoleIp"></b><small data-t="consoleIpHint"></small><small class="pref-status warning" id="console-ip-bad" data-t="consoleIpBad" hidden></small></div>
+          <input id="pref-console-ip" class="passcode short" type="text" spellcheck="false" autocomplete="off" maxlength="21" placeholder="192.168.1.20" aria-labelledby="console-ip-name">
+        </div>
+        <div class="pref-item">
+          <div class="pref-text"><b id="console-code-name" data-t="consoleCode"></b><small data-t="consoleCodeHint"></small><small class="pref-status warning" id="console-code-bad" data-t="consoleCodeBad" hidden></small></div>
+          <input id="pref-console-code" class="passcode short" type="password" inputmode="numeric" spellcheck="false" autocomplete="off" maxlength="6" placeholder="000000" aria-labelledby="console-code-name">
+        </div>
+      </section>
       <section class="pref-group">
         <h2 id="names-name" data-t="prefNames"></h2>
         <p class="hint" data-t="namesHint"></p>
@@ -263,7 +276,7 @@
           <div class="repair-line" hidden></div>
           <div class="list-warn" hidden></div>
           <dl class="facts" hidden></dl>
-          <div class="card-actions" hidden><button class="to-verify"></button><button class="to-decompress"></button><button class="to-add-dlc"></button><button class="to-update"></button></div>
+          <div class="card-actions" hidden><button class="to-verify"></button><button class="to-decompress"></button><button class="to-add-dlc"></button><button class="to-update"></button><button class="to-send"></button></div>
           <div class="note" hidden></div>
           <button class="link report" hidden></button>
           <button class="link compare" hidden></button>
@@ -386,7 +399,17 @@
     <p id="done-next"></p>
   </div>
   <p class="warning" id="done-runtime" hidden></p>
-  <form method="dialog" class="dialog-actions"><button type="button" id="done-report" class="quiet" data-t="copyReport"></button><button value="close" class="primary" data-t="close" autofocus></button></form>
+  <form method="dialog" class="dialog-actions"><button type="button" id="done-report" class="quiet" data-t="copyReport"></button><button type="button" id="done-send" data-t="sendCard" hidden></button><button value="close" class="primary" data-t="close" autofocus></button></form>
+</dialog>
+
+<!-- Send to the console: the .p5z that go, and the drive of the console with its free space -->
+<dialog id="send-dialog" aria-labelledby="send-title" aria-describedby="send-text">
+  <h2 id="send-title" data-t="sendTitle"></h2>
+  <p class="muted" id="send-text" data-t="sendText"></p>
+  <ul class="space-list" id="send-list"></ul>
+  <h3 id="send-drive-name" data-t="sendDrive"></h3>
+  <div role="radiogroup" aria-labelledby="send-drive-name" id="send-drives"></div>
+  <form method="dialog" class="dialog-actions"><button value="cancel" class="quiet" data-t="cancel"></button><button value="send" id="send-go" class="primary" data-t="sendGo" autofocus></button></form>
 </dialog>
 
 <!-- Compare the levels on this PC: the engine packs a sample of the game at each level and tells

@@ -53,7 +53,7 @@ func textKeys(t *testing.T, lang string) map[string]bool {
 // failed or was skipped), with the ones the page gives itself.
 func pageCodes() []string {
 	states := []string{jobs.StateWaiting, jobs.StateQueued, jobs.StatePacking, jobs.StateVerifying, jobs.StateUnpacking,
-		jobs.StateProtecting, jobs.StateRepairing, jobs.StateGrowing, jobs.StateOK, jobs.StateError, jobs.StateSkipped, jobs.StateCancelled}
+		jobs.StateProtecting, jobs.StateRepairing, jobs.StateGrowing, jobs.StateSending, jobs.StateOK, jobs.StateError, jobs.StateSkipped, jobs.StateCancelled}
 	warnings := []string{"fat32", "needs_runtime", "may_not_fit", "duplicate_target", "no_title_id"}
 	details := []string{
 		// blocks of a plan, which the Runner gives as the detail of a skip
@@ -80,9 +80,13 @@ func pageCodes() []string {
 		"grown", "grown_unverified", "nothing_to_do", "repair_redone", "nothing_given", "busy", "grow_no_space", "grow_too_big", "too_many_volumes",
 		"mostly_changed", "no_packs_left", "other_game", "same_version", "no_title_id", "not_a_game", "changed_meanwhile",
 		"dump_packed",
+		// a .p5z sent to the console (jobs/send.go): how it ended, and what the console and the engine say
+		"sent", "no_console", "send_unreachable", "send_receive_off", "send_bad_code", "send_locked", "send_exists", "send_busy",
+		"send_no_space", "send_fat32", "send_bad_name", "send_no_drive", "send_verify_failed", "send_console_cancelled",
+		"send_console_error", "send_invalid",
 	}
 	// the phases of the progress of the engine (phase_code in src/cli/main.c), and of par2
-	phases := []string{"copying", "comparing", "packing", "verifying", "unpacking", "working", "protecting", "repairing"}
+	phases := []string{"copying", "comparing", "packing", "verifying", "unpacking", "working", "protecting", "repairing", "sending"}
 	var keys []string
 	for _, s := range states {
 		keys = append(keys, "state_"+s)

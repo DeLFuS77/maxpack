@@ -28,7 +28,32 @@ int mp_cancelled(void) { return __atomic_load_n(&g_cancel, __ATOMIC_SEQ_CST) != 
 void mp_cancel_reset(void) { __atomic_store_n(&g_cancel, 0, __ATOMIC_SEQ_CST); }
 #endif
 
+// How often a thread waiting in the pause looks whether it ended.
+#define PAUSE_POLL_MS 25
+
+static volatile long g_pause, g_pause_waiting;
+
+#ifdef _WIN32
+void mp_pause_set(int on) { InterlockedExchange(&g_pause, on ? 1 : 0); }
+int mp_paused(void) { return InterlockedCompareExchange(&g_pause, 0, 0) != 0; }
+unsigned mp_pause_waiting(void) { return (unsigned)InterlockedCompareExchange(&g_pause_waiting, 0, 0); }
+static void waiting_add(long n) { InterlockedExchangeAdd(&g_pause_waiting, n); }
+#else
+void mp_pause_set(int on) { __atomic_store_n(&g_pause, on ? 1 : 0, __ATOMIC_SEQ_CST); }
+int mp_paused(void) { return __atomic_load_n(&g_pause, __ATOMIC_SEQ_CST) != 0; }
+unsigned mp_pause_waiting(void) { return (unsigned)__atomic_load_n(&g_pause_waiting, __ATOMIC_SEQ_CST); }
+static void waiting_add(long n) { __atomic_add_fetch(&g_pause_waiting, n, __ATOMIC_SEQ_CST); }
+#endif
+
+void mp_pause_wait(int (*stop)(void *ctx), void *ctx) {
+    if (!mp_paused() || mp_cancelled()) return;
+    waiting_add(1);
+    while (mp_paused() && !mp_cancelled() && !(stop && stop(ctx))) mp_sleep_ms(PAUSE_POLL_MS);
+    waiting_add(-1);
+}
+
 int mp_cancel_check(mp_err *e) {
+    mp_pause_wait(NULL, NULL);
     if (!mp_cancelled()) return 0;
     mp_err_set(e, "cancelled");
     return -1;
@@ -89,6 +114,15 @@ typedef struct {
     void *ctx;
 } pool;
 
+// Whether a thread of the pool failed: the others waiting in the pause stop waiting.
+static int pool_failed(void *arg) {
+    pool *p = arg;
+    mp_mutex_lock(p->mu);
+    int failed = p->err != 0;
+    mp_mutex_unlock(p->mu);
+    return failed;
+}
+
 static void worker(void *arg) {
     pool *p = arg;
     mp_mutex_lock(p->mu);
@@ -96,6 +130,11 @@ static void worker(void *arg) {
     mp_mutex_unlock(p->mu);
     for (;;) {
         mp_mutex_lock(p->mu);
+        if (!p->err && p->next < p->n && mp_paused() && !mp_cancelled()) {   // the next item waits for the end of the pause
+            mp_mutex_unlock(p->mu);
+            mp_pause_wait(pool_failed, p);
+            continue;
+        }
         if (!p->err && p->next < p->n && mp_cancelled()) p->err = -1;   // cancelled: no more is handed out
         if (p->err || p->next >= p->n) {
             mp_mutex_unlock(p->mu);
@@ -182,6 +221,15 @@ struct mp_pipe {
     void *ctx;
 };
 
+// Whether the pipe is stopping: its threads waiting in the pause stop waiting.
+static int pipe_stopping(void *arg) {
+    mp_pipe *p = arg;
+    mp_mutex_lock(p->mu);
+    int stopping = p->stop || p->aborted;
+    mp_mutex_unlock(p->mu);
+    return stopping;
+}
+
 static void pipe_worker(void *arg) {
     mp_pipe *p = arg;
     mp_mutex_lock(p->mu);
@@ -189,6 +237,12 @@ static void pipe_worker(void *arg) {
     for (;;) {
         while (!p->stop && !p->aborted && p->taken == p->submitted) mp_cond_wait(p->work_cv, p->mu);
         if (p->stop || p->aborted) break;
+        if (mp_paused() && !mp_cancelled()) {   // the next slot waits for the end of the pause
+            mp_mutex_unlock(p->mu);
+            mp_pause_wait(pipe_stopping, p);
+            mp_mutex_lock(p->mu);
+            continue;
+        }
         size_t s = (size_t)(p->taken++ % p->nslots);
         if (p->state[s] != SLOT_QUEUED) continue;   // it needed no work (or another thread has it)
         p->state[s] = SLOT_RUNNING;

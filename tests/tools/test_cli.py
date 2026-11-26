@@ -12,6 +12,7 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 import time
 
 EXE, FX, TMP = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -366,6 +367,126 @@ p.stderr.read()
 p.wait()
 check("control_stdin_eof_cancela", p.returncode == 130 and not os.path.exists(cdst2), str(p.returncode))
 
+# --control stdin "pause": the work stops at its next batch (no progress comes, the output does not grow) and
+# says {"event":"paused"}; "resume" goes on from there, and what is made is whole. A cancel while paused cancels.
+
+
+class Lines:
+    """The lines of a process's stdout, read by a thread of their own."""
+
+    def __init__(self, p):
+        self.lines, self.lock = [], threading.Lock()
+        self.thread = threading.Thread(target=self._read, args=(p,), daemon=True)
+        self.thread.start()
+
+    def _read(self, p):
+        for line in iter(p.stdout.readline, b""):
+            with self.lock:
+                self.lines.append(line.decode("utf-8", "replace").strip())
+
+    def all(self):
+        with self.lock:
+            return list(self.lines)
+
+    def wait_for(self, event, seconds=20):
+        end = time.time() + seconds
+        while time.time() < end:
+            if any('"event":"%s"' % event in line for line in self.all()):
+                return True
+            time.sleep(0.02)
+        return False
+
+
+def size_of(path):
+    if os.path.isfile(path):
+        return os.path.getsize(path)
+    total = 0
+    for root, _, files in os.walk(path):
+        total += sum(os.path.getsize(os.path.join(root, f)) for f in files)
+    return total
+
+
+for what, args, out in (("pack", ["pack", BIG, "-o", os.path.join(TMP, "paused.p5z"), "--p5z", "--threads", "1", "--level", "19"],
+                         os.path.join(TMP, "paused.p5z")),
+                        ("pack_folder", ["pack", BIG, "-o", os.path.join(TMP, "paused_folder"), "--folder", "--threads", "2",
+                                         "--level", "19"], os.path.join(TMP, "paused_folder"))):
+    if os.path.isfile(out):
+        os.remove(out)
+    rmtree(out)
+    p = subprocess.Popen([EXE, *args, "--progress", "json", "--control", "stdin"],
+                         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    lines = Lines(p)
+    detail = ""
+    try:
+        ok = lines.wait_for("progress")
+        p.stdin.write(b"pause\n")
+        p.stdin.flush()
+        ok = ok and lines.wait_for("paused")
+        time.sleep(1.5)   # what was at work when it was asked for ends
+        n, grown = len(lines.all()), size_of(out)
+        time.sleep(1.5)
+        still = len(lines.all()) == n and size_of(out) == grown and p.poll() is None
+        detail = "lines %d -> %d, size %d -> %d" % (n, len(lines.all()), grown, size_of(out))
+        p.stdin.write(b"resume\n")
+        p.stdin.flush()
+        p.wait(timeout=300)
+        lines.thread.join(timeout=10)
+        evs = json_lines("\n".join(lines.all()))
+        resumed = any(e.get("event") == "resumed" for e in evs)
+        ok = ok and still and resumed and p.returncode == 0 and last_result(evs).get("ok") is True
+        vrc, vout, verr = run("verify", out)
+        check("control_stdin_pause_" + what, ok and vrc == 0, "%s rc=%s verify=%s %s" % (detail, p.returncode, vrc, verr[-200:]))
+    except Exception as ex:  # noqa: BLE001
+        p.kill()
+        check("control_stdin_pause_" + what, False, repr(ex) + detail)
+
+# verify: paused, resumed, and every file checked.
+vsrc = os.path.join(TMP, "paused.p5z")
+p = subprocess.Popen([EXE, "verify", vsrc, "--progress", "json", "--control", "stdin"],
+                     stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+lines = Lines(p)
+p.stdin.write(b"pause\n")
+p.stdin.flush()
+paused = lines.wait_for("paused")
+p.stdin.write(b"resume\n")
+p.stdin.flush()
+p.wait(timeout=300)
+lines.thread.join(timeout=10)
+evs = json_lines("\n".join(lines.all()))
+check("control_stdin_pause_verify", paused and p.returncode == 0 and last_result(evs).get("ok") is True
+      and any(e.get("event") == "resumed" for e in evs), "rc=%s %s" % (p.returncode, lines.all()[-3:]))
+
+# Cancelled while paused: it stops as a cancel does, and takes away what it wrote.
+cpause = os.path.join(TMP, "paused_cancel.p5z")
+if os.path.isfile(cpause):
+    os.remove(cpause)
+p = subprocess.Popen([EXE, "pack", BIG, "-o", cpause, "--p5z", "--threads", "1", "--level", "19", "--progress", "json",
+                      "--control", "stdin"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+lines = Lines(p)
+lines.wait_for("progress")
+p.stdin.write(b"pause\n")
+p.stdin.flush()
+paused = lines.wait_for("paused")
+p.stdin.write(b"cancel\n")
+p.stdin.flush()
+p.wait(timeout=120)
+lines.thread.join(timeout=10)
+evs = json_lines("\n".join(lines.all()))
+check("control_stdin_pause_cancel", paused and p.returncode == 130 and last_result(evs).get("error") == "cancelled"
+      and not os.path.exists(cpause), "rc=%s %s" % (p.returncode, lines.all()[-3:]))
+
+# The end of the input while paused cancels too (the window that launched it is gone).
+p = subprocess.Popen([EXE, "pack", BIG, "-o", cpause, "--p5z", "--threads", "1", "--level", "19", "--progress", "json",
+                      "--control", "stdin"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+lines = Lines(p)
+lines.wait_for("progress")
+p.stdin.write(b"pause\n")
+p.stdin.flush()
+paused = lines.wait_for("paused")
+p.stdin.close()
+p.wait(timeout=120)
+check("control_stdin_pause_eof", paused and p.returncode == 130 and not os.path.exists(cpause), "rc=%s" % p.returncode)
+
 # ---- analyze --levels: the levels compared on this PC ---------------------------------------------
 LEVEL_ROW = re.compile(r"^ +(\d+) +\d+\.\d\d [KMGT]?B +-?\d+\.\d % ", re.M)
 rc, out, err = run("analyze", BASIC, "--levels", "--threads", "2")
@@ -615,7 +736,7 @@ try:
     caps = json.loads(so)
     check("capabilities", rc == 0 and all(caps.get(k) is True for k in
                                           ("progress_json", "control_stdin", "max_file_size", "info_json", "icon", "packs",
-                                           "content_id", "levels", "measure")),
+                                           "content_id", "levels", "measure", "pause")),
           so + err)
 except Exception as ex:  # noqa: BLE001
     check("capabilities", False, repr(ex) + so[-200:] + err[-200:])

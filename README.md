@@ -398,7 +398,7 @@ The same engine, for scripts and for measuring a game before you pack it.
   passcode other than the default), read by the engine itself with nothing to mount or install.
 - **Deterministic:** the same input and options give the same bytes with any number of threads.
 - **Made to be driven:** `--progress json` prints one JSON line per event and `--control stdin`
-  cancels cleanly. Exit codes: 0 success, 1 error, 2 wrong usage, 130 cancelled.
+  cancels cleanly, or pauses and resumes the work. Exit codes: 0 success, 1 error, 2 wrong usage, 130 cancelled.
 - Full reference, with examples: [the guide, section 6](docs/guide.md#6-the-command-line).
 
 ### The `.p5z` format

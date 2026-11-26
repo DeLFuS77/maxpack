@@ -4,7 +4,8 @@
 // MiB at once (whole runs of an exFAT image's clusters, with several requests in flight), and the
 // SHA-256 of each file is computed on the way by whichever of them holds that file's next piece, so
 // different files hash at the same time. The consumer gets the pieces in order, exactly the bytes of
-// reading the files one after another; memory is bounded by a fixed budget.
+// reading the files one after another; memory is bounded by a fixed budget. While paused
+// (mp_pause_set), each thread ends the read it has and starts no other.
 #ifndef MP_READAHEAD_H
 #define MP_READAHEAD_H
 

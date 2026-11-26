@@ -24,8 +24,22 @@ void mp_progress_set_hook(const mp_progress_hook *h);
 void mp_cancel_request(void);
 int mp_cancelled(void);
 void mp_cancel_reset(void);
-// If a cancellation is pending, puts "cancelled" in e and returns -1; otherwise 0.
+// If a cancellation is pending, puts "cancelled" in e and returns -1; otherwise 0. While a pause is
+// asked for, it first waits for it to end (see mp_pause_wait): the loops that call it stop there.
 int mp_cancel_check(mp_err *e);
+
+// Pause: an atomic flag, like the cancel, that can be set from any thread. While it is set, the
+// threads of mp_parallel_run and of the pipes take no other item or slot, the read-ahead starts no
+// other read and mp_cancel_check waits: each one ends what it has first (one item, one slot, one
+// read, one piece of a loop), and then CPU and disk are idle; memory stays as it is. Cleared, they go
+// on from where they were. A cancel ends the waits.
+void mp_pause_set(int on);
+int mp_paused(void);
+// Waits while a pause is asked for, until it is cleared, a cancel is asked for, or stop(ctx) says to
+// stop (stop may be NULL). It looks every few tens of milliseconds.
+void mp_pause_wait(int (*stop)(void *ctx), void *ctx);
+// How many threads wait in mp_pause_wait now.
+unsigned mp_pause_waiting(void);
 
 typedef struct mp_progress {
     mp_mutex *mu;

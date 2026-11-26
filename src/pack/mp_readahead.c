@@ -4,7 +4,7 @@
 // `budget` bytes taken and given back in that same order. A piece is hashed once the previous piece of
 // its item is: the thread that finishes the previous one goes on with it if it is already read,
 // otherwise the thread that reads it does. Everything is protected by one mutex; reading and hashing
-// happen outside it.
+// happen outside it. While paused (mp_pause_set) no thread starts a read.
 #include "mp_readahead.h"
 
 #include <inttypes.h>
@@ -99,11 +99,26 @@ static void hash_from(mp_readahead *r, uint64_t seq) {
     }
 }
 
+// Whether the read-ahead is being closed: its threads waiting in the pause stop waiting.
+static int closing(void *arg) {
+    mp_readahead *r = arg;
+    mp_mutex_lock(r->mu);
+    int stop = r->stop;
+    mp_mutex_unlock(r->mu);
+    return stop;
+}
+
 static void reader(void *arg) {
     mp_readahead *r = arg;
     mp_mutex_lock(r->mu);
     for (;;) {
         if (r->stop) break;
+        if (!r->cancelled && !r->failed && r->cur < r->n && mp_paused() && !mp_cancelled()) {
+            mp_mutex_unlock(r->mu);   // the next read waits for the end of the pause
+            mp_pause_wait(closing, r);
+            mp_mutex_lock(r->mu);
+            continue;
+        }
         if (!r->cancelled && !r->failed && r->cur < r->n && mp_cancelled()) {
             r->cancelled = 1;   // nothing more starts; the consumer learns it when it gets here
             mp_cond_broadcast(r->ready_cv);

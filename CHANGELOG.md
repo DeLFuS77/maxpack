@@ -8,6 +8,12 @@ All notable changes to MaxPack are listed here. The format follows
 
 ### Added
 
+- **Pause and resume:** `--control stdin` takes the lines `pause` and `resume` (pack, unpack, verify,
+  add, update, compact, analyze --levels and measure). A pause stops the work at its next batch: the
+  threads end the block they have and take no other, and nothing more is read or written, so the CPU and
+  the disk are free; memory stays. Resuming goes on from there with the same result. With `--progress
+  json` they say `{"event":"paused"}` and `{"event":"resumed"}`; a cancel while paused cancels. In C,
+  `mp_pause_set` (`src/analyze/mp_parallel.h`).
 - **Send to the console:** `maxpack send <game.p5z> <ps5-ip> --code <6 digits> [--drive <id>]` sends a
   `.p5z` to MaxPack for the console over the network, which verifies it when it has it whole and only
   then gives it its name. It shows the MB/s and the time left, goes on from what the console has after

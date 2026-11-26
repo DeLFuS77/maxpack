@@ -620,7 +620,7 @@ maxpack pack "D:\dumps\MyGame.exfat" -o "D:\games\MyGame [PPSA00000].p5z" --p5z 
 | `--leave-out-leftovers` | Leaves out what dump tools leave behind (`decrypted/`, `*.auth_info`, the entitlement files), only when the game's `sce_sys/playgo-hash-table.dat` proves it is not the game's; without one, everything stays and it says so. See [Whether a dump is complete](#whether-a-dump-is-complete). | `--leave-out-leftovers` |
 | `--dlc DLC` | Puts a DLC of the game inside what is made: its `.pkg` (opened with the same `--passcode`) or a dumped DLC folder. Can be repeated. See [DLC inside the `.p5z`](#dlc-inside-the-p5z). | `--dlc "D:\dlc\Bonus.pkg"` |
 | `--progress json` | One JSON line per event on stdout; the text for people stays on stderr. | `--progress json` |
-| `--control stdin` | Reads the input: the line `cancel`, or closing the input, cancels and deletes what was written. | `--control stdin` |
+| `--control stdin` | Reads the input: the line `cancel`, or closing the input, cancels and deletes what was written; `pause` stops the work at its next batch and `resume` goes on from there. | `--control stdin` |
 
 What it guarantees:
 - It never writes to the source, and the output cannot be the game or inside it.
@@ -644,7 +644,13 @@ With `--progress json`, the lines look like this:
 ```
 
 `--control stdin` is meant for a user interface. By hand, type `cancel` and press Enter. If the input
-is already closed (for example with `< /dev/null`), it cancels at once. The result line also has
+is already closed (for example with `< /dev/null`), it cancels at once. The line `pause` stops the work
+at its next batch: each thread ends the block it has (a few MiB) and takes no other, and nothing more is
+read or written, so the CPU and the disk are free while the memory stays as it is. `resume` goes on from
+there, and the result is the same as without the pause. With `--progress json` they say
+`{"event":"paused"}` and `{"event":"resumed"}`; a `cancel` (or the end of the input) while paused cancels
+as usual. `unpack`, `verify` (also `--quick`), `add`, `update`, `compact`, `analyze --levels` and
+`measure` take them too; `send` does not. The result line also has
 `left_out_files` and `left_out_bytes`, `dlc_data`, `dlc_license` and `dlc_bytes` (the DLC put inside,
 below) and `completeness`.
 
@@ -802,7 +808,7 @@ travels in clear on the home network (there is no encryption), so another device
 | `<ps5-ip>` | The console's IP address, as its page shows it (no leading zeros); `a.b.c.d:port` when it is not on port 8095. | `192.168.1.20` |
 | `MAXPACK_SEND_CODE` | The code can come in this environment variable instead of `--code`, so other programs of the PC do not see it on the command line (the window does that). | |
 | `--json` | One JSON line per event on stdout, as `--progress json`: `started` (the drive, and what the console had already), `progress` of the phases `sending` (with `rate` in bytes a second and `eta` in seconds) and `verifying` (the console's), `retry`, `paused`, and the `result` (with `kept` and `have` when it did not end: whether the console keeps what arrived, and how much). | `--json` |
-| `--control stdin` | `cancel` stops it, and the console keeps what arrived; so does the end of the input (a window closed or gone). | |
+| `--control stdin` | `cancel` stops it, and the console keeps what arrived; so does the end of the input (a window closed or gone). `pause` is not taken: the console would stop the receive. | |
 | `--delete-on-cancel` | With `--control stdin`: `cancel` makes the console delete what it received (the end of the input still keeps it). Off by default. | |
 | `--chunk N`, `--retries N`, `--retry-wait MS` | Bytes per request (default 32 MiB, at most 64 MiB); tries after a broken connection (10, but 1 while the console has never answered: "no answer" in about 11 s; any answer begins the count again); the wait after the first one (1 s, doubling up to 30 s; at most 30000). The connect waits 5 s at most. | `--retries 20` |
 | `--stall S` | What the console has, and its verify, not moving for S seconds stops it, and the console keeps what arrived (default 300). | `--stall 600` |
@@ -1336,7 +1342,8 @@ the queue starts, or choose **Delete them for good** in Settings.
 - **On the console,** **Pause** stops an install without losing what was done. Under **Unfinished
   installs**, **Resume** goes on and **Discard** deletes what was copied.
 - **On the command line,** `--control stdin` lets you cancel with the line `cancel`. The engine deletes
-  what it was writing and exits with code 130.
+  what it was writing and exits with code 130. The lines `pause` and `resume` stop the work at its next
+  batch and go on from there.
 
 ### "N files of the original game are missing"
 

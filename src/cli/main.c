@@ -109,7 +109,10 @@ static void usage(FILE *out) {
             "\n"
             "Options for pack, unpack, verify, add, update, compact, analyze --levels and measure (for a front end):\n"
             "  --progress json    one JSON line per event on stdout (the text stays on stderr)\n"
-            "  --control stdin    read from stdin: the line \"cancel\" or closing the input cancels\n"
+            "  --control stdin    read from stdin: the line \"cancel\" or closing the input cancels; \"pause\"\n"
+            "                     stops the work at its next batch (the CPU and the disk go idle, memory\n"
+            "                     stays) and \"resume\" goes on from there; with --progress json each one\n"
+            "                     says {\"event\":\"paused\"} or {\"event\":\"resumed\"}\n"
             "  Exit codes: 0 ok, 1 error, 2 usage, 130 cancelled\n"
             "\n"
             "send: MaxPack for the console shows the code in Settings > \"Receive games from the PC\", which\n"
@@ -127,7 +130,7 @@ static void usage(FILE *out) {
             "  --retry-wait MS    the wait after the first one, 1 to 30000 (default 1000; it doubles, up to 30 s)\n"
             "  --stall S          nothing moving on the console for S seconds stops it (default 300)\n"
             "  --control stdin    \"cancel\" stops it, and the console keeps what arrived (so does the end of\n"
-            "                     the input)\n"
+            "                     the input); \"pause\" is not taken (the console would stop the receive)\n"
             "  --delete-on-cancel with --control stdin: \"cancel\" makes the console delete what it received\n"
             "  Exit codes: 0 sent and verified, 1 error, 2 usage, 3 no answer from the console, 4 receiving\n"
             "  is off there, 5 wrong code, 6 too many wrong codes, 7 already there, 8 the console is busy,\n"
@@ -166,6 +169,7 @@ static int g_control;               // --control stdin
 static const char *g_err_code;      // error code for the JSON result
 static int g_result_done;           // the "result" line has already been written
 static volatile int g_cancel_line;  // the cancel came as the line "cancel" (not as the end of the input)
+static int g_no_pause;              // the command does not take "pause" (send: the console would stop the receive)
 
 static const char *phase_code(const char *phase) {
     if (!strncmp(phase, "Copying", 7)) return "copying";
@@ -211,6 +215,15 @@ static void control_thread(void *arg) {
                 g_cancel_line = 1;
                 mp_cancel_request();
                 return;
+            }
+            // pause and resume: the work stops at its next batch, and goes on from there
+            int pause = !strcmp(line, "pause"), resume = !strcmp(line, "resume");
+            if ((pause || resume) && !g_no_pause) {
+                mp_pause_set(pause);
+                if (g_json) {
+                    printf("{\"event\":\"%s\"}\n", pause ? "paused" : "resumed");
+                    fflush(stdout);
+                }
             }
             n = 0;
         } else if (c != '\r' && n < sizeof line - 1) {
@@ -1654,8 +1667,10 @@ static void quick_progress(void *ctx, uint64_t done, uint64_t total) {
     }
 }
 
+// Asked before each piece: while paused (--control stdin "pause") it waits there.
 static int quick_cancelled(void *ctx) {
     (void)ctx;
+    mp_pause_wait(NULL, NULL);
     return mp_cancelled();
 }
 
@@ -2125,6 +2140,7 @@ static int run_send(int argc, char **argv) {
         g_json = 0;   // --discard --json is its answer itself
         return run_send_discard(p5z, &o, json);
     }
+    g_no_pause = 1;
     start_json_and_control();
     // what goes is a whole .p5z: one whose name the console takes, as it is (an append that stopped undone)
     const char *base = p5z + strlen(p5z);
@@ -2399,7 +2415,7 @@ int main(int argc, char **argv) {
         printf("{\"progress_json\":true,\"control_stdin\":true,\"max_file_size\":true,\"info_json\":true,"
                "\"icon\":true,\"packs\":true,\"content_id\":true,\"levels\":true,\"measure\":true,"
                "\"images\":true,\"fpkg\":true,\"passcode\":true,\"completeness\":true,\"dlc\":true,\"grow\":true,"
-               "\"verify_quick\":true,\"send\":true}\n");
+               "\"verify_quick\":true,\"send\":true,\"pause\":true}\n");
         return 0;
     }
     if (argc >= 2 && (!strcmp(argv[1], "--help") || !strcmp(argv[1], "-h") || !strcmp(argv[1], "help"))) {

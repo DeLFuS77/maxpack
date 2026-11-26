@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // The read-ahead hands out exactly the bytes and the SHA-256s of reading the files one after another
 // with mp_source_read, in the order asked, whatever its threads, piece size and memory; and fails,
-// cancels and stops as that reading would.
+// cancels and stops as that reading would, and starts no read while paused.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -11,6 +11,7 @@
 #include "mp_parallel.h"
 #include "mp_readahead.h"
 #include "mp_source.h"
+#include "mp_source_impl.h"
 
 #define FX MP_FIXTURES_DIR
 #define TMP MP_TEST_TMP "/readahead"
@@ -456,6 +457,110 @@ MP_TEST(readahead_close_early) {
     mp_source_close(s);
 }
 
+// ---- pause -----------------------------------------------------------------------------------
+
+// The reads of the source, counted: the one numbered pause_at asks for a pause.
+static int (*real_read)(mp_source *s, size_t i, uint64_t off, void *buf, size_t len, mp_err *e);
+static mp_mutex *reads_mu;
+static int reads, pause_at;
+
+static int counting_read(mp_source *s, size_t i, uint64_t off, void *buf, size_t len, mp_err *e) {
+    mp_mutex_lock(reads_mu);
+    int n = ++reads;
+    mp_mutex_unlock(reads_mu);
+    if (n == pause_at) mp_pause_set(1);
+    return real_read(s, i, off, buf, len, e);
+}
+
+static int reads_now(void) {
+    mp_mutex_lock(reads_mu);
+    int n = reads;
+    mp_mutex_unlock(reads_mu);
+    return n;
+}
+
+// Whether `threads` threads wait in the pause (it gives them 10 s to get there).
+static int parked(unsigned threads) {
+    for (int i = 0; i < 2000; i++) {
+        if (mp_pause_waiting() >= threads) return 1;
+        mp_sleep_ms(5);
+    }
+    return 0;
+}
+
+MP_TEST(readahead_pauses) {
+    make_dir();
+    mp_err e = {{0}};
+    mp_source *s = NULL;
+    if (mp_source_open(DIRSRC, &s, &e) != 0) {
+        MP_FAIL_("%s", e.msg);
+        return;
+    }
+    size_t n = 0;
+    uint32_t *f = scrambled(s, &n);
+    digest ref;
+    reference(s, f, n, &ref);
+    reads_mu = mp_mutex_new();
+    real_read = s->read;
+    s->read = counting_read;
+    mp_readahead_opts o = {4, 256 * KIB, 256 * MIB};   // room for everything: only the pause stops them
+    mp_readahead *ra = NULL;
+    mp_readahead_piece p;
+    digest got;
+
+    // paused before it opens: not one read until it is resumed, then every byte in order
+    reads = 0;
+    pause_at = 0;
+    mp_pause_set(1);
+    MP_CHECK(mp_readahead_open(s, f, n, NULL, &o, &ra, &e) == 0);
+    MP_CHECK(parked(4));
+    mp_sleep_ms(50);
+    MP_CHECK_EQ_U64(reads_now(), 0);
+    mp_pause_set(0);
+    MP_CHECK(drain(ra, s, f, n, &got, &e) == 0);
+    MP_CHECK(!memcmp(got.all, ref.all, 32));
+    MP_CHECK_EQ_U64(got.bytes, ref.bytes);
+    mp_readahead_close(ra);
+
+    // paused at the third read: each thread ends the read it has and starts no other; nothing is lost
+    reads = 0;
+    pause_at = 3;
+    MP_CHECK(mp_readahead_open(s, f, n, NULL, &o, &ra, &e) == 0);
+    MP_CHECK(parked(4));
+    int at = reads_now();
+    MP_CHECK(at >= 3 && at <= 6);
+    mp_sleep_ms(50);
+    MP_CHECK_EQ_U64(reads_now(), at);
+    mp_pause_set(0);
+    MP_CHECK(drain(ra, s, f, n, &got, &e) == 0);
+    MP_CHECK(!memcmp(got.all, ref.all, 32));
+    mp_readahead_close(ra);
+
+    // cancelled while paused: the consumer gets "cancelled"
+    pause_at = 0;
+    mp_pause_set(1);
+    MP_CHECK(mp_readahead_open(s, f, n, NULL, &o, &ra, &e) == 0);
+    MP_CHECK(parked(4));
+    mp_cancel_request();
+    MP_CHECK(mp_readahead_next(ra, &p, &e) == -1);
+    MP_CHECK_STR(e.msg, "cancelled");
+    mp_readahead_close(ra);
+    mp_cancel_reset();
+
+    // closed while paused (the consumer stopped): its threads go, nothing hangs
+    MP_CHECK(mp_readahead_open(s, f, n, NULL, &o, &ra, &e) == 0);
+    MP_CHECK(parked(4));
+    mp_readahead_close(ra);
+    MP_CHECK_EQ_U64(mp_pause_waiting(), 0);
+    mp_pause_set(0);
+
+    s->read = real_read;
+    mp_mutex_free(reads_mu);
+    free(ref.sha);
+    free(f);
+    mp_source_close(s);
+}
+
 int main(void) {
     mpt_clear(TMP);
     MP_RUN(readahead_same_bytes_exfat);
@@ -468,6 +573,7 @@ int main(void) {
     MP_RUN(readahead_truncated_image);
     MP_RUN(readahead_cancel);
     MP_RUN(readahead_close_early);
+    MP_RUN(readahead_pauses);
     mpt_clear(TMP);
     MP_TEST_MAIN_END();
 }

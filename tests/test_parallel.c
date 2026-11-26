@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -40,6 +41,7 @@ typedef struct {
     int calls;
     mp_mutex *mu;
     uint64_t fail_value;   // work returns 7 for that input (0 = never)
+    int pause_at;          // the call of work that asks for a pause (0 = none)
     mp_pipe *pipe;
     uint64_t n;            // the producer thread submits 1..n
 } pctx;
@@ -55,6 +57,7 @@ static int square_work(void *ctx, size_t slot, unsigned tid) {
     mp_mutex_lock(c->mu);
     c->calls++;
     if (tid > c->max_tid) c->max_tid = tid;
+    if (c->pause_at && c->calls == c->pause_at) mp_pause_set(1);
     mp_mutex_unlock(c->mu);
     return c->fail_value && v == c->fail_value ? 7 : 0;
 }
@@ -211,6 +214,190 @@ MP_TEST(pipe_cancelled) {
     MP_CHECK(mp_pipe_new(2, 0, square_work, &c) == NULL);
 }
 
+// ---- pause -----------------------------------------------------------------------------------
+
+// Whether `threads` threads wait in the pause (it gives them 10 s to get there).
+static int parked(unsigned threads) {
+    for (int i = 0; i < 2000; i++) {
+        if (mp_pause_waiting() >= threads) return 1;
+        mp_sleep_ms(5);
+    }
+    return 0;
+}
+
+typedef struct {
+    mp_mutex *mu;
+    int calls, pause_at;   // the call that asks for a pause (0 = none)
+    int *seen;
+    size_t n;
+    unsigned threads;
+    int rc;
+} pause_ctx;
+
+static int pausing_work(void *ctx, size_t item, unsigned tid) {
+    (void)tid;
+    pause_ctx *c = ctx;
+    mp_mutex_lock(c->mu);
+    int n = ++c->calls;
+    c->seen[item]++;
+    mp_mutex_unlock(c->mu);
+    if (n == c->pause_at) mp_pause_set(1);
+    return 0;
+}
+
+static int calls_of(mp_mutex *mu, const int *calls) {
+    mp_mutex_lock(mu);
+    int n = *calls;
+    mp_mutex_unlock(mu);
+    return n;
+}
+
+static void run_pausing(void *arg) {
+    pause_ctx *c = arg;
+    c->rc = mp_parallel_run(c->threads, c->n, pausing_work, c, NULL);
+}
+
+// A pause asked for during the 10th item: each thread ends the item it has and takes no other until
+// it is resumed; then every item is done once.
+MP_TEST(parallel_pauses_between_items) {
+    static int seen[1000];
+    memset(seen, 0, sizeof seen);
+    pause_ctx c = {mp_mutex_new(), 0, 10, seen, 1000, 3, -5};
+    mp_thread *t = NULL;
+    MP_CHECK(mp_thread_start(&t, run_pausing, &c) == 0);
+    MP_CHECK(parked(3));
+    int at = calls_of(c.mu, &c.calls);
+    MP_CHECK(at >= 10 && at <= 12);   // the 10th, and at most the one each other thread had
+    mp_sleep_ms(100);
+    MP_CHECK_EQ_U64(calls_of(c.mu, &c.calls), at);
+    MP_CHECK(mp_paused());
+    mp_pause_set(0);
+    mp_thread_join(t);
+    MP_CHECK(!mp_paused());
+    MP_CHECK(c.rc == 0);
+    MP_CHECK_EQ_U64(c.calls, 1000);
+    int bad = 0;
+    for (int i = 0; i < 1000; i++) bad += seen[i] != 1;
+    MP_CHECK_EQ_U64(bad, 0);
+    MP_CHECK_EQ_U64(mp_pause_waiting(), 0);
+    mp_mutex_free(c.mu);
+}
+
+// A cancel while paused ends the wait: the run stops as a cancel does.
+MP_TEST(parallel_cancel_while_paused) {
+    static int seen[1000];
+    memset(seen, 0, sizeof seen);
+    pause_ctx c = {mp_mutex_new(), 0, 5, seen, 1000, 2, -5};
+    mp_thread *t = NULL;
+    MP_CHECK(mp_thread_start(&t, run_pausing, &c) == 0);
+    MP_CHECK(parked(2));
+    mp_cancel_request();
+    mp_thread_join(t);
+    MP_CHECK(c.rc == -1);
+    MP_CHECK(c.calls < 1000);
+    MP_CHECK_EQ_U64(mp_pause_waiting(), 0);
+    mp_cancel_reset();
+    mp_pause_set(0);
+    mp_mutex_free(c.mu);
+}
+
+// The pipe's threads end the slot they have and take no other while paused; resumed, every slot
+// comes out in order with its result.
+MP_TEST(pipe_pauses_between_slots) {
+    pctx c;
+    memset(&c, 0, sizeof c);
+    c.mu = mp_mutex_new();
+    c.pause_at = 3;
+    mp_pipe *p = mp_pipe_new(2, NSLOTS, square_work, &c);
+    MP_CHECK(p != NULL);
+    if (!p) return;
+    for (int i = 0; i < NSLOTS; i++) {
+        long s = mp_pipe_acquire(p);
+        c.in[s] = (uint64_t)i + 1;
+        mp_pipe_submit(p, (size_t)s, 1);
+    }
+    MP_CHECK(parked(2));
+    int at = calls_of(c.mu, &c.calls);
+    MP_CHECK(at >= 3 && at <= 4);
+    mp_sleep_ms(100);
+    MP_CHECK_EQ_U64(calls_of(c.mu, &c.calls), at);
+    mp_pause_set(0);
+    uint64_t bad = 0;
+    for (int i = 0; i < NSLOTS; i++) {
+        int rc = -5;
+        long s = mp_pipe_next(p, 1, &rc);
+        if (s < 0 || rc != 0 || c.in[s] != (uint64_t)i + 1 || c.out[s] != c.in[s] * c.in[s]) bad++;
+        if (s >= 0) mp_pipe_release(p, (size_t)s);
+    }
+    MP_CHECK_EQ_U64(bad, 0);
+    MP_CHECK_EQ_U64(c.calls, NSLOTS);
+    mp_pipe_free(p);
+    mp_mutex_free(c.mu);
+}
+
+// Stopped while its threads wait in the pause (the writer failed): they go, nothing hangs.
+MP_TEST(pipe_freed_while_paused) {
+    pctx c;
+    memset(&c, 0, sizeof c);
+    c.mu = mp_mutex_new();
+    c.pause_at = 1;
+    mp_pipe *p = mp_pipe_new(3, NSLOTS, square_work, &c);
+    MP_CHECK(p != NULL);
+    if (!p) return;
+    for (int i = 0; i < NSLOTS; i++) {
+        long s = mp_pipe_acquire(p);
+        c.in[s] = (uint64_t)i + 1;
+        mp_pipe_submit(p, (size_t)s, 1);
+    }
+    MP_CHECK(parked(3));
+    mp_pipe_abort(p);
+    mp_pipe_free(p);
+    MP_CHECK_EQ_U64(mp_pause_waiting(), 0);
+    MP_CHECK(c.calls < NSLOTS);
+    mp_pause_set(0);
+    mp_mutex_free(c.mu);
+}
+
+typedef struct {
+    mp_mutex *mu;
+    int n;
+    char msg[64];
+} check_ctx;
+
+static void check_loop(void *arg) {
+    check_ctx *x = arg;
+    mp_err e = {{0}};
+    while (mp_cancel_check(&e) == 0) {
+        mp_mutex_lock(x->mu);
+        if (++x->n == 5) mp_pause_set(1);
+        mp_mutex_unlock(x->mu);
+    }
+    snprintf(x->msg, sizeof x->msg, "%s", e.msg);
+}
+
+// The loops of pack, unpack and verify stop at their next mp_cancel_check while paused, go on once
+// resumed, and a cancel while paused ends them as a cancel does.
+MP_TEST(cancel_check_waits_while_paused) {
+    check_ctx x = {mp_mutex_new(), 0, ""};
+    mp_thread *t = NULL;
+    MP_CHECK(mp_thread_start(&t, check_loop, &x) == 0);
+    MP_CHECK(parked(1));
+    MP_CHECK_EQ_U64(calls_of(x.mu, &x.n), 5);
+    mp_sleep_ms(50);
+    MP_CHECK_EQ_U64(calls_of(x.mu, &x.n), 5);
+    mp_pause_set(0);
+    for (int i = 0; i < 2000 && calls_of(x.mu, &x.n) < 100; i++) mp_sleep_ms(5);
+    MP_CHECK(calls_of(x.mu, &x.n) >= 100);
+    mp_pause_set(1);
+    MP_CHECK(parked(1));
+    mp_cancel_request();
+    mp_thread_join(t);
+    MP_CHECK_STR(x.msg, "cancelled");
+    mp_cancel_reset();
+    mp_pause_set(0);
+    mp_mutex_free(x.mu);
+}
+
 MP_TEST(xxh64_vector) {
     MP_CHECK_EQ_U64(mp_xxh64("", 0, 0), 0xEF46DB3751D8E999ULL);
     MP_CHECK(mp_xxh64("a", 1, 0) != mp_xxh64("b", 1, 0));
@@ -223,6 +410,11 @@ int main(void) {
     MP_RUN(pipe_same_thread);
     MP_RUN(pipe_abort_wakes_everyone);
     MP_RUN(pipe_cancelled);
+    MP_RUN(parallel_pauses_between_items);
+    MP_RUN(parallel_cancel_while_paused);
+    MP_RUN(pipe_pauses_between_slots);
+    MP_RUN(pipe_freed_while_paused);
+    MP_RUN(cancel_check_waits_while_paused);
     MP_RUN(xxh64_vector);
     MP_TEST_MAIN_END();
 }

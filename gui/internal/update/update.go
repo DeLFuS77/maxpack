@@ -15,6 +15,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	_ "embed"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -35,6 +36,12 @@ import (
 
 // Repo is the repository whose releases are looked at.
 const Repo = "DeLFuS77/maxpack"
+
+// ReleaseKeys are the public keys the releases are signed with (release.pub): the author's main key and a
+// spare one, which signs if the first is lost. A release signed by either is taken.
+//
+//go:embed release.pub
+var ReleaseKeys string
 
 // The most each answer may take: what is bigger is not what it should be.
 const (
@@ -67,7 +74,7 @@ func fail(code string, format string, args ...any) error {
 // Config is what a check needs.
 type Config struct {
 	Current   string // the version of this MaxPack ("1.0.7"); a build of no release ("dev-…") looks for nothing
-	PublicKey string // the minisign public key of the releases (the base64 line of minisign.pub); "" for none
+	PublicKey string // the minisign public keys of the releases, as release.pub keeps them; "" for none
 	Asset     string // the file of this system in the release (see AssetFor)
 	Download  bool   // whether that file is downloaded and checked (the installer of Windows)
 	Folder    string // where it goes
@@ -134,12 +141,12 @@ func newer(a, b string) bool {
 
 // Check looks for a newer release, as the package says. An empty Offer and no error: nothing newer.
 func Check(ctx context.Context, c Config) (Offer, error) {
-	if strings.TrimSpace(c.PublicKey) == "" {
-		return Offer{}, ErrNoKey
-	}
-	key, err := minisign.ParsePublicKey(c.PublicKey)
+	keys, err := minisign.ParsePublicKeys(c.PublicKey)
 	if err != nil {
 		return Offer{}, err
+	}
+	if len(keys) == 0 {
+		return Offer{}, ErrNoKey
 	}
 	if !versionOf.MatchString(c.Current) {
 		return Offer{}, nil
@@ -192,7 +199,7 @@ func Check(ctx context.Context, c Config) (Offer, error) {
 	if err != nil {
 		return Offer{}, err
 	}
-	trusted, err := minisign.Verify(key, sums, signature)
+	trusted, err := minisign.VerifyAny(keys, sums, signature)
 	if err != nil {
 		return Offer{}, &Error{Code: "bad_signature", Err: err}
 	}

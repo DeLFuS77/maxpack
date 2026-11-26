@@ -9,7 +9,8 @@
 //	trusted comment: <text>
 //	base64 of the Ed25519 signature of the signature above followed by the trusted comment's text
 //
-// Both signatures must be valid for the key, and the key ID must be the key's.
+// Both signatures must be valid for the key, and the key ID must be the key's. A file of keys (release.pub)
+// may hold several, the main key and a spare one; a signature is checked with the one of its key ID.
 package minisign
 
 import (
@@ -64,6 +65,63 @@ func ParsePublicKey(text string) (PublicKey, error) {
 	copy(key.ID[:], raw[2:10])
 	key.Key = ed25519.PublicKey(raw[10:])
 	return key, nil
+}
+
+// ParsePublicKeys reads a file of public keys: each key's base64 line, after its untrusted comment; lines
+// starting with # are comments, and empty lines are left out. A file with no key gives none.
+func ParsePublicKeys(text string) ([]PublicKey, error) {
+	keys := []PublicKey{}
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "untrusted comment:") {
+			continue
+		}
+		key, err := ParsePublicKey(line)
+		if err != nil {
+			return nil, err
+		}
+		keys = append(keys, key)
+	}
+	return keys, nil
+}
+
+// Name is the key ID as minisign shows it (in "minisign public key 64300306F44900F2"): the 8 bytes as a
+// little-endian number, in hex.
+func (k PublicKey) Name() string {
+	name := ""
+	for i := len(k.ID) - 1; i >= 0; i-- {
+		name += fmt.Sprintf("%02X", k.ID[i])
+	}
+	return name
+}
+
+// VerifyAny is Verify with the key of keys whose ID the signature names: ErrOtherKey when none has it.
+func VerifyAny(keys []PublicKey, message, sig []byte) (trusted string, err error) {
+	id, err := keyID(sig)
+	if err != nil {
+		return "", err
+	}
+	for _, key := range keys {
+		if key.ID == id {
+			return Verify(key, message, sig)
+		}
+	}
+	return "", ErrOtherKey
+}
+
+// keyID is the ID of the key a signature names, once its format is checked.
+func keyID(sig []byte) ([8]byte, error) {
+	var id [8]byte
+	lines := splitLines(string(sig))
+	if len(lines) < 2 || len(lines[1]) > maxLine {
+		return id, fmt.Errorf("signature: %w", ErrFormat)
+	}
+	raw, err := base64.StdEncoding.DecodeString(lines[1])
+	if err != nil || len(raw) != 2+8+ed25519.SignatureSize {
+		return id, fmt.Errorf("signature: %w", ErrFormat)
+	}
+	copy(id[:], raw[2:10])
+	return id, nil
 }
 
 // Verify checks that sig (the content of a .minisig file) is key's signature of message, and that its

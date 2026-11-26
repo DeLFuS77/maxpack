@@ -350,7 +350,7 @@ only accepts a `libSceAmpr.sprx` that reads zstd.
 - **Internet:** MaxPack's window goes on the internet for nothing, unless you turn on **Look for new
   versions** (off by default): then, once each time it starts, it asks GitHub for the latest release, and
   offers a newer one only once its list of files is signed by the author (on Windows, with its installer
-  downloaded and checked: **Update** runs it). A build without the key says it is not available.
+  downloaded and checked: **Update** runs it). The release keys are built in, a main one and a spare.
 - **About:** the versions, **Copy report**, and the links to report a bug or a game.
 
 ### Repair data

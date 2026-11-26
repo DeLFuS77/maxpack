@@ -138,3 +138,47 @@ func TestMalformed(t *testing.T) {
 		}
 	}
 }
+
+// A file of keys as release.pub keeps them (comments, each key after its untrusted comment) takes a
+// signature by any of its keys, matched by key ID; a key ID it does not have is refused.
+func TestSeveralKeys(t *testing.T) {
+	first, second := ed25519.NewKeyFromSeed([]byte("first test key of a pair, never1")), ed25519.NewKeyFromSeed([]byte("spare test key of a pair, never2"))
+	idFirst, idSecond := [8]byte{1, 1, 1, 1, 1, 1, 1, 1}, [8]byte{2, 2, 2, 2, 2, 2, 2, 2}
+	text := "# the keys of these tests only\nuntrusted comment: minisign public key 0101010101010101\n" +
+		minisigntest.PublicKey(first.Public().(ed25519.PublicKey), idFirst) + "\n\n# a spare one\r\nuntrusted comment: minisign public key 0202020202020202\r\n" +
+		minisigntest.PublicKey(second.Public().(ed25519.PublicKey), idSecond) + "\r\n"
+	keys, err := minisign.ParsePublicKeys(text)
+	if err != nil || len(keys) != 2 || keys[0].ID != idFirst || keys[1].ID != idSecond {
+		t.Fatalf("%+v, %v", keys, err)
+	}
+	message := []byte("sums\n")
+	for _, c := range []struct {
+		private ed25519.PrivateKey
+		id      [8]byte
+	}{{first, idFirst}, {second, idSecond}} {
+		trusted, err := minisign.VerifyAny(keys, message, minisigntest.Sign(c.private, c.id, message, true, "MaxPack 1.2.3"))
+		if err != nil || trusted != "MaxPack 1.2.3" {
+			t.Errorf("signed by %x: %q, %v", c.id, trusted, err)
+		}
+	}
+	if _, err := minisign.VerifyAny(keys, message, minisigntest.Sign(first, [8]byte{9}, message, true, "MaxPack 1.2.3")); !errors.Is(err, minisign.ErrOtherKey) {
+		t.Errorf("an unknown key ID: %v", err)
+	}
+	if _, err := minisign.VerifyAny(keys, message, minisigntest.Sign(second, idFirst, message, true, "MaxPack 1.2.3")); !errors.Is(err, minisign.ErrSignature) {
+		t.Errorf("the spare key under the first one's ID: %v", err)
+	}
+	if _, err := minisign.VerifyAny(nil, message, minisigntest.Sign(first, idFirst, message, true, "x")); !errors.Is(err, minisign.ErrOtherKey) {
+		t.Errorf("no keys: %v", err)
+	}
+	for _, bad := range []string{"untrusted comment: x\nnot a key\n", "RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7"} {
+		if _, err := minisign.ParsePublicKeys(bad); !errors.Is(err, minisign.ErrFormat) {
+			t.Errorf("%q: %v", bad, err)
+		}
+	}
+	if keys, err := minisign.ParsePublicKeys("# none yet\n"); err != nil || len(keys) != 0 {
+		t.Errorf("a file with no key: %+v, %v", keys, err)
+	}
+	if name := keys[1].Name(); name != "0202020202020202" {
+		t.Errorf("the name of a key: %s", name)
+	}
+}

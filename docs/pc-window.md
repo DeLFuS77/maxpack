@@ -444,7 +444,8 @@ least in both themes, and nothing moves when the system asks for less motion.
   versions** (off by default; see [What goes on the internet](../README.md#what-goes-on-the-internet)):
   - once each time MaxPack starts, it asks GitHub for the latest release of DeLFuS77/maxpack;
   - only when that is newer does it download the release's `SHA256SUMS` and `SHA256SUMS.minisig`, and it
-    offers the new version only when the signature is valid for the key built into MaxPack;
+    offers the new version only when the signature is valid for one of the release keys built into MaxPack
+    (the main one, or the spare one that signs if the first is lost);
   - the signature must also name that version (`MaxPack X.Y.Z`), so the signed list of an older release
     is never offered under a newer number;
   - on Windows it then downloads the installer, checks its SHA-256 against the signed list, and **Update**
@@ -455,7 +456,8 @@ least in both themes, and nothing moves when the system asks for less motion.
   - a release not signed, or signed with another key, is not offered, and nothing past its list is
     downloaded. The line under the switch says what it found.
 
-  A build without the key says "Not available in this build", and the switch cannot be turned on.
+  A build without any release key (`gui/internal/update/release.pub` empty) would say "Not available in
+  this build", and its switch could not be turned on.
 - **About** has **Copy report** and the links to report a bug or a game.
 
 ### Windows Explorer

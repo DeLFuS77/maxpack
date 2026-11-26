@@ -37,7 +37,8 @@ Only the latest release receives fixes.
   SHA-256 of the file with `SHA256SUMS`, which is on the same page. The releases signed by the author also
   have `SHA256SUMS.minisig`, made offline with a key the CI never has ([docs/releasing.md](docs/releasing.md)).
 - **Looking for new versions** (Settings › Internet, off by default) goes only to GitHub over HTTPS, and
-  offers a version only when its `SHA256SUMS` is signed with the key built into MaxPack; the installer
+  offers a version only when its `SHA256SUMS` is signed with one of the release keys built into MaxPack
+  (`gui/internal/update/release.pub`: the main one and a spare); the installer
   it downloads on Windows must have the SHA-256 that list gives, checked again right before it runs.
 - Only use `.p5z` files and game dumps that you made yourself or trust. `maxpack verify` checks that a
   `.p5z` is whole; it cannot tell you whether a game is safe to run.

@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"errors"
+	"net/http"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -90,6 +91,7 @@ type App struct {
 	updateMutex  sync.Mutex
 	update       *updating
 	updates      *update.Config
+	updateClient *http.Client
 	runInstaller func(path string) error
 	quit         func()
 }

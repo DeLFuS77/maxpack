@@ -4,7 +4,8 @@ package main
 
 // Looking for new versions (Settings › Internet), off until the user turns it on: then, once each time
 // MaxPack starts, it asks GitHub for the latest release, and offers a newer one only once the signature of
-// its SHA256SUMS checks with the key below (see internal/update). On Windows the installer is downloaded and
+// its SHA256SUMS checks with one of the release keys built in (internal/update/release.pub; see
+// internal/update and docs/releasing.md). On Windows the installer is downloaded and
 // checked against that list, and Update runs it; on macOS, Linux and in the portable version, Update opens
 // the release's page.
 
@@ -16,16 +17,12 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/DeLFuS77/maxpack/gui/internal/minisign"
 	"github.com/DeLFuS77/maxpack/gui/internal/update"
 	"github.com/DeLFuS77/maxpack/gui/settings"
 
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
-
-// updateKey is the minisign public key that signs the SHA256SUMS of each release: the second line of the
-// author's minisign.pub (see docs/releasing.md). It is empty in this build: MaxPack then looks for nothing,
-// and Settings says it is not available.
-const updateKey = ""
 
 // updateTimeout is the most a look (and the download of the installer) may take.
 const updateTimeout = 30 * time.Minute
@@ -48,14 +45,14 @@ type updating struct {
 	offer update.Offer
 }
 
-// updateConfig is how a look is made: GitHub, the key of this build, the file of this system and the folder
-// of the downloads (or the stand-in of the tests).
+// updateConfig is how a look is made: GitHub, the keys of this build, the file of this system and the folder
+// of the downloads (or the stand-ins of the tests).
 func (a *App) updateConfig() update.Config {
 	if a.updates != nil {
 		return *a.updates
 	}
 	c := update.Defaults()
-	c.Current, c.PublicKey = version, updateKey
+	c.Current, c.PublicKey, c.Client = version, update.ReleaseKeys, a.updateClient
 	c.Asset, c.Download = update.AssetFor(runtime.GOOS, runtime.GOARCH, isPortable())
 	if folder, err := settings.Dir(); err == nil {
 		c.Folder = filepath.Join(folder, "updates")
@@ -66,13 +63,16 @@ func (a *App) updateConfig() update.Config {
 }
 
 // updateAvailable tells whether this build can look for versions: it has a key to check them with.
-func (a *App) updateAvailable() bool { return a.updateConfig().PublicKey != "" }
+func (a *App) updateAvailable() bool {
+	keys, err := minisign.ParsePublicKeys(a.updateConfig().PublicKey)
+	return err == nil && len(keys) > 0
+}
 
 // CheckUpdate looks for a newer version, when Settings says so, at most once each time MaxPack starts: a
 // second call (the page loaded again, or the switch turned on later) gets the first answer.
 func (a *App) CheckUpdate() UpdateView {
 	c := a.updateConfig()
-	if c.PublicKey == "" {
+	if !a.updateAvailable() {
 		return UpdateView{State: "unavailable"}
 	}
 	a.updateMutex.Lock()

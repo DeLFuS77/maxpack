@@ -18,6 +18,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/DeLFuS77/maxpack/gui/internal/minisign"
 	"github.com/DeLFuS77/maxpack/gui/internal/minisign/minisigntest"
 )
 
@@ -371,5 +372,44 @@ func TestInstallerKeptBetweenStarts(t *testing.T) {
 	}
 	if entries, _ := os.ReadDir(c.Folder); len(entries) != 0 {
 		t.Fatalf("left after the update: %v", entries)
+	}
+}
+
+// The keys built into MaxPack are the release keys of the author (the ones NXPress's releases are signed
+// with too): the main one and the spare one, by the IDs minisign shows.
+func TestReleaseKeys(t *testing.T) {
+	keys, err := minisign.ParsePublicKeys(ReleaseKeys)
+	if err != nil || len(keys) != 2 {
+		t.Fatalf("%d keys, %v", len(keys), err)
+	}
+	if keys[0].Name() != "64300306F44900F2" || keys[1].Name() != "7090921881F567B0" {
+		t.Fatalf("the keys are %s and %s", keys[0].Name(), keys[1].Name())
+	}
+}
+
+// A release signed by either key of the file is taken; one signed by a key it does not have is not.
+func TestEitherReleaseKey(t *testing.T) {
+	main, spare := ed25519.NewKeyFromSeed([]byte("main release test key, never1234")), ed25519.NewKeyFromSeed([]byte("spare release test key, never123"))
+	idMain, idSpare := [8]byte{'m', 'a', 'i', 'n', 'k', 'e', 'y', '1'}, [8]byte{'s', 'p', 'a', 'r', 'e', 'k', 'e', 'y'}
+	text := "# test keys only\nuntrusted comment: minisign public key 3179656B6E69616D\n" + minisigntest.PublicKey(main.Public().(ed25519.PublicKey), idMain) +
+		"\n# the spare one\nuntrusted comment: minisign public key 79656B6572617073\n" + minisigntest.PublicKey(spare.Public().(ed25519.PublicKey), idSpare) + "\n"
+	for name, signer := range map[string]struct {
+		private ed25519.PrivateKey
+		id      [8]byte
+		ok      bool
+	}{"main": {main, idMain, true}, "spare": {spare, idSpare, true}, "unknown": {main, [8]byte{'o', 't', 'h', 'e', 'r'}, false}} {
+		r := signed("v1.1.0")
+		r.assets["SHA256SUMS.minisig"] = minisigntest.Sign(signer.private, signer.id, r.assets["SHA256SUMS"], true, "MaxPack 1.1.0")
+		server := httptest.NewTLSServer(r)
+		c := config(t, server, "1.0.7")
+		c.PublicKey = text
+		offer, err := Check(context.Background(), c)
+		server.Close()
+		if signer.ok && (err != nil || offer.Version != "1.1.0") {
+			t.Errorf("signed by the %s key: %+v, %v", name, offer, err)
+		}
+		if !signer.ok && (codeOf(err) != "bad_signature" || strings.Contains(r.requests(), installer)) {
+			t.Errorf("signed by an %s key: %v, asked %s", name, err, r.requests())
+		}
 	}
 }

@@ -12,14 +12,14 @@ All notable changes to MaxPack are listed here. The format follows
   internet): once each time the window starts, it asks GitHub's API for the latest release of
   DeLFuS77/maxpack and, only when it is newer, downloads its `SHA256SUMS` and `SHA256SUMS.minisig` and
   checks the minisign signature (Ed25519, both the signature and its trusted comment; prehashed and legacy)
-  with the public key built into the window, with Go's standard library; the trusted comment must be
+  with the release keys built into the window, with Go's standard library; the trusted comment must be
   `MaxPack` and the tag's version, so an old signed list put under a newer tag is refused. Only then does it
   offer it: on Windows the installer is downloaded, checked against the signed list (and again before it
   runs; kept for the next start while it is whole, and deleted once up to date), and **Update** runs it and
   closes MaxPack; on macOS, Linux and the portable version, **Open its page**. Only
-  GitHub's hosts over HTTPS. The key is not in this build yet: Settings says the option is not available.
-  `docs/releasing.md` says how each release is signed (`minisign -Sm SHA256SUMS -t "MaxPack X.Y.Z"`, then
-  `SHA256SUMS.minisig` uploaded to the draft before it is published).
+  GitHub's hosts over HTTPS. The keys (`gui/internal/update/release.pub`) are the author's release keys,
+  the main one (`64300306F44900F2`) and a spare (`7090921881F567B0`), the same that sign NXPress's releases;
+  a signature by either is taken. `docs/releasing.md` says how each release is signed.
 - **Keyboard shortcuts** in the window: Ctrl+O adds files, Ctrl+Shift+O a folder, Ctrl+Enter starts, Esc
   cancels the queue once asked, Ctrl+P pauses or resumes, Ctrl+1 to Ctrl+5 open the sections (⌘ on macOS),
   with any keyboard layout (Russian and Arabic ones too). Settings › Keyboard lists them.

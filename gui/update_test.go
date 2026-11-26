@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -192,14 +193,65 @@ func TestUpdateBadSignature(t *testing.T) {
 	}
 }
 
-// The real configuration: GitHub's hosts, the file of this system, and the key of the build.
+// The real configuration: GitHub's hosts, the file of this system, and the keys of the build (release.pub:
+// the main release key and the spare one), so Settings offers the option.
 func TestUpdateConfigOfTheBuild(t *testing.T) {
 	useSettings(t, t.TempDir())
 	c := (&App{}).updateConfig()
-	if c.API != "https://api.github.com" || c.Downloads != "https://github.com" || c.PublicKey != updateKey || c.Current != version {
+	if c.API != "https://api.github.com" || c.Downloads != "https://github.com" || c.PublicKey != update.ReleaseKeys || c.Current != version {
 		t.Fatalf("%+v", c)
 	}
 	if folder, _ := settings.Dir(); !strings.HasPrefix(c.Folder, folder) || !strings.HasSuffix(c.Folder, "updates") {
 		t.Fatalf("downloads go to %s", c.Folder)
+	}
+	if !(&App{}).updateAvailable() {
+		t.Fatal("a build with the release keys says looking for versions is not available")
+	}
+}
+
+// askedNothing is a client that never goes on the internet: it keeps the addresses it is asked for and fails them.
+type askedNothing struct {
+	mutex sync.Mutex
+	asked []string
+}
+
+func (a *askedNothing) RoundTrip(r *http.Request) (*http.Response, error) {
+	a.mutex.Lock()
+	defer a.mutex.Unlock()
+	a.asked = append(a.asked, r.URL.String())
+	return nil, errors.New("no internet in the tests")
+}
+
+// With the keys in the build, the option is still off by default and nothing is asked of the internet until it
+// is turned on; once on, the first thing asked is GitHub's API for the latest release of DeLFuS77/maxpack.
+func TestUpdateOffByDefaultWithTheKeys(t *testing.T) {
+	useSettings(t, t.TempDir())
+	if saved, _ := settings.Load(); saved.UpdateCheck {
+		t.Fatal("looking for new versions is on by default")
+	}
+	asked := &askedNothing{}
+	a := &App{updateClient: &http.Client{Transport: asked}}
+	if setup := a.Setup(); !setup.UpdateKey {
+		t.Fatalf("Setup says no key: %+v", setup)
+	}
+	if view := a.CheckUpdate(); view.State != "off" || len(asked.asked) != 0 {
+		t.Fatalf("off: %+v, asked %v", view, asked.asked)
+	}
+	saveSettings(t, func(s *settings.Settings) { s.UpdateCheck = true })
+	if version == "dev" {
+		// a build of no release looks for nothing, even turned on
+		if view := a.CheckUpdate(); view.State != "none" || len(asked.asked) != 0 {
+			t.Fatalf("a dev build: %+v, asked %v", view, asked.asked)
+		}
+	}
+	old := version
+	version = "1.0.7"
+	defer func() { version = old }()
+	b := &App{updateClient: &http.Client{Transport: asked}}
+	if view := b.CheckUpdate(); view.State != "error" || view.Error != "network" {
+		t.Fatalf("on: %+v", view)
+	}
+	if len(asked.asked) != 1 || asked.asked[0] != "https://api.github.com/repos/DeLFuS77/maxpack/releases/latest" {
+		t.Fatalf("asked %v", asked.asked)
 	}
 }

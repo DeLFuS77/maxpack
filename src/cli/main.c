@@ -57,6 +57,8 @@ static void usage(FILE *out) {
             "  maxpack send <game.p5z> <ps5-ip> --code <6 digits> [--drive <id>] [--json]   to MaxPack for\n"
             "                     the console, which verifies it when it arrives (verify --quick)\n"
             "  maxpack send --drives <ps5-ip> --code <6 digits> [--json]   the console's drives, free space\n"
+            "  maxpack send --discard <game.p5z> <ps5-ip> --code <6 digits> [--drive <id>]   delete what the\n"
+            "                     console received of it\n"
             "  maxpack --version\n"
             "  maxpack --capabilities   what this version can do, as JSON (for a front end)\n"
             "\n"
@@ -113,19 +115,25 @@ static void usage(FILE *out) {
             "send: MaxPack for the console shows the code in Settings > \"Receive games from the PC\", which\n"
             "must be on. The .p5z goes to <drive>/homebrew/ as <name>.maxpack-recv and gets its name once the\n"
             "console has verified it. If it stops (a broken connection, Ctrl+C, the PC or the console off),\n"
-            "the same command goes on from what the console has. Its options:\n"
+            "the same command goes on from what the console has; a receive the console paused (idle, a write\n"
+            "error) is started again, one stopped on the console is not. Its options:\n"
             "  <ps5-ip>           the console's IP address: a.b.c.d (port 8095), or a.b.c.d:port\n"
             "  --code C           the pairing code (or the environment variable MAXPACK_SEND_CODE)\n"
             "  --drive ID         internal (default), usb0, ...: send --drives lists them\n"
             "  --json             one JSON line per event on stdout, as --progress json\n"
             "  --chunk N          bytes per request, 65536 to 67108864 (default 33554432)\n"
-            "  --retries N        tries after a broken connection before it gives up (default 10)\n"
-            "  --retry-wait MS    the wait after the first one (default 1000; it doubles, up to 30 s)\n"
-            "  --control stdin    \"cancel\" stops it, and the console deletes what it received\n"
+            "  --retries N        tries after a broken connection before it gives up (default 10; 1 while the\n"
+            "                     console has never answered); any answer begins the count again\n"
+            "  --retry-wait MS    the wait after the first one, 1 to 30000 (default 1000; it doubles, up to 30 s)\n"
+            "  --stall S          nothing moving on the console for S seconds stops it (default 300)\n"
+            "  --control stdin    \"cancel\" stops it, and the console keeps what arrived (so does the end of\n"
+            "                     the input)\n"
+            "  --delete-on-cancel with --control stdin: \"cancel\" makes the console delete what it received\n"
             "  Exit codes: 0 sent and verified, 1 error, 2 usage, 3 no answer from the console, 4 receiving\n"
             "  is off there, 5 wrong code, 6 too many wrong codes, 7 already there, 8 the console is busy,\n"
             "  9 no space, 10 FAT32 drive, 11 file name, 12 no such drive, 13 arrived damaged, 14 cancelled\n"
-            "  on the console, 130 cancelled\n"
+            "  on the console, 15 stopped on the console, 16 nothing moved (stalled), 17 the console cannot write\n"
+            "  it, 130 cancelled (or stopped) here\n"
             "\n"
             "Options for analyze:\n"
             "  --sample N%%        sample percentage (default 2%%, at least 1 GiB)\n"
@@ -157,6 +165,7 @@ static int g_json;                  // --progress json
 static int g_control;               // --control stdin
 static const char *g_err_code;      // error code for the JSON result
 static int g_result_done;           // the "result" line has already been written
+static volatile int g_cancel_line;  // the cancel came as the line "cancel" (not as the end of the input)
 
 static const char *phase_code(const char *phase) {
     if (!strncmp(phase, "Copying", 7)) return "copying";
@@ -199,6 +208,7 @@ static void control_thread(void *arg) {
         if (c == '\n') {
             line[n] = 0;
             if (!strcmp(line, "cancel")) {
+                g_cancel_line = 1;
                 mp_cancel_request();
                 return;
             }
@@ -1764,8 +1774,6 @@ static int run_verify_quick(const char *target, int json) {
     return ok ? 0 : 1;
 }
 
-static int run_verify_quick(const char *target, int json);
-
 static int run_verify(int argc, char **argv) {
     const char *target = NULL, *against = NULL;
     unsigned threads = mp_cpu_count();
@@ -1849,7 +1857,7 @@ static int run_verify(int argc, char **argv) {
 static int send_exit(const char *code) {
     static const char *const codes[] = {"unreachable", "receive_off", "bad_code", "locked", "exists", "busy",
                                         "no_space", "fat32", "bad_name", "no_drive", "verify_failed",
-                                        "console_cancelled"};
+                                        "console_cancelled", "console_stopped", "stalled", "write_error"};
     if (!code) return 0;
     if (!strcmp(code, "cancelled")) return 130;
     for (int i = 0; i < (int)(sizeof codes / sizeof *codes); i++)
@@ -1935,9 +1943,23 @@ static void send_retry(void *ctx, unsigned attempt, unsigned wait_ms, uint64_t h
     }
 }
 
+// 1: stop and keep what arrived; 2: the line "cancel" with --delete-on-cancel, the console deletes it (the
+// end of the input, a window closed or gone, always keeps it)
 static int send_cancelled(void *ctx) {
     (void)ctx;
-    return mp_cancelled();
+    return !mp_cancelled() ? 0 : g_cancel_line ? 2 : 1;
+}
+
+static void send_paused(void *ctx, const char *reason, uint64_t have) {
+    send_seen *s = ctx;
+    send_end_line(s);
+    fprintf(stderr, "The console paused the receive (%s): starting it again from what it has\n",
+            !strcmp(reason, "write_error") ? "it could not write" : "idle");
+    if (g_json) {
+        printf("{\"event\":\"paused\",\"reason\":\"%s\",\"have\":%llu}\n", !strcmp(reason, "write_error") ? "write_error" : "idle",
+               (unsigned long long)have);
+        fflush(stdout);
+    }
 }
 
 static void send_bad_json(const mp_send_result *r, mp_jbuf *b) {
@@ -1998,11 +2020,39 @@ static int run_send_drives(const mp_send_opts *o, int json) {
     return 0;
 }
 
+static int run_send_discard(const char *p5z, const mp_send_opts *o, int json) {
+    mp_send_result r;
+    mp_err e = {{0}};
+    int rc = mp_send_discard(p5z, o, &r, &e);
+    g_result_done = 1;
+    if (rc != 0) {
+        fprintf(stderr, "error: %s\n", e.msg);
+        if (json) {
+            printf("{\"ok\":false,\"error\":\"%s\",\"message\":", r.code ? r.code : "io");
+            print_json_string(e.msg);
+            printf("}\n");
+        }
+        return send_exit(r.code ? r.code : "io");
+    }
+    char had[32];
+    size_text(had, sizeof had, r.have);
+    fprintf(json ? stderr : stdout, "Deleted what the console had of %s on %s (%s)\n", r.name, r.drive, had);
+    if (json) {
+        printf("{\"ok\":true,\"name\":");
+        print_json_string(r.name);
+        printf(",\"drive\":");
+        print_json_string(r.drive);
+        printf(",\"had\":%llu}\n", (unsigned long long)r.have);
+    }
+    fflush(stdout);
+    return 0;
+}
+
 static int run_send(int argc, char **argv) {
     mp_send_opts o;
     mp_send_opts_default(&o);
     const char *p5z = NULL, *addr = NULL, *code = NULL;
-    int drives = 0, json = 0;
+    int drives = 0, json = 0, discard = 0;
     for (int i = 0; i < argc; i++) {
         const char *a = argv[i];
         int common = common_opt(argc, argv, &i);
@@ -2010,10 +2060,14 @@ static int run_send(int argc, char **argv) {
         if (common) continue;
         if (!strcmp(a, "--drives")) {
             drives = 1;
+        } else if (!strcmp(a, "--discard")) {
+            discard = 1;
+        } else if (!strcmp(a, "--delete-on-cancel")) {
+            o.delete_on_cancel = 1;
         } else if (!strcmp(a, "--json")) {
             json = 1;
         } else if (!strcmp(a, "--code") || !strcmp(a, "--drive") || !strcmp(a, "--chunk") || !strcmp(a, "--retries") ||
-                   !strcmp(a, "--retry-wait")) {
+                   !strcmp(a, "--retry-wait") || !strcmp(a, "--stall")) {
             if (i + 1 >= argc) return bad_usage("missing value for", a);
             const char *v = argv[++i];
             char *end = NULL;
@@ -2031,8 +2085,12 @@ static int run_send(int argc, char **argv) {
             } else if (!strcmp(a, "--retries")) {
                 if (!number || n > 1000) return bad_usage("--retries must be between 0 and 1000", v);
                 o.retries = (unsigned)n;
+            } else if (!strcmp(a, "--stall")) {
+                if (!number || n < 1 || n > 86400) return bad_usage("--stall must be between 1 and 86400 seconds", v);
+                o.stall_ms = (unsigned)n * 1000u;
             } else {
-                if (!number || n < 1 || n > 600000) return bad_usage("--retry-wait must be between 1 and 600000 ms", v);
+                if (!number || n < 1 || n > MP_SEND_MAX_WAIT_MS)
+                    return bad_usage("--retry-wait must be between 1 and 30000 ms (no wait is longer than 30 s)", v);
                 o.retry_ms = (unsigned)n;
             }
         } else if (a[0] == '-') {
@@ -2046,6 +2104,7 @@ static int run_send(int argc, char **argv) {
         }
     }
     if (drives && addr) return bad_usage("send --drives takes only the console's address", p5z);
+    if (drives && discard) return bad_usage("--discard takes a .p5z, not --drives", NULL);
     if (drives) {   // its one argument is the address
         addr = p5z;
         p5z = NULL;
@@ -2061,6 +2120,10 @@ static int run_send(int argc, char **argv) {
     if (drives) {
         g_json = 0;   // --drives --json is the list itself
         return run_send_drives(&o, json);
+    }
+    if (discard) {
+        g_json = 0;   // --discard --json is its answer itself
+        return run_send_discard(p5z, &o, json);
     }
     start_json_and_control();
     // what goes is a whole .p5z: one whose name the console takes, as it is (an append that stopped undone)
@@ -2081,20 +2144,32 @@ static int run_send(int argc, char **argv) {
         int what = 0;
         recover_note(p5z);
         mp_p5z *pz = NULL;
+        size_t pl = strlen(p5z);
+        char *journal = malloc(pl + sizeof MP_P5Z_JOURNAL);
+        if (journal) {
+            memcpy(journal, p5z, pl);
+            memcpy(journal + pl, MP_P5Z_JOURNAL, sizeof MP_P5Z_JOURNAL);
+        }
         if (mp_p5z_recover(p5z, &what, NULL) == 0 && what == MP_RECOVER_BUSY) {
             fail_code = "p5z_busy";
             mp_err_set(&e, "another MaxPack is changing %s now: send it when that ends", p5z);
+        } else if (journal && mp_path_kind(journal) != 0) {
+            // a change of it stopped and could not be undone (a read-only file?): what it is cannot be told
+            fail_code = "p5z_busy";
+            mp_err_set(&e, "a change of %s stopped halfway and could not be undone: open it with MaxPack where it can "
+                           "be written, then send it", p5z);
         } else if (mp_p5z_open(p5z, &pz, &e) != 0) {
             fail_code = "invalid";
         }
         mp_p5z_close(pz);
+        free(journal);
     }
     int rc = 0;
     send_seen seen;
     memset(&seen, 0, sizeof seen);
     uint64_t t0 = mp_now_ns();
     if (!fail_code) {
-        mp_send_hooks h = {send_started, send_sending, send_verifying, send_retry, send_cancelled, &seen};
+        mp_send_hooks h = {send_started, send_sending, send_verifying, send_retry, send_paused, send_cancelled, &seen};
         if (mp_send(p5z, &o, &h, &r, &e) != 0) fail_code = r.code ? r.code : "io";
         send_end_line(&seen);
     }
@@ -2115,6 +2190,11 @@ static int run_send(int argc, char **argv) {
             mp_jbuf_str(&b, e.msg);
             mp_jbuf_raw(&b, ",\"detail\":");
             mp_jbuf_str(&b, r.detail);
+            mp_jbuf_raw(&b, r.kept ? ",\"kept\":true" : ",\"kept\":false");
+            mp_jbuf_raw(&b, ",\"have\":");
+            mp_jbuf_u64(&b, r.have);
+            mp_jbuf_raw(&b, ",\"drive\":");
+            mp_jbuf_str(&b, r.drive);
             send_bad_json(&r, &b);
             json_result(0, fail_code, b.p && !b.oom ? b.p : "");
         }

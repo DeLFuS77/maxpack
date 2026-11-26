@@ -373,7 +373,7 @@ int mp_http_request_ex(const char *host, uint16_t port, const char *method, cons
         mp_err_set(e, "cannot create the socket");
         return -1;
     }
-    if (connect_timeout(s, &a, timeout_ms) != 0) {
+    if (connect_timeout(s, &a, o->connect_ms ? o->connect_ms : timeout_ms) != 0) {
         close_sock(s);
         mp_err_set(e, "cannot connect to %s:%u", host, (unsigned)port);
         return -1;

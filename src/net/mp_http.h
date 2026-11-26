@@ -45,7 +45,8 @@ int mp_http_request(const char *host, uint16_t port, const char *method, const c
 typedef struct {
     const char *content_type;   // NULL: application/json
     const char *headers;        // more header lines, each one ending in "\r\n" (NULL: none)
-    unsigned timeout_ms;        // to connect, and for each send and each read
+    unsigned timeout_ms;        // for each send and each read (and to connect, without connect_ms)
+    unsigned connect_ms;        // to connect (0: timeout_ms)
 } mp_http_opts;
 int mp_http_request_ex(const char *host, uint16_t port, const char *method, const char *path, const char *body,
                        size_t body_len, const mp_http_opts *o, int *status, char **resp, size_t *resp_len, mp_err *e);

@@ -30,6 +30,7 @@
 #include "mp_report_out.h"
 #include "mp_rules.h"
 #include "mp_source.h"
+#include "mp_verify_quick.h"
 #include "mp_version.h"
 
 static void usage(FILE *out) {
@@ -49,6 +50,8 @@ static void usage(FILE *out) {
             "                                   volume's size and SHA-256, in the lines the console's pack prints\n"
             "  maxpack icon <folder|image|package|game.p5z> -o <icon.png>\n"
             "  maxpack verify <game.p5z | folder> [--against <source>] [--threads N]\n"
+            "  maxpack verify --quick <game.p5z> [--json]   only that its bytes are those it was written\n"
+            "                     with (each volume's and stored file's SHA-256), at the speed of the disk\n"
             "  maxpack measure [<folder>] [options]   measure this PC (and the folder's disk), with no game\n"
             "  maxpack --version\n"
             "  maxpack --capabilities   what this version can do, as JSON (for a front end)\n"
@@ -1600,15 +1603,162 @@ static int cmd_verify(int argc, char **argv) {
     return finish_cmd(run_verify(argc, argv));
 }
 
+// ---- verify --quick ------------------------------------------------------------------------------
+
+typedef struct {
+    uint64_t print_ns, json_ns;
+} quick_seen;
+
+static void quick_progress(void *ctx, uint64_t done, uint64_t total) {
+    quick_seen *q = ctx;
+    uint64_t now = mp_now_ns();
+    int end = done == total;
+    if (g_json && (end || now - q->json_ns >= 100000000ull)) {
+        q->json_ns = now;
+        json_progress(NULL, "Verifying", done, total);
+    }
+    if (end || now - q->print_ns >= 1000000000ull) {
+        q->print_ns = now;
+        fprintf(stderr, "\rVerifying: %.1f %%", total ? 100.0 * (double)done / (double)total : 100.0);
+    }
+}
+
+static int quick_cancelled(void *ctx) {
+    (void)ctx;
+    return mp_cancelled();
+}
+
+// The report as JSON fields, without the braces.
+static void quick_fields(const mp_qv_report *r, mp_jbuf *b) {
+    char hex[65];
+    mp_jbuf_raw(b, "\"version\":");
+    mp_jbuf_u64(b, r->version);
+    mp_jbuf_raw(b, ",\"bytes\":");
+    mp_jbuf_u64(b, r->bytes);
+    mp_jbuf_raw(b, ",\"total\":");
+    mp_jbuf_u64(b, r->total);
+    mp_jbuf_raw(b, ",\"volumes\":");
+    mp_jbuf_u64(b, r->volumes);
+    mp_jbuf_raw(b, ",\"files\":");
+    mp_jbuf_u64(b, r->files);
+    mp_jbuf_raw(b, ",\"bad_count\":");
+    mp_jbuf_u64(b, r->nbad);
+    mp_jbuf_raw(b, ",\"bad\":[");
+    for (size_t i = 0; i < r->nlisted; i++) {
+        const mp_qv_bad *x = &r->bad[i];
+        mp_jbuf_raw(b, i ? ",{\"kind\":" : "{\"kind\":");
+        mp_jbuf_str(b, x->kind == MP_QV_VOLUME ? "volume" : "file");
+        if (x->kind == MP_QV_VOLUME) {
+            mp_jbuf_raw(b, ",\"volume\":");
+            mp_jbuf_u64(b, x->volume);
+        }
+        mp_jbuf_raw(b, ",\"path\":");
+        mp_jbuf_str(b, x->path);
+        mp_jbuf_raw(b, ",\"why\":");
+        mp_jbuf_str(b, x->why);
+        mp_sha256_hex(x->expected, hex);
+        mp_jbuf_raw(b, ",\"expected\":");
+        mp_jbuf_str(b, hex);
+        mp_jbuf_raw(b, ",\"found\":");
+        if (x->has_found) {
+            mp_sha256_hex(x->found, hex);
+            mp_jbuf_str(b, hex);
+        } else {
+            mp_jbuf_raw(b, "null");
+        }
+        mp_jbuf_raw(b, "}");
+    }
+    mp_jbuf_raw(b, "]");
+}
+
+// verify --quick: 0 everything matched, 1 something did not or it could not check, 130 cancelled.
+static int run_verify_quick(const char *target, int json) {
+    if (mp_path_kind(target) != 1) {
+        g_err_code = "bad_input";
+        fprintf(stderr, "error: %s %s\n", mp_path_kind(target) == 0 ? "does not exist:" : "is not a .p5z file:", target);
+        if (json && !g_json) printf("{\"ok\":false,\"error\":\"bad_input\"}\n");
+        return 1;
+    }
+    start_json_and_control();
+    recover_note(target);
+    quick_seen seen = {0, 0};
+    mp_qv_progress pr = {quick_progress, &seen};
+    mp_qv_cancel ca = {quick_cancelled, NULL};
+    mp_qv_report r;
+    mp_err e = {{0}};
+    uint64_t t0 = mp_now_ns();
+    int rc = mp_p5z_verify_quick(target, &pr, &ca, &r, &e);
+    if (seen.print_ns) fprintf(stderr, "\n");
+    if (rc == MP_QV_CANCELLED) {
+        mp_qv_report_free(&r);
+        fprintf(stderr, "error: cancelled\n");
+        if (json && !g_json) printf("{\"ok\":false,\"error\":\"cancelled\"}\n");
+        return 130;
+    }
+    if (rc != MP_QV_CHECKED) {
+        mp_qv_report_free(&r);
+        g_err_code = "invalid";
+        fprintf(stderr, "error: %s\n", e.msg);
+        if (json && !g_json) {
+            printf("{\"ok\":false,\"error\":\"invalid\",\"message\":");
+            print_json_string(e.msg);
+            printf("}\n");
+        }
+        return 1;
+    }
+    for (size_t i = 0; i < r.nlisted; i++) {
+        const mp_qv_bad *x = &r.bad[i];
+        char want[65], got[65];
+        mp_sha256_hex(x->expected, want);
+        mp_sha256_hex(x->found, got);
+        const char *why = !strcmp(x->why, "header") ? "its 64-byte header is damaged or not of this .p5z"
+                          : !strcmp(x->why, "data") ? "its compressed data do not decompress"
+                          : !strcmp(x->why, "read")  ? "its bytes could not be read"
+                                                     : "the SHA-256 does not match";
+        if (x->has_found && strcmp(x->why, "header"))
+            fprintf(stderr, "FAILED: %s: %s (expected %s, found %s)\n", x->path, why, want, got);
+        else
+            fprintf(stderr, "FAILED: %s: %s\n", x->path, why);
+    }
+    if (r.nbad > r.nlisted) fprintf(stderr, "... and %zu more failures\n", r.nbad - r.nlisted);
+    FILE *hum = g_json || json ? stderr : stdout;
+    char size[32];
+    size_text(size, sizeof size, r.bytes);
+    fprintf(hum, "verify --quick: %llu OK, %llu failed: %u volumes and %u files, %s read (%.0f s)\n",
+            (unsigned long long)(r.volumes + r.files - r.nbad), (unsigned long long)r.nbad, r.volumes, r.files, size,
+            (double)(mp_now_ns() - t0) / 1e9);
+    mp_jbuf b = {0};
+    mp_jbuf_raw(&b, ",");
+    quick_fields(&r, &b);
+    if (g_json) {
+        json_result(r.ok, r.ok ? NULL : "verify_failed", b.p && !b.oom ? b.p : "");
+    } else if (json) {
+        printf("{\"ok\":%s%s}\n", r.ok ? "true" : "false", b.p && !b.oom ? b.p : "");
+        fflush(stdout);
+    }
+    mp_jbuf_free(&b);
+    int ok = r.ok;
+    mp_qv_report_free(&r);
+    if (!ok) g_err_code = "verify_failed";
+    return ok ? 0 : 1;
+}
+
+static int run_verify_quick(const char *target, int json);
+
 static int run_verify(int argc, char **argv) {
     const char *target = NULL, *against = NULL;
     unsigned threads = mp_cpu_count();
+    int quick = 0, json = 0;
     for (int i = 0; i < argc; i++) {
         const char *a = argv[i];
         int common = common_opt(argc, argv, &i);
         if (common < 0) return 2;
         if (common) {
             continue;
+        } else if (!strcmp(a, "--quick")) {
+            quick = 1;
+        } else if (!strcmp(a, "--json")) {
+            json = 1;
         } else if (!strcmp(a, "--against") || !strcmp(a, "--threads")) {
             if (i + 1 >= argc) return bad_usage("missing value for", a);
             const char *v = argv[++i];
@@ -1629,6 +1779,9 @@ static int run_verify(int argc, char **argv) {
         }
     }
     if (!target) return bad_usage("missing the .p5z or the folder to verify", NULL);
+    if (json && !quick) return bad_usage("--json goes with --quick (verify --progress json gives its result as JSON)", NULL);
+    if (quick && against) return bad_usage("--quick checks a .p5z against its own SHA-256 hashes, not --against", NULL);
+    if (quick) return run_verify_quick(target, json);
     int kind = mp_path_kind(target);
     if (kind == 0) {
         g_err_code = "bad_input";
@@ -1827,7 +1980,8 @@ int main(int argc, char **argv) {
         // what the window needs from this version of the engine
         printf("{\"progress_json\":true,\"control_stdin\":true,\"max_file_size\":true,\"info_json\":true,"
                "\"icon\":true,\"packs\":true,\"content_id\":true,\"levels\":true,\"measure\":true,"
-               "\"images\":true,\"fpkg\":true,\"passcode\":true,\"completeness\":true,\"dlc\":true,\"grow\":true}\n");
+               "\"images\":true,\"fpkg\":true,\"passcode\":true,\"completeness\":true,\"dlc\":true,\"grow\":true,"
+               "\"verify_quick\":true}\n");
         return 0;
     }
     if (argc >= 2 && (!strcmp(argv[1], "--help") || !strcmp(argv[1], "-h") || !strcmp(argv[1], "help"))) {

@@ -1344,5 +1344,70 @@ check("info_json_no_sums_elsewhere", "archive_id" not in d and "volume_sums" not
 rc, so, _ = run("--help")
 check("help_sums", "maxpack info --sums <game.p5z>" in so, so[:3000])
 
+# ---- verify --quick: each volume's and stored file's SHA-256, without decompressing the packs ----------
+qp = fresh(os.path.join(TMP, "quick.p5z"))
+rc, so, err = run("pack", GAME, "-o", qp, "--p5z", "--threads", "2", "--volume-limit", "262208")
+check("quick_pack", rc == 0, err[-300:])
+rc, so, err = run("verify", "--quick", qp)
+check("verify_quick_text", rc == 0 and so.startswith("verify --quick: ") and " 0 failed" in so and "FAILED" not in err,
+      so + err)
+rc, so, err = run("verify", qp, "--quick", "--json")
+d = json.loads(so or "{}")
+check("verify_quick_json", rc == 0 and d.get("ok") is True and d.get("bad_count") == 0 and d.get("bad") == []
+      and d.get("bytes") == d.get("total") and d.get("total", 0) > 0 and d.get("volumes", 0) >= 3
+      and d.get("files", 0) > 0 and d.get("version") == 1 and "verify --quick: " in err, so + err)
+rc, so, err = run("verify", "--quick", qp, "--progress", "json")
+try:
+    evs = json_lines(so)
+    res = last_result(evs)
+    check("verify_quick_progress_json",
+          rc == 0 and res.get("ok") is True and res.get("bad_count") == 0 and has_final_progress(evs)
+          and progress_monotonic(evs) and all(e["phase"] == "verifying" for e in evs if e["event"] == "progress"),
+          so[-300:] + err[-300:])
+except Exception as ex:  # noqa: BLE001
+    check("verify_quick_progress_json", False, repr(ex) + so[-200:])
+# a byte changed in the second volume: named, with the SHA-256 the index records and the one found
+play = json.loads(run("info", "--play", qp)[1] or "{}")
+sums = {v["name"]: v["sha256"] for v in json.loads(run("info", "--json", qp)[1] or "{}").get("volume_sums", [])}
+vol = [v for v in play.get("volumes", []) if v["id"] == 1]
+qbad = fresh(os.path.join(TMP, "quick_bad.p5z"))
+data = bytearray(open(qp, "rb").read())
+if vol:
+    data[vol[0]["offset"] + vol[0]["length"] // 2] ^= 0x55
+open(qbad, "wb").write(bytes(data))
+rc, so, err = run("verify", "--quick", qbad, "--json")
+d = json.loads(so or "{}")
+b = (d.get("bad") or [{}])[0]
+check("verify_quick_bad_volume", rc == 1 and d.get("ok") is False and d.get("bad_count") == 1 and b.get("kind") == "volume"
+      and b.get("volume") == 1 and b.get("path") == "ampr_zstd-001.pak" and b.get("why") == "sha256"
+      and b.get("expected") == sums.get("ampr_zstd-001.pak") and b.get("found") not in (None, b.get("expected"))
+      and "FAILED: ampr_zstd-001.pak" in err, so + err)
+rc, so, err = run("verify", "--quick", qbad)
+check("verify_quick_bad_text", rc == 1 and " 1 failed" in so and "FAILED: ampr_zstd-001.pak" in err, so + err)
+# one that grew
+rc, so, err = run("verify", "--quick", gp, "--json")
+d = json.loads(so or "{}")
+check("verify_quick_grown", rc == 0 and d.get("ok") is True and d.get("version") == 2, so + err)
+# cut short: it cannot check, and says why
+qcut = fresh(os.path.join(TMP, "quick_cut.p5z"))
+open(qcut, "wb").write(open(qp, "rb").read()[:-100])
+rc, so, err = run("verify", "--quick", qcut, "--json")
+d = json.loads(so or "{}")
+check("verify_quick_cut", rc == 1 and d.get("ok") is False and d.get("error") == "invalid"
+      and "truncated" in d.get("message", "") and "error:" in err, so + err)
+rc, so, err = run("verify", "--quick", qcut, "--progress", "json")
+check("verify_quick_cut_progress_json", rc == 1 and last_result(json_lines(so)).get("error") == "invalid", so + err)
+rc, so, err = run("verify", "--quick", os.path.join(TMP, "quick_none.p5z"), "--json")
+check("verify_quick_missing", rc == 1 and json.loads(so or "{}").get("error") == "bad_input", so + err)
+# usage
+rc, _, err = run("verify", qp, "--json")
+check("verify_json_needs_quick", rc == 2, err[-300:])
+rc, _, err = run("verify", "--quick", qp, "--against", GAME)
+check("verify_quick_no_against", rc == 2, err[-300:])
+rc, so, _ = run("--help")
+check("help_verify_quick", "maxpack verify --quick <game.p5z>" in so, so[:3000])
+rc, so, _ = run("--capabilities")
+check("capabilities_verify_quick", json.loads(so or "{}").get("verify_quick") is True, so)
+
 print("test_cli: %d failures" % len(failures))
 sys.exit(1 if failures else 0)

@@ -317,7 +317,8 @@ int mp_verify_folder(const char *dir, const char *against, unsigned threads, int
             long si = mp_source_find(v.src, c->path);
             if (si >= 0) c->src = (size_t)si;
         }
-        if (v.src && c->src == SIZE_MAX && !c->bad) {
+        // what pack --dlc added (addcontN/) is no file of the game: it is only read from the packs
+        if (v.src && c->src == SIZE_MAX && !c->bad && !mp_complete_is_dlc(c->path)) {
             c->bad = 1;
             snprintf(c->why, sizeof c->why, "not in the source");
         }

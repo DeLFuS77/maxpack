@@ -660,7 +660,7 @@ maxpack pack "D:\dumps\MyGame" --dlc "D:\dlc\Bonus.pkg" --dlc "D:\dlc\SeasonPass
 |---|---|---|
 | With a `.p5z` | Checks every file against its SHA-256. | `maxpack verify "D:\games\MyGame.p5z"` |
 | With a folder | Checks the packs and the indexes. | `maxpack verify "E:\homebrew\PPSA00000"` |
-| `--against SOURCE` | Folders only: also compares it with the original game. | `maxpack verify "E:\homebrew\PPSA00000" --against "D:\dumps\MyGame.exfat"` |
+| `--against SOURCE` | Folders only: also compares it with the original game. The DLC `pack --dlc` put inside (`addcontN/`) are not in it: they are only read from the packs. | `maxpack verify "E:\homebrew\PPSA00000" --against "D:\dumps\MyGame.exfat"` |
 | `--threads N` | Threads. | `--threads 8` |
 | `--progress json`, `--control stdin` | As in `pack`. | `--control stdin` |
 

@@ -1099,6 +1099,9 @@ rc, so, err = run("pack", os.path.join(FX, "mini"), "--dlc", os.path.join(FX, "d
 rc2, so2, err2 = run("verify", fo)
 check("pack_dlc_folder", rc == 0 and rc2 == 0 and os.path.exists(os.path.join(fo, "dlc_emu.ini"))
       and os.path.exists(os.path.join(fo, "addcont0", "module", "libdlc.prx")), err[-300:] + so2[-300:] + err2[-300:])
+# against the game it was made of: what the DLC added is not in it, and is no failure
+rc, so, err = run("verify", fo, "--against", os.path.join(FX, "mini"))
+check("verify_dlc_folder_against_game", rc == 0 and " 0 failed" in so + err, so[-400:] + err[-400:])
 # what stops it: exit 1 with the reason, the error code for a front end, nothing left
 for name, game, dlc, code, words in (
         ("other_game", MINI_PKG, os.path.join(FX, "dlc_other.pkg"), "dlc_refused", "a DLC of another game"),

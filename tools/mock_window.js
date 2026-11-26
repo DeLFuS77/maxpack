@@ -362,7 +362,7 @@ const mock = `
     WatchTakeExisting: async () => [],
     ChooseWatchFolder: async () => "D:\\\\incoming",
     CancelConsoleDrives: async () => {},
-    DiscardOnConsole: async () => ({ had: 123456789, error: "", message: "" }),
+    DiscardOnConsole: async () => ({ had: 123456789, deleted: true, error: "", message: "" }),
     ConsoleDrives: async () => (query.get("console") === "refused" ? { drives: [], error: "bad_code", message: "" }
       : { drives: [{ id: "internal", free: 412e9, total: 825e9, fs: "ufs" }, { id: "usb0", free: 1.6e12, total: 2e12, fs: "exfat" }, { id: "usb1", free: 2e9, total: 64e9, fs: "exfat" }], error: "", message: "" }),
     Start: async (section, items, opts) => {
@@ -370,7 +370,7 @@ const mock = `
         Protected: 0, Unprotected: 0, ProtectedSize: 0, Repaired: 0 } };
       runQueue();
     },
-    Append: async (section, items, replace, keepOriginals) => {
+    Append: async (section, items, replace, redo, keepOriginals) => {
       if (!queue || queue.section !== section) throw new Error("no queue of this section is running");
       const at = queue.items.length;
       items.forEach((item, n) => { queue.items.push(item); queue.keep[at + n] = keepOriginals; setTimeout(() => emit("job:item", { i: at + n, state: "queued", detail: "" }), 0); });

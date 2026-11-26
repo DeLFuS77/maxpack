@@ -14,6 +14,7 @@ import (
 	"github.com/DeLFuS77/maxpack/gui/core"
 	"github.com/DeLFuS77/maxpack/gui/internal/par2"
 	"github.com/DeLFuS77/maxpack/gui/internal/system"
+	"github.com/DeLFuS77/maxpack/gui/internal/update"
 	"github.com/DeLFuS77/maxpack/gui/jobs"
 	"github.com/DeLFuS77/maxpack/gui/settings"
 
@@ -83,6 +84,14 @@ type App struct {
 	// the question of the console's drives at work (see send.go), and how long it may take when not drivesTimeout
 	drivesCancel  context.CancelFunc
 	drivesTimeout time.Duration
+
+	// the look for a new version of this start (see update.go), and the stand-ins of the tests: where it
+	// looks, how an installer is run and how MaxPack closes
+	updateMutex  sync.Mutex
+	update       *updating
+	updates      *update.Config
+	runInstaller func(path string) error
+	quit         func()
 }
 
 // Setup is what the page shows before anything is chosen.
@@ -117,6 +126,8 @@ type Setup struct {
 	Par2        string `json:"par2"`
 	Par2Version string `json:"par2Version"`
 	Par2Error   string `json:"par2Error"`
+	// UpdateKey: this build has the key that checks new versions, so Settings can offer to look for them
+	UpdateKey bool `json:"updateKey"`
 }
 
 func (a *App) startup(ctx context.Context) {
@@ -138,7 +149,7 @@ func (a *App) Setup() Setup {
 	saved, _ := settings.Load()
 	core.SetPasscode(saved.Passcode)
 	setup := Setup{Version: version, Lang: saved.EffectiveLang(), Theme: saved.Theme, LogFile: logFile(), Templates: jobs.Templates, CPUThreads: runtime.NumCPU(),
-		Explorer: shell.available(), Portable: isPortable()}
+		Explorer: shell.available(), Portable: isPortable(), UpdateKey: a.updateAvailable()}
 	if builtIn := a.builtInRuntime(); builtIn != "" {
 		setup.BuiltInRuntime, setup.BuiltInRuntimeVersion = builtIn, bundled.Version()
 	}

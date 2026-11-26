@@ -486,7 +486,9 @@ The programs are not signed: Windows shows "Windows protected your PC" (press **
 ### Check what you download
 
 - **`SHA256SUMS`.** Every release has one: `sha256sum -c --ignore-missing SHA256SUMS` checks the files
-  you downloaded (on Windows, compare with `Get-FileHash <file>`).
+  you downloaded (on Windows, compare with `Get-FileHash <file>`). From the releases signed by the author
+  on, `SHA256SUMS.minisig` signs it ([minisign](https://jedisct1.github.io/minisign/)):
+  `minisign -Vm SHA256SUMS -P <key>` checks it.
 - **Build attestation.** Each file also has one, signed through GitHub, which proves it was built by
   this repository's workflow from the tagged commit: `gh attestation verify <file> -R DeLFuS77/maxpack`
   checks it.
@@ -497,11 +499,16 @@ The programs are not signed: Windows shows "Windows protected your PC" (press **
 
 ## What goes on the internet
 
-Nothing, from MaxPack itself:
+Nothing, from MaxPack itself, unless you ask it to look for new versions:
 
-- **The window** makes no connection of its own. It does not look for new versions, sends nothing about
-  you or your games, and loads its page from inside the program. That is why Settings has no switch
-  for it: there is nothing to turn off.
+- **The window** makes no connection of its own until you turn on Settings › Internet › **Look for new
+  versions** (off by default). Then, once each time it starts, it asks GitHub's API for the latest release
+  of this repository and, only when that is newer, downloads its `SHA256SUMS` and `SHA256SUMS.minisig` and
+  checks the signature with the key built into MaxPack; only if it is right does it offer the new version
+  (on Windows it first downloads the installer and checks it against that list; **Update** runs it). It
+  goes only to GitHub, over HTTPS, and sends nothing about you or your games; its page is loaded from
+  inside the program. A build without the key (the ones so far) says it is not available, and never
+  looks.
 - **The command line** (`maxpack`, the engine) never goes on the internet.
 - **The links** of the window (Settings > About: Report a bug, Report a game) open in your browser, and
   only when you click them.
@@ -524,6 +531,7 @@ MaxPack for the console is another program, with its own self-update: see
 | [docs/design/](docs/design/maxpack.md) | The design documents: goals, constraints, the window, the installer. |
 | [CHANGELOG.md](CHANGELOG.md) | What changed in each version. |
 | [SECURITY.md](SECURITY.md) | How to report a vulnerability, and what to keep in mind. |
+| [docs/releasing.md](docs/releasing.md) | How a release is made and signed. |
 
 The console side has its own documents in [maxpack-ps5](https://github.com/DeLFuS77/maxpack-ps5#documentation),
 and the runtime's p5z mode is in [ampr-emu-ng](https://github.com/DeLFuS77/ampr-emu-ng/blob/main/docs/p5z-mode.md).

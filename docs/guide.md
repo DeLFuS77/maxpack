@@ -347,7 +347,10 @@ only accepts a `libSceAmpr.sprx` that reads zstd.
   not in front, a notice of the system with its sound (a short sound of MaxPack where there is no notice).
 - **Keyboard:** **Ctrl+O** add files, **Ctrl+Shift+O** add a folder, **Ctrl+Enter** start, **Esc** cancel
   (it asks first), **Ctrl+P** pause or resume, **Ctrl+1** to **Ctrl+5** the sections (⌘ on macOS).
-- **Internet:** MaxPack's window goes on the internet for nothing.
+- **Internet:** MaxPack's window goes on the internet for nothing, unless you turn on **Look for new
+  versions** (off by default): then, once each time it starts, it asks GitHub for the latest release, and
+  offers a newer one only once its list of files is signed by the author (on Windows, with its installer
+  downloaded and checked: **Update** runs it). A build without the key says it is not available.
 - **About:** the versions, **Copy report**, and the links to report a bug or a game.
 
 ### Repair data

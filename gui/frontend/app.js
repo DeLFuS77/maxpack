@@ -95,6 +95,11 @@ const state = {
   // the watched folder as the window tells it (StartWatch, watch:status): the folder, and why it cannot
   // be looked at ("gone", "unreadable"; "" when it can)
   watch: { folder: "", error: "", existing: 0 },
+  // the look for a new version (Settings › Internet), as the window answered it (null while it looks), and
+  // whether it was asked and the toast said, in this page
+  update: null,
+  updateAsked: false,
+  updateTold: false,
 };
 
 // whether a queue is running: the window took it, and has not said its end yet
@@ -1117,6 +1122,60 @@ function paintSettings() {
   const tile = $("settings-tile");
   if (!tile.firstChild) tile.append(document.querySelector('nav button[data-section="settings"] svg').cloneNode(true));
   paintExplorer();
+  paintUpdate();
+}
+
+// ---- new versions (Settings › Internet) ----------------------------------------------------------------
+
+// what the look for a new version says: nothing while it is off; in a build without the key, that it cannot
+const updateAvailable = () => !!(state.setup && state.setup.updateKey);
+function updateText(view) {
+  if (!updateAvailable() || (view && view.state === "unavailable")) return t("updateUnavailable");
+  if (!state.settings.UpdateCheck) return "";
+  if (!view) return t("updateChecking");
+  switch (view.state) {
+    case "none": return t("updateNone");
+    case "found": return t(view.install ? "updateFoundInstall" : "updateFoundPage")(view.version);
+    case "error": return typeof texts.en["updateError_" + view.error] === "string" ? t("updateError_" + view.error) : t("updateError_network");
+  }
+  return "";
+}
+function paintUpdate() {
+  const view = state.update, found = !!view && view.state === "found" && !!state.settings.UpdateCheck;
+  $("pref-update").checked = updateAvailable() && !!state.settings.UpdateCheck;
+  $("pref-update").disabled = !updateAvailable() || !go.has();
+  $("update-status").textContent = state.updateAsked || !updateAvailable() ? updateText(view) : "";
+  $("update-status").classList.toggle("warning", !!view && view.state === "error" || !updateAvailable());
+  $("update-go").hidden = !found;
+  $("update-go").textContent = found ? t(view.install ? "updateInstall" : "updateOpenPage") : "";
+}
+// looks for a new version once Settings says so: the window asks GitHub once each time MaxPack starts
+async function checkUpdate() {
+  if (!updateAvailable() || !state.settings.UpdateCheck || state.updateAsked) return;
+  state.updateAsked = true;
+  state.update = null;
+  paintUpdate();
+  const view = await go.call("CheckUpdate").catch(() => ({ state: "error", error: "network" }));
+  // turned off meanwhile: it is asked again when it is turned on
+  if (view && view.state === "off") {
+    state.updateAsked = false;
+    state.update = null;
+  } else {
+    state.update = view || { state: "error", error: "network" };
+  }
+  if (state.update && state.update.state === "found" && !state.updateTold) {
+    state.updateTold = true;
+    toast(t("updateFoundToast")(state.update.version));
+  }
+  paintUpdate();
+}
+// Update: on Windows the installer, checked again, runs and MaxPack closes (not while a queue runs); elsewhere
+// the release's page opens
+async function runUpdate() {
+  const view = state.update;
+  if (!view || view.state !== "found") return;
+  if (view.install && state.busy) { toast(t("updateWait")); return; }
+  await go.call("Update").catch(error => toast(/^busy/.test(message(error)) ? t("updateWait") : message(error)));
 }
 
 // ---- MaxPack in the Explorer of Windows (Settings › Windows Explorer) -------------------------------
@@ -1254,10 +1313,10 @@ function toast(text) {
   toastTimer = setTimeout(() => { $("toast").hidden = true; }, 4000);
 }
 
-// the settings are kept whole: SetSettings writes every field
+// the settings are kept whole: SetSettings writes every field (the promise ends once they are kept)
 function keep(change) {
   state.settings = Object.assign({}, state.settings, change);
-  go.call("SetSettings", state.settings).catch(error => toast(message(error)));
+  return go.call("SetSettings", state.settings).catch(error => toast(message(error)));
 }
 
 function applyTheme() {
@@ -2500,6 +2559,14 @@ function wire() {
   $("delete-originals").addEventListener("change", () => { state.deleteOriginals = $("delete-originals").checked; render(); });
   $("pref-low").addEventListener("change", () => keep({ LowPriority: $("pref-low").checked }));
   $("pref-end-notice").addEventListener("change", () => keep({ QuietEnd: !$("pref-end-notice").checked }));
+  // new versions: looked for once it is turned on (and kept), and taken with Update
+  $("pref-update").addEventListener("change", async () => {
+    const on = $("pref-update").checked;
+    await keep({ UpdateCheck: on });
+    paintUpdate();
+    if (on) checkUpdate();
+  });
+  $("update-go").addEventListener("click", runUpdate);
   // the passcode of PS5 packages: kept once it is one (or empty, the default); the packages that
   // needed another one are read again with it
   $("pref-passcode").addEventListener("input", () => { $("passcode-bad").hidden = validPasscode($("pref-passcode").value.trim()); });
@@ -2637,6 +2704,7 @@ async function main() {
   render();
   addSent(await go.call("PendingFiles").catch(() => null));
   loadExplorer();
+  checkUpdate();
   offerLeftovers();
   // the watched folder, now that the page listens; what waits (no destination, no room) is tried again now and then
   go.call("StartWatch").then(status => { state.watch = Object.assign({ existing: 0 }, status || state.watch); }, () => {});

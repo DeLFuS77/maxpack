@@ -50,6 +50,10 @@
 //   ?grow=1             Details with a .p5z that grew twice (by DLC and an update) and one that never did:
 //                       Add DLC… ends well, and Update with a new dump… stops because most of the game
 //                       changed until Update anyway
+//   ?update=found       Settings looks for new versions (on): MaxPack 1.1.0 is found a moment later, signed, with
+//                       its installer checked (Update); ?update=page: found, Update opens its page (macOS,
+//                       Linux, portable); ?update=none: this is the latest; ?update=bad: its signature is not
+//                       right; ?update=nokey: a build without the key (not available)
 //   ?paused=1           Compress starts by itself and its queue pauses a moment later, to see it paused (Pause
 //                       and Resume work in any queue of Compress, Decompress and Verify)
 // Start runs a queue made up here: each game packs and verifies in a few seconds (and gets its repair
@@ -296,7 +300,7 @@ const mock = `
   });
   const App = {
     Setup: async () => Object.assign({ version: "1.0.2-mock", coreVersion: "maxpack 1.0.2", lang: settings.Lang || "en", theme: "system", coreError: "", builtInRuntime: "", builtInRuntimeVersion: "",
-      logFile: "C:\\\\Users\\\\user\\\\AppData\\\\Roaming\\\\MaxPack\\\\maxpack.log", templates, cpuThreads: 32, explorer: explorer.available, portable: !!query.get("portable"),
+      logFile: "C:\\\\Users\\\\user\\\\AppData\\\\Roaming\\\\MaxPack\\\\maxpack.log", templates, cpuThreads: 32, explorer: explorer.available, portable: !!query.get("portable"), updateKey: query.get("update") !== "nokey",
       par2: query.get("nopar2") ? "" : "C:\\\\Program Files\\\\MaxPack\\\\maxpack-par2.exe", par2Version: query.get("nopar2") ? "" : "par2cmdline-turbo version 1.5.0",
       par2Error: query.get("nopar2") ? "maxpack-par2 not found: it should be next to the program, at C:\\\\Program Files\\\\MaxPack\\\\maxpack-par2.exe" : "" }, builtIn),
     ExplorerPlaces: async () => Object.assign({}, explorer),
@@ -374,6 +378,16 @@ const mock = `
     },
     Unqueue: async (section, i) => { if (!queue || i < queue.at) return false; queue.removed[i] = true; return true; },
     Cancel: async () => { if (queue) queue.cancelled = true; },
+    CheckUpdate: async () => {
+      const kind = query.get("update") || "";
+      if (kind === "nokey") return { state: "unavailable", error: "", version: "", page: "", install: false };
+      if (!settings.UpdateCheck) return { state: "off", error: "", version: "", page: "", install: false };
+      await new Promise(done => setTimeout(done, 1500));
+      if (kind === "none") return { state: "none", error: "", version: "", page: "", install: false };
+      if (kind === "bad") return { state: "error", error: "bad_signature", version: "", page: "", install: false };
+      return { state: "found", error: "", version: "1.1.0", page: "https://github.com/DeLFuS77/maxpack/releases/tag/v1.1.0", install: kind !== "page" };
+    },
+    Update: async () => { console.log("update"); },
     Pause: async () => {
       if (!queue || !["compress", "decompress", "verify"].includes(queue.section)) throw new Error("no queue that can pause is running");
       if (!queue.paused) { queue.paused = true; emit("job:paused", { paused: true }); }

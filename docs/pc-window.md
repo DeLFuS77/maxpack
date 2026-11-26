@@ -440,8 +440,18 @@ least in both themes, and nothing moves when the system asks for less motion.
   - **Esc** cancels the queue running, once you say yes; with a card open, Esc closes the card instead;
   - **Ctrl+P** pauses or resumes the queue;
   - **Ctrl+1** to **Ctrl+5** open Compress, Decompress, Verify, Details and Rename.
-- **Internet.** MaxPack's window goes on the internet for nothing; see
-  [What goes on the internet](../README.md#what-goes-on-the-internet).
+- **Internet.** MaxPack's window goes on the internet for nothing, unless you turn on **Look for new
+  versions** (off by default; see [What goes on the internet](../README.md#what-goes-on-the-internet)):
+  - once each time MaxPack starts, it asks GitHub for the latest release of DeLFuS77/maxpack;
+  - only when that is newer does it download the release's `SHA256SUMS` and `SHA256SUMS.minisig`, and it
+    offers the new version only when the signature is valid for the key built into MaxPack;
+  - on Windows it then downloads the installer, checks its SHA-256 against the signed list, and **Update**
+    runs it (checked again first) and closes MaxPack; not while a queue runs;
+  - on macOS, on Linux and in the portable version, **Open its page** opens the release on GitHub;
+  - a release not signed, or signed with another key, is not offered, and nothing past its list is
+    downloaded. The line under the switch says what it found.
+
+  A build without the key says "Not available in this build", and the switch cannot be turned on.
 - **About** has **Copy report** and the links to report a bug or a game.
 
 ### Windows Explorer

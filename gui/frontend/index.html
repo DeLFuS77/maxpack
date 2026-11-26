@@ -271,6 +271,11 @@
       <section class="pref-group">
         <h2 data-t="prefInternet"></h2>
         <p class="hint plain" data-t="internetText"></p>
+        <!-- new versions: off until turned on, and only in a build with the key that checks them -->
+        <div class="pref-item">
+          <div class="pref-text"><b id="update-name" data-t="updateCheck"></b><small data-t="updateHint"></small><small class="pref-status" id="update-status" aria-live="polite"></small></div>
+          <div class="pref-buttons"><button id="update-go" hidden></button><input id="pref-update" class="switch" type="checkbox" role="switch" aria-labelledby="update-name"></div>
+        </div>
       </section>
       <section class="pref-group">
         <h2 data-t="prefAbout"></h2>

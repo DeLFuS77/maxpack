@@ -8,6 +8,16 @@ All notable changes to MaxPack are listed here. The format follows
 
 ### Added
 
+- **Look for new versions** (Settings › Internet, off by default; until it is on, MaxPack does not go on the
+  internet): once each time the window starts, it asks GitHub's API for the latest release of
+  DeLFuS77/maxpack and, only when it is newer, downloads its `SHA256SUMS` and `SHA256SUMS.minisig` and
+  checks the minisign signature (Ed25519, both the signature and its trusted comment; prehashed and legacy)
+  with the public key built into the window, with Go's standard library. Only then does it offer it: on
+  Windows the installer is downloaded, checked against the signed list (and again before it runs), and
+  **Update** runs it and closes MaxPack; on macOS, Linux and the portable version, **Open its page**. Only
+  GitHub's hosts over HTTPS. The key is not in this build yet: Settings says the option is not available.
+  `docs/releasing.md` says how each release is signed (`minisign -Sm SHA256SUMS`, then
+  `SHA256SUMS.minisig` uploaded to the draft before it is published).
 - **Keyboard shortcuts** in the window: Ctrl+O adds files, Ctrl+Shift+O a folder, Ctrl+Enter starts, Esc
   cancels the queue once asked, Ctrl+P pauses or resumes, Ctrl+1 to Ctrl+5 open the sections (⌘ on macOS).
   Settings › Keyboard lists them.

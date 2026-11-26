@@ -224,8 +224,10 @@ static int describe_source(const char *path, mp_describe *d, mp_complete *c, mp_
         }
     }
     if (!d->content_id[0]) snprintf(d->content_id, sizeof d->content_id, "%s", mp_source_package_id(s));
-    // a DLC: its package's content ID, and the title ID of it (what pack --dlc matches with the game's)
-    d->dlc = mp_source_is_dlc_package(s) || (!d->packed && pj >= 0 && find_ci(s, "eboot.bin") < 0);
+    // a DLC: its package's content ID, and the title ID of it (what pack --dlc matches with the game's).
+    // A package is what its content type says; a folder or image, one with param.json and no eboot.bin
+    d->dlc = mp_source_kind_of(s) == MP_SRC_FPKG ? mp_source_is_dlc_package(s)
+                                                 : !d->packed && pj >= 0 && find_ci(s, "eboot.bin") < 0;
     if (d->dlc) {
         if (mp_source_is_dlc_package(s)) snprintf(d->content_id, sizeof d->content_id, "%s", mp_source_package_id(s));
         if (strlen(d->content_id) >= 16 && d->content_id[6] == '-')

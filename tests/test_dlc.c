@@ -440,6 +440,13 @@ MP_TEST(describe_dlc) {
         MP_CHECK(!d.dlc);
         mp_dlc_list_free(&l);
     }
+    // a package is what its content type says: a game's package with no eboot.bin (another builder's
+    // test package) is still a game's
+    if (describe_ok(FX "/lpp120-mixed.pkg", &d, &l)) {
+        MP_CHECK(!d.dlc && !d.dlc_data);
+        MP_CHECK_STR(d.title_id, "PPSA12345");
+        mp_dlc_list_free(&l);
+    }
     uint8_t *png = NULL;
     size_t len = 0;
     mp_err e = {{0}};

@@ -29,6 +29,7 @@
 #include "mp_play.h"
 #include "mp_report_out.h"
 #include "mp_rules.h"
+#include "mp_send.h"
 #include "mp_source.h"
 #include "mp_verify_quick.h"
 #include "mp_version.h"
@@ -53,6 +54,9 @@ static void usage(FILE *out) {
             "  maxpack verify --quick <game.p5z> [--json]   only that its bytes are those it was written\n"
             "                     with (each volume's and stored file's SHA-256), at the speed of the disk\n"
             "  maxpack measure [<folder>] [options]   measure this PC (and the folder's disk), with no game\n"
+            "  maxpack send <game.p5z> <ps5-ip> --code <6 digits> [--drive <id>] [--json]   to MaxPack for\n"
+            "                     the console, which verifies it when it arrives (verify --quick)\n"
+            "  maxpack send --drives <ps5-ip> --code <6 digits> [--json]   the console's drives, free space\n"
             "  maxpack --version\n"
             "  maxpack --capabilities   what this version can do, as JSON (for a front end)\n"
             "\n"
@@ -105,6 +109,23 @@ static void usage(FILE *out) {
             "  --progress json    one JSON line per event on stdout (the text stays on stderr)\n"
             "  --control stdin    read from stdin: the line \"cancel\" or closing the input cancels\n"
             "  Exit codes: 0 ok, 1 error, 2 usage, 130 cancelled\n"
+            "\n"
+            "send: MaxPack for the console shows the code in Settings > \"Receive games from the PC\", which\n"
+            "must be on. The .p5z goes to <drive>/homebrew/ as <name>.maxpack-recv and gets its name once the\n"
+            "console has verified it. If it stops (a broken connection, Ctrl+C, the PC or the console off),\n"
+            "the same command goes on from what the console has. Its options:\n"
+            "  <ps5-ip>           the console's IP address: a.b.c.d (port 8095), or a.b.c.d:port\n"
+            "  --code C           the pairing code (or the environment variable MAXPACK_SEND_CODE)\n"
+            "  --drive ID         internal (default), usb0, ...: send --drives lists them\n"
+            "  --json             one JSON line per event on stdout, as --progress json\n"
+            "  --chunk N          bytes per request, 65536 to 67108864 (default 33554432)\n"
+            "  --retries N        tries after a broken connection before it gives up (default 10)\n"
+            "  --retry-wait MS    the wait after the first one (default 1000; it doubles, up to 30 s)\n"
+            "  --control stdin    \"cancel\" stops it, and the console deletes what it received\n"
+            "  Exit codes: 0 sent and verified, 1 error, 2 usage, 3 no answer from the console, 4 receiving\n"
+            "  is off there, 5 wrong code, 6 too many wrong codes, 7 already there, 8 the console is busy,\n"
+            "  9 no space, 10 FAT32 drive, 11 file name, 12 no such drive, 13 arrived damaged, 14 cancelled\n"
+            "  on the console, 130 cancelled\n"
             "\n"
             "Options for analyze:\n"
             "  --sample N%%        sample percentage (default 2%%, at least 1 GiB)\n"
@@ -1822,6 +1843,323 @@ static int run_verify(int argc, char **argv) {
     return r.files_bad ? 1 : 0;
 }
 
+// ---- send ----------------------------------------------------------------------------------------
+
+// The exit code of each way a send ends.
+static int send_exit(const char *code) {
+    static const char *const codes[] = {"unreachable", "receive_off", "bad_code", "locked", "exists", "busy",
+                                        "no_space", "fat32", "bad_name", "no_drive", "verify_failed",
+                                        "console_cancelled"};
+    if (!code) return 0;
+    if (!strcmp(code, "cancelled")) return 130;
+    for (int i = 0; i < (int)(sizeof codes / sizeof *codes); i++)
+        if (!strcmp(code, codes[i])) return 3 + i;
+    return 1;
+}
+
+typedef struct {
+    uint64_t t0, print_ns, json_ns, from;
+    int line;   // a progress line is on stderr without its end
+} send_seen;
+
+static void send_end_line(send_seen *s) {
+    if (s->line) fprintf(stderr, "\n");
+    s->line = 0;
+}
+
+static void send_started(void *ctx, const char *name, const char *drive, uint64_t have, uint64_t size) {
+    send_seen *s = ctx;
+    s->t0 = mp_now_ns();
+    s->from = have;
+    char a[32], b[32];
+    size_text(a, sizeof a, have);
+    size_text(b, sizeof b, size);
+    fprintf(stderr, "Sending %s (%s) to %s of the console\n", name, b, drive);
+    if (have) fprintf(stderr, "The console has %s of it already: going on from there\n", a);
+    if (g_json) {
+        printf("{\"event\":\"started\",\"name\":");
+        print_json_string(name);
+        printf(",\"drive\":");
+        print_json_string(drive);
+        printf(",\"have\":%llu,\"size\":%llu}\n", (unsigned long long)have, (unsigned long long)size);
+        fflush(stdout);
+    }
+}
+
+static void send_sending(void *ctx, uint64_t have, uint64_t size, uint64_t sent) {
+    send_seen *s = ctx;
+    uint64_t now = mp_now_ns();
+    double secs = (double)(now - s->t0) / 1e9;
+    uint64_t rate = secs > 0 ? (uint64_t)((double)sent / secs) : 0;
+    uint64_t eta = rate ? (size - have) / rate : 0;
+    int end = have == size;
+    if (g_json && (end || now - s->json_ns >= 100000000ull)) {
+        s->json_ns = now;
+        printf("{\"event\":\"progress\",\"phase\":\"sending\",\"done\":%llu,\"total\":%llu,\"rate\":%llu,\"eta\":%llu}\n",
+               (unsigned long long)have, (unsigned long long)size, (unsigned long long)rate, (unsigned long long)eta);
+        fflush(stdout);
+    }
+    if (end || now - s->print_ns >= 1000000000ull) {
+        s->print_ns = now;
+        char left[32];
+        duration_text(left, sizeof left, eta);
+        fprintf(stderr, "\rSending: %.1f %%, %.1f MB/s, %s left   ", size ? 100.0 * (double)have / (double)size : 100.0,
+                (double)rate / 1e6, left);
+        s->line = 1;
+    }
+}
+
+static void send_verifying(void *ctx, uint64_t done, uint64_t total) {
+    send_seen *s = ctx;
+    uint64_t now = mp_now_ns();
+    if (g_json) {
+        printf("{\"event\":\"progress\",\"phase\":\"verifying\",\"done\":%llu,\"total\":%llu}\n", (unsigned long long)done,
+               (unsigned long long)total);
+        fflush(stdout);
+    }
+    if (done == total || now - s->print_ns >= 1000000000ull) {
+        s->print_ns = now;
+        fprintf(stderr, "\rThe console is verifying it: %.1f %%        ", total ? 100.0 * (double)done / (double)total : 0.0);
+        s->line = 1;
+    }
+}
+
+static void send_retry(void *ctx, unsigned attempt, unsigned wait_ms, uint64_t have) {
+    send_seen *s = ctx;
+    send_end_line(s);
+    fprintf(stderr, "The connection to the console broke (try %u): trying again in %.1f s\n", attempt, wait_ms / 1000.0);
+    if (g_json) {
+        printf("{\"event\":\"retry\",\"attempt\":%u,\"wait_ms\":%u,\"have\":%llu}\n", attempt, wait_ms,
+               (unsigned long long)have);
+        fflush(stdout);
+    }
+}
+
+static int send_cancelled(void *ctx) {
+    (void)ctx;
+    return mp_cancelled();
+}
+
+static void send_bad_json(const mp_send_result *r, mp_jbuf *b) {
+    mp_jbuf_raw(b, ",\"bad\":[");
+    for (size_t i = 0; i < r->nbad; i++) {
+        const mp_send_bad *x = &r->bad[i];
+        mp_jbuf_raw(b, i ? ",{\"path\":" : "{\"path\":");
+        mp_jbuf_str(b, x->path);
+        if (x->volume >= 0) {
+            mp_jbuf_raw(b, ",\"volume\":");
+            mp_jbuf_i64(b, x->volume);
+        }
+        mp_jbuf_raw(b, ",\"why\":");
+        mp_jbuf_str(b, x->why);
+        mp_jbuf_raw(b, ",\"expected\":");
+        mp_jbuf_str(b, x->expected);
+        mp_jbuf_raw(b, ",\"found\":");
+        if (x->found[0]) mp_jbuf_str(b, x->found);
+        else mp_jbuf_raw(b, "null");
+        mp_jbuf_raw(b, "}");
+    }
+    mp_jbuf_raw(b, "]");
+}
+
+static int run_send_drives(const mp_send_opts *o, int json) {
+    mp_send_result r;
+    mp_err e = {{0}};
+    mp_console_drive *v = NULL;
+    size_t n = 0;
+    if (mp_send_drives(o, &v, &n, &r, &e) != 0) {
+        fprintf(stderr, "error: %s\n", e.msg);
+        if (json) {
+            printf("{\"ok\":false,\"error\":\"%s\",\"message\":", r.code ? r.code : "io");
+            print_json_string(e.msg);
+            printf("}\n");
+        }
+        g_result_done = 1;
+        return send_exit(r.code ? r.code : "io");
+    }
+    if (json) printf("{\"drives\":[");
+    for (size_t i = 0; i < n; i++) {
+        if (json) {
+            printf("%s{\"id\":", i ? "," : "");
+            print_json_string(v[i].id);
+            printf(",\"free\":%llu,\"total\":%llu,\"fs\":", (unsigned long long)v[i].free, (unsigned long long)v[i].total);
+            print_json_string(v[i].fs);
+            printf("}");
+        } else {
+            char a[32], b[32];
+            size_text(a, sizeof a, v[i].free);
+            size_text(b, sizeof b, v[i].total);
+            printf("%-10s %s free of %s%s%s%s\n", v[i].id, a, b, v[i].fs[0] ? " (" : "", v[i].fs, v[i].fs[0] ? ")" : "");
+        }
+    }
+    if (json) printf("]}\n");
+    fflush(stdout);
+    free(v);
+    return 0;
+}
+
+static int run_send(int argc, char **argv) {
+    mp_send_opts o;
+    mp_send_opts_default(&o);
+    const char *p5z = NULL, *addr = NULL, *code = NULL;
+    int drives = 0, json = 0;
+    for (int i = 0; i < argc; i++) {
+        const char *a = argv[i];
+        int common = common_opt(argc, argv, &i);
+        if (common < 0) return 2;
+        if (common) continue;
+        if (!strcmp(a, "--drives")) {
+            drives = 1;
+        } else if (!strcmp(a, "--json")) {
+            json = 1;
+        } else if (!strcmp(a, "--code") || !strcmp(a, "--drive") || !strcmp(a, "--chunk") || !strcmp(a, "--retries") ||
+                   !strcmp(a, "--retry-wait")) {
+            if (i + 1 >= argc) return bad_usage("missing value for", a);
+            const char *v = argv[++i];
+            char *end = NULL;
+            unsigned long long n = strtoull(v, &end, 10);
+            int number = end != v && !*end && v[0] != '-';
+            if (!strcmp(a, "--code")) {
+                code = v;
+            } else if (!strcmp(a, "--drive")) {
+                if (!*v || strlen(v) >= 64) return bad_usage("invalid --drive", v);
+                o.drive = v;
+            } else if (!strcmp(a, "--chunk")) {
+                if (!number || n < MP_SEND_MIN_CHUNK || n > MP_SEND_MAX_CHUNK)
+                    return bad_usage("--chunk must be between 65536 and 67108864 bytes", v);
+                o.chunk = (size_t)n;
+            } else if (!strcmp(a, "--retries")) {
+                if (!number || n > 1000) return bad_usage("--retries must be between 0 and 1000", v);
+                o.retries = (unsigned)n;
+            } else {
+                if (!number || n < 1 || n > 600000) return bad_usage("--retry-wait must be between 1 and 600000 ms", v);
+                o.retry_ms = (unsigned)n;
+            }
+        } else if (a[0] == '-') {
+            return bad_usage("unknown option", a);
+        } else if (!p5z) {
+            p5z = a;
+        } else if (!addr) {
+            addr = a;
+        } else {
+            return bad_usage("extra argument", a);
+        }
+    }
+    if (drives && addr) return bad_usage("send --drives takes only the console's address", p5z);
+    if (drives) {   // its one argument is the address
+        addr = p5z;
+        p5z = NULL;
+    }
+    if (!drives && !p5z) return bad_usage("missing the .p5z to send", NULL);
+    if (!addr) return bad_usage("missing the console's IP address", NULL);
+    if (mp_send_parse_address(addr, &o) != 0)
+        return bad_usage("the console's address must be its IP address, a.b.c.d or a.b.c.d:port", addr);
+    if (!code) code = getenv("MAXPACK_SEND_CODE");
+    if (!code) return bad_usage("missing --code: the pairing code the console shows", NULL);
+    if (mp_send_set_code(&o, code) != 0) return bad_usage("--code must be the 6 digits the console shows", NULL);
+    if (json) g_json = 1;
+    if (drives) {
+        g_json = 0;   // --drives --json is the list itself
+        return run_send_drives(&o, json);
+    }
+    start_json_and_control();
+    // what goes is a whole .p5z: one whose name the console takes, as it is (an append that stopped undone)
+    const char *base = p5z + strlen(p5z);
+    while (base > p5z && base[-1] != '/' && base[-1] != '\\') base--;
+    mp_err e = {{0}};
+    mp_send_result r;
+    memset(&r, 0, sizeof r);
+    const char *fail_code = NULL;
+    if (mp_path_kind(p5z) != 1) {
+        fail_code = "bad_input";
+        mp_err_set(&e, "%s %s", mp_path_kind(p5z) == 0 ? "does not exist:" : "is not a .p5z file:", p5z);
+    } else if (!mp_send_name_ok(base)) {
+        fail_code = "bad_name";
+        mp_err_set(&e, "the console takes only a plain .p5z name of at most 200 bytes (no '/', '\\', '..' or "
+                       "control characters): %s", base);
+    } else {
+        int what = 0;
+        recover_note(p5z);
+        mp_p5z *pz = NULL;
+        if (mp_p5z_recover(p5z, &what, NULL) == 0 && what == MP_RECOVER_BUSY) {
+            fail_code = "p5z_busy";
+            mp_err_set(&e, "another MaxPack is changing %s now: send it when that ends", p5z);
+        } else if (mp_p5z_open(p5z, &pz, &e) != 0) {
+            fail_code = "invalid";
+        }
+        mp_p5z_close(pz);
+    }
+    int rc = 0;
+    send_seen seen;
+    memset(&seen, 0, sizeof seen);
+    uint64_t t0 = mp_now_ns();
+    if (!fail_code) {
+        mp_send_hooks h = {send_started, send_sending, send_verifying, send_retry, send_cancelled, &seen};
+        if (mp_send(p5z, &o, &h, &r, &e) != 0) fail_code = r.code ? r.code : "io";
+        send_end_line(&seen);
+    }
+    mp_jbuf b = {0};
+    if (fail_code) {
+        fprintf(stderr, "error: %s\n", e.msg);
+        for (size_t i = 0; i < r.nbad; i++) {
+            const mp_send_bad *x = &r.bad[i];
+            if (x->expected[0] && x->found[0])
+                fprintf(stderr, "FAILED: %s: %s (expected %s, found %s)\n", x->path, x->why, x->expected, x->found);
+            else
+                fprintf(stderr, "FAILED: %s%s%s\n", x->path, x->why[0] ? ": " : "", x->why);
+        }
+        rc = !strcmp(fail_code, "bad_name") ? 11 : send_exit(fail_code);
+        if (!strcmp(fail_code, "bad_input") || !strcmp(fail_code, "invalid") || !strcmp(fail_code, "p5z_busy")) rc = 1;
+        if (g_json) {
+            mp_jbuf_raw(&b, ",\"message\":");
+            mp_jbuf_str(&b, e.msg);
+            mp_jbuf_raw(&b, ",\"detail\":");
+            mp_jbuf_str(&b, r.detail);
+            send_bad_json(&r, &b);
+            json_result(0, fail_code, b.p && !b.oom ? b.p : "");
+        }
+        g_result_done = 1;
+    } else {
+        double secs = (double)(mp_now_ns() - t0) / 1e9;
+        char a[32], d[32];
+        size_text(a, sizeof a, r.size);
+        duration_text(d, sizeof d, (uint64_t)secs);
+        FILE *hum = g_json ? stderr : stdout;
+        fprintf(hum, "Sent and verified: %s on %s of the console (%s in %s, %.1f MB/s)\n", r.name, r.drive, a, d,
+                secs > 0 ? (double)r.sent / 1e6 / secs : 0.0);
+        if (g_json) {
+            mp_jbuf_raw(&b, ",\"name\":");
+            mp_jbuf_str(&b, r.name);
+            mp_jbuf_raw(&b, ",\"drive\":");
+            mp_jbuf_str(&b, r.drive);
+            mp_jbuf_raw(&b, ",\"size\":");
+            mp_jbuf_u64(&b, r.size);
+            mp_jbuf_raw(&b, ",\"sent\":");
+            mp_jbuf_u64(&b, r.sent);
+            mp_jbuf_raw(&b, ",\"resumed_from\":");
+            mp_jbuf_u64(&b, r.resumed_from);
+            mp_jbuf_raw(&b, ",\"retries\":");
+            mp_jbuf_u64(&b, r.retries);
+            char t[32];
+            snprintf(t, sizeof t, ",\"seconds\":%.1f", secs);
+            mp_jbuf_raw(&b, t);
+            json_result(1, NULL, b.p && !b.oom ? b.p : "");
+        }
+    }
+    mp_jbuf_free(&b);
+    mp_send_result_free(&r);
+    return rc;
+}
+
+static int cmd_send(int argc, char **argv) {
+    prescan_json(argc, argv);
+    for (int i = 0; i < argc; i++)
+        if (!strcmp(argv[i], "--json") && !has_arg(argc, argv, "--drives")) g_json = 1;
+    int rc = run_send(argc, argv);
+    if (rc == 2) return finish_cmd(rc);
+    return rc;
+}
+
 // ---- measure -------------------------------------------------------------------------------------
 
 // Appends s as a JSON string (quotes, backslashes and control characters escaped).
@@ -1981,7 +2319,7 @@ int main(int argc, char **argv) {
         printf("{\"progress_json\":true,\"control_stdin\":true,\"max_file_size\":true,\"info_json\":true,"
                "\"icon\":true,\"packs\":true,\"content_id\":true,\"levels\":true,\"measure\":true,"
                "\"images\":true,\"fpkg\":true,\"passcode\":true,\"completeness\":true,\"dlc\":true,\"grow\":true,"
-               "\"verify_quick\":true}\n");
+               "\"verify_quick\":true,\"send\":true}\n");
         return 0;
     }
     if (argc >= 2 && (!strcmp(argv[1], "--help") || !strcmp(argv[1], "-h") || !strcmp(argv[1], "help"))) {
@@ -2005,6 +2343,7 @@ int main(int argc, char **argv) {
     if (argc >= 2 && strcmp(argv[1], "add") == 0) return cmd_add(argc - 2, argv + 2);
     if (argc >= 2 && strcmp(argv[1], "update") == 0) return cmd_update(argc - 2, argv + 2);
     if (argc >= 2 && strcmp(argv[1], "compact") == 0) return cmd_compact(argc - 2, argv + 2);
+    if (argc >= 2 && strcmp(argv[1], "send") == 0) return cmd_send(argc - 2, argv + 2);
     if (argc >= 2) return bad_usage("unknown command", argv[1]);
     usage(stderr);
     return 2;

@@ -133,7 +133,7 @@ endif()
 
 if(NOT MAXPACK_PS5)
   add_executable(maxpack src/cli/main.c)
-  target_link_libraries(maxpack PRIVATE maxpack_pack)
+  target_link_libraries(maxpack PRIVATE maxpack_pack maxpack_net)
   mp_warnings(maxpack)
 endif()
 
@@ -277,6 +277,11 @@ if(MAXPACK_BUILD_TESTS)
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/tools/test_cli.py $<TARGET_FILE:maxpack> ${MP_FIXTURES_DIR}
     ${MP_TEST_TMP}/cli)
   set_tests_properties(test_cli PROPERTIES FIXTURES_REQUIRED "exfat;images;fpkg;playgo" TIMEOUT 300)
+  # maxpack send against a fake MaxPack for the console (tests/tools/test_send.py)
+  add_test(NAME test_send COMMAND ${Python3_EXECUTABLE} -I
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/tools/test_send.py $<TARGET_FILE:maxpack> ${MP_FIXTURES_DIR}
+    ${MP_TEST_TMP}/send)
+  set_tests_properties(test_send PROPERTIES FIXTURES_REQUIRED exfat TIMEOUT 300)
 
   # A package's version comes from the tag (v1.2.3 -> 1.2.3); needs bash.
   find_program(MP_BASH bash)

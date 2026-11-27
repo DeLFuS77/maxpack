@@ -45,7 +45,7 @@ MaxPack is three programs, each in its own repository (all GPL-3.0). You downloa
 | **MaxPack for the console** (`maxpack.elf`) | PS5 | [DeLFuS77/maxpack-ps5](https://github.com/DeLFuS77/maxpack-ps5) | Mounts games like Kraken Mount, plays a `.p5z` as it is and has an installer. |
 | **ampr-emu-ng** (`libSceAmpr.sprx`) | PS5 | [DeLFuS77/ampr-emu-ng](https://github.com/DeLFuS77/ampr-emu-ng) | The runtime that reads the packs while you play. MaxPack for the console and the PC window already carry it inside: you only download it for the `maxpack` command line. |
 
-MaxPack for the PC 1.0.7 and MaxPack for the console 1.0.2 both carry ampr-emu-ng
+MaxPack for the PC 1.1.0 and MaxPack for the console 1.1.0 both carry ampr-emu-ng
 v0.5.1-maxpack.2 inside.
 
 ### Two ways to take a game to the PS5

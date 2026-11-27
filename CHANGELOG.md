@@ -6,6 +6,8 @@ All notable changes to MaxPack are listed here. The format follows
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-27
+
 ### Added
 
 - **Games packed already with zstd packs** (`ampr_zstd.index` and its `ampr_zstd-NNN.pak`, as Dump Forge,
@@ -810,7 +812,8 @@ risk. The authors are not responsible for data loss, lost saves, damage to the c
 bans or any other problem. MaxPack is not affiliated with or endorsed by Sony Interactive
 Entertainment. Full text: [Legal and disclaimer](README.md#legal-and-disclaimer).
 
-[Unreleased]: https://github.com/DeLFuS77/maxpack/compare/v1.0.7...HEAD
+[Unreleased]: https://github.com/DeLFuS77/maxpack/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/DeLFuS77/maxpack/releases/tag/v1.1.0
 [1.0.7]: https://github.com/DeLFuS77/maxpack/releases/tag/v1.0.7
 [1.0.6]: https://github.com/DeLFuS77/maxpack/releases/tag/v1.0.6
 [1.0.5]: https://github.com/DeLFuS77/maxpack/releases/tag/v1.0.5

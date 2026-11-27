@@ -1,12 +1,16 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Test helper: a game's files made into LZ4 packs as drakmor/ampr_emu's tools/ampr_pack.py lays them out
-// (docs/ASSET_PACKS.md there; GPL-3.0-or-later): ampr_assets.index (AMPRPAK4) with a record for every file in
-// folded path order, loose or packed, its volumes ampr_assets-NNN.pak (AMPRDAT3), the CRC sidecar
-// (AMPRCRC1), a runtime profile (AMPRCFG1), ampr_emu.index, the loose files with their dates and the tool's
-// runtime. Packed files go round-robin into the packs in blocks of 16 KiB, 64 KiB or 1 MiB by their size;
-// each block is LZ4 when that is smaller, else raw, and raw always for the files stored ("noise" or "random"
-// in their path); a block already in that pack is not written again: its chunk record points at it
-// (shared). Every chunk sits on its pack's I/O pages as the runtime reads them.
+// Test helper: a game's files made into LZ4 packs in the format of drakmor/ampr_emu's tools/ampr_pack.py
+// (docs/ASSET_PACKS.md there; GPL-3.0-or-later): ampr_assets.index (AMPRPAK4) with a record for every file,
+// loose or packed, in the order of their file IDs in ampr_emu.index (AMPRIDX3, whose rows are sorted by
+// folded path), as ampr_pack.py writes them; its volumes ampr_assets-NNN.pak (AMPRDAT3), the CRC sidecar
+// (AMPRCRC1) and a runtime profile (AMPRCFG1) when asked, ampr_emu.index, the loose files with their dates and
+// the tool's runtime (loose, or packed when asked). Packed files go round-robin into the packs, each one a
+// contiguous range of chunk records, in blocks of 16 KiB, 64 KiB or 1 MiB by their size; each block is LZ4 when
+// that is smaller, else raw, and raw always for the files stored ("noise" or "random" in their path); a block
+// already in that pack is not written again: its chunk record points at it (shared). Every chunk sits on its
+// pack's I/O pages as the runtime reads them. With classes, "vdl" files are streaming (256 KiB blocks, from a
+// page's start) and "frag" ones random-access and hot (16 KiB blocks); with keep_loose the packed files stay
+// loose beside the packs too, as `ampr_pack.py pack --root app0 --output app0` leaves a game.
 #ifndef MP_LZ4PACK_H
 #define MP_LZ4PACK_H
 
@@ -42,6 +46,10 @@ typedef struct {
     int crc, runtime;    // write the CRC sidecar, a runtime profile
     // what it made, to check the packs hold what the tests want
     uint64_t lz4_chunks, raw_chunks, shared_chunks;
+    int classes;      // streaming, random-access and hot files (above)
+    int keep_loose;   // the packed files loose too
+    int rt_packed;    // the tool's runtime in the packs
+    uint64_t streaming_chunks;
 } mpt_lz4_opts;
 
 typedef struct {
@@ -90,6 +98,23 @@ static inline uint32_t mpt_crc_without(const uint8_t *p, size_t n, size_t zero_a
     return mp_crc32(p + zero_at + 4, n - zero_at - 4, c);
 }
 
+// A manifest in memory sealed again after a test changed it: its two CRCs, and its file record hashes made again
+// from their paths when hashes is 1.
+static inline void mpt_lz4_seal(uint8_t *d, size_t size, int hashes) {
+    uint64_t nf = mpt_r64(d + 40), strings = mpt_r64(d + 96);
+    for (uint64_t i = 0; hashes && i < nf && MP_LZ4PK_HEADER + 48 * (i + 1) <= size; i++) {
+        uint8_t *r = d + MP_LZ4PK_HEADER + 48 * i;
+        char path[1100];
+        uint32_t off = mpt_r32(r + 32), len = mpt_r32(r + 36);
+        if (len >= sizeof path || strings + off + len > size) break;
+        memcpy(path, d + strings + off, len);
+        path[len] = 0;
+        mpt_w64(r, mp_lz4pk_path_hash(path));
+    }
+    mpt_w32(d + 112, mp_crc32(d + MP_LZ4PK_HEADER, size - MP_LZ4PK_HEADER, 0));
+    mpt_w32(d + 116, mpt_crc_without(d, MP_LZ4PK_HEADER, 116));
+}
+
 // The manifest's file record hashes made again from their paths, and its two CRCs: after a test changed it.
 static inline int mpt_lz4_reseal(const char *index_path) {
     mp_file *f = NULL;
@@ -104,18 +129,7 @@ static inline int mpt_lz4_reseal(const char *index_path) {
         free(d);
         return -1;
     }
-    uint64_t nf = mpt_r64(d + 40), strings = mpt_r64(d + 96);
-    for (uint64_t i = 0; i < nf; i++) {
-        uint8_t *r = d + MP_LZ4PK_HEADER + 48 * i;
-        char path[1100];
-        uint32_t off = mpt_r32(r + 32), len = mpt_r32(r + 36);
-        if (len >= sizeof path || strings + off + len > size) break;
-        memcpy(path, d + strings + off, len);
-        path[len] = 0;
-        mpt_w64(r, mp_lz4pk_path_hash(path));
-    }
-    mpt_w32(d + 112, mp_crc32(d + MP_LZ4PK_HEADER, (size_t)size - MP_LZ4PK_HEADER, 0));
-    mpt_w32(d + 116, mpt_crc_without(d, MP_LZ4PK_HEADER, 116));
+    mpt_lz4_seal(d, (size_t)size, 1);
     mp_err e = {{0}};
     int rc = mp_write_file(index_path, d, (size_t)size, &e);
     free(d);
@@ -140,7 +154,7 @@ static int mpt_lz4_cmp(const void *a, const void *b) {
     return mpt_fold_cmp(((const mpt_lz4_rec *)a)->en->path, ((const mpt_lz4_rec *)b)->en->path);
 }
 
-// A block already written to a pack: its raw bytes' SHA-256 and whether it was stored raw by policy.
+// A block already written to a pack: its raw bytes' SHA-256 and its kind (stored raw by policy, streaming).
 typedef struct {
     uint8_t sha[32];
     int store;
@@ -165,6 +179,13 @@ static inline int mpt_lz4_put_file(const char *dir, const char *rel, const void 
 
 static const char mpt_lz4_rt[] = "another tool's libSceAmpr.sprx, with LZ4 packs";
 
+// n bytes at off of record r (the tool's runtime when it is at SIZE_MAX).
+static inline int mpt_lz4_read(mp_source *src, const mpt_lz4_rec *r, uint64_t off, uint8_t *b, size_t n, mp_err *e) {
+    if (r->at != SIZE_MAX) return mp_source_read(src, r->at, off, b, n, e);
+    memcpy(b, mpt_lz4_rt + off, n);
+    return 0;
+}
+
 static inline int mpt_lz4_pack(const char *src_path, const char *dir, mpt_lz4_opts *o) {
     mp_err e = {{0}};
     mp_source *src = NULL;
@@ -184,7 +205,7 @@ static inline int mpt_lz4_pack(const char *src_path, const char *dir, mpt_lz4_op
     mp_idx3_row *rows = calloc(nrec, sizeof *rows);
     int rc = -1, ordinal = 0;
     uint64_t nchunks = 0;
-    o->lz4_chunks = o->raw_chunks = o->shared_chunks = 0;
+    o->lz4_chunks = o->raw_chunks = o->shared_chunks = o->streaming_chunks = 0;
     if (!rec || !recs || !data || !block || !lz || !rows) goto done;
     for (size_t i = 0; i < n; i++) {
         rec[i].en = mp_source_entry(src, i);
@@ -209,30 +230,32 @@ static inline int mpt_lz4_pack(const char *src_path, const char *dir, mpt_lz4_op
         rows[i].path = en->path;
         rows[i].size = en->size;
         rows[i].mtime = en->mtime;
-        if (rec[i].at == SIZE_MAX || !o->in_packs(en->path, en->size)) {   // loose
+        int packed = rec[i].at == SIZE_MAX ? o->rt_packed : o->in_packs(en->path, en->size);
+        if (!packed || o->keep_loose) {   // loose
             uint8_t *b = malloc((size_t)en->size + 1);
             if (!b) goto done;
-            if (rec[i].at == SIZE_MAX) memcpy(b, mpt_lz4_rt, (size_t)en->size);
-            else if (mp_source_read(src, rec[i].at, 0, b, (size_t)en->size, &e) != 0) {
+            if (mpt_lz4_read(src, &rec[i], 0, b, (size_t)en->size, &e) != 0) {
                 free(b);
                 goto done;
             }
             int w = mpt_lz4_put_file(dir, en->path, b, (size_t)en->size, en->mtime);
             free(b);
             if (w != 0) goto done;
-            continue;
+            if (!packed) continue;
         }
         int store = strstr(en->path, "noise") || strstr(en->path, "random");
-        uint8_t shift = en->size < (64u << 10) ? 14 : en->size >= (2u << 20) ? 20 : 16;
+        int streaming = o->classes && strstr(en->path, "vdl"), randomly = o->classes && strstr(en->path, "frag");
+        uint8_t shift = randomly ? 14 : streaming ? 18 : en->size < (64u << 10) ? 14 : en->size >= (2u << 20) ? 20 : 16;
         uint64_t bs = 1ull << shift, count = (en->size + bs - 1) / bs;
         uint32_t pack = (uint32_t)(ordinal++ % o->npacks);
         mpt_w32(r + 24, (uint32_t)nchunks);
         mpt_w32(r + 28, (uint32_t)count);
-        mpt_w32(r + 40, store ? 3u : 1u);   // packed, and stored raw
+        // packed, stored raw, streaming, hot, random-access
+        mpt_w32(r + 40, 1u | (store ? 2u : 0u) | (streaming ? 4u : 0u) | (randomly ? 8u | 16u : 0u));
         r[44] = shift;
         for (uint64_t k = 0; k < count; k++) {
             size_t raw = (size_t)(en->size - k * bs < bs ? en->size - k * bs : bs);
-            if (mp_source_read(src, rec[i].at, k * bs, block, raw, &e) != 0) goto done;
+            if (mpt_lz4_read(src, &rec[i], k * bs, block, raw, &e) != 0) goto done;
             uint8_t crc[4];
             mpt_w32(crc, mp_crc32(block, raw, 0));
             if (mpt_buf_put(&crcs, crc, 4) != 0) goto done;
@@ -245,7 +268,7 @@ static inline int mpt_lz4_pack(const char *src_path, const char *dir, mpt_lz4_op
             uint32_t desc = 0;
             int found = 0;
             for (size_t s = 0; s < nseen && !found; s++)
-                if (seen[s].pack == pack && seen[s].store == store && !memcmp(seen[s].sha, sha, 32)) {
+                if (seen[s].pack == pack && seen[s].store == (store | streaming << 1) && !memcmp(seen[s].sha, sha, 32)) {
                     loc = seen[s].loc;
                     desc = seen[s].desc | 1u << 22;   // shared
                     found = 1;
@@ -259,10 +282,11 @@ static inline int mpt_lz4_pack(const char *src_path, const char *dir, mpt_lz4_op
                 const uint8_t *bytes = codec ? lz : block;
                 mpt_buf *v = &data[pack];
                 size_t off = (v->n + 63) & ~(size_t)63;
-                // on the I/O pages as the runtime reads them: a small chunk inside one page, a large one from a
-                // page's start
-                if (stored > o->page || off / o->page != (off + stored - 1) / o->page) off = (off + o->page - 1) / o->page * o->page;
-                uint32_t flags = stored <= o->page ? 4u | (off % o->page == 0 ? 8u : 0u) : 8u;
+                // on the I/O pages as the runtime reads them: a small chunk inside one page, a large one (and a
+                // streaming one) from a page's start
+                if (streaming || stored > o->page || off / o->page != (off + stored - 1) / o->page)
+                    off = (off + o->page - 1) / o->page * o->page;
+                uint32_t flags = (stored <= o->page ? 4u | (off % o->page == 0 ? 8u : 0u) : 8u) | (streaming ? 2u : 0u);
                 if (mpt_buf_zeros(v, off - v->n) != 0 || mpt_buf_put(v, bytes, stored) != 0) goto done;
                 loc = (uint64_t)off | (uint64_t)pack << 48;
                 desc = (uint32_t)(stored - 1) | (uint32_t)codec << 20 | flags << 22;
@@ -273,13 +297,14 @@ static inline int mpt_lz4_pack(const char *src_path, const char *dir, mpt_lz4_op
                     seen = q;
                 }
                 memcpy(seen[nseen].sha, sha, 32);
-                seen[nseen].store = store;
+                seen[nseen].store = store | streaming << 1;
                 seen[nseen].pack = pack;
                 seen[nseen].loc = loc;
                 seen[nseen].desc = desc;
                 nseen++;
                 if (codec) o->lz4_chunks++;
                 else o->raw_chunks++;
+                if (streaming) o->streaming_chunks++;
             }
             uint8_t cr[12];
             mpt_w64(cr, loc);

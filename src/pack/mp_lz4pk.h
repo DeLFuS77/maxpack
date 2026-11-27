@@ -32,9 +32,11 @@ typedef struct {
 
 typedef struct mp_lz4pk mp_lz4pk;
 
-// Checks the manifest (index[0..len), copied) and gives it: its header and CRCs, each pack record and file
-// record and the chunks of every packed file. *older is set (and -1 returned) for a manifest of another
-// version of the LZ4 packs (AMPRPAK1 to AMPRPAK3), which this reader does not take.
+// Checks the manifest (index[0..len), copied) and gives it: its header and CRCs, its counts (no more files,
+// chunks or packs than ampr-emu-ng's runtime takes), each pack record and file record and the chunks of every
+// packed file, each one a range of chunk records of its own (no more claimed than there are). *older is set
+// (and -1 returned) for a manifest of another version of the LZ4 packs (AMPRPAK1 to AMPRPAK3), which this
+// reader does not take.
 int mp_lz4pk_open(const uint8_t *index, size_t len, mp_lz4pk **out, int *older, mp_err *e);
 // The volumes, by pack number: each one's header checked against its record and the manifest (pack number,
 // flags, build ID, payload, CRC) and its size against the record. Once, before a read.

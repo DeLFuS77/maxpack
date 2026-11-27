@@ -1010,6 +1010,10 @@ MP_TEST(lz4_refuses_tricky_paths) {
         lz4_rename(bad, from[i], to[i]);
         refused(bad, MP_IMPORT_DAMAGED, "path");
     }
+    // two records of one path, ASCII case aside
+    copy_tree(LZ4F, bad);
+    lz4_rename(bad, "/app0/many/f001.json", "/app0/MANY/F000.json");
+    refused(bad, MP_IMPORT_DAMAGED, "twice");
     mpt_clear(bad);
 }
 
@@ -1049,6 +1053,269 @@ MP_TEST(lz4_refuses_other_kinds) {
     mpt_clear(bad);
 }
 
+// ---- LZ4 packs: the reader alone ------------------------------------------------------------
+
+// A changed manifest is refused by the reader with those words in its reason (sealed again first, its file
+// hashes made again from the paths when hashes is 1).
+static void lz4_open_refused(uint8_t *d, size_t n, int hashes, const char *words) {
+    mpt_lz4_seal(d, n, hashes);
+    mp_lz4pk *l = NULL;
+    mp_err e = {{0}};
+    if (mp_lz4pk_open(d, n, &l, NULL, &e) == 0) {
+        MP_FAIL_("taken, not refused for %s", words);
+        mp_lz4pk_close(l);
+        return;
+    }
+    MP_CHECK_CONTAINS(e.msg, words);
+}
+
+// The first file record that is packed with at least min chunks, the first of them of that codec (any when -1),
+// or loose (min 0, codec -2).
+static uint8_t *lz4_record_of(uint8_t *d, uint32_t min, int codec) {
+    uint64_t nf = mpt_r64(d + 40), chunks = mpt_r64(d + 80);
+    for (uint64_t i = 0; i < nf; i++) {
+        uint8_t *rec = d + MP_LZ4PK_HEADER + 48 * i;
+        uint32_t flags = mpt_r32(rec + 40), first = mpt_r32(rec + 24), count = mpt_r32(rec + 28);
+        if (codec == -2) {
+            if (!(flags & 1)) return rec;
+            continue;
+        }
+        if (!(flags & 1) || count < min || (flags & 6)) continue;   // packed, neither stored nor streaming
+        if (codec >= 0 && (int)((mpt_r32(d + chunks + 12 * first + 8) >> 20) & 3) != codec) continue;
+        return rec;
+    }
+    MP_FAIL_("no such record");
+    return NULL;
+}
+
+// Each rule of the manifest, broken in a copy of a right one: refused, with its reason.
+MP_TEST(lz4_reader_refusals) {
+    make_lz4();
+    size_t n = 0;
+    uint8_t *orig = mpt_slurp(LZ4F "/" MP_LZ4PK_INDEX, &n), *d = orig ? malloc(n) : NULL, *rec = NULL;
+    if (!d) {
+        MP_FAIL_("no manifest");
+        free(orig);
+        return;
+    }
+    uint64_t chunks = mpt_r64(orig + 80), packs = 0, strings = 0;
+    // a path hash that is not its path's
+    memcpy(d, orig, n);
+    if ((rec = lz4_record_of(d, 1, -1))) {
+        rec[0] ^= 1;
+        lz4_open_refused(d, n, 0, "path hash");
+    }
+    // a backslash, a NUL and an empty part (an absolute path under /app0/) in a path
+    const char *to[] = {"/app0/data\\frag.bin", "/app0/data\0frag.bin", "/app0//ata/frag.bin"};
+    const char *why[] = {"not a safe one", "path", "not a safe one"};
+    for (int k = 0; k < 3; k++) {
+        memcpy(d, orig, n);
+        strings = mpt_r64(d + 96);
+        uint8_t *at = memmem_simple(d + strings, n - strings, "/app0/data/frag.bin");
+        if (!at) {
+            MP_FAIL_("no data/frag.bin");
+            break;
+        }
+        memcpy(at, to[k], 19);
+        lz4_open_refused(d, n, 1, why[k]);
+    }
+    // a chunk count that is not its size's
+    memcpy(d, orig, n);
+    if ((rec = lz4_record_of(d, 2, -1))) {
+        mpt_w32(rec + 28, mpt_r32(rec + 28) - 1);
+        lz4_open_refused(d, n, 0, "chunk count");
+    }
+    // a file stored as it is with an LZ4 chunk, and a file said to stream whose chunks do not
+    for (uint32_t flag = 2; flag <= 4; flag += 2) {
+        memcpy(d, orig, n);
+        if ((rec = lz4_record_of(d, 1, 1))) {
+            mpt_w32(rec + 40, mpt_r32(rec + 40) | flag);
+            lz4_open_refused(d, n, 0, "chunk out of its pack or of its place");
+        }
+    }
+    // a chunk neither inside one I/O page nor at a page's start
+    memcpy(d, orig, n);
+    if ((rec = lz4_record_of(d, 1, -1))) {
+        uint8_t *c = d + chunks + 12 * (uint64_t)mpt_r32(rec + 24);
+        mpt_w32(c + 8, mpt_r32(c + 8) & ~((4u | 8u) << 22));
+        lz4_open_refused(d, n, 0, "chunk out of its pack or of its place");
+    }
+    // a pack record: a page that is no power of two, and no I/O page layout
+    for (int k = 0; k < 2; k++) {
+        memcpy(d, orig, n);
+        packs = mpt_r64(d + 88);
+        mpt_w32(d + packs + (k ? 24 : 28), k ? 0 : 3000);
+        lz4_open_refused(d, n, 0, "pack record");
+    }
+    // a loose file with chunks
+    memcpy(d, orig, n);
+    if ((rec = lz4_record_of(d, 0, -2))) {
+        mpt_w32(rec + 28, 1);
+        lz4_open_refused(d, n, 0, "loose file with chunks");
+    }
+    free(d);
+    free(orig);
+}
+
+// A manifest of files that all claim the same chunks, which no packer writes (each file has a range of its
+// own): refused at once, not after checking every chunk of every file.
+MP_TEST(lz4_refuses_shared_chunk_ranges) {
+    enum { NF = 4000, NC = 4000 };
+    uint64_t files_at = MP_LZ4PK_HEADER, chunks_at = files_at + 48ull * NF, packs_at = chunks_at + 12ull * NC,
+             strings_at = packs_at + 32, slen = 17ull * NF + 20, n = strings_at + slen;
+    uint8_t *d = calloc(1, (size_t)n);
+    if (!d) return;
+    for (uint32_t i = 0; i < NF; i++) {
+        char path[32];
+        snprintf(path, sizeof path, "/app0/f%05u.bin", i);
+        memcpy(d + strings_at + 17ull * i, path, 17);
+        uint8_t *rec = d + files_at + 48ull * i;
+        mpt_w64(rec, mp_lz4pk_path_hash(path));
+        mpt_w64(rec + 8, (uint64_t)NC << 14);
+        mpt_w32(rec + 24, 0);
+        mpt_w32(rec + 28, NC);
+        mpt_w32(rec + 32, 17 * i);
+        mpt_w32(rec + 36, 16);
+        mpt_w32(rec + 40, 1);
+        rec[44] = 14;
+    }
+    for (uint32_t k = 0; k < NC; k++) {   // raw 16 KiB chunks, each from a page's start
+        mpt_w64(d + chunks_at + 12ull * k, 4096 + ((uint64_t)k << 14));
+        mpt_w32(d + chunks_at + 12ull * k + 8, (16384u - 1) | 8u << 22);
+    }
+    memcpy(d + strings_at + 17ull * NF, "ampr_assets-000.pak", 20);
+    mpt_w64(d + packs_at, (uint64_t)NC << 14);
+    mpt_w64(d + packs_at + 8, 4096 + ((uint64_t)NC << 14));
+    mpt_w32(d + packs_at + 16, 17 * NF);
+    mpt_w32(d + packs_at + 20, 19);
+    mpt_w32(d + packs_at + 24, 2);
+    mpt_w32(d + packs_at + 28, 4096);
+    memcpy(d, "AMPRPAK4", 8);
+    mpt_w32(d + 8, 4);
+    mpt_w32(d + 12, MP_LZ4PK_HEADER);
+    mpt_w32(d + 20, 0x01020304u);
+    mpt_w64(d + 40, NF);
+    mpt_w64(d + 48, NC);
+    mpt_w32(d + 56, 1);
+    mpt_w32(d + 60, 48);
+    mpt_w32(d + 64, 12);
+    mpt_w32(d + 68, 32);
+    mpt_w64(d + 72, files_at);
+    mpt_w64(d + 80, chunks_at);
+    mpt_w64(d + 88, packs_at);
+    mpt_w64(d + 96, strings_at);
+    mpt_w64(d + 104, slen);
+    lz4_open_refused(d, (size_t)n, 0, "overlap");
+    free(d);
+}
+
+// More files, chunks or packs than ampr-emu-ng's runtime takes (AMPR_EMU_PACK_MAX_FILES, MAX_CHUNKS and
+// MAX_PACKS): refused by their counts, before anything is made of them.
+MP_TEST(lz4_refuses_counts_over_the_runtime_caps) {
+    const uint64_t nf = 2000001, nc = 16000001, np = 1025;
+    const uint64_t lens[3] = {MP_LZ4PK_HEADER + 48 * nf, MP_LZ4PK_HEADER + 12 * nc, MP_LZ4PK_HEADER + 32 * np + 20 * np};
+    uint8_t *d = calloc(1, (size_t)lens[1]);
+    if (!d) {
+        MP_FAIL_("no memory for the test");
+        return;
+    }
+    for (int k = 0; k < 3; k++) {
+        size_t n = (size_t)lens[k];
+        memset(d, 0, n);
+        uint64_t f = k == 0 ? nf : 0, c = k == 1 ? nc : 0, p = k == 2 ? np : 0;
+        uint64_t at = MP_LZ4PK_HEADER + 48 * f + 12 * c + 32 * p;
+        for (uint64_t i = 0; i < p; i++) {   // right pack records, each one with its name
+            uint8_t *q = d + MP_LZ4PK_HEADER + 32 * i;
+            snprintf((char *)d + at + 20 * i, 20, "ampr_assets-%04llu.p", (unsigned long long)i);
+            mpt_w64(q, 4096);
+            mpt_w64(q + 8, 8192);
+            mpt_w32(q + 16, (uint32_t)(20 * i));
+            mpt_w32(q + 20, 18);
+            mpt_w32(q + 24, 2);
+            mpt_w32(q + 28, 4096);
+        }
+        memcpy(d, "AMPRPAK4", 8);
+        mpt_w32(d + 8, 4);
+        mpt_w32(d + 12, MP_LZ4PK_HEADER);
+        mpt_w32(d + 20, 0x01020304u);
+        mpt_w64(d + 40, f);
+        mpt_w64(d + 48, c);
+        mpt_w32(d + 56, (uint32_t)p);
+        mpt_w32(d + 60, 48);
+        mpt_w32(d + 64, 12);
+        mpt_w32(d + 68, 32);
+        mpt_w64(d + 72, MP_LZ4PK_HEADER);
+        mpt_w64(d + 80, MP_LZ4PK_HEADER + 48 * f);
+        mpt_w64(d + 88, MP_LZ4PK_HEADER + 48 * f + 12 * c);
+        mpt_w64(d + 96, at);
+        mpt_w64(d + 104, n - at);
+        lz4_open_refused(d, n, 0, "counts");
+    }
+    free(d);
+}
+
+// A manifest of another version says what to do with it: only AMPRPAK3 has a converter (ampr_emu's
+// convert_ampr_pack_v3.py).
+MP_TEST(lz4_older_manifests_say_what_to_do) {
+    uint8_t d[MP_LZ4PK_HEADER] = "AMPRPAK1";
+    for (char v = '1'; v <= '3'; v++) {
+        d[7] = (uint8_t)v;
+        mp_lz4pk *l = NULL;
+        mp_err e = {{0}};
+        int older = 0;
+        MP_CHECK(mp_lz4pk_open(d, sizeof d, &l, &older, &e) == -1 && older == 1);
+        if (v == '3') MP_CHECK_CONTAINS(e.msg, "convert_ampr_pack_v3.py");
+        else MP_CHECK(strstr(e.msg, "convert_ampr_pack_v3") == NULL && strstr(e.msg, "again") != NULL);
+    }
+}
+
+// A manifest written by drakmor/ampr_emu's own Python tools (tools/build_ampr_index.py and
+// tools/ampr_pack_format.py): ampr-emu-ng's crates/ampr-lz4/tests/fixtures/python_manifest.bin
+// (GPL-3.0-or-later), byte for byte. A packed file of one raw block at a page's start, and a loose one.
+static const uint8_t python_manifest[325] = {
+    0x41, 0x4d, 0x50, 0x52, 0x50, 0x41, 0x4b, 0x34, 0x04, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x04, 0x03, 0x02, 0x01, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+    0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x30, 0x00, 0x00, 0x00,
+    0x0c, 0x00, 0x00, 0x00, 0x20, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0xe0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xec, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x0c, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x39, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0xf5, 0x1e, 0x18, 0xbc, 0xc4, 0xf1, 0x7d, 0x5d, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0xba, 0x5f, 0x10, 0x23, 0x31, 0x72, 0xde, 0xfd, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x7b, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x13, 0x00, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00, 0x0e, 0x00, 0x00, 0x00,
+    0xcc, 0xa7, 0x80, 0x68, 0x80, 0x97, 0x98, 0xa6, 0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0xc8, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x14, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0x3f, 0x00, 0x02, 0x00, 0x40, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x50, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x25, 0x00, 0x00, 0x00,
+    0x13, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x2f, 0x61, 0x70, 0x70,
+    0x30, 0x2f, 0x44, 0x61, 0x74, 0x61, 0x2f, 0x54, 0x65, 0x73, 0x74, 0x2e, 0x62, 0x69, 0x6e, 0x00,
+    0x2f, 0x61, 0x70, 0x70, 0x30, 0x2f, 0x72, 0x65, 0x61, 0x64, 0x6d, 0x65, 0x2e, 0x74, 0x78, 0x74,
+    0x00, 0x61, 0x6d, 0x70, 0x72, 0x5f, 0x61, 0x73, 0x73, 0x65, 0x74, 0x73, 0x2d, 0x30, 0x30, 0x30,
+    0x2e, 0x70, 0x61, 0x6b, 0x00,
+};
+
+MP_TEST(lz4_reads_a_manifest_of_the_python_tools) {
+    mp_lz4pk *l = NULL;
+    mp_err e = {{0}};
+    if (mp_lz4pk_open(python_manifest, sizeof python_manifest, &l, NULL, &e) != 0) {
+        MP_FAIL_("%s", e.msg);
+        return;
+    }
+    MP_CHECK_EQ_U64(mp_lz4pk_count(l), 2);
+    MP_CHECK_EQ_U64(mp_lz4pk_chunk_count(l), 1);
+    MP_CHECK_EQ_U64(mp_lz4pk_pack_count(l), 1);
+    MP_CHECK_STR(mp_lz4pk_pack_name(l, 0), "ampr_assets-000.pak");
+    MP_CHECK_STR(mp_lz4pk_path(l, 0), "Data/Test.bin");
+    MP_CHECK_EQ_U64(mp_lz4pk_size(l, 0), 16384);
+    MP_CHECK(mp_lz4pk_mtime(l, 0) == 123 && mp_lz4pk_packed(l, 0));
+    MP_CHECK_STR(mp_lz4pk_path(l, 1), "readme.txt");
+    MP_CHECK_EQ_U64(mp_lz4pk_size(l, 1), 7);
+    MP_CHECK(mp_lz4pk_mtime(l, 1) == 456 && !mp_lz4pk_packed(l, 1));
+    mp_lz4pk_close(l);
+}
+
 int main(void) {
     mp_err e = {{0}};
     mpt_clear(TMP);
@@ -1077,5 +1344,10 @@ int main(void) {
     MP_RUN(lz4_refuses_tricky_paths);
     MP_RUN(lz4_refuses_missing_and_twice);
     MP_RUN(lz4_refuses_other_kinds);
+    MP_RUN(lz4_reader_refusals);
+    MP_RUN(lz4_refuses_shared_chunk_ranges);
+    MP_RUN(lz4_refuses_counts_over_the_runtime_caps);
+    MP_RUN(lz4_older_manifests_say_what_to_do);
+    MP_RUN(lz4_reads_a_manifest_of_the_python_tools);
     MP_TEST_MAIN_END();
 }

@@ -18,6 +18,10 @@
 #define PACK_REC 32u
 #define PATH_MAX_BYTES 1024u   // the PS5's path limit, as the runtime takes a path
 #define ENDIAN 0x01020304u
+// what ampr-emu-ng's runtime takes (AMPR_EMU_PACK_MAX_FILES, _MAX_CHUNKS and _MAX_PACKS)
+#define MAX_FILES 2000000u
+#define MAX_CHUNKS 16000000u
+#define MAX_PACKS 1024u
 
 #define F_PACKED 1u
 #define F_STORE_ONLY 2u
@@ -153,9 +157,12 @@ int mp_lz4pk_open(const uint8_t *d, size_t len, mp_lz4pk **out, int *older, mp_e
     if (older) *older = 0;
     if (len >= 8 && !memcmp(d, "AMPRPAK", 7) && d[7] >= '1' && d[7] <= '3') {
         if (older) *older = 1;
+        // only the third has a converter
         mp_err_set(e, "its ampr_assets.index is of an older version of the LZ4 packs (AMPRPAK%c), which MaxPack does "
-                      "not read: ampr_emu's convert_ampr_pack_v3.py makes it the current one (AMPRPAK4)",
-                   d[7]);
+                      "not read: %s",
+                   d[7],
+                   d[7] == '3' ? "ampr_emu's convert_ampr_pack_v3.py makes it the current one (AMPRPAK4)"
+                               : "pack the game again from its dump with a current ampr_emu (AMPRPAK4)");
         return -1;
     }
     if (len < MP_LZ4PK_HEADER || memcmp(d, "AMPRPAK4", 8)) return bad(e, what, "header");
@@ -165,8 +172,8 @@ int mp_lz4pk_open(const uint8_t *d, size_t len, mp_lz4pk **out, int *older, mp_e
     if (crc_without(d, MP_LZ4PK_HEADER, 116) != rd32(d + 116)) return bad(e, what, "header CRC");
     if (mp_crc32(d + MP_LZ4PK_HEADER, len - MP_LZ4PK_HEADER, 0) != rd32(d + 112)) return bad(e, what, "payload CRC");
     uint64_t nf = rd64(d + 40), nc = rd64(d + 48), np = rd32(d + 56), slen = rd64(d + 104);
-    // each count against what is left of the file: no sum can wrap
-    if (nf > 0xFFFFFFFFull || nc > 0xFFFFFFFFull || np > 0xFFFFu || nf > len / FILE_REC || nc > len / CHUNK_REC ||
+    // each count within what the runtime takes and against what is left of the file: no sum can wrap
+    if (nf > MAX_FILES || nc > MAX_CHUNKS || np > MAX_PACKS || nf > len / FILE_REC || nc > len / CHUNK_REC ||
         np > len / PACK_REC)
         return bad(e, what, "counts");
     uint64_t files_at = MP_LZ4PK_HEADER, chunks_at = files_at + FILE_REC * nf, packs_at = chunks_at + CHUNK_REC * nc,
@@ -217,6 +224,9 @@ int mp_lz4pk_open(const uint8_t *d, size_t len, mp_lz4pk **out, int *older, mp_e
             return bad(e, what, "chunk record");
         }
     }
+    // the chunks the packed files claim: each file has a range of its own (a shared block has a record in each),
+    // so no more than there are, and each chunk is checked for one file only
+    uint64_t claimed = 0;
     for (size_t i = 0; i < p->n; i++) {
         const uint8_t *r = d + files_at + FILE_REC * i;
         lfile *f = &p->f[i];
@@ -247,6 +257,7 @@ int mp_lz4pk_open(const uint8_t *d, size_t len, mp_lz4pk **out, int *older, mp_e
             else if ((f->flags & F_STREAMING) && (f->flags & F_RANDOM)) why = "a file both streaming and random-access";
             else if ((uint64_t)f->first + f->count > p->nc) why = "a chunk range";
             else if (f->count != f->size / block + (f->size % block != 0)) why = "a chunk count";
+            else if ((claimed += f->count) > p->nc) why = "chunk ranges that overlap: more chunks claimed than there are";
             for (uint32_t k = 0; !why && k < f->count; k++) {
                 const lchunk *c = &p->c[f->first + k];
                 uint64_t raw = f->size - (uint64_t)k * block < block ? f->size - (uint64_t)k * block : block;
@@ -348,8 +359,9 @@ int mp_lz4pk_read_file(mp_lz4pk *p, size_t i, uint64_t off, void *buf, size_t n,
     }
     if (!n) return 0;
     const lfile *f = &p->f[i];
-    uint64_t block = 1ull << f->shift;
-    uint8_t *src = malloc(MP_LZ4PK_CHUNK_MAX), *dec = malloc(MP_LZ4PK_CHUNK_MAX), *o = buf;
+    uint64_t block = 1ull << f->shift;   // what a chunk of this file stores and decodes to at most
+    size_t room = (size_t)(f->size < block ? f->size : block);
+    uint8_t *src = malloc((size_t)block), *dec = malloc(room ? room : 1), *o = buf;
     int rc = 0;
     if (!src || !dec) {
         mp_err_set(e, "out of memory");

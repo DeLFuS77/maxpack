@@ -199,9 +199,10 @@ The sidebar has four work sections and Settings. Everything is explained, with s
 ### Compress ([details](pc-window.md#2-compress))
 
 1. Drop the games on the window, or use **Add files** or **Add folder**. Dump folders and images are
-   fine: `.exfat`, `.ffpkg`, `.ffpfs` and `.ffpfsc`, the ones ShadowMountPlus mounts, and PS5 debug
-   packages (`.pkg`). A game kept as an image or a package goes to a `.p5z` in one step: no dumping it
-   again, no other tool and no temporary space.
+   fine: `.exfat`, `.ffpkg`, `.ffpfs` and `.ffpfsc`, the ones ShadowMountPlus mounts, PS5 debug
+   packages (`.pkg`), and a `.zstd` (an exFAT image with a game packed already in it). A game kept as an
+   image or a package goes to a `.p5z` in one step: no dumping it again, no other tool and no temporary
+   space.
    **Add folder** takes several folders at once, and each one can be a game or a folder with games
    right below it.
    A game's DLC (their `.pkg`, or dumped DLC folders) can come along: drop them with it, or use
@@ -226,8 +227,9 @@ What it does by itself:
   image with one inside, such as ModGames44's `.zstd`) is compressed from the files it was made of: its
   row says "already packed (zstd, level 5)", and **Games packed already**, in the panel, says what becomes
   of its packs: **Compress again (smaller)**, the default, or **Keep their packs (faster)**. Once made, its
-  row says it was made from a packed game. One packed with LZ4 packs (`ampr_assets`) is skipped ("it is
-  packed with LZ4 packs"). See [A game packed already](#a-game-packed-already).
+  row says it was made from a packed game, and what it saved is against what the packed game took on disk.
+  One packed with LZ4 packs (`ampr_assets`) is skipped ("it is packed with LZ4 packs"), and a DLC packed
+  already goes inside no game ("a DLC packed already"). See [A game packed already](#a-game-packed-already).
 - A dump that lacks files of the original game says so on its row ("3 files of the original game are
   missing") before anything starts, and is compressed all the same: dump it again if you can (see
   [Whether a dump is complete](#whether-a-dump-is-complete)). A copy that lacks files its dump tool
@@ -709,30 +711,44 @@ is read as the exFAT image it is), or a `.pkg` with packs in it. It is packed fr
   other tool's runtime, `fakelib/libSceAmpr.sprx`: give MaxPack's with `--runtime` for a folder (a `.p5z`
   gets one from MaxPack for the console when it plays).
 - **Compressed again** (the default): the files of its packs are decompressed as they are read and go
-  through the normal packing, at `--level` and by MaxPack's rules of what goes loose. What comes out is,
-  byte for byte, what the dump it was made of gives with the same level and options, whatever the other
-  tool packed or left loose.
+  through the normal packing, at `--level` and by MaxPack's rules of what goes loose, whatever the other
+  tool packed or left loose. What comes out has the files of the dump it was made of, with their contents
+  and dates. It is, byte for byte, the `.p5z` that dump gives with the same level and options when the
+  other tool kept the dates of its loose files (to the second) and the dump had no `ampr_emu.index`,
+  `fakelib/libSceAmpr.sprx`, `ampr_commands.bin` or runtime logs of its own (a dump tool's
+  `ampr_emu.index` is kept in a `.p5z` of the dump as the original it replaced, and a packed game no
+  longer has it).
 - **`--keep-packs`** (faster): the chunks of its packs go into what is made as they are, decompressed only
   to check them and to hash each file, and what is made keeps the level of the packs (for example the 5 of
   Dump Forge); `--level` is not used. A file the packs have that MaxPack leaves loose (`eboot.bin`, the
   `.prx`, `sce_sys/`...) comes out of them and goes loose; a file the other tool left loose that MaxPack
-  packs is compressed, at the packs' level. The result does not depend on the thread count either.
+  packs is compressed, at the packs' level. Each compressed chunk is read once: the bytes written are the
+  ones decoded and hashed. The result does not depend on the thread count either.
 - **Refused**, with a code for `--progress json`, nothing made and nothing written to the source:
   `packs_damaged` for packs or indexes that are damaged or disagree (a volume missing or of another size, a
-  header, a CRC, a compressed block that does not decode, a packed file its `ampr_emu.index` does not list
-  or lists with another size, no `ampr_emu.index`, a volume without `ampr_zstd.index`);
-  `packed_file_missing` for a file its `ampr_emu.index` lists that is neither loose nor in the packs (what is
-  left out, OS junk and what dump tools leave behind aside); `packs_lz4` for LZ4 packs (`ampr_assets`),
-  which MaxPack does not read yet. A block stored as it is (not compressed) has no checksum in the format:
-  a byte changed in one cannot be told.
+  header, a CRC, a compressed block that is not one zstd frame or does not decode, a packed file its
+  `ampr_emu.index` does not list or lists with another size, no `ampr_emu.index`, a volume without
+  `ampr_zstd.index`); `packed_and_loose` for a file both loose and in the packs, or a file that is also the
+  folder of another (ASCII case aside): keep only one; `packed_file_missing` for a file its
+  `ampr_emu.index` lists that is neither loose nor in the packs, or is loose of another size (a copy cut
+  short; what is left out, OS junk and what dump tools leave behind aside); `packs_lz4` for LZ4 packs
+  (`ampr_assets`), which MaxPack does not read yet; `dlc_packed` for a DLC packed already (no `eboot.bin`).
+  A read of the source that fails (a drive unplugged, an image cut short) is said as it is, with the code
+  `io`, not as damaged packs. A block stored as it is (not compressed) has no checksum in the format: a
+  byte changed in one cannot be told.
+- **Names:** `ampr_zstd.index` and its volumes are read under the exact names the console's runtime opens;
+  one that differs only in case is taken only when there is none so (a file system that ignores case), and
+  left out like the other AMPR files. The index may take 512 MiB at most, as the runtime's.
 - **What it says:** `made from a packed game (zstd level 5): compressed again at level 19` (or `its packs
   kept as they are`), and in the result line `from_packed`, `packed_level` and `kept_packs`. `info --json`
-  of the game says `packs` (`zstd`, `lz4` or `""`), `packed_level` and `unpacked_size`, what its files take
-  unpacked. The `.p5z` itself has no mark of it (its format does not change): its manifest has the SHA-256
+  of the game says `packs` (`zstd`, `lz4` or `""`), `packed_level` (0 when its header gives none) and
+  `unpacked_size`, what its files take unpacked; its `completeness` and whether it is a DLC are of the files
+  it was made of, as `pack` reads them, in a folder, an image or a package alike. The `.p5z` itself has no
+  mark of it (its format does not change): its manifest has the SHA-256
   of each file as it came out of the packs, and `unpack --original` gives the game unpacked, not the packed
   folder it was made from.
-- **Not yet:** a DLC packed already is still refused by `pack --dlc` and `add`, and `update` still refuses a
-  new dump that is packed already.
+- **Not yet:** a DLC packed already is refused by `pack` (`dlc_packed`), `pack --dlc` and `add`, and `update`
+  still refuses a new dump that is packed already.
 
 ### DLC inside the `.p5z`
 

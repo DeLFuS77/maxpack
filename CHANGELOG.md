@@ -13,22 +13,32 @@ All notable changes to MaxPack are listed here. The format follows
   folder, an exFAT, UFS2 or PFS image or a `.pkg` alike: `pack` reads them as the files they were made of, its
   loose ones and the ones in its packs, decompressed as they are read, with the dates of `ampr_emu.index`; the
   packs, both indexes, `ampr_commands.bin`, the runtime's logs and the other tool's `fakelib/libSceAmpr.sprx` are
-  left out. Compressed again (the default), the `.p5z` is byte for byte the one of the dump they were made of
-  at the same level and options, whatever the other tool packed or left loose. `--keep-packs` copies the
-  chunks of the packs as they are, decompressed only to check them and hash each file, and keeps their
-  level; what MaxPack leaves loose comes out of the packs, and what it packs that the packs lack is
-  compressed at their level. Damaged packs or indexes (`packs_damaged`), a file `ampr_emu.index` lists that is
-  not there (`packed_file_missing`) and LZ4 packs (`packs_lz4`, not read yet) are refused with those codes in
-  `--progress json`, nothing made and nothing written to the source; before, a packed game was refused, and
-  one with LZ4 packs was packed as if it were a dump. The `.p5z` format does not change: `pack` says
-  `made from a packed game` (`from_packed`, `packed_level` and `kept_packs` in its result), and `info --json`
-  of a game says `packs`, `packed_level` and `unpacked_size`. A DLC packed already, and `update` with a new
-  dump packed already, are still refused. The window: a game packed already is no longer skipped in
-  Compress; its row says "already packed (zstd, level N)", **Games packed already** in the panel chooses
-  **Compress again (smaller)** (the default) or **Keep their packs (faster)**, the room it needs is that of
-  its files unpacked, the ampr-emu-ng in use goes into a folder made of it, its DLC go inside it, and once
-  made its row says what it was made from; one with LZ4 packs is skipped and says why. The report says the
-  packs of each game and the choice. Texts in every language.
+  left out. Compressed again (the default), the `.p5z` has the files and dates of the dump they were made of,
+  whatever the other tool packed or left loose, and is byte for byte that dump's `.p5z` at the same level and
+  options when the tool kept the dates of the loose files and the dump had no `ampr_emu.index` or runtime
+  files of its own. `--keep-packs` copies the chunks of the packs as they are, each read once and
+  decompressed only to check it and hash each file, and keeps their level; what MaxPack leaves loose comes
+  out of the packs, and what it packs that the packs lack is compressed at their level. Refused with a code in
+  `--progress json`, nothing made and nothing written to the source: damaged packs or indexes, a chunk that
+  is not one zstd frame (`packs_damaged`); a file both loose and packed, or a file that is a folder too
+  (`packed_and_loose`); a file `ampr_emu.index` lists that is not there, or loose of another size
+  (`packed_file_missing`); LZ4 packs (`packs_lz4`, not read yet); a DLC packed already (`dlc_packed`). A read
+  of the source that fails is said as such (`io`). The index and volumes are the ones named exactly as the
+  console's runtime opens them; the index may take 512 MiB, as the runtime's. Before, a packed game was
+  refused, and one with LZ4 packs was packed as if it were a dump. The `.p5z` format does not change: `pack`
+  says `made from a packed game` (`from_packed`, `packed_level` and `kept_packs` in its result), and
+  `info --json` of a game says `packs`, `packed_level` and `unpacked_size`, and reads a packed game as `pack`
+  does for its completeness and whether it is a DLC. `pack --dlc` of a DLC packed already, and `update` with a
+  new dump packed already, are still refused. The window: a game packed already is no longer skipped in
+  Compress, and a `.zstd` is taken as an image; its row says "already packed (zstd, level N)", **Games packed
+  already** in the panel chooses **Compress again (smaller)** (the default) or **Keep their packs (faster)**,
+  the room it needs is that of its files unpacked, what it saved is against what it took on disk, the
+  ampr-emu-ng in use goes into a folder made of it, its DLC go inside it, and once made its row says what it
+  was made from; one with LZ4 packs is skipped and says why, and a DLC packed already goes inside no game.
+  The report says the packs of each game and the choice. Texts in every language.
+- **ampr_emu.index's hash table is checked in one pass:** a forged one (no empty slot, every row far from
+  where its hash starts), which `pack` of a packed game reads, took rows × slots steps (minutes, or much
+  longer).
 
 - **Look for new versions** (Settings › Internet, off by default; until it is on, MaxPack does not go on the
   internet): once each time the window starts, it asks GitHub's API for the latest release of

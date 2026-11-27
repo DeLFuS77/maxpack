@@ -730,14 +730,16 @@ the zstd packs as below, and LZ4 ones as [their part](#lz4-packs) says.
   `packs_damaged` for packs or indexes that are damaged or disagree (a volume missing or of another size, a
   header, a CRC, a compressed block that is not one zstd frame or does not decode, a packed file its
   `ampr_emu.index` does not list or lists with another size, no `ampr_emu.index`, a volume without
-  `ampr_zstd.index`); `packed_and_loose` for a file both loose and in the packs, or a file that is also the
-  folder of another (ASCII case aside): keep only one; `packed_file_missing` for a file its
-  `ampr_emu.index` lists that is neither loose nor in the packs, or is loose of another size (a copy cut
-  short; what is left out, OS junk and what dump tools leave behind aside); `packs_lz4` for LZ4 packs MaxPack
-  does not read (below); `dlc_packed` for a DLC packed already (no `eboot.bin`).
-  A read of the source that fails (a drive unplugged, an image cut short) is said as it is, with the code
-  `io`, not as damaged packs. A block stored as it is (not compressed) has no checksum in the format: a
-  byte changed in one cannot be told.
+  `ampr_zstd.index`); `packed_and_loose` for a file both loose and in the packs whose two copies differ, in
+  their size or in a byte (told as it is read), or a file that is also the folder of another (ASCII case
+  aside): keep only one; `packed_file_missing` for a file its `ampr_emu.index` lists that is neither loose nor
+  in the packs, or is loose of another size (a copy cut short; what is left out, OS junk and what dump tools
+  leave behind aside); `packs_lz4` for LZ4 packs MaxPack does not read (below); `dlc_packed` for a DLC packed
+  already (no `eboot.bin`). A loose copy that is the packed file itself, byte for byte (a game packed in
+  place, its files kept beside the packs, which the runtime plays from the packs), is no refusal: the file is
+  taken once, from the packs. A read of the source that fails (a drive unplugged, an image cut short) is said
+  as it is, with the code `io`, not as damaged packs. A block stored as it is (not compressed) has no checksum
+  in the format: a byte changed in one cannot be told.
 - **Names:** `ampr_zstd.index` and its volumes are read under the exact names the console's runtime opens;
   one that differs only in case is taken only when there is none so (a file system that ignores case), and
   left out like the other AMPR files. The index may take 512 MiB at most, as the runtime's.
@@ -769,18 +771,21 @@ exFAT2AMPR on the console and Dump Forge's LZ4 option), is taken by `pack` the s
 - **What is checked** (what ampr_emu's and ampr-emu-ng's readers check), first the manifest and the volumes:
   the manifest's header and CRCs, safe paths (no `..`, nothing outside the game) and their hashes, the sizes
   and block geometry of each file, each pack's record and its volume's header, size and CRC, and each chunk:
-  inside its pack's payload and on its I/O pages, at most 1 MiB, raw or LZ4. A chunk shared by several
-  files (the packers deduplicate blocks) is fine. Then each chunk as it is read: decoded, it must give its
-  size and, when there is an `ampr_assets.index.crc`, its CRC. Without that file, a damaged LZ4 chunk is told
-  only when it does not decode to its size, and a damaged raw one cannot be told. A `.runtime` that is not
-  right (the console's runtime refuses the packs then) is refused too.
+  inside its pack's payload and on its I/O pages, at most 1 MiB, raw or LZ4. Each file has a range of chunk
+  records of its own, and there are no more files, chunks or packs than ampr-emu-ng's runtime takes
+  (2,000,000, 16,000,000 and 1,024). A block shared by several files (the packers deduplicate blocks) is fine.
+  Then each chunk as it is read: decoded, it must give its size and, when there is an `ampr_assets.index.crc`,
+  its CRC. Without that file, a damaged LZ4 chunk is told only when it does not decode to its size, and a
+  damaged raw one cannot be told. A `.runtime` that is not right (the console's runtime refuses the packs
+  then) is refused too.
 - **Refused**, with the same codes, nothing made: `packs_damaged` for anything above that is not right, a
   volume missing or of another size, a file twice in the manifest and volumes without their manifest;
   `packed_file_missing` for a file the manifest lists that is not there, or is loose of another size;
-  `packed_and_loose` for a file both in the packs and loose beside them, or one that is also the folder of
-  another; `packs_lz4` for a manifest of an older version (`AMPRPAK1` to `AMPRPAK3`: ampr_emu's
-  `convert_ampr_pack_v3.py` makes it the current one) and for a game with zstd and LZ4 packs at once (give
-  it as it was dumped).
+  `packed_and_loose` for a file both in the packs and loose beside them whose two copies differ (the same file
+  kept beside the packs, as `ampr_pack.py pack --root app0 --output app0` leaves a game, is taken once), or
+  one that is also the folder of another; `packs_lz4` for a manifest of an older version (`AMPRPAK1` to
+  `AMPRPAK3`: ampr_emu's `convert_ampr_pack_v3.py` makes an `AMPRPAK3` one the current one; the others must be
+  packed again) and for a game with zstd and LZ4 packs at once (give it as it was dumped).
 - **What it says:** `made from a packed game (LZ4 packs): compressed again at level 19`, with
   `(--keep-packs keeps zstd packs only)` when it was given, and `"packs":"lz4"` in the result line
   (`packed_level` 0, `kept_packs` false). `info --json` says `"packs":"lz4"`, `packed_files` and `volumes`
@@ -1589,14 +1594,17 @@ console repository, which identifies games only by these numbers.
   its chunks are the packs' bytes, the `.p5z` verifies and unpacks to the dump with its dates; a changed
   byte and a file missing are refused. No folder made by Dump Forge or Alembic, nor a real `.zstd`, has
   been tried yet: only ones that follow their format, made by MaxPack.
-- **Games packed already with LZ4 packs:** a test game made into LZ4 packs by a test tool (several packs,
-  LZ4, raw and shared chunks, the CRC file and a runtime profile, another split of loose and packed files)
-  gives the dump's `.p5z` byte for byte at 1 and every thread, also from an exFAT image of it; a damaged
-  chunk, a wrong CRC, a chunk out of its pack, a path that leaves the game and a file missing are refused.
-  The two LZ4 test packs ps5upload publishes, made by drakmor's `ampr_pack.py` from the same files (one with
-  LZ4 HC, raw and shared chunks in one pack, the other stored in three packs), give the same `.p5z` byte for
-  byte, and its files match their CRC files. No game packed by exFAT2AMPR or Dump Forge's LZ4 option has
-  been tried yet.
+- **Games packed already with LZ4 packs:** a test game made into LZ4 packs by a test tool (several packs, 4
+  KiB and 64 KiB pages, LZ4, raw and shared chunks, streaming, random-access and hot files, with and without
+  the CRC file and the runtime profile, another split of loose and packed files, packed in place with its
+  files kept beside the packs) gives the dump's `.p5z` byte for byte at 1 and every thread, also from an exFAT
+  image of it; a damaged chunk (with the CRC file and without it), a wrong CRC, a chunk out of its pack, every
+  rule of the manifest broken one at a time, files that claim the same chunks, counts over the runtime's, a
+  loose copy that differs and a file missing are refused, and a cancel says so. The manifest that
+  ampr-emu-ng's tests keep from drakmor's Python tools is read with its sizes and dates. The two LZ4 test
+  packs ps5upload publishes, made by drakmor's `ampr_pack.py` from the same files (one with LZ4 HC, raw and
+  shared chunks in one pack, the other stored in three packs), give the same `.p5z` byte for byte, and its
+  files match their CRC files. No game packed by exFAT2AMPR or Dump Forge's LZ4 option has been tried yet.
 - **On every change, in GitHub Actions:** the engine is built and passes its tests on Windows and Linux;
   the window is built and passes its tests on Windows, Linux and macOS; the packages are installed,
   compress a test image and are uninstalled.

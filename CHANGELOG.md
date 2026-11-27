@@ -20,8 +20,9 @@ All notable changes to MaxPack are listed here. The format follows
   decompressed only to check it and hash each file, and keeps their level; what MaxPack leaves loose comes
   out of the packs, and what it packs that the packs lack is compressed at their level. Refused with a code in
   `--progress json`, nothing made and nothing written to the source: damaged packs or indexes, a chunk that
-  is not one zstd frame (`packs_damaged`); a file both loose and packed, or a file that is a folder too
-  (`packed_and_loose`); a file `ampr_emu.index` lists that is not there, or loose of another size
+  is not one zstd frame (`packs_damaged`); a file both loose and packed whose two copies differ, or a file
+  that is a folder too (`packed_and_loose`; the same file kept loose beside the packs, as a game packed in
+  place has it, is taken once, from the packs, its copy compared as it is read); a file `ampr_emu.index` lists that is not there, or loose of another size
   (`packed_file_missing`); LZ4 packs MaxPack does not read (`packs_lz4`, below); a DLC packed already
   (`dlc_packed`). A read of the source that fails is said as such (`io`). The index and volumes are the ones named exactly as the
   console's runtime opens them; the index may take 512 MiB, as the runtime's. Before, a packed game was
@@ -44,8 +45,11 @@ All notable changes to MaxPack are listed here. The format follows
   conditions as from zstd packs. The reader, in C, is ported from ampr_emu's and ampr-emu-ng's
   (GPL-3.0-or-later) and makes all their checks: the headers and CRCs of the manifest and of each volume, safe
   paths and their hashes, sizes, each chunk inside its pack and on its pages, at most 1 MiB, raw or LZ4 (shared
-  chunks allowed), and each chunk decoded against its size and the CRC file. Damaged packs (`packs_damaged`), a file missing (`packed_file_missing`) and a file both loose
-  and packed (`packed_and_loose`) are refused as with zstd packs; `packs_lz4` is now only for an older manifest
+  chunks allowed), each file with chunk records of its own, no more files, chunks or packs than ampr-emu-ng
+  takes, and each chunk decoded against its size and the CRC file. Damaged packs (`packs_damaged`), a file
+  missing (`packed_file_missing`) and a loose copy that differs from the packed file (`packed_and_loose`) are
+  refused as with zstd packs; a game packed in place, its files kept beside the packs as
+  `ampr_pack.py pack --root app0 --output app0` leaves it, is taken. `packs_lz4` is now only for an older manifest
   (`AMPRPAK1` to `AMPRPAK3`) or zstd and LZ4 packs in one game. LZ4 blocks are decoded with lz4 1.10.0
   (BSD-2-Clause), a new submodule in `third_party/lz4`, of which only `lib/lz4.c` is built. `info --json` says
   `"packs":"lz4"`, its packed files, volumes and size unpacked, and `pack`'s result says `packs`. The window

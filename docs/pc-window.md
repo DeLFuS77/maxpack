@@ -216,8 +216,8 @@ out: for **Play from the USB** the folder gets the ampr-emu-ng in use, as a dump
 what its files take unpacked; what it saved is against what it took on disk. Once made, its row says "made
 from a packed game, compressed again" or "made from a packed game, its packs kept (zstd level 5)". A game
 whose packs are damaged, that lacks a file its list (`ampr_emu.index`, or the LZ4 packs' `ampr_assets.index`)
-gives (or has one cut short), or has a file both loose and in its packs, fails and says so; nothing of it is
-left. Its DLC go inside it as they go inside a dump. A DLC packed already goes inside no game: its row says
+gives (or has one cut short), or has a file both loose and in its packs whose two copies differ, fails and
+says so; nothing of it is left (the same file kept loose beside its packs is taken once). Its DLC go inside it as they go inside a dump. A DLC packed already goes inside no game: its row says
 it is not taken yet. See [the guide](guide.md#a-game-packed-already).
 
 ### Images

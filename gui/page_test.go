@@ -534,10 +534,10 @@ func TestStartOneAtATime(t *testing.T) {
 	}
 }
 
-// The dialog of Add files shows the images ShadowMountPlus mounts and the PS5 packages wherever a
-// section takes them.
+// The dialog of Add files shows the images ShadowMountPlus mounts, the PS5 packages and the .zstd images
+// wherever a section takes them.
 func TestSectionPatterns(t *testing.T) {
-	images := "*.exfat;*.ffpkg;*.ffpfs;*.ffpfsc;*.pkg"
+	images := "*.exfat;*.ffpkg;*.ffpfs;*.ffpfsc;*.pkg;*.zstd"
 	for section, want := range map[string]string{"compress": images, "details": images + ";*.p5z", "rename": images + ";*.p5z", "decompress": "*.p5z", "verify": "*.p5z"} {
 		if got := sectionPatterns[section]; got != want {
 			t.Errorf("%s: %q, want %q", section, got, want)

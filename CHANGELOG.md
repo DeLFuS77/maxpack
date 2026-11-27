@@ -8,6 +8,28 @@ All notable changes to MaxPack are listed here. The format follows
 
 ### Added
 
+- **Games packed already with zstd packs** (`ampr_zstd.index` and its `ampr_zstd-NNN.pak`, as Dump Forge,
+  Alembic, ModGames44's `.zstd` exFAT image and MaxPack's own `--folder` have them) go to a `.p5z`, from a
+  folder, an exFAT, UFS2 or PFS image or a `.pkg` alike: `pack` reads them as the files they were made of, its
+  loose ones and the ones in its packs, decompressed as they are read, with the dates of `ampr_emu.index`; the
+  packs, both indexes, `ampr_commands.bin`, the runtime's logs and the other tool's `fakelib/libSceAmpr.sprx` are
+  left out. Compressed again (the default), the `.p5z` is byte for byte the one of the dump they were made of
+  at the same level and options, whatever the other tool packed or left loose. `--keep-packs` copies the
+  chunks of the packs as they are, decompressed only to check them and hash each file, and keeps their
+  level; what MaxPack leaves loose comes out of the packs, and what it packs that the packs lack is
+  compressed at their level. Damaged packs or indexes (`packs_damaged`), a file `ampr_emu.index` lists that is
+  not there (`packed_file_missing`) and LZ4 packs (`packs_lz4`, not read yet) are refused with those codes in
+  `--progress json`, nothing made and nothing written to the source; before, a packed game was refused, and
+  one with LZ4 packs was packed as if it were a dump. The `.p5z` format does not change: `pack` says
+  `made from a packed game` (`from_packed`, `packed_level` and `kept_packs` in its result), and `info --json`
+  of a game says `packs`, `packed_level` and `unpacked_size`. A DLC packed already, and `update` with a new
+  dump packed already, are still refused. The window: a game packed already is no longer skipped in
+  Compress; its row says "already packed (zstd, level N)", **Games packed already** in the panel chooses
+  **Compress again (smaller)** (the default) or **Keep their packs (faster)**, the room it needs is that of
+  its files unpacked, the ampr-emu-ng in use goes into a folder made of it, its DLC go inside it, and once
+  made its row says what it was made from; one with LZ4 packs is skipped and says why. The report says the
+  packs of each game and the choice. Texts in every language.
+
 - **Look for new versions** (Settings › Internet, off by default; until it is on, MaxPack does not go on the
   internet): once each time the window starts, it asks GitHub's API for the latest release of
   DeLFuS77/maxpack and, only when it is newer, downloads its `SHA256SUMS` and `SHA256SUMS.minisig` and

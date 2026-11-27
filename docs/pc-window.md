@@ -78,8 +78,10 @@ go to **Compress** and a
    packages are fine (see [Images](#images)). **Add folder** takes several folders at once (on Linux, when `zenity`
    is there; else one at a time), and each one can be a game or a folder with games right below it;
    several dropped at once are each taken the same way. Each game shows its title, ID, version and size.
-   A folder that is already compressed (with packs) is not compressed again: it shows "it is compressed
-   already" and is skipped; to check it, use **Verify**.
+   A game packed already with zstd packs (a folder made by Dump Forge, Alembic or MaxPack, or an image
+   with one, such as a `.zstd`) shows "already packed (zstd, level 5)" and is compressed from the files
+   it was made of (see [Games packed already](#games-packed-already)); one with LZ4 packs shows "it is
+   packed with LZ4 packs" and is skipped.
    A game's DLC can come along (see [DLC](#dlc) below).
 2. Choose **Made for**.
 3. Choose the compression **level**, 1 to 22 (19 by default), or one of the shortcuts **Light**,
@@ -194,6 +196,23 @@ size before is the image's file, so what it says is saved is what the disk gets 
 and what to do next. If the system asks for less motion, the final numbers show without animation.
 
 ![The result: what saved the most and what to do next](img/window-result.jpg)
+
+### Games packed already
+
+When the list has a game packed already with zstd packs, the panel shows **Games packed already**:
+
+- **Compress again (smaller)**, the default: its packs are read decompressed and compressed at the level
+  above, by MaxPack's rules; the `.p5z` is the one its dump would give.
+- **Keep their packs (faster)**: the chunks of its packs go in as they are, checked as they are read; what
+  is made keeps their level (the level above is not used for it). What MaxPack leaves loose comes out of
+  the packs.
+
+The choice is kept for next time. Either way the other tool's runtime (`fakelib/libSceAmpr.sprx`) is left
+out: for **Play from the USB** the folder gets the ampr-emu-ng in use, as a dump does. The room it needs is
+what its files take unpacked. Once made, its row says "made from a packed game, compressed again" or "made
+from a packed game, its packs kept (zstd level 5)". A game whose packs are damaged, or that lacks a file its
+`ampr_emu.index` lists, fails and says so; nothing of it is left. Its DLC go inside it as they go inside a
+dump. See [the guide](guide.md#a-game-packed-already).
 
 ### Images
 
@@ -505,11 +524,13 @@ them.
 
 A plain text for an issue on GitHub: MaxPack's version, the engine's, the system and its version, the
 CPU threads, the memory, the settings that matter (mode, level, threads, runtime built in or your own,
-low priority, the originals, the template of the names, whether an FPKG passcode was given) and, for
+low priority, the originals, the template of the names, whether an FPKG passcode was given, what becomes
+of the packs of a game packed already) and, for
 the games it is about, whether each is complete against the original package (the counts: files
 listed, missing, not in the package and left by dump tools, never which), what each one is
 (for an image, its kind: "PFS container (.ffpfsc) with an exFAT image inside, compressed", and what its
-file takes, which its row for the list is against), its sizes, its volumes, how many DLC it has or goes
+file takes, which its row for the list is against), what a game packed already is packed with and at what
+level, its sizes, its volumes, how many DLC it has or goes
 with and how many of them have files of their own, and how it ended. It never has a game's name, its
 title ID, a DLC's content ID or a path. For a
 `.p5z` (or a game just compressed) it ends with the row for the

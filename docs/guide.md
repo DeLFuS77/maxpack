@@ -222,7 +222,12 @@ The sidebar has four work sections and Settings. Everything is explained, with s
 6. Press **Compress**.
 
 What it does by itself:
-- A folder that is already compressed is skipped ("it is compressed already").
+- A game packed already with zstd packs (a folder made by Dump Forge, Alembic or MaxPack itself, or an
+  image with one inside, such as ModGames44's `.zstd`) is compressed from the files it was made of: its
+  row says "already packed (zstd, level 5)", and **Games packed already**, in the panel, says what becomes
+  of its packs: **Compress again (smaller)**, the default, or **Keep their packs (faster)**. Once made, its
+  row says it was made from a packed game. One packed with LZ4 packs (`ampr_assets`) is skipped ("it is
+  packed with LZ4 packs"). See [A game packed already](#a-game-packed-already).
 - A dump that lacks files of the original game says so on its row ("3 files of the original game are
   missing") before anything starts, and is compressed all the same: dump it again if you can (see
   [Whether a dump is complete](#whether-a-dump-is-complete)). A copy that lacks files its dump tool
@@ -651,6 +656,7 @@ maxpack pack "D:\dumps\MyGame.exfat" -o "D:\games\MyGame [PPSA00000].p5z" --p5z 
 | `--keep-loose GLOB` | Also leave loose whatever matches. Can be repeated. `*` and `?` work inside one folder; `**`, across any number of folders. | `--keep-loose "**/*.bnk"` |
 | `--max-file-size N` | Only with `--p5z`: if the `.p5z` is going to pass N bytes, it stops and deletes it. | `--max-file-size 4294967295` (FAT32) |
 | `--volume-limit N` | For testing: each pack volume takes at most N bytes (from 262208 to 4294901760, the default). Lets a small game have several volumes; you do not need it to play. | `--volume-limit 524288` |
+| `--keep-packs` | For a game packed already: its packs' chunks go in as they are, decompressed only to check them and hash each file, which is faster; what is made keeps their zstd level, and `--level` is not used. See [A game packed already](#a-game-packed-already). | `--keep-packs` |
 | `--leave-out-leftovers` | Leaves out what dump tools leave behind (`decrypted/`, `*.auth_info`, the entitlement files), only when the game's `sce_sys/playgo-hash-table.dat` proves it is not the game's; without one, everything stays and it says so. See [Whether a dump is complete](#whether-a-dump-is-complete). | `--leave-out-leftovers` |
 | `--dlc DLC` | Puts a DLC of the game inside what is made: its `.pkg` (opened with the same `--passcode`) or a dumped DLC folder. Can be repeated. See [DLC inside the `.p5z`](#dlc-inside-the-p5z). | `--dlc "D:\dlc\Bonus.pkg"` |
 | `--progress json` | One JSON line per event on stdout; the text for people stays on stderr. | `--progress json` |
@@ -659,7 +665,8 @@ maxpack pack "D:\dumps\MyGame.exfat" -o "D:\games\MyGame [PPSA00000].p5z" --p5z 
 What it guarantees:
 - It never writes to the source, and the output cannot be the game or inside it.
 - It does not accept an output that is not empty, or a `.p5z` that already exists.
-- It refuses games that are already packed and paths that differ only in letter case.
+- A game packed already with zstd packs is packed from the files it was made of (below); one with LZ4
+  packs, damaged packs or a file missing is refused. It refuses paths that differ only in letter case.
 - An interrupted pack does not mount, and an interrupted or damaged `.p5z` is detected when opened.
 - With the same options, the result is identical byte for byte.
 
@@ -687,7 +694,45 @@ the input) while paused cancels as usual. `unpack`, `verify` (also `--quick`), `
 `compact` take them too. `analyze --levels` and `measure` do not, as a pause would go into what they
 time, and neither does `send`. The result line also has
 `left_out_files` and `left_out_bytes`, `dlc_data`, `dlc_license` and `dlc_bytes` (the DLC put inside,
-below) and `completeness`.
+below), `from_packed`, `packed_level` and `kept_packs` (a game packed already, below) and `completeness`.
+
+### A game packed already
+
+A game packed already with zstd packs, `ampr_zstd.index` and its `ampr_zstd-000.pak`, `ampr_zstd-001.pak`...
+(the format of Dump Forge, Alembic, ModGames44's `.zstd` and MaxPack's own `--folder`), is taken by `pack`
+wherever it is: a folder, an exFAT, UFS2 or PFS image (MaxPack tells an image by its contents, so a `.zstd`
+is read as the exFAT image it is), or a `.pkg` with packs in it. It is packed from the files it was made of:
+
+- **What goes in:** its loose files and the files in its packs, with the sizes the packs give and the dates
+  its `ampr_emu.index` gives (it lists every file of the game). Left out: the packs and both indexes, which
+  are made again, `ampr_commands.bin` and the runtime's logs (`apr_emu.log`, `ampr_emu.log`), and the
+  other tool's runtime, `fakelib/libSceAmpr.sprx`: give MaxPack's with `--runtime` for a folder (a `.p5z`
+  gets one from MaxPack for the console when it plays).
+- **Compressed again** (the default): the files of its packs are decompressed as they are read and go
+  through the normal packing, at `--level` and by MaxPack's rules of what goes loose. What comes out is,
+  byte for byte, what the dump it was made of gives with the same level and options, whatever the other
+  tool packed or left loose.
+- **`--keep-packs`** (faster): the chunks of its packs go into what is made as they are, decompressed only
+  to check them and to hash each file, and what is made keeps the level of the packs (for example the 5 of
+  Dump Forge); `--level` is not used. A file the packs have that MaxPack leaves loose (`eboot.bin`, the
+  `.prx`, `sce_sys/`...) comes out of them and goes loose; a file the other tool left loose that MaxPack
+  packs is compressed, at the packs' level. The result does not depend on the thread count either.
+- **Refused**, with a code for `--progress json`, nothing made and nothing written to the source:
+  `packs_damaged` for packs or indexes that are damaged or disagree (a volume missing or of another size, a
+  header, a CRC, a compressed block that does not decode, a packed file its `ampr_emu.index` does not list
+  or lists with another size, no `ampr_emu.index`, a volume without `ampr_zstd.index`);
+  `packed_file_missing` for a file its `ampr_emu.index` lists that is neither loose nor in the packs (what is
+  left out, OS junk and what dump tools leave behind aside); `packs_lz4` for LZ4 packs (`ampr_assets`),
+  which MaxPack does not read yet. A block stored as it is (not compressed) has no checksum in the format:
+  a byte changed in one cannot be told.
+- **What it says:** `made from a packed game (zstd level 5): compressed again at level 19` (or `its packs
+  kept as they are`), and in the result line `from_packed`, `packed_level` and `kept_packs`. `info --json`
+  of the game says `packs` (`zstd`, `lz4` or `""`), `packed_level` and `unpacked_size`, what its files take
+  unpacked. The `.p5z` itself has no mark of it (its format does not change): its manifest has the SHA-256
+  of each file as it came out of the packs, and `unpack --original` gives the game unpacked, not the packed
+  folder it was made from.
+- **Not yet:** a DLC packed already is still refused by `pack --dlc` and `add`, and `update` still refuses a
+  new dump that is packed already.
 
 ### DLC inside the `.p5z`
 
@@ -934,8 +979,9 @@ The `info --json` line carries `kind` (`folder`, `p5z`, `exfat`, `ufs2` for an `
 inside, else `""`), `compressed` (whether reading it decompresses PFSC or Kraken blocks), `title_id`,
 `version`, `name`, `content_id` (from `param.json`, also of a `.p5z`, an image or a package; its first two letters are the region,
 and it is `""` when `param.json` gives none), `original_size`, `install_size`, `p5z_size`, `files`,
-`packed_files`, `volumes`, `has_runtime`, `has_zstd_runtime`, `packed`, `content`, `dlc_data`, `dlc` and
-`completeness` (below). Of a `.p5z` it also has `loose_bytes`, `grown`, `unused_bytes`, `recovered`, and
+`packed_files`, `volumes`, `has_runtime`, `has_zstd_runtime`, `packed`, `packs`, `packed_level`,
+`unpacked_size` (of a game packed already: see [A game packed already](#a-game-packed-already)), `content`,
+`dlc_data`, `dlc` and `completeness` (below). Of a `.p5z` it also has `loose_bytes`, `grown`, `unused_bytes`, `recovered`, and
 what `info --sums` prints: `archive_id` (32 lowercase hex digits), `level` (the packs' zstd level) and
 `volume_sums`, one `{"name","size","sha256"}` per volume (left out when the index cannot give them).
 
@@ -1485,6 +1531,12 @@ console repository, which identifies games only by these numbers.
   folders, with files of their own and licenses only, go inside a test game; the `.p5z` verifies, lists
   them and unpacks to the game, its `addcontN/` folders and the `dlc_emu.ini`; up to 100 with files and
   every refusal are tried. No DLC package made by another builder has been tried yet.
+- **Games packed already** (`pack` of a folder with zstd packs): packed again, a test game packed to a
+  folder gives the `.p5z` of the dump byte for byte, at 1, 2 and every thread, also from an exFAT image of
+  that folder and from a folder packed with another split of loose and packed files; with `--keep-packs`
+  its chunks are the packs' bytes, the `.p5z` verifies and unpacks to the dump with its dates; a changed
+  byte, a file missing and LZ4 packs are refused. No folder made by Dump Forge or Alembic, nor a real
+  `.zstd`, has been tried yet: only ones that follow their format, made by MaxPack.
 - **On every change, in GitHub Actions:** the engine is built and passes its tests on Windows and Linux;
   the window is built and passes its tests on Windows, Linux and macOS; the packages are installed,
   compress a test image and are uninstalled.

@@ -51,8 +51,7 @@ int mp_import_left_out(const char *path) {
            ieq(path, "apr_emu.log") || ieq(path, "ampr_emu.log") || ieq(path, MP_RUNTIME_PATH);
 }
 
-// An LZ4 pack's file or folder at the root (ampr_assets.index, ampr_assets-000.pak, ampr_assets/...).
-static int is_lz4(const char *path) { return istarts(path, "ampr_assets"); }
+int mp_import_lz4(const char *path) { return istarts(path, "ampr_assets"); }
 
 // The number of the volume a root file is (ampr_zstd-000.pak, as the index names them), or -1.
 static long volume_number(const char *path) {
@@ -331,7 +330,7 @@ int mp_import_open(const char *path, int what, mp_source **out, mp_import_info *
     long ix = -1, vol = -1;
     for (size_t i = 0; i < mp_source_count(s); i++) {
         const char *p = mp_source_entry(s, i)->path;
-        if (is_lz4(p)) {
+        if (mp_import_lz4(p)) {
             mp_source_close(s);
             return refuse(info, MP_IMPORT_LZ4, e, path, "%s",
                           "it is packed with LZ4 packs (ampr_assets), which MaxPack does not read yet: give it as "

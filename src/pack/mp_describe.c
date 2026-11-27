@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "mp_describe.h"
+#include "mp_import.h"
 #include "mp_p5z_internal.h"
 #include "mp_param.h"
 #include "mp_playgo.h"
@@ -79,15 +80,17 @@ static uint32_t rd32(const uint8_t *p) { return p[0] | p[1] << 8 | p[2] << 16 | 
 static uint64_t rd64(const uint8_t *p) { return rd32(p) | (uint64_t)rd32(p + 4) << 32; }
 
 // The packs of an already packed folder, as its ampr_zstd.index header says
-// (AMPRZPK1: volumes at +20, files at +40). Only the counters are read: checking the
-// whole index is verify's job. A header that cannot be read leaves both at 0.
+// (AMPRZPK1: level at +17, volumes at +20, files at +40, their bytes at +96). Only the counters
+// are read: checking the whole index is verify's job. A header that cannot be read leaves them at 0.
 static void index_counts(mp_source *s, size_t i, mp_describe *d) {
     uint8_t h[MP_ZPK_HEADER];
     if (mp_source_entry(s, i)->size < sizeof h || mp_source_read(s, i, 0, h, sizeof h, NULL) != 0 ||
         memcmp(h, "AMPRZPK1", 8) != 0)
         return;
+    d->packed_level = h[17];
     d->volumes = rd32(h + 20);
     d->packed_files = rd64(h + 40);
+    d->unpacked_size = rd64(h + 96);
 }
 
 static int cmp_cfile(const void *a, const void *b) {
@@ -205,7 +208,17 @@ static int describe_source(const char *path, mp_describe *d, mp_complete *c, mp_
     d->files = n;
     long ix = find_ci(s, INDEX_PATH);
     d->packed = ix >= 0;
-    if (ix >= 0) index_counts(s, (size_t)ix, d);
+    if (ix >= 0) {
+        snprintf(d->packs, sizeof d->packs, "zstd");
+        index_counts(s, (size_t)ix, d);
+        for (size_t i = 0; i < n; i++)
+            if (!mp_import_left_out(mp_source_entry(s, i)->path)) d->unpacked_size += mp_source_entry(s, i)->size;
+    }
+    // LZ4 packs (ampr_assets.index, its packs or folder at the root), which pack does not read yet
+    for (size_t i = 0; i < n; i++) {
+        const char *p = mp_source_entry(s, i)->path;
+        if (mp_import_lz4(p)) snprintf(d->packs, sizeof d->packs, "lz4");
+    }
     long rt = find_ci(s, RUNTIME_PATH);
     if (rt >= 0) {
         uint8_t *b = NULL;

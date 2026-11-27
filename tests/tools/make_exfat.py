@@ -222,18 +222,21 @@ def build(files, overrides=None, extra_clusters=0):
         if n.is_dir:
             n.clusters = take(ceil_div(n.dl, CLUSTER))
             n.nofat = p != "many"          # many/ is chained through the FAT
-    frag, vdl, rnd = by_path["data/frag.bin"], by_path["data/vdl.bin"], by_path["random.bin"]
+    # the files of basic_files(); an image of other files has them all one after another
+    frag, vdl, rnd = by_path.get("data/frag.bin"), by_path.get("data/vdl.bin"), by_path.get("random.bin")
+    basic = frag is not None and vdl is not None and rnd is not None
     for p, n in nodes:
-        if not n.is_dir and n not in (frag, vdl, rnd) and n.dl:
+        if not n.is_dir and (not basic or n not in (frag, vdl, rnd)) and n.dl:
             n.clusters = take(ceil_div(n.dl, CLUSTER))
             n.nofat = p != "dupblocks.bin"   # chained through the FAT even though it is contiguous
-    nf, nv = ceil_div(frag.dl, CLUSTER), ceil_div(vdl.dl, CLUSTER)
-    inter = take(2 * nv)
-    vdl.clusters = inter[1::2]
-    frag.clusters = inter[0::2] + take(nf - nv)
-    frag.nofat = vdl.nofat = False
-    rnd.clusters = take(ceil_div(rnd.dl, CLUSTER))
-    rnd.nofat = True
+    if basic:
+        nf, nv = ceil_div(frag.dl, CLUSTER), ceil_div(vdl.dl, CLUSTER)
+        inter = take(2 * nv)
+        vdl.clusters = inter[1::2]
+        frag.clusters = inter[0::2] + take(nf - nv)
+        frag.nofat = vdl.nofat = False
+        rnd.clusters = take(ceil_div(rnd.dl, CLUSTER))
+        rnd.nofat = True
 
     used = nxt[0] - 2
     assert used <= count
@@ -337,7 +340,7 @@ def build(files, overrides=None, extra_clusters=0):
         "random_off": coff(rnd.clusters[0]),
         "frag_fat_entry": FAT_OFFSET * SECTOR + frag.clusters[2] * 4,
         "frag_first": frag.clusters[0],
-    }
+    } if basic else {}
     return bytes(img), nodes, info
 
 

@@ -39,5 +39,7 @@ mp_zpk *mp_import_zpk(mp_source *s);
 int mp_import_failed(mp_source *s);
 // 1 for a file of a packed game that mp_import_open leaves out (the AMPR files and the runtime).
 int mp_import_left_out(const char *path);
+// 1 for what LZ4 packs are at the root (ampr_assets.index, its packs, an ampr_assets folder), ASCII case aside.
+int mp_import_lz4(const char *path);
 
 #endif

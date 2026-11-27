@@ -35,6 +35,12 @@ typedef struct {
     // (mp_p5z_unused)
     uint32_t grown;
     uint64_t unused_bytes;
+    // a folder or image packed already, not a .p5z: "zstd" (ampr_zstd.index, which pack packs from the files it
+    // was made of: mp_import.h) or "lz4" (ampr_assets, which it refuses), "" for none; the zstd level its index
+    // says, and what its files take unpacked (the packs, the AMPR files and the other tool's runtime aside)
+    char packs[8];
+    int packed_level;
+    uint64_t unpacked_size;
 } mp_describe;
 
 // 0 if it could describe it; -1 with the reason in e.

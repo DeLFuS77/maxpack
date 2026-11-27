@@ -66,6 +66,11 @@ static void usage(FILE *out) {
             "An image is an .exfat, an .ffpkg (UFS2), an .ffpfs (PFS) or an .ffpfsc (a PFS image that holds\n"
             "one of them, usually compressed); a package is a PS5 debug package (FPKG, .pkg), which MaxPack\n"
             "decrypts with its passcode as it reads it. MaxPack tells which by its contents, not by its name.\n"
+            "A game packed already with zstd packs (ampr_zstd.index and its ampr_zstd-NNN.pak, as Dump Forge\n"
+            "and Alembic make them, also inside an image such as a .zstd one) is packed from the files it was\n"
+            "made of: its packs are read decompressed and packed again, the AMPR files and the other tool's\n"
+            "fakelib/libSceAmpr.sprx left out. Damaged packs, a file its ampr_emu.index lists that is not there\n"
+            "and LZ4 packs (ampr_assets) are refused.\n"
             "\n"
             "Options for pack, analyze, info, icon and verify --against:\n"
             "  --passcode P       the 32-character passcode of a package, if it is not the default\n"
@@ -82,6 +87,11 @@ static void usage(FILE *out) {
             "  --max-file-size N  with --p5z: stop and delete the .p5z if it goes over N bytes\n"
             "  --volume-limit N   for testing: volumes of at most N bytes (262208 to 4294901760,\n"
             "                     default 4294901760), to get several from a small game\n"
+            "  --keep-packs       for a game packed already: its packs' chunks go in as they are, decompressed\n"
+            "                     only to check them and hash each file (faster); what is made keeps their\n"
+            "                     zstd level, and --level is not used. What MaxPack leaves loose comes out\n"
+            "                     of the packs, and what it packs that the packs lack is compressed at their\n"
+            "                     level. Without it, the game is compressed again at --level (smaller)\n"
             "  --leave-out-leftovers  leave out what dump tools leave behind (decrypted/, *.auth_info)\n"
             "                     when the game's sce_sys/playgo-hash-table.dat proves it is not the\n"
             "                     game's; without one, everything stays\n"
@@ -899,6 +909,8 @@ static int run_pack(int argc, char **argv) {
             p5z = 1;
         } else if (!strcmp(a, "--leave-out-leftovers")) {
             o.leave_out_leftovers = 1;
+        } else if (!strcmp(a, "--keep-packs")) {
+            o.keep_packs = 1;
         } else if (!strcmp(a, "-o") || !strcmp(a, "--level") || !strcmp(a, "--threads") ||
                    !strcmp(a, "--runtime") || !strcmp(a, "--keep-loose") || !strcmp(a, "--max-file-size") ||
                    !strcmp(a, "--volume-limit") || !strcmp(a, "--dlc")) {
@@ -995,6 +1007,7 @@ static int run_pack(int argc, char **argv) {
     if (rc != 0) {
         if (too_big) g_err_code = "too_big";
         if (r.dlc_error) g_err_code = r.dlc_error;   // a DLC that needs another passcode says so below
+        if (r.code) g_err_code = r.code;             // a packed game refused: packs_damaged, packed_file_missing, packs_lz4
         passcode_code(e.msg);
         mp_err why = {{0}};
         int left;
@@ -1031,6 +1044,12 @@ static int run_pack(int argc, char **argv) {
         print_size(hum, r.left_out_bytes);
         fprintf(hum, "\n");
     }
+    if (r.from_packed) {
+        if (r.kept_packs)
+            fprintf(hum, "  made from a packed game (zstd level %d): its packs kept as they are\n", r.packed_level);
+        else
+            fprintf(hum, "  made from a packed game (zstd level %d): compressed again at level %d\n", r.packed_level, o.level);
+    }
     if (r.dlc_data || r.dlc_license) {
         fprintf(hum, "  DLC:    ");
         if (r.dlc_data == 1)
@@ -1042,17 +1061,19 @@ static int run_pack(int argc, char **argv) {
         fprintf(hum, "\n");
     }
     if (g_json) {
-        char extra[640];
+        char extra[768];
         snprintf(extra, sizeof extra,
                  ",\"original_size\":%llu,\"output_size\":%llu,\"loose_bytes\":%llu,\"packed_bytes\":%llu,"
                  "\"stored_bytes\":%llu,\"volumes\":%llu,\"runtime_without_zstd\":%s,\"left_out_files\":%llu,"
-                 "\"left_out_bytes\":%llu,\"dlc_data\":%u,\"dlc_license\":%u,\"dlc_bytes\":%llu,\"completeness\":",
+                 "\"left_out_bytes\":%llu,\"dlc_data\":%u,\"dlc_license\":%u,\"dlc_bytes\":%llu,\"from_packed\":%s,"
+                 "\"packed_level\":%d,\"kept_packs\":%s,\"completeness\":",
                  (unsigned long long)(r.loose_bytes + r.packed_bytes),
                  (unsigned long long)(p5z ? psize : folder_bytes(dst)), (unsigned long long)r.loose_bytes,
                  (unsigned long long)r.packed_bytes, (unsigned long long)r.stored_bytes,
                  (unsigned long long)r.volumes, r.runtime_without_zstd ? "true" : "false",
                  (unsigned long long)r.left_out_files, (unsigned long long)r.left_out_bytes, r.dlc_data, r.dlc_license,
-                 (unsigned long long)r.dlc_bytes);
+                 (unsigned long long)r.dlc_bytes, r.from_packed ? "true" : "false", r.packed_level,
+                 r.kept_packs ? "true" : "false");
         mp_jbuf b = {0};
         mp_jbuf_raw(&b, extra);
         mp_complete_json(&r.complete, 0, &b);
@@ -1443,6 +1464,9 @@ static int cmd_info_json(const char *path) {
            (unsigned long long)d.volumes);
     printf(",\"has_runtime\":%s,\"has_zstd_runtime\":%s,\"packed\":%s", d.has_runtime ? "true" : "false",
            d.has_zstd_runtime ? "true" : "false", d.packed ? "true" : "false");
+    // a game packed already (not a .p5z): with what packs, at what level, and what its files take unpacked
+    printf(",\"packs\":\"%s\",\"packed_level\":%d,\"unpacked_size\":%llu", d.packs, d.packed_level,
+           (unsigned long long)d.unpacked_size);
     // a game or a DLC (and whether that one has files of its own), and the DLC the game carries
     printf(",\"content\":\"%s\",\"dlc_data\":%s,\"dlc\":[", d.dlc ? "dlc" : "game", d.dlc_data ? "true" : "false");
     for (size_t i = 0; i < dlc.n; i++) {
@@ -2453,7 +2477,7 @@ int main(int argc, char **argv) {
         printf("{\"progress_json\":true,\"control_stdin\":true,\"max_file_size\":true,\"info_json\":true,"
                "\"icon\":true,\"packs\":true,\"content_id\":true,\"levels\":true,\"measure\":true,"
                "\"images\":true,\"fpkg\":true,\"passcode\":true,\"completeness\":true,\"dlc\":true,\"grow\":true,"
-               "\"verify_quick\":true,\"send\":true,\"pause\":true}\n");
+               "\"verify_quick\":true,\"send\":true,\"pause\":true,\"import\":true}\n");
         return 0;
     }
     if (argc >= 2 && (!strcmp(argv[1], "--help") || !strcmp(argv[1], "-h") || !strcmp(argv[1], "help"))) {

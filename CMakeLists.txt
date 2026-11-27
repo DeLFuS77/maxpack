@@ -270,6 +270,11 @@ if(MAXPACK_BUILD_TESTS)
   set_tests_properties(test_identity PROPERTIES TIMEOUT 600)
   mp_add_test(test_import FIXTURES)
   set_tests_properties(test_import PROPERTIES TIMEOUT 600)
+  # pack of a game packed already, from the command line: a folder and an exFAT image of it (tests/tools/test_import.py)
+  add_test(NAME test_import_cli COMMAND ${Python3_EXECUTABLE} -I
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/tools/test_import.py $<TARGET_FILE:maxpack> ${MP_FIXTURES_DIR}
+    ${MP_TEST_TMP}/import_cli)
+  set_tests_properties(test_import_cli PROPERTIES FIXTURES_REQUIRED exfat TIMEOUT 300)
   mp_add_test(test_cancel FIXTURES)
   mp_add_test(test_verify FIXTURES)
   mp_add_test(test_verify_quick FPKG)

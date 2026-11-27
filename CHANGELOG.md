@@ -22,8 +22,8 @@ All notable changes to MaxPack are listed here. The format follows
   `--progress json`, nothing made and nothing written to the source: damaged packs or indexes, a chunk that
   is not one zstd frame (`packs_damaged`); a file both loose and packed, or a file that is a folder too
   (`packed_and_loose`); a file `ampr_emu.index` lists that is not there, or loose of another size
-  (`packed_file_missing`); LZ4 packs (`packs_lz4`, not read yet); a DLC packed already (`dlc_packed`). A read
-  of the source that fails is said as such (`io`). The index and volumes are the ones named exactly as the
+  (`packed_file_missing`); LZ4 packs MaxPack does not read (`packs_lz4`, below); a DLC packed already
+  (`dlc_packed`). A read of the source that fails is said as such (`io`). The index and volumes are the ones named exactly as the
   console's runtime opens them; the index may take 512 MiB, as the runtime's. Before, a packed game was
   refused, and one with LZ4 packs was packed as if it were a dump. The `.p5z` format does not change: `pack`
   says `made from a packed game` (`from_packed`, `packed_level` and `kept_packs` in its result), and
@@ -34,8 +34,24 @@ All notable changes to MaxPack are listed here. The format follows
   already** in the panel chooses **Compress again (smaller)** (the default) or **Keep their packs (faster)**,
   the room it needs is that of its files unpacked, what it saved is against what it took on disk, the
   ampr-emu-ng in use goes into a folder made of it, its DLC go inside it, and once made its row says what it
-  was made from; one with LZ4 packs is skipped and says why, and a DLC packed already goes inside no game.
+  was made from; a DLC packed already goes inside no game.
   The report says the packs of each game and the choice. Texts in every language.
+- **Games packed already with LZ4 packs** (`ampr_assets.index`, `AMPRPAK4`, and its `ampr_assets-NNN.pak`, with
+  the `.crc` and `.runtime` files when there are, as drakmor's ampr_emu, exFAT2AMPR and Dump Forge's LZ4 option
+  make them) go to a `.p5z` too, from a folder, an image or a `.pkg`: read as the files they were made of, with
+  the sizes and dates of the manifest, and always compressed again (LZ4 chunks cannot go into a `.p5z`:
+  `--keep-packs` keeps zstd packs only, and says so). The `.p5z` is byte for byte the dump's, on the same
+  conditions as from zstd packs. The reader, in C, is ported from ampr_emu's and ampr-emu-ng's
+  (GPL-3.0-or-later) and makes all their checks: the headers and CRCs of the manifest and of each volume, safe
+  paths and their hashes, sizes, each chunk inside its pack and on its pages, at most 1 MiB, raw or LZ4 (shared
+  chunks allowed), and each chunk decoded against its size and the CRC file. Damaged packs (`packs_damaged`), a file missing (`packed_file_missing`) and a file both loose
+  and packed (`packed_and_loose`) are refused as with zstd packs; `packs_lz4` is now only for an older manifest
+  (`AMPRPAK1` to `AMPRPAK3`) or zstd and LZ4 packs in one game. LZ4 blocks are decoded with lz4 1.10.0
+  (BSD-2-Clause), a new submodule in `third_party/lz4`, of which only `lib/lz4.c` is built. `info --json` says
+  `"packs":"lz4"`, its packed files, volumes and size unpacked, and `pack`'s result says `packs`. The window
+  takes them in Compress, its row says "already packed (LZ4)" and, once made, "made from a packed game,
+  compressed again"; the choice for packed games does not apply to them, and the report says so. Texts in
+  every language.
 - **ampr_emu.index's hash table is checked in one pass:** a forged one (no empty slot, every row far from
   where its hash starts), which `pack` of a packed game reads, took rows × slots steps (minutes, or much
   longer).

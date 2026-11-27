@@ -79,9 +79,9 @@ go to **Compress** and a
    is there; else one at a time), and each one can be a game or a folder with games right below it;
    several dropped at once are each taken the same way. Each game shows its title, ID, version and size.
    A game packed already with zstd packs (a folder made by Dump Forge, Alembic or MaxPack, or an image
-   with one, such as a `.zstd`) shows "already packed (zstd, level 5)" and is compressed from the files
-   it was made of (see [Games packed already](#games-packed-already)); one with LZ4 packs shows "it is
-   packed with LZ4 packs" and is skipped.
+   with one, such as a `.zstd`) shows "already packed (zstd, level 5)", one with LZ4 packs (drakmor's
+   ampr_emu, exFAT2AMPR, Dump Forge's LZ4 option) "already packed (LZ4)", and both are compressed from the
+   files they were made of (see [Games packed already](#games-packed-already)).
    A game's DLC can come along (see [DLC](#dlc) below).
 2. Choose **Made for**.
 3. Choose the compression **level**, 1 to 22 (19 by default), or one of the shortcuts **Light**,
@@ -208,14 +208,17 @@ When the list has a game packed already with zstd packs, the panel shows **Games
   is made keeps their level (the level above is not used for it). What MaxPack leaves loose comes out of
   the packs.
 
+A game with LZ4 packs is always compressed again, whatever the choice: LZ4 chunks cannot go into a `.p5z`
+(the choice does not show for it alone, and the report says "always compressed again").
+
 The choice is kept for next time. Either way the other tool's runtime (`fakelib/libSceAmpr.sprx`) is left
 out: for **Play from the USB** the folder gets the ampr-emu-ng in use, as a dump does. The room it needs is
 what its files take unpacked; what it saved is against what it took on disk. Once made, its row says "made
 from a packed game, compressed again" or "made from a packed game, its packs kept (zstd level 5)". A game
-whose packs are damaged, that lacks a file its `ampr_emu.index` lists (or has one cut short), or has a file
-both loose and in its packs, fails and says so; nothing of it is left. Its DLC go inside it as they go inside
-a dump. A DLC packed already goes inside no game: its row says it is not taken yet. See
-[the guide](guide.md#a-game-packed-already).
+whose packs are damaged, that lacks a file its list (`ampr_emu.index`, or the LZ4 packs' `ampr_assets.index`)
+gives (or has one cut short), or has a file both loose and in its packs, fails and says so; nothing of it is
+left. Its DLC go inside it as they go inside a dump. A DLC packed already goes inside no game: its row says
+it is not taken yet. See [the guide](guide.md#a-game-packed-already).
 
 ### Images
 

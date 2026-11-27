@@ -226,10 +226,11 @@ What it does by itself:
 - A game packed already with zstd packs (a folder made by Dump Forge, Alembic or MaxPack itself, or an
   image with one inside, such as ModGames44's `.zstd`) is compressed from the files it was made of: its
   row says "already packed (zstd, level 5)", and **Games packed already**, in the panel, says what becomes
-  of its packs: **Compress again (smaller)**, the default, or **Keep their packs (faster)**. Once made, its
-  row says it was made from a packed game, and what it saved is against what the packed game took on disk.
-  One packed with LZ4 packs (`ampr_assets`) is skipped ("it is packed with LZ4 packs"), and a DLC packed
-  already goes inside no game ("a DLC packed already"). See [A game packed already](#a-game-packed-already).
+  of its packs: **Compress again (smaller)**, the default, or **Keep their packs (faster)**. One packed with
+  LZ4 packs (`ampr_assets`: drakmor's ampr_emu, exFAT2AMPR, Dump Forge's LZ4 option) says "already packed
+  (LZ4)" and is always compressed again, whatever that choice says. Once made, its row says it was made from
+  a packed game, and what it saved is against what the packed game took on disk. A DLC packed already goes
+  inside no game ("a DLC packed already"). See [A game packed already](#a-game-packed-already).
 - A dump that lacks files of the original game says so on its row ("3 files of the original game are
   missing") before anything starts, and is compressed all the same: dump it again if you can (see
   [Whether a dump is complete](#whether-a-dump-is-complete)). A copy that lacks files its dump tool
@@ -658,7 +659,7 @@ maxpack pack "D:\dumps\MyGame.exfat" -o "D:\games\MyGame [PPSA00000].p5z" --p5z 
 | `--keep-loose GLOB` | Also leave loose whatever matches. Can be repeated. `*` and `?` work inside one folder; `**`, across any number of folders. | `--keep-loose "**/*.bnk"` |
 | `--max-file-size N` | Only with `--p5z`: if the `.p5z` is going to pass N bytes, it stops and deletes it. | `--max-file-size 4294967295` (FAT32) |
 | `--volume-limit N` | For testing: each pack volume takes at most N bytes (from 262208 to 4294901760, the default). Lets a small game have several volumes; you do not need it to play. | `--volume-limit 524288` |
-| `--keep-packs` | For a game packed already: its packs' chunks go in as they are, decompressed only to check them and hash each file, which is faster; what is made keeps their zstd level, and `--level` is not used. See [A game packed already](#a-game-packed-already). | `--keep-packs` |
+| `--keep-packs` | For a game packed already with zstd packs: its packs' chunks go in as they are, decompressed only to check them and hash each file, which is faster; what is made keeps their zstd level, and `--level` is not used. LZ4 packs are always compressed again. See [A game packed already](#a-game-packed-already). | `--keep-packs` |
 | `--leave-out-leftovers` | Leaves out what dump tools leave behind (`decrypted/`, `*.auth_info`, the entitlement files), only when the game's `sce_sys/playgo-hash-table.dat` proves it is not the game's; without one, everything stays and it says so. See [Whether a dump is complete](#whether-a-dump-is-complete). | `--leave-out-leftovers` |
 | `--dlc DLC` | Puts a DLC of the game inside what is made: its `.pkg` (opened with the same `--passcode`) or a dumped DLC folder. Can be repeated. See [DLC inside the `.p5z`](#dlc-inside-the-p5z). | `--dlc "D:\dlc\Bonus.pkg"` |
 | `--progress json` | One JSON line per event on stdout; the text for people stays on stderr. | `--progress json` |
@@ -667,8 +668,8 @@ maxpack pack "D:\dumps\MyGame.exfat" -o "D:\games\MyGame [PPSA00000].p5z" --p5z 
 What it guarantees:
 - It never writes to the source, and the output cannot be the game or inside it.
 - It does not accept an output that is not empty, or a `.p5z` that already exists.
-- A game packed already with zstd packs is packed from the files it was made of (below); one with LZ4
-  packs, damaged packs or a file missing is refused. It refuses paths that differ only in letter case.
+- A game packed already with zstd or LZ4 packs is packed from the files it was made of (below); one with
+  damaged packs or a file missing is refused. It refuses paths that differ only in letter case.
 - An interrupted pack does not mount, and an interrupted or damaged `.p5z` is detected when opened.
 - With the same options, the result is identical byte for byte.
 
@@ -704,6 +705,7 @@ A game packed already with zstd packs, `ampr_zstd.index` and its `ampr_zstd-000.
 (the format of Dump Forge, Alembic, ModGames44's `.zstd` and MaxPack's own `--folder`), is taken by `pack`
 wherever it is: a folder, an exFAT, UFS2 or PFS image (MaxPack tells an image by its contents, so a `.zstd`
 is read as the exFAT image it is), or a `.pkg` with packs in it. It is packed from the files it was made of:
+the zstd packs as below, and LZ4 ones as [their part](#lz4-packs) says.
 
 - **What goes in:** its loose files and the files in its packs, with the sizes the packs give and the dates
   its `ampr_emu.index` gives (it lists every file of the game). Left out: the packs and both indexes, which
@@ -731,8 +733,8 @@ is read as the exFAT image it is), or a `.pkg` with packs in it. It is packed fr
   `ampr_zstd.index`); `packed_and_loose` for a file both loose and in the packs, or a file that is also the
   folder of another (ASCII case aside): keep only one; `packed_file_missing` for a file its
   `ampr_emu.index` lists that is neither loose nor in the packs, or is loose of another size (a copy cut
-  short; what is left out, OS junk and what dump tools leave behind aside); `packs_lz4` for LZ4 packs
-  (`ampr_assets`), which MaxPack does not read yet; `dlc_packed` for a DLC packed already (no `eboot.bin`).
+  short; what is left out, OS junk and what dump tools leave behind aside); `packs_lz4` for LZ4 packs MaxPack
+  does not read (below); `dlc_packed` for a DLC packed already (no `eboot.bin`).
   A read of the source that fails (a drive unplugged, an image cut short) is said as it is, with the code
   `io`, not as damaged packs. A block stored as it is (not compressed) has no checksum in the format: a
   byte changed in one cannot be told.
@@ -749,6 +751,40 @@ is read as the exFAT image it is), or a `.pkg` with packs in it. It is packed fr
   folder it was made from.
 - **Not yet:** a DLC packed already is refused by `pack` (`dlc_packed`), `pack --dlc` and `add`, and `update`
   still refuses a new dump that is packed already.
+
+#### LZ4 packs
+
+A game packed already with LZ4 packs, `ampr_assets.index` (its manifest, `AMPRPAK4`) and its volumes
+`ampr_assets-000.pak`, `ampr_assets-001.pak`... (`AMPRDAT3`), with `ampr_assets.index.crc` and
+`ampr_assets.index.runtime` beside them when the packer wrote them (the format of drakmor's ampr_emu,
+exFAT2AMPR on the console and Dump Forge's LZ4 option), is taken by `pack` the same way, wherever it is:
+
+- **What goes in:** its manifest lists every file of the game, loose or packed, with its size and date: the
+  loose files and the files of its packs go in with them. Left out: the manifest, its `.crc` and `.runtime`,
+  the volumes, any other AMPR file (an `ampr_emu.index` the tool wrote too, `ampr_commands.bin`, the
+  runtime's logs) and the other tool's `fakelib/libSceAmpr.sprx`.
+- **Always compressed again:** LZ4 chunks cannot go into a `.p5z`, which holds zstd ones, so `--keep-packs`
+  does not apply: given, `pack` compresses it again all the same and says so. What comes out is, byte for
+  byte, the `.p5z` its dump gives at the same level and options, on the conditions above for zstd packs.
+- **What is checked** (what ampr_emu's and ampr-emu-ng's readers check), first the manifest and the volumes:
+  the manifest's header and CRCs, safe paths (no `..`, nothing outside the game) and their hashes, the sizes
+  and block geometry of each file, each pack's record and its volume's header, size and CRC, and each chunk:
+  inside its pack's payload and on its I/O pages, at most 1 MiB, raw or LZ4. A chunk shared by several
+  files (the packers deduplicate blocks) is fine. Then each chunk as it is read: decoded, it must give its
+  size and, when there is an `ampr_assets.index.crc`, its CRC. Without that file, a damaged LZ4 chunk is told
+  only when it does not decode to its size, and a damaged raw one cannot be told. A `.runtime` that is not
+  right (the console's runtime refuses the packs then) is refused too.
+- **Refused**, with the same codes, nothing made: `packs_damaged` for anything above that is not right, a
+  volume missing or of another size, a file twice in the manifest and volumes without their manifest;
+  `packed_file_missing` for a file the manifest lists that is not there, or is loose of another size;
+  `packed_and_loose` for a file both in the packs and loose beside them, or one that is also the folder of
+  another; `packs_lz4` for a manifest of an older version (`AMPRPAK1` to `AMPRPAK3`: ampr_emu's
+  `convert_ampr_pack_v3.py` makes it the current one) and for a game with zstd and LZ4 packs at once (give
+  it as it was dumped).
+- **What it says:** `made from a packed game (LZ4 packs): compressed again at level 19`, with
+  `(--keep-packs keeps zstd packs only)` when it was given, and `"packs":"lz4"` in the result line
+  (`packed_level` 0, `kept_packs` false). `info --json` says `"packs":"lz4"`, `packed_files` and `volumes`
+  of its packs and `unpacked_size`; `packed` stays false (it is for the zstd packs MaxPack makes and reads).
 
 ### DLC inside the `.p5z`
 
@@ -1551,8 +1587,16 @@ console repository, which identifies games only by these numbers.
   folder gives the `.p5z` of the dump byte for byte, at 1, 2 and every thread, also from an exFAT image of
   that folder and from a folder packed with another split of loose and packed files; with `--keep-packs`
   its chunks are the packs' bytes, the `.p5z` verifies and unpacks to the dump with its dates; a changed
-  byte, a file missing and LZ4 packs are refused. No folder made by Dump Forge or Alembic, nor a real
-  `.zstd`, has been tried yet: only ones that follow their format, made by MaxPack.
+  byte and a file missing are refused. No folder made by Dump Forge or Alembic, nor a real `.zstd`, has
+  been tried yet: only ones that follow their format, made by MaxPack.
+- **Games packed already with LZ4 packs:** a test game made into LZ4 packs by a test tool (several packs,
+  LZ4, raw and shared chunks, the CRC file and a runtime profile, another split of loose and packed files)
+  gives the dump's `.p5z` byte for byte at 1 and every thread, also from an exFAT image of it; a damaged
+  chunk, a wrong CRC, a chunk out of its pack, a path that leaves the game and a file missing are refused.
+  The two LZ4 test packs ps5upload publishes, made by drakmor's `ampr_pack.py` from the same files (one with
+  LZ4 HC, raw and shared chunks in one pack, the other stored in three packs), give the same `.p5z` byte for
+  byte, and its files match their CRC files. No game packed by exFAT2AMPR or Dump Forge's LZ4 option has
+  been tried yet.
 - **On every change, in GitHub Actions:** the engine is built and passes its tests on Windows and Linux;
   the window is built and passes its tests on Windows, Linux and macOS; the packages are installed,
   compress a test image and are uninstalled.

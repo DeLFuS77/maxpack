@@ -337,7 +337,7 @@ func (a *App) plans(section string, items []jobs.Item, choices Choices) ([]jobs.
 		o.Runtime = a.builtInRuntime()
 	}
 	saved, _ := settings.Load()
-	o.NameTemplate, o.LowPriority, o.KeepLeftovers = saved.NameTemplate, saved.LowPriority, saved.KeepLeftovers
+	o.NameTemplate, o.LowPriority, o.KeepLeftovers, o.KeepPacks = saved.NameTemplate, saved.LowPriority, saved.KeepLeftovers, saved.KeepPacks
 	// the console is the one of Settings, whatever the page sent; its drive is the page's choice
 	o.Console, o.ConsoleCode = "", ""
 	if o.Mode == jobs.ModeSend {

@@ -55,7 +55,7 @@ const takes = {
 };
 const defaultTemplate = "{title} [{id}]";
 const defaults = { Lang: "", Theme: "system", Runtime: "", LastDest: "", Mode: "p5z", Level: 19, DeleteOriginals: false, DeletePermanently: false, LowPriority: false, NameTemplate: defaultTemplate, Threads: 0,
-  RepairData: false, RepairPercent: 5, Passcode: "", KeepLeftovers: false, ConsoleIP: "", ConsoleCode: "",
+  RepairData: false, RepairPercent: 5, Passcode: "", KeepLeftovers: false, KeepPacks: false, ConsoleIP: "", ConsoleCode: "",
   WatchOn: false, WatchFolder: "", WatchSend: false, QuietEnd: false, UpdateCheck: false };
 // the shares of repair data the window offers (a PAR2 set next to each .p5z)
 const percents = [1, 5, 10];
@@ -213,6 +213,8 @@ function nextDescribe() {
         paintRow(row);
         // in Compress a DLC goes inside the games of its title ID: what each row says may change
         if (row.section === "compress") for (const other of state.lists.compress) if (other !== row) paintRow(other);
+        // a game packed already brings the choice of what becomes of its packs
+        if (row.section === "compress" && packedZstd(row.game)) paintPackedChoice();
         paintSummary();
         paintStart();
         // a game added to the section whose queue runs joins it (not a repair, nor repair data being
@@ -398,6 +400,13 @@ function kindName(game) {
   // a DLC, with files of its own or a license only
   return isDlc(game) ? name + " · " + t(game.DLCData ? "kindDlc" : "kindDlcLicense") : name;
 }
+// a game packed already: one with zstd packs (Dump Forge, Alembic, a folder for the console, also in an image)
+// is compressed from the files it was made of, again or with its packs kept (KeepPacks); one with LZ4 packs
+// cannot be yet, nor can what an engine that did not say its packs saw packed
+const packedZstd = game => !!game && game.Kind !== "p5z" && game.Packs === "zstd";
+const cannotCompress = game => !!game && (game.Packs === "lz4" || (!!game.Packed && !packedZstd(game)));
+// what the row of a game packed already with zstd says of it: "already packed (zstd, level 5)"
+const packedNote = game => (packedZstd(game) ? t("packedZstd")(Number(game.PackedLevel) || 0) : "");
 // an image by its kind: exFAT, UFS2, PFS, a PFS container that holds one of them, or a PS5 package
 function imageName(kind) {
   switch (kind) {
@@ -464,10 +473,11 @@ function rowWarnings(row) {
     if (late.length) list.push(t("dlcLate")(namesOf(late)));
     return list;
   }
-  if (row.section === "compress" && game.Packed) list.push(t("detail_already_packed"));
+  // a game packed already in a way Compress does not take; one with zstd packs is no warning (its line says it)
+  if (row.section === "compress" && cannotCompress(game)) list.push(t(game.Packs === "lz4" ? "detail_packs_lz4" : "detail_already_packed"));
   // a dump that lacks files of the original game makes a backup that lacks them too: said before
   // it is packed, which it still is
-  if (row.section === "compress" && !game.Packed) {
+  if (row.section === "compress" && !cannotCompress(game)) {
     const c = game.Completeness;
     if (fromDumpTool(c)) list.push(...copyProblems(c));
     else if (missingOf(game)) list.push(t("warn_missing_files")(missingOf(game)));
@@ -477,7 +487,8 @@ function rowWarnings(row) {
   if (row.section === "verify" && !game.Packed) list.push(t("detail_not_packed"));
   // only a folder needs ampr-emu-ng in its fakelib/: MaxPack for the console puts its own in when it
   // plays a .p5z. A folder that lacks one is given the one in use, when there is one
-  const lacks = row.section === "compress" && modeOf("compress") === "folder" && !game.Packed && !game.HasZstdRuntime && !runtimeInUse();
+  // (a game packed already loses the runtime the other tool gave it)
+  const lacks = row.section === "compress" && modeOf("compress") === "folder" && !cannotCompress(game) && (packedZstd(game) || !game.HasZstdRuntime) && !runtimeInUse();
   // made without a runtime that reads zstd: its note says it already
   const told = row.state === "ok" && /(^|; )runtime_without_zstd($|; )/.test(row.detail);
   if ((lacks || row.warnings.includes("needs_runtime")) && !told) list.push(t("warn_needs_runtime"));
@@ -498,6 +509,8 @@ function partText(part) {
   if (found) return t("detail_repair_not_possible")(+found[1]);
   found = /^exit_(-?\d+)$/.exec(part);
   if (found) return t("detail_exit")(+found[1]);
+  found = /^from_packed_kept:(\d+)$/.exec(part);
+  if (found) return t("detail_from_packed_kept")(+found[1]);
   found = /^send_letting_go: (\d+)$/.exec(part);
   if (found) return t("detail_send_letting_go")(+found[1]);
   found = /^watch_(other|older)_version: (\S+) (\S+)$/.exec(part);
@@ -556,7 +569,7 @@ function completenessFacts(game) {
     const what = t("leftoversOf")(size(c.LeftoverBytes), c.LeftoverCount);
     // only the original package's list proves they are not the game's
     const proven = c.Checkable && !dumpTool;
-    const fate = game.Kind === "p5z" || game.Packed ? "" : !proven ? t("leftoversUnproven") : state.settings.KeepLeftovers ? t("leftoversKept") : t("leftoversOut");
+    const fate = game.Kind === "p5z" || cannotCompress(game) ? "" : !proven ? t("leftoversUnproven") : state.settings.KeepLeftovers ? t("leftoversKept") : t("leftoversOut");
     facts.push([t("factLeftovers"), fate ? what + " · " + fate : what]);
   }
   return facts;
@@ -603,11 +616,11 @@ const firstOfItsId = row => state.lists.compress.find(other => goodDlc(other) &&
 function gameRowsOf(row) {
   const id = titleOf(row.game);
   if (!id || !goodDlc(row) || !firstOfItsId(row)) return [];
-  return state.lists.compress.filter(other => readRow(other) && !isDlc(other.game) && !other.game.Packed && titleOf(other.game) === id);
+  return state.lists.compress.filter(other => readRow(other) && !isDlc(other.game) && !cannotCompress(other.game) && titleOf(other.game) === id);
 }
 // the DLC rows that go inside a game of Compress, in the order of the list, once each
 function dlcRowsOf(row) {
-  if (row.section !== "compress" || !readRow(row) || isDlc(row.game) || row.game.Packed) return [];
+  if (row.section !== "compress" || !readRow(row) || isDlc(row.game) || cannotCompress(row.game)) return [];
   const id = titleOf(row.game);
   return id ? state.lists.compress.filter(other => goodDlc(other) && titleOf(other.game) === id && firstOfItsId(other)) : [];
 }
@@ -682,7 +695,7 @@ function growFacts(game) {
 // made again counts as good)
 function goodNote(row) {
   if (row.state !== "ok") return false;
-  if (/^(repaired|repair_not_needed|sent|send_discarded)$/.test(row.detail)) return true;
+  if (/^(repaired|repair_not_needed|sent|send_discarded|from_packed|from_packed_kept:\d+)$/.test(row.detail)) return true;
   return /^(grown|nothing_to_do)(; repair_redone)?$/.test(row.detail);
 }
 
@@ -770,7 +783,7 @@ function paintRow(row) {
   // its ID, version and what it is (with what the game takes unpacked when its file is not that); until
   // read, that it is being read, or where it is
   const file = tr.querySelector(".file"), dlc = dlcCountOf(row);
-  if (game) file.textContent = [game.TitleID, game.Version && t("versionOf")(game.Version), kindName(game), dlc && t("withDlc")(dlc), unpackedNote(game)].filter(Boolean).join(" · ");
+  if (game) file.textContent = [game.TitleID, game.Version && t("versionOf")(game.Version), kindName(game), row.section === "compress" && packedNote(game), dlc && t("withDlc")(dlc), unpackedNote(game)].filter(Boolean).join(" · ");
   else file.textContent = row.error ? row.path : t("reading");
   tr.querySelector(".size").textContent = game ? size(onDisk(game)) : "";
 
@@ -831,7 +844,7 @@ function paintRow(row) {
   compare.disabled = state.busy;
   // DLC packages for a game of Compress (a dumped DLC folder comes with Add folder, or dropped)
   const addDlc = tr.querySelector(".add-dlc");
-  addDlc.hidden = !(row.section === "compress" && readRow(row) && !isDlc(game) && !game.Packed && row.state !== "ok") || (running() && state.job.rows.includes(row));
+  addDlc.hidden = !(row.section === "compress" && readRow(row) && !isDlc(game) && !cannotCompress(game) && row.state !== "ok") || (running() && state.job.rows.includes(row));
   addDlc.textContent = t("addDlc");
 
   const warnings = rowWarnings(row), warn = tr.querySelector(".list-warn");
@@ -966,6 +979,12 @@ function paintList() {
   $("rows").replaceChildren(...list.map(row => row.tr));
 }
 
+// what becomes of the packs of a game packed already: shown when Compress has one
+function paintPackedChoice() {
+  $("packed-block").hidden = state.section !== "compress" || !(state.lists.compress || []).some(row => packedZstd(row.game));
+  for (const input of document.querySelectorAll('input[name="packed-games"]')) input.checked = input.value === (state.settings.KeepPacks ? "keep" : "again");
+}
+
 function paintOptions() {
   const section = state.section, s = state.settings;
   document.querySelectorAll("#options [data-for]").forEach(block => { block.hidden = !block.dataset.for.split(" ").includes(section); });
@@ -976,6 +995,7 @@ function paintOptions() {
   const mode = s.Mode === "folder" ? "folder" : "p5z";
   for (const input of document.querySelectorAll('input[name="made-for"]')) input.checked = input.value === mode;
   for (const input of document.querySelectorAll('input[name="unpack-to"]')) input.checked = input.value === state.unpackTo;
+  paintPackedChoice();
   paintLevel(s.Level);
   $("dest").textContent = s.LastDest ? ltr(s.LastDest) : t("destNone");
   $("dest").classList.toggle("empty", !s.LastDest);
@@ -1443,7 +1463,7 @@ function readyRows(section, kind) {
   return state.lists[section].filter(row => {
     if (!row.game || row.state === "ok") return false;
     // a DLC goes inside its game, never alone
-    if (section === "compress" && (row.game.Packed || isDlc(row.game))) return false;
+    if (section === "compress" && (cannotCompress(row.game) || isDlc(row.game))) return false;
     if (section === "verify" && !row.game.Packed) return false;
     return true;
   });
@@ -1654,7 +1674,7 @@ async function joinQueue() {
   const job = state.job;
   if (!running() || job.joining) return;
   let rows = toJoin.splice(0).filter(row => row.game && state.lists[job.section].includes(row) && !job.rows.includes(row)
-    && row.state !== "ok" && !(job.section === "compress" && (row.game.Packed || isDlc(row.game))) && !(job.section === "verify" && !row.game.Packed));
+    && row.state !== "ok" && !(job.section === "compress" && (cannotCompress(row.game) || isDlc(row.game))) && !(job.section === "verify" && !row.game.Packed));
   if (!rows.length) return;
   job.joining = true;
   try {
@@ -1898,7 +1918,7 @@ const incomplete = game => missingOf(game) > 0 || (fromDumpTool(game && game.Com
 function watchReady(rows) {
   const ready = [];
   for (const row of rows) {
-    if (!readRow(row) || row.state || isDlc(row.game) || row.game.Packed) continue;
+    if (!readRow(row) || row.state || isDlc(row.game) || cannotCompress(row.game)) continue;
     if (incomplete(row.game)) {
       if (!row.watchHeld) Object.assign(row, { watchHeld: true, detail: "watch_incomplete" });
       continue;
@@ -2190,6 +2210,7 @@ function gameReport(row) {
     }
   }
   return { Kind: game.Kind || "", Inner: game.Inner || "", Compressed: !!game.Compressed, Packed: !!game.Packed, ImageSize: game.ImageSize || 0,
+    Packs: game.Packs || "", PackedLevel: Number(game.PackedLevel) || 0,
     OriginalSize: game.OriginalSize || 0, InstallSize: game.InstallSize || 0,
     P5zSize: game.P5zSize || 0, OutSize: ran.outSize || 0, Volumes: game.Volumes || 0, Files: game.Files || 0,
     HasZstdRuntime: !!game.HasZstdRuntime, HasRuntime: !!game.HasRuntime, State: ran.state || "", Detail: ran.detail || "", Out: ran.out || "",
@@ -2723,6 +2744,7 @@ function wire() {
   for (const kind of ["focus", "blur"]) window.addEventListener(kind, tellFront);
   document.addEventListener("visibilitychange", tellFront);
   for (const input of document.querySelectorAll('input[name="made-for"]')) input.addEventListener("change", () => { keep({ Mode: input.value }); render(); });
+  for (const input of document.querySelectorAll('input[name="packed-games"]')) input.addEventListener("change", () => { keep({ KeepPacks: input.value === "keep" }); render(); });
   for (const input of document.querySelectorAll('input[name="unpack-to"]')) input.addEventListener("change", () => { state.unpackTo = input.value; save("unpackTo", input.value); render(); });
   $("level").addEventListener("input", () => paintLevel($("level").value));
   $("level").addEventListener("change", () => { keep({ Level: Number($("level").value) }); paintLevel($("level").value); });

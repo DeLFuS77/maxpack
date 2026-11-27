@@ -38,8 +38,9 @@ var ErrClosing = errors.New("the window is closing")
 // info --json says whether a game has every file of the original package, and pack takes
 // --leave-out-leftovers; "dlc": pack takes --dlc, and info --json says what a DLC is and the DLC a
 // game carries; "grow": add, update and compact grow a .p5z by appending, and info --json says how
-// many times one grew; "pause": --control stdin takes "pause" and "resume".
-var Required = []string{"progress_json", "control_stdin", "max_file_size", "info_json", "icon", "packs", "content_id", "levels", "measure", "images", "fpkg", "passcode", "completeness", "dlc", "grow", "pause"}
+// many times one grew; "pause": --control stdin takes "pause" and "resume"; "import": pack takes a game
+// packed already with zstd packs, and --keep-packs, and info --json says its packs.
+var Required = []string{"progress_json", "control_stdin", "max_file_size", "info_json", "icon", "packs", "content_id", "levels", "measure", "images", "fpkg", "passcode", "completeness", "dlc", "grow", "pause", "import"}
 
 // passcode is the one of Settings › FPKG passcode ("" is the default, which the engine knows).
 var passcode atomic.Value

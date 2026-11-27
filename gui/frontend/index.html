@@ -92,6 +92,18 @@
       <p class="hint" data-t="compareHint"></p>
     </section>
 
+    <!-- a game packed already with zstd packs (Dump Forge, Alembic...): compressed again, or its packs kept;
+         shown when the list has one -->
+    <section class="block" data-for="compress" id="packed-block" hidden>
+      <h2 id="packed-games-name" data-t="packedGames"></h2>
+      <div role="radiogroup" aria-labelledby="packed-games-name">
+        <label class="choice"><input type="radio" name="packed-games" value="again" checked>
+          <span><b data-t="packedAgain"></b><small data-t="packedAgainHint"></small></span></label>
+        <label class="choice"><input type="radio" name="packed-games" value="keep">
+          <span><b data-t="packedKeep"></b><small data-t="packedKeepHint"></small></span></label>
+      </div>
+    </section>
+
     <section class="block" data-for="decompress">
       <h2 id="unpack-to-name" data-t="unpackTo"></h2>
       <div role="radiogroup" aria-labelledby="unpack-to-name">

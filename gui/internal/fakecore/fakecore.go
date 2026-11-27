@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -27,6 +28,9 @@ import (
 //   - "no-zstd-runtime": pack writes its output and ends well, saying that what it made carries no
 //     runtime that reads zstd (runtime_without_zstd), as the real one does for a dump without one
 //     and no --runtime; verify ends well.
+//   - "from-packed": pack writes its output and ends well, saying it was made from a game packed already
+//     at level 5 (from_packed, packed_level), its packs kept when given --keep-packs (kept_packs), as
+//     the real one does; and a game whose folder ends in "-dump" was not packed. verify ends well.
 //   - "priority": ends well at once, saying the priority it runs at ("priority" in its result: see
 //     NormalPriority and LowPriority).
 //   - "writes": pack and unpack write their output (in an empty folder that is there too), tell
@@ -239,6 +243,24 @@ func run(mode string, args []string) int {
 		}
 		fmt.Println(`{"event":"result","ok":false,"error":"exists"}`)
 		return 1
+	case "from-packed":
+		if len(args) > 0 && args[0] == "verify" {
+			fmt.Println(`{"event":"result","ok":true,"files_bad":0}`)
+			return 0
+		}
+		out := output(args)
+		if out == "" {
+			fmt.Fprintln(os.Stderr, "error: missing -o")
+			return 2
+		}
+		if err := writePart(out, hasArg(args, "--p5z")); err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			return 1
+		}
+		from := len(args) > 1 && !strings.HasSuffix(args[1], "-dump")
+		fmt.Printf("{\"event\":\"result\",\"ok\":true,\"original_size\":10,\"output_size\":8,\"from_packed\":%v,\"packed_level\":%d,\"kept_packs\":%v}\n",
+			from, map[bool]int{true: 5}[from], from && hasArg(args, "--keep-packs"))
+		return 0
 	case "no-zstd-runtime":
 		if len(args) > 0 && args[0] == "verify" {
 			fmt.Println(`{"event":"result","ok":true,"files_bad":0}`)

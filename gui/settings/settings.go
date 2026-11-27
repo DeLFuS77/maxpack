@@ -82,6 +82,9 @@ type Settings struct {
 	// *.auth_info); off by default, so it is left out when the game's own list of the original
 	// package's files proves it is not the game's (jobs.Options.KeepLeftovers)
 	KeepLeftovers bool
+	// KeepPacks keeps the packs of a game packed already with zstd packs when Compress compresses it
+	// (jobs.Options.KeepPacks): faster; off by default, so it is compressed again, which is smaller
+	KeepPacks bool
 	// ConsoleIP is the address of MaxPack for the console a .p5z is sent to (an IPv4 address, with
 	// ":port" when it is not 8095) and ConsoleCode the pairing code it shows (6 digits); "" for none.
 	// The code goes only to the engine, in its environment: never into a log or a report
@@ -256,6 +259,7 @@ func Load() (Settings, error) {
 	read("RepairPercent", &s.RepairPercent)
 	read("Passcode", &s.Passcode)
 	read("KeepLeftovers", &s.KeepLeftovers)
+	read("KeepPacks", &s.KeepPacks)
 	read("ConsoleIP", &s.ConsoleIP)
 	read("ConsoleCode", &s.ConsoleCode)
 	read("WatchOn", &s.WatchOn)

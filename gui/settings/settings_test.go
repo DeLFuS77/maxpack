@@ -23,7 +23,7 @@ func useFolder(t *testing.T) string {
 func TestSettingsRoundtrip(t *testing.T) {
 	useFolder(t)
 	want := Settings{Lang: "en", Theme: "dark", Runtime: `C:\emu\runtime.elf`, LastDest: `D:\Juegos`, Mode: "folder", Level: 7, NameTemplate: "{title} [{id}]",
-		RepairData: true, RepairPercent: 10, KeepLeftovers: true}
+		RepairData: true, RepairPercent: 10, KeepLeftovers: true, KeepPacks: true}
 	if err := Save(want); err != nil {
 		t.Fatal(err)
 	}
@@ -40,7 +40,7 @@ func TestSettingsDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	// no language chosen: the window speaks the one of the system (English when it has none)
-	if got.Mode != "p5z" || got.Level != 19 || got.Lang != "" || got.Theme != "system" || got.KeepLeftovers {
+	if got.Mode != "p5z" || got.Level != 19 || got.Lang != "" || got.Theme != "system" || got.KeepLeftovers || got.KeepPacks {
 		t.Fatalf("default: %+v", got)
 	}
 	if lang := got.EffectiveLang(); lang != SystemLang() || !ValidLang(lang) {

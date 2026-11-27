@@ -49,6 +49,11 @@ const fat32Max = 1<<32 - 1
 // to update it even when more than half of the game changed. Grown is how many times it grew,
 // UnusedBytes what of it nothing uses any more, and Recovered that the engine found an append to it
 // that had stopped, and undid it, when it read it.
+//
+// Packs is what a game packed already (not a .p5z) is packed with: "zstd" (ampr_zstd.index, as Dump
+// Forge, Alembic or a folder for the console have it), which Compress compresses from the files it was
+// made of, or "lz4" (ampr_assets), which the engine does not read yet; "" for none. PackedLevel is the
+// zstd level of its packs, and UnpackedSize what its files take unpacked (0 when it is not packed).
 type Item struct {
 	Path, TitleID, Name, Version, Kind string
 	Inner                              string
@@ -58,6 +63,9 @@ type Item struct {
 	ImageSize                          uint64
 	HasZstdRuntime                     bool
 	Packed                             bool
+	Packs                              string
+	PackedLevel                        int
+	UnpackedSize                       uint64
 	Icon                               string
 	Completeness                       *Completeness
 	Content                            string
@@ -85,6 +93,14 @@ type DLC struct {
 
 // IsDLC tells whether the item is a DLC, not a game.
 func (it Item) IsDLC() bool { return it.Content == "dlc" }
+
+// PackedZstd tells whether it is a game packed already with zstd packs, which Compress compresses from
+// the files it was made of: compressed again, or with its packs kept (Options.KeepPacks).
+func (it Item) PackedZstd() bool { return it.Kind != "p5z" && it.Packs == "zstd" }
+
+// CannotCompress tells whether it is compressed in a way Compress does not take: LZ4 packs, a .p5z, or the
+// packs of a game an engine that did not say them saw.
+func (it Item) CannotCompress() bool { return it.Packs == "lz4" || (it.Packed && !it.PackedZstd()) }
 
 // dlcOf reads the "dlc" list of info --json (nil when there is none).
 func dlcOf(info map[string]any) []DLC {
@@ -181,6 +197,9 @@ type Options struct {
 	// *.auth_info). Else the engine leaves it out (--leave-out-leftovers), and only when the game's
 	// own list of the original package's files proves it is not the game's: with no list, it stays
 	KeepLeftovers bool
+	// KeepPacks keeps the packs of a game packed already with zstd packs (--keep-packs): their chunks go in
+	// as they are, at their level, which is faster; else it is compressed again at Level, which is smaller
+	KeepPacks bool
 	// Console is the address of MaxPack for the console (its IP address, as Settings has it) and Drive the
 	// drive of it a .p5z goes to ("" for the engine's choice), for ModeSend. ConsoleCode, the pairing code,
 	// is taken from Settings by the window, never from the page, and goes to the engine in its environment
@@ -284,6 +303,7 @@ func FromInfo(path string, info map[string]any) Item {
 		Path: path, TitleID: text("title_id"), Name: text("name"), Version: text("version"),
 		Kind: text("kind"), Inner: text("inner"), Compressed: flag("compressed"), OriginalSize: number("original_size"),
 		HasZstdRuntime: flag("has_zstd_runtime"), Packed: flag("packed"), ContentID: text("content_id"),
+		Packs: text("packs"), PackedLevel: int(number("packed_level")), UnpackedSize: number("unpacked_size"),
 		Completeness: completenessOf(info), Content: text("content"), DLCData: flag("dlc_data"), DLC: dlcOf(info),
 		Grown: uint32(number("grown")), UnusedBytes: number("unused_bytes"), Recovered: flag("recovered"),
 	}
@@ -370,8 +390,8 @@ func plan(items []Item, o Options, fs FS, out func(Item) string, args func(it It
 	plans := make([]Plan, len(items))
 	committed := map[string]uint64{}
 	for i, it := range items {
-		// what is compressed into it: the game, and its DLC
-		made := it.OriginalSize
+		// what is compressed into it: the game (a game packed already, its files unpacked), and its DLC
+		made := max(it.OriginalSize, it.UnpackedSize)
 		if o.Mode == ModeP5z || o.Mode == ModeFolder {
 			made += it.AddDLCSize
 		}
@@ -445,6 +465,9 @@ func PlanCompress(items []Item, o Options, fs FS) []Plan {
 			kind = "--folder"
 		}
 		a := []string{"pack", it.Path, "-o", target, kind, "--level", level(o)}
+		if it.PackedZstd() && o.KeepPacks {
+			a = append(a, "--keep-packs")
+		}
 		// its DLC inside it, in the order given (addcont0/, addcont1/...)
 		for _, dlc := range it.AddDLC {
 			a = append(a, "--dlc", dlc)
@@ -453,7 +476,8 @@ func PlanCompress(items []Item, o Options, fs FS) []Plan {
 			a = append(a, "--threads", strconv.Itoa(o.Threads))
 		}
 		a = append(a, core.PasscodeArgs()...)
-		if !it.HasZstdRuntime && o.Runtime != "" {
+		// a game packed already loses the runtime the other tool gave it
+		if (!it.HasZstdRuntime || it.PackedZstd()) && o.Runtime != "" {
 			a = append(a, "--runtime", o.Runtime)
 		}
 		if !o.KeepLeftovers {
@@ -465,7 +489,7 @@ func PlanCompress(items []Item, o Options, fs FS) []Plan {
 	for i := range plans {
 		// a folder plays with the runtime in its fakelib/; a .p5z is given ampr-emu-ng by MaxPack
 		// for the console when it plays it, so it never needs one
-		if o.Mode == ModeFolder && !plans[i].Item.HasZstdRuntime && o.Runtime == "" {
+		if o.Mode == ModeFolder && (!plans[i].Item.HasZstdRuntime || plans[i].Item.PackedZstd()) && o.Runtime == "" {
 			plans[i].Warnings = append(plans[i].Warnings, "needs_runtime")
 		}
 		// the installer of the PS5 refuses a .p5z with no TITLE_ID

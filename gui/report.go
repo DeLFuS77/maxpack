@@ -37,11 +37,14 @@ var links = map[string]string{
 // "" when it was not in one) and whether it has every file of the original package (its counts;
 // nil when the engine did not say). Out is what the queue made, read for its volumes; it is never
 // written in the report. DLC is how many DLC it carries, or is compressed with, and DLCData how many of
-// them have files of their own (the rest are licenses): counts only, never which.
+// them have files of their own (the rest are licenses): counts only, never which. Packs and PackedLevel
+// are what a game packed already is packed with (jobs.Item).
 type ReportGame struct {
 	Kind, Inner               string
 	Compressed                bool
 	Packed                    bool
+	Packs                     string
+	PackedLevel               int
 	ImageSize                 uint64
 	OriginalSize, InstallSize uint64
 	P5zSize, OutSize, Volumes uint64
@@ -304,6 +307,11 @@ func (a *App) reportText(r ReportRequest) string {
 		passcode = "given"
 	}
 	line("Settings: %s, level %d, threads %s, runtime %s, low priority %s, %s, names %s, repair data %s, FPKG passcode %s", modeText, saved.Level, threads, runtimeWords, priority, originals, saved.NameTemplate, repair, passcode)
+	packedGames := "compressed again"
+	if saved.KeepPacks {
+		packedGames = "their packs kept"
+	}
+	line("Packed games: %s", packedGames)
 	// whether a console to send to was given, never its address nor its code
 	console := "no console address or code"
 	switch {
@@ -333,6 +341,12 @@ func (a *App) reportText(r ReportRequest) string {
 		line("")
 		line("Game %d", n+1)
 		line("Kind: %s", kindWords(g))
+		switch g.Packs {
+		case "zstd":
+			line("Packed already: zstd packs, level %d", g.PackedLevel)
+		case "lz4":
+			line("Packed already: LZ4 packs")
+		}
 		line("Size: %s", sized(g.OriginalSize))
 		if jobs.IsImage(g.Kind) && g.ImageSize > 0 {
 			line("Image file: %s", sized(g.ImageSize))

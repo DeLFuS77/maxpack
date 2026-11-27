@@ -416,6 +416,14 @@ func (r *Runner) one(ctx context.Context, i int, p Plan, o Options) outcome {
 	if bad, _ := result.Raw["runtime_without_zstd"].(bool); bad && o.Mode == ModeFolder {
 		notes = append(notes, "runtime_without_zstd")
 	}
+	// made from a game packed already: compressed again, or with its packs kept at their level
+	if from, _ := result.Raw["from_packed"].(bool); from && compress {
+		if kept, _ := result.Raw["kept_packs"].(bool); kept {
+			notes = append(notes, fmt.Sprintf("from_packed_kept:%d", number(result, "packed_level")))
+		} else {
+			notes = append(notes, "from_packed")
+		}
+	}
 	// "unpack --original" checks every file against its SHA-256 as it writes it; the others are
 	// verified by the engine before they take their name
 	saved := uint64(0)

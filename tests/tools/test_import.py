@@ -2,12 +2,14 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Command-line tests of packing a game packed already with zstd packs.
 
-Usage: test_import.py <maxpack> <fixtures folder> <temporary folder>
+Usage: test_import.py <maxpack> <fixtures folder> <temporary folder> [<mp_fpkgtool>]
 
 A packed folder (made with pack --folder) is packed again to a .p5z: the one of the dump at that level,
 from the folder and from an exFAT image of it alike; with --keep-packs its chunks are kept, at their
-level. info --json tells what it is, and what is damaged, missing or not zstd is refused with its code.
+level. info --json tells what it is, and what is damaged, missing or not zstd is refused with its code. The
+same from a PS5 package of the folder, with DLC, and with names that differ only in case beside the real ones.
 """
+import importlib.util
 import json
 import os
 import shutil
@@ -15,6 +17,7 @@ import subprocess
 import sys
 
 EXE, FX, TMP = sys.argv[1], sys.argv[2], sys.argv[3]
+FPKGTOOL = sys.argv[4] if len(sys.argv) > 4 else None
 BASIC = os.path.join(FX, "basic.exfat")
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import make_exfat  # noqa: E402
@@ -165,12 +168,13 @@ def tree_bytes(path):
 def refused(name, src, code, words):
     before = tree_bytes(src)
     for keep in ([], ["--keep-packs"]):
-        rc, out, err = pack(src, at("refused.p5z"), "--p5z", *keep)
-        res = result(out)
-        tag = name + ("_keep" if keep else "")
-        check(tag, rc == 1 and res.get("ok") is False and res.get("error") == code, "%d %s %s" % (rc, out, err))
-        check(tag + "_says", words in err, err)
-        check(tag + "_nothing_left", not os.path.exists(at("refused.p5z")))
+        for kind, out_name in (("--p5z", "refused.p5z"), ("--folder", "refused_folder")):
+            rc, out, err = pack(src, at(out_name), kind, *keep)
+            res = result(out)
+            tag = name + ("_keep" if keep else "") + ("" if kind == "--p5z" else "_folder")
+            check(tag, rc == 1 and res.get("ok") is False and res.get("error") == code, "%d %s %s" % (rc, out, err))
+            check(tag + "_says", words in err, err)
+            check(tag + "_nothing_left", not os.path.exists(at(out_name)))
     check(name + "_source_kept", tree_bytes(src) == before)
 
 
@@ -198,6 +202,95 @@ try:
     check("info_lz4", json.loads(out)["packs"] == "lz4", out)
 except (ValueError, KeyError) as ex:
     check("info_lz4_json", False, repr(ex) + " " + out)
+
+
+
+def image_of(folder, extra=(), last=None):
+    """The files of folder (and extra (path, bytes)) as an exFAT image; last goes at its end."""
+    got = []
+    for root, _, names in os.walk(folder):
+        for name in names:
+            full = os.path.join(root, name)
+            rel = os.path.relpath(full, folder).replace(os.sep, "/")
+            with open(full, "rb") as f:
+                got.append((rel, f.read(), None))
+    got += [(p, d, None) for p, d in extra]
+    got.sort(key=lambda x: x[0] == last)
+    return make_exfat.build(got)[0]
+
+
+def compressed_chunk(index):
+    """(volume, offset, stored) of a compressed chunk of an ampr_zstd.index's bytes."""
+    nchunks, coff = int.from_bytes(index[48:56], "little"), int.from_bytes(index[64:72], "little")
+    for k in range(nchunks):
+        c = int.from_bytes(index[coff + 8 * k:coff + 8 * k + 8], "little")
+        if c >> 62 == 1:
+            return (c >> 32) & 0xFFF, c & 0xFFFFFFFF, ((c >> 44) & 0x3FFFF) + 1
+    return None
+
+
+# names that differ only in case beside the real ones (a case-sensitive image can hold both): what the console
+# opens is the exact name, as here; the others are left out
+with open(os.path.join(FOLDER, "ampr_zstd.index"), "rb") as f:
+    index = f.read()
+vol, off, stored = compressed_chunk(index)
+with open(os.path.join(FOLDER, "ampr_zstd-%03d.pak" % vol), "rb") as f:
+    decoy = bytearray(f.read())
+decoy[off + stored // 2] ^= 0x5A
+with open(fresh(at("decoys.exfat")), "wb") as f:
+    f.write(image_of(FOLDER, [("AMPR_ZSTD-%03d.PAK" % vol, bytes(decoy)), ("AMPR_ZSTD.INDEX", b"not an index")]))
+rc, out, err = pack(at("decoys.exfat"), at("decoys.p5z"), "--p5z")
+check("exact_names", rc == 0 and same(at("b19.p5z"), at("decoys.p5z")), err)
+
+# a read of the source that fails (an image cut short in its last volume) is no damage of the packs
+img = image_of(FOLDER, last="ampr_zstd-002.pak")
+with open(fresh(at("cut.exfat")), "wb") as f:
+    f.write(img[:len(img) - 16 * 4096 - 30000])   # the 16 clusters the builder leaves free at its end, and more
+for keep in ([], ["--keep-packs"]):
+    rc, out, err = pack(at("cut.exfat"), at("cut.p5z"), "--p5z", *keep)
+    res = result(out)
+    check("read_error" + ("_keep" if keep else ""), rc == 1 and res.get("error") == "io" and "packs are damaged" not in err,
+          "%d %s %s" % (rc, out, err))
+    check("read_error_nothing_left" + ("_keep" if keep else ""), not os.path.exists(at("cut.p5z")))
+
+
+# a PS5 package with the packed folder in it: the same .p5z as the folder
+def load(name):
+    spec = importlib.util.spec_from_file_location(name, os.path.join(os.path.dirname(os.path.abspath(__file__)), name + ".py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+build = load("fpkg_build")
+if FPKGTOOL:
+    build.use_helper(FPKGTOOL, TMP)
+pkg_files = sorted(((rel, data) for rel, data, _ in files), key=lambda x: x[0])
+pkg, _ = build.package(pkg_files, "UP0000-TEST00001_00-MAXPACKTEST00000", t_sec=make_exfat.MTIME_UNIX)
+with open(fresh(at("packed.pkg")), "wb") as f:
+    f.write(pkg)
+rc, out, err = run("info", "--json", at("packed.pkg"))
+try:
+    info = json.loads(out)
+    check("pkg_info", info["kind"] == "fpkg" and info["packs"] == "zstd" and info["packed_level"] == 9, out)
+except (ValueError, KeyError) as ex:
+    check("pkg_info_json", False, repr(ex) + " " + out + err)
+rc, out, err = pack(at("packed.pkg"), at("p19.p5z"), "--p5z")
+check("pkg_identical", rc == 0 and result(out).get("from_packed") is True and same(at("a19.p5z"), at("p19.p5z")), err)
+rc, out, err = pack(at("packed.pkg"), at("p9.p5z"), "--p5z", "--keep-packs")
+check("pkg_keep_identical", rc == 0 and same(at("a9.p5z"), at("p9.p5z")), err)
+
+# with a DLC put inside: what the dump gives with it, compressed again or with the packs kept
+MINI, DLC = os.path.join(FX, "mini"), os.path.join(FX, "dlc_data")
+rc, _, err = run("pack", MINI, "-o", fresh(at("mini_folder")), "--folder", "--threads", "3")
+check("pack_mini_folder", rc == 0, err)
+rc, _, err = run("pack", MINI, "-o", fresh(at("mini_dlc.p5z")), "--p5z", "--dlc", DLC, "--threads", "3")
+check("pack_mini_dlc", rc == 0, err)
+for keep in ([], ["--keep-packs"]):
+    rc, out, err = pack(at("mini_folder"), at("mini_dlc_again.p5z"), "--p5z", "--dlc", DLC, *keep)
+    res = result(out)
+    check("dlc_identical" + ("_keep" if keep else ""), rc == 0 and res.get("dlc_data") == 1 and res.get("from_packed") is True
+          and same(at("mini_dlc.p5z"), at("mini_dlc_again.p5z")), err)
 
 print("%d failures" % len(failures))
 sys.exit(1 if failures else 0)

@@ -121,8 +121,16 @@ long mp_zpk_find(const mp_zpk *z, const char *path);
 // Data of block k of file i (any pointer may be NULL). 0 if it exists.
 int mp_zpk_chunk(const mp_zpk *z, size_t i, uint32_t k, uint32_t *vol, uint64_t *off, uint32_t *stored,
                  int *codec);
-// Reads [off, off+n) of file i decoding its blocks; checks sizes and checksums.
+// Reads [off, off+n) of file i decoding its blocks; checks sizes and checksums, and that each compressed block
+// is one zstd frame as the runtime takes it.
 int mp_zpk_read_file(mp_zpk *z, size_t i, uint64_t off, void *buf, size_t n, mp_err *e);
+// The same; *bad (when not NULL) is 1 when it failed because of what the packs hold (a block that is not a
+// valid frame, does not decode or is of another size), 0 for anything else (a read that failed, memory).
+// seen (when not NULL) is given each block decoded whole, after it was checked: its chunk record and its
+// stored bytes, valid during the call.
+int mp_zpk_read_file_ex(mp_zpk *z, size_t i, uint64_t off, void *buf, size_t n,
+                        void (*seen)(void *ctx, uint64_t chunk, const uint8_t *stored, uint32_t len), void *ctx, int *bad,
+                        mp_err *e);
 // The bytes chunk record c (one of mp_zpk_file_chunks') takes in its volume, as they are stored: *stored of
 // them, at most cap, into buf. 0, or -1 with e set.
 int mp_zpk_read_stored(mp_zpk *z, uint64_t c, void *buf, size_t cap, uint32_t *stored, mp_err *e);

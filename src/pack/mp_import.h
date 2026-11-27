@@ -17,6 +17,7 @@
 #define MP_IMPORT_DAMAGED "packs_damaged"          // packs or indexes that are damaged or disagree
 #define MP_IMPORT_MISSING "packed_file_missing"    // a file ampr_emu.index lists is not there
 #define MP_IMPORT_LZ4 "packs_lz4"                  // LZ4 packs (ampr_assets*), which MaxPack does not read yet
+#define MP_IMPORT_TWICE "packed_and_loose"        // a path both loose and in the packs (or a file and a folder)
 
 typedef struct {
     int packed;                 // the source is a game packed with zstd packs
@@ -29,13 +30,16 @@ typedef struct {
 // packed game, gives the source of its original files instead (info->packed). A source that is not packed
 // is given as it is. Refused, with e and info->code set: LZ4 packs, a pack volume without its index, packs
 // or indexes that are damaged or disagree with each other (no ampr_emu.index, a packed file it does not list
-// or lists with another size, a file both loose and packed), and a file ampr_emu.index lists that is neither
-// loose nor packed (the files that are left out, OS junk and what dump tools leave behind aside).
+// or lists with another size), a path both loose and packed or a file that is a folder too (ASCII case aside),
+// and a file ampr_emu.index lists that is neither loose nor packed, or loose of another size (the files that
+// are left out, OS junk and what dump tools leave behind aside). The names the runtime opens (the index, the
+// volumes) are taken as it names them, and in another case only when there are none so.
 int mp_import_open(const char *path, int what, mp_source **out, mp_import_info *info, mp_err *e);
 // The packs of a source mp_import_open made of a packed game (NULL for any other source), valid while
 // it is open: a file of the source with a path the packs have is read from them.
 mp_zpk *mp_import_zpk(mp_source *s);
-// 1 once reading a file of the packs failed (a damaged block or volume): what stopped was the packs.
+// 1 once reading a file of the packs found a block that is not what the runtime takes or does not decode: what
+// stopped was the packs (a read of the source that fails is not that).
 int mp_import_failed(mp_source *s);
 // 1 for a file of a packed game that mp_import_open leaves out (the AMPR files and the runtime).
 int mp_import_left_out(const char *path);

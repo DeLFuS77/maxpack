@@ -6,11 +6,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <zstd.h>
 
 #include "mp_fixture.h"
 #include "mp_hash.h"
 #include "mp_idx3.h"
 #include "mp_import.h"
+#include "mp_measure.h"
 #include "mp_source.h"
 #include "mp_zpk.h"
 
@@ -124,10 +126,14 @@ static void make_reference(void) {
 // Whether a file goes into the packs of the folder another tool makes.
 typedef int (*packs_fn)(const char *path, uint64_t size);
 
+static const char foreign_rt[] = "another tool's libSceAmpr.sprx, AMPRZPK1";
+
 // A packed folder as another tool may make it, of the files of src: the ones in_packs takes go into the packs
 // at that level, the others stay loose, and ampr_emu.index lists them all (but unlisted, when not NULL) with
-// their sizes and dates; the tool's own runtime and the runtime's files are there too, as the console leaves them.
-static int foreign(const char *src_path, const char *dir, int level, packs_fn in_packs, const char *unlisted) {
+// their sizes and dates; the tool's own runtime (in the packs with rt_packed) and the runtime's files are
+// there too, as the console leaves them.
+static int foreign_ex(const char *src_path, const char *dir, int level, packs_fn in_packs, const char *unlisted,
+                      int rt_packed) {
     mp_err e = {{0}};
     mp_source *src = NULL;
     mpt_clear(dir);
@@ -136,6 +142,15 @@ static int foreign(const char *src_path, const char *dir, int level, packs_fn in
         mp_source_close(src);
         return -1;
     }
+    if (rt_packed) {   // the runtime as a file of the source, to pack it
+        mp_source *m = NULL;
+        if (mp_source_merge(src, NULL, NULL, 0, NULL, "fakelib/libSceAmpr.sprx", (const uint8_t *)foreign_rt,
+                            sizeof foreign_rt - 1, 1600000000, &m, &e) != 0) {
+            MP_FAIL_("%s", e.msg);
+            return -1;
+        }
+        src = m;
+    }
     size_t n = mp_source_count(src), np = 0, nrows = 0;
     uint32_t *files = malloc(n * sizeof *files);
     mp_idx3_row *rows = calloc(n + 1, sizeof *rows);
@@ -143,6 +158,10 @@ static int foreign(const char *src_path, const char *dir, int level, packs_fn in
     int rc = -1;
     for (size_t i = 0; i < n; i++) {
         const mp_entry *en = mp_source_entry(src, i);
+        if (!strcmp(en->path, "fakelib/libSceAmpr.sprx")) {
+            files[np++] = (uint32_t)i;
+            continue;   // its row is below
+        }
         if (en->size && in_packs(en->path, en->size)) {
             files[np++] = (uint32_t)i;
         } else {
@@ -160,14 +179,13 @@ static int foreign(const char *src_path, const char *dir, int level, packs_fn in
         rows[nrows].mtime = en->mtime;
         nrows++;
     }
-    static const char rt[] = "another tool's libSceAmpr.sprx, AMPRZPK1";
     rows[nrows].path = "fakelib/libSceAmpr.sprx";
-    rows[nrows].size = sizeof rt - 1;
+    rows[nrows].size = sizeof foreign_rt - 1;
     rows[nrows].mtime = 1600000000;
     nrows++;
     char p[2048];
     snprintf(p, sizeof p, "%s/fakelib/libSceAmpr.sprx", dir);
-    mpt_put(p, rt, sizeof rt - 1);
+    if (!rt_packed) mpt_put(p, foreign_rt, sizeof foreign_rt - 1);
     snprintf(p, sizeof p, "%s/ampr_commands.bin", dir);
     mpt_put_text(p, "commands the runtime logged");
     snprintf(p, sizeof p, "%s/apr_emu.log", dir);
@@ -196,6 +214,10 @@ static int foreign(const char *src_path, const char *dir, int level, packs_fn in
     free(sha);
     mp_source_close(src);
     return rc;
+}
+
+static int foreign(const char *src_path, const char *dir, int level, packs_fn in_packs, const char *unlisted) {
+    return foreign_ex(src_path, dir, level, in_packs, unlisted, 0);
 }
 
 // eboot.bin and param.json, which MaxPack leaves loose, in the packs; random.bin and data/big.bin, which it
@@ -619,6 +641,122 @@ MP_TEST(refuses_lz4_packs) {
     mpt_clear(TMP "/lz4");
 }
 
+// A loose copy of a packed file (someone patching it) is no damage: it says what it is, with its own code.
+MP_TEST(refuses_a_file_loose_and_packed) {
+    make_reference();
+    copy_tree(FOLDER, TMP "/twice");
+    mpt_put_text(TMP "/twice/data/big.bin", "a loose copy of a packed file");
+    refused(TMP "/twice", MP_IMPORT_TWICE, "data/big.bin");
+    mpt_clear(TMP "/twice");
+}
+
+// A packed file whose path is a folder of loose files too would make a .p5z that verifies and cannot be
+// unpacked (nor played: the indexes would hold it as a file and as a folder).
+MP_TEST(refuses_a_file_that_is_a_folder) {
+    make_reference();
+    copy_tree(FOLDER, TMP "/filedir");
+    mpt_put_text(TMP "/filedir/data/big.bin/child.txt", "a loose file under a packed one");
+    refused(TMP "/filedir", MP_IMPORT_TWICE, "data/big.bin");
+    mpt_clear(TMP "/filedir");
+}
+
+// A loose file of another size than its ampr_emu.index says: a copy cut short (the console would serve the
+// size the index says).
+MP_TEST(refuses_a_loose_file_cut_short) {
+    make_reference();
+    copy_tree(FOLDER, TMP "/short");
+    size_t n = 0;
+    uint8_t *b = mpt_slurp(TMP "/short/eboot.bin", &n);
+    if (b && n > 100) mpt_put(TMP "/short/eboot.bin", b, n - 100);
+    free(b);
+    refused(TMP "/short", MP_IMPORT_MISSING, "eboot.bin");
+    mpt_clear(TMP "/short");
+}
+
+// The other tool's runtime and the runtime's files inside the packs are left out as when they are loose.
+MP_TEST(leaves_out_ampr_files_in_the_packs) {
+    make_reference();
+    if (foreign_ex(MPT_BASIC, TMP "/rtpacked", 7, odd_split, NULL, 1) != 0) return;
+    for (int keep = 0; keep < 2; keep++) {
+        mp_pack_result r;
+        mp_err e = {{0}};
+        if (pack_ex(TMP "/rtpacked", TMP "/rtpacked.p5z", 1, 19, 3, MP_ZPK_VOLUME_LIMIT, keep, &r, &e) != 0) {
+            MP_FAIL_("keep %d: %s", keep, e.msg);
+            continue;
+        }
+        if (!keep) MP_CHECK(same_bytes(A19, TMP "/rtpacked.p5z"));
+        mp_p5z *p = NULL;
+        if (mp_p5z_open(TMP "/rtpacked.p5z", &p, &e) == 0) {
+            const mp_pack_manifest *m = mp_p5z_manifest(p);
+            for (size_t i = 0; i < m->n; i++)
+                if (mp_import_left_out(m->v[i].path)) MP_FAIL_("keep %d: %s went in", keep, m->v[i].path);
+            mp_p5z_close(p);
+        }
+        mpt_clear(TMP "/rtpacked.p5z");
+    }
+    mpt_clear(TMP "/rtpacked");
+}
+
+// A chunk is one zstd frame: one with a skippable frame after it decodes, but is not what the runtime takes.
+MP_TEST(refuses_a_chunk_of_two_frames) {
+    if (foreign(MPT_BASIC, TMP "/frames", 1, odd_split, NULL) != 0) return;
+    uint32_t vol = 0, stored = 0;
+    uint64_t off = 0;
+    if (compressed_block(TMP "/frames", &vol, &off, &stored) != 0) return;
+    // the chunk's block again, at level 19 (smaller than level 1's), and a skippable frame for the room left
+    char p[512];
+    snprintf(p, sizeof p, TMP "/frames/ampr_zstd-%03u.pak", vol);
+    size_t n = 0;
+    uint8_t *v = mpt_slurp(p, &n), *plain = malloc(MP_BLOCK_V1), *again = malloc(ZSTD_compressBound(MP_BLOCK_V1));
+    size_t got = v ? ZSTD_decompress(plain, MP_BLOCK_V1, v + off, stored) : 0;
+    ZSTD_CCtx *c = ZSTD_createCCtx();
+    size_t f = !ZSTD_isError(got) && c ? mp_zstd_block(c, 19, 18, plain, got, again, ZSTD_compressBound(MP_BLOCK_V1)) : 0;
+    ZSTD_freeCCtx(c);
+    if (!f || f + 8 > stored) {
+        MP_FAIL_("no room for a second frame (%zu of %u)", f, stored);
+    } else {
+        memcpy(v + off, again, f);
+        uint32_t room = stored - (uint32_t)f - 8;
+        uint8_t skip[8] = {0x50, 0x2A, 0x4D, 0x18, (uint8_t)room, (uint8_t)(room >> 8), (uint8_t)(room >> 16), 0};
+        memcpy(v + off + f, skip, 8);
+        memset(v + off + f + 8, 0, room);
+        mpt_put(p, v, n);
+        refused(TMP "/frames", MP_IMPORT_DAMAGED, "zstd frame");
+    }
+    free(v);
+    free(plain);
+    free(again);
+    mpt_clear(TMP "/frames");
+}
+
+// Cancelled in the middle of the packs: it says it was cancelled, not that the packs are damaged, and the .p5z
+// goes.
+static int cancel_calls;
+static void cancel_soon(void *ctx, const char *phase, uint64_t done, uint64_t total) {
+    (void)ctx;
+    (void)done;
+    if (!strncmp(phase, "Packing", 7) && total && ++cancel_calls == 1) mp_cancel_request();   // after its first block
+}
+
+MP_TEST(cancel_while_reading_the_packs) {
+    make_reference();
+    for (int keep = 0; keep < 2; keep++) {
+        cancel_calls = 0;
+        mp_progress_hook h = {cancel_soon, NULL};
+        mp_progress_set_hook(&h);
+        mp_pack_result r;
+        mp_err e = {{0}};
+        int rc = pack_ex(FOLDER, TMP "/cancelled.p5z", 1, 19, 2, MP_ZPK_VOLUME_LIMIT, keep, &r, &e);
+        mp_progress_set_hook(NULL);
+        int was = mp_cancelled();
+        mp_cancel_reset();
+        MP_CHECK(rc == -1 && was);
+        MP_CHECK_CONTAINS(e.msg, "cancelled");
+        MP_CHECK(r.code == NULL);
+        MP_CHECK(mp_path_kind(TMP "/cancelled.p5z") == 0);
+    }
+}
+
 int main(void) {
     mp_err e = {{0}};
     mpt_clear(TMP);
@@ -634,5 +772,11 @@ int main(void) {
     MP_RUN(refuses_a_missing_file);
     MP_RUN(refuses_an_unlisted_packed_file);
     MP_RUN(refuses_lz4_packs);
+    MP_RUN(refuses_a_file_loose_and_packed);
+    MP_RUN(refuses_a_file_that_is_a_folder);
+    MP_RUN(refuses_a_loose_file_cut_short);
+    MP_RUN(leaves_out_ampr_files_in_the_packs);
+    MP_RUN(refuses_a_chunk_of_two_frames);
+    MP_RUN(cancel_while_reading_the_packs);
     MP_TEST_MAIN_END();
 }

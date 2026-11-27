@@ -394,6 +394,13 @@ int mp_zpk_read_stored(mp_zpk *z, uint64_t c, void *buf, size_t cap, uint32_t *s
 }
 
 int mp_zpk_read_file(mp_zpk *z, size_t i, uint64_t off, void *buf, size_t n, mp_err *e) {
+    return mp_zpk_read_file_ex(z, i, off, buf, n, NULL, NULL, NULL, e);
+}
+
+int mp_zpk_read_file_ex(mp_zpk *z, size_t i, uint64_t off, void *buf, size_t n,
+                        void (*seen)(void *ctx, uint64_t chunk, const uint8_t *stored, uint32_t len), void *ctx, int *bad,
+                        mp_err *e) {
+    if (bad) *bad = 0;
     if (i >= z->n || off > z->f[i].size || n > z->f[i].size - off) {
         mp_err_set(e, "read outside the packed file");
         return -1;
@@ -420,10 +427,12 @@ int mp_zpk_read_file(mp_zpk *z, size_t i, uint64_t off, void *buf, size_t n, mp_
         if (C_CODEC(c) == 1) {
             ZSTD_frameHeader fh;
             size_t r = ZSTD_getFrameHeader(&fh, src, stored);
+            // one frame and nothing after it (zstd would take a skippable frame or more frames too)
             if (r != 0 || fh.frameContentSize != want || !fh.checksumFlag || fh.windowSize > MP_BLOCK_V1 ||
-                fh.dictID != 0) {
+                fh.dictID != 0 || ZSTD_findFrameCompressedSize(src, stored) != stored) {
                 mp_err_set(e, "%s: block %llu with a zstd frame that is not valid for the runtime", f->path,
                            (unsigned long long)k);
+                if (bad) *bad = 1;
                 rc = -1;
                 break;
             }
@@ -431,11 +440,13 @@ int mp_zpk_read_file(mp_zpk *z, size_t i, uint64_t off, void *buf, size_t n, mp_
             if (ZSTD_isError(r) || r != want) {
                 mp_err_set(e, "%s: block %llu damaged (%s)", f->path, (unsigned long long)k,
                            ZSTD_isError(r) ? ZSTD_getErrorName(r) : "different size");
+                if (bad) *bad = 1;
                 rc = -1;
                 break;
             }
             plain = dec;
         }
+        if (seen) seen(ctx, c, src, stored);
         size_t from = (size_t)(off > base ? off - base : 0), take = want - from < n ? want - from : n;
         memcpy(o, plain + from, take);
         o += take;

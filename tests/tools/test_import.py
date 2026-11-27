@@ -325,6 +325,14 @@ for name in ("complete_packed", "complete_packed.exfat"):
     except (ValueError, KeyError) as ex:
         check("completeness_" + name + "_json", False, repr(ex) + " " + out + err)
 
+# an ampr_zstd.index of more than 512 MiB (here one an image says it is: its data is not there) is refused before it
+# is read, as the console's runtime refuses it
+files_of = [(rel, data, None) for rel, data, _ in files]
+with open(fresh(at("big_index.exfat")), "wb") as f:
+    f.write(make_exfat.build(files_of, overrides={"ampr_zstd.index": 513 << 20}, extra_clusters=140000)[0])
+rc, out, err = pack(at("big_index.exfat"), at("big_index.p5z"), "--p5z")
+check("index_too_large", rc == 1 and result(out).get("error") == "packs_damaged" and "too large" in err, "%d %s %s" % (rc, out, err))
+
 # a level outside 1..22 in a broken index's header is no level
 bad = copy_tree(FOLDER, at("bad_level"))
 with open(os.path.join(bad, "ampr_zstd.index"), "r+b") as f:

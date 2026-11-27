@@ -293,18 +293,37 @@ int mp_idx3_parse(const uint8_t *d, size_t n, mp_idx3_entry **out, size_t *count
             break;
         }
     }
-    // Each row has to be in the hash table.
+    // Each row has to be in the hash table: in a slot with its hash and number, with no empty slot between
+    // that slot and the one its hash starts at, as a lookup probes them. One pass over the slots, from an empty
+    // one: a lookup of each row in turn takes rows x slots steps on a forged table (none empty, every row far
+    // from its start), minutes or hours.
     const uint8_t *sl = d + hash_off;
-    for (uint64_t i = 0; i < rows && !rc; i++) {
-        uint64_t h = mp_idx3_path_hash(v[i].app0_path), pos = h & (slots - 1);
-        int found = 0;
-        for (uint64_t k = 0; k < slots && !found; k++, pos = (pos + 1) & (slots - 1)) {
-            const uint8_t *s = sl + IDX3_SLOT * pos;
-            if (rd32(s + 8) == 0) break;
-            found = rd64(s) == h && rd32(s + 8) == i + 1;
-        }
-        if (!found) rc = bad(e, "a row is not in the hash table");
+    uint64_t mask = slots - 1, start = slots, run = 0;   // full slots right before the one looked at
+    uint64_t *hv = rc ? NULL : malloc((size_t)rows * sizeof *hv);
+    uint8_t *found = rc ? NULL : calloc((size_t)rows, 1);
+    if (!rc && (!hv || !found)) {
+        mp_err_set(e, "out of memory");
+        rc = -1;
     }
+    for (uint64_t i = 0; i < rows && !rc; i++) hv[i] = mp_idx3_path_hash(v[i].app0_path);
+    for (uint64_t k = 0; k < slots && !rc && start == slots; k++)
+        if (rd32(sl + IDX3_SLOT * k + 8) == 0) start = k;
+    for (uint64_t step = 1; step <= slots && !rc; step++) {
+        uint64_t pos = start == slots ? step - 1 : (start + step) & mask;   // none empty: one run, all reachable
+        const uint8_t *s = sl + IDX3_SLOT * pos;
+        uint32_t at = rd32(s + 8);
+        if (at == 0) {
+            run = 0;
+            continue;
+        }
+        if (at <= rows && rd64(s) == hv[at - 1] && (start == slots || ((pos - (hv[at - 1] & mask)) & mask) <= run))
+            found[at - 1] = 1;
+        run++;
+    }
+    for (uint64_t i = 0; i < rows && !rc; i++)
+        if (!found[i]) rc = bad(e, "a row is not in the hash table");
+    free(hv);
+    free(found);
     if (rc) {
         mp_idx3_entries_free(v, (size_t)rows);
         return -1;

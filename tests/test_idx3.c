@@ -317,12 +317,79 @@ MP_TEST(idx3_parse_accepts_8_aligned_slots) {
     free(d);
 }
 
+// A forged index whose table has no empty slot and every row far from where its hash starts: a lookup of
+// each row probes half the table, and checking them one by one took rows x slots steps (minutes for a few
+// MiB, longer for more). It is checked in one pass over the slots, and is valid by the same rules: each row
+// is in a slot of its hash with no empty slot between. A row behind an empty slot is still refused.
+MP_TEST(idx3_parse_forged_table_in_one_pass) {
+    size_t n = 100000;
+    mp_idx3_row *rows = calloc(n, sizeof *rows);
+    char (*names)[32] = malloc(n * sizeof *names);
+    if (!rows || !names) {
+        MP_FAIL_("out of memory");
+        free(rows);
+        free(names);
+        return;
+    }
+    for (size_t i = 0; i < n; i++) {
+        snprintf(names[i], sizeof names[i], "d%02u/f%06u.bin", (unsigned)(i % 50), (unsigned)i);
+        rows[i].path = names[i];
+        rows[i].size = i;
+        rows[i].mtime = 1700000000;
+    }
+    uint8_t *d = NULL;
+    size_t len = 0;
+    mp_err e = {{0}};
+    MP_CHECK(mp_idx3_build(rows, n, &d, &len, &e) == 0);
+    free(rows);
+    free(names);
+    if (!d) return;
+    uint64_t hash_off = rd64(d + 32), slots = rd32(d + 44), mask = slots - 1;
+    uint8_t *sl = d + hash_off;
+    uint64_t *hash = calloc(n, sizeof *hash);
+    uint8_t *real = calloc((size_t)slots, 1);
+    for (uint64_t k = 0; hash && k < slots; k++) {
+        uint32_t idx = rd32(sl + 16 * k + 8);
+        if (idx) hash[idx - 1] = rd64(sl + 16 * k);
+    }
+    // every slot taken: junk (a row number that is none), and each row half the table from its start
+    for (uint64_t k = 0; k < slots; k++) {
+        put64(sl + 16 * k, 0x5555555555555555ull);
+        for (int b = 0; b < 4; b++) sl[16 * k + 8 + b] = 0xFF;
+        memset(sl + 16 * k + 12, 0, 4);
+    }
+    for (size_t i = 0; hash && real && i < n; i++) {
+        uint64_t pos = (hash[i] + slots / 2) & mask;
+        while (real[pos]) pos = (pos + 1) & mask;
+        real[pos] = 1;
+        put64(sl + 16 * pos, hash[i]);
+        for (int b = 0; b < 4; b++) sl[16 * pos + 8 + b] = (uint8_t)((i + 1) >> (8 * b));
+    }
+    mp_idx3_entry *v = NULL;
+    size_t m = 0;
+    uint64_t t0 = mp_now_ns();
+    MP_CHECK(mp_idx3_parse(d, len, &v, &m, &e) == 0);
+    double s = (double)(mp_now_ns() - t0) / 1e9;
+    if (s > 5) MP_FAIL_("checking the table took %.1f s", s);
+    MP_CHECK_EQ_U64(m, n);
+    mp_idx3_entries_free(v, m);
+    // an empty slot right after where a row's hash starts: its lookup stops there
+    uint64_t home = hash ? hash[7] & mask : 0;
+    memset(sl + 16 * home + 8, 0, 4);
+    MP_CHECK(mp_idx3_parse(d, len, &v, &m, &e) == -1);
+    MP_CHECK_CONTAINS(e.msg, "not in the hash table");
+    free(hash);
+    free(real);
+    free(d);
+}
+
 int main(void) {
     MP_RUN(idx3_set_row_matches_pack_runtime);
     MP_RUN(idx3_set_row_replaces);
     MP_RUN(idx3_set_row_bad_input);
     MP_RUN(idx3_find_case_insensitive);
     MP_RUN(idx3_parse_accepts_8_aligned_slots);
+    MP_RUN(idx3_parse_forged_table_in_one_pass);
     MP_RUN(idx3_two_rows);
     MP_RUN(idx3_rejects_case_dup);
     MP_RUN(idx3_parse_roundtrip);

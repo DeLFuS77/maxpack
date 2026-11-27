@@ -14,6 +14,7 @@ packages that compile on Windows, Linux or macOS, with the production tags) are 
 """
 import json
 import os
+import re
 import subprocess
 import sys
 
@@ -134,6 +135,18 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE."""
 
 
+def lz4_version():
+    """The version lz4.h says (LZ4_VERSION_MAJOR, _MINOR and _RELEASE), as 1.10.0."""
+    h = read(os.path.join(ROOT, "third_party", "lz4", "lib", "lz4.h"))
+    parts = []
+    for name in ("MAJOR", "MINOR", "RELEASE"):
+        m = re.search(r"^#define LZ4_VERSION_%s\s+(\d+)" % name, h, re.M)
+        if not m:
+            raise SystemExit("third_party/lz4/lib/lz4.h does not say LZ4_VERSION_" + name)
+        parts.append(m.group(1))
+    return ".".join(parts)
+
+
 def build():
     mods = modules()
     used = linked()
@@ -184,7 +197,7 @@ def build():
     b = zh.index("*/", a)
     w("\n".join(ln.strip() for ln in zh[a:b].splitlines()).strip("\n"))
     w("")
-    w("lz4 1.10.0 - https://github.com/lz4/lz4 (third_party/lz4)")
+    w(f"lz4 {lz4_version()} - https://github.com/lz4/lz4 (third_party/lz4)")
     w("  License: BSD-2-Clause (the lz4 library, lib/: MaxPack builds lib/lz4.c alone, which decodes the")
     w("  chunks of LZ4 packs).")
     w("")

@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // .p5z writer. Volumes go raw (install = copy); the other files, in zstd 19 frames with a long
 // window of up to 32 MiB, written in order. The frames are a pipeline: a pool compresses them while
-// this thread reads the next ones and writes those already compressed, also across files.
+// this thread reads the next ones and writes those already compressed, also across files. What is in
+// it is bounded by bytes, not by frames: up to threads * 32 MiB of input, so that while one large
+// frame is compressed the other threads go through the small files after it.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -25,13 +27,18 @@ typedef struct {
 } p5frame;
 
 // A piece of a file in the frame pipeline: a frame (ilen > 0) or, with no data, only the end of
-// the file (one that is empty or a multiple of 32 MiB).
+// the file (one that is empty or a multiple of 32 MiB). Its buffer holds the frame's bytes and, once
+// compressed, the compressed frame in their place: it is ZSTD_compressBound(cap) bytes long.
 typedef struct {
-    uint8_t *in, *out;   // MP_LONG_FRAME and out_cap bytes, allocated when first needed
+    uint8_t *buf;        // allocated with the piece's first bytes, freed once it is written
+    size_t cap;          // the input it has room for (at most MP_LONG_FRAME)
     size_t ilen, olen;
     size_t file;         // index in files
     int first, last;     // the file's first and last piece
 } fslot;
+
+// Pieces in the pipeline at most (the bytes are the bound; this is for files of a few bytes).
+#define FRAME_SLOTS 4096
 
 typedef struct {
     mp_wfile *f;
@@ -45,11 +52,14 @@ typedef struct {
     int in_file;
     size_t cur_file;           // index in files of the file being received
     int cur_first;             // its first piece has not been sent yet
+    uint64_t cur_left;         // what it has still to send, by the size it was given
     mp_pipe *pipe;
     fslot *slots;
     size_t nslots;
     long cur;                  // slot being filled, or -1
+    size_t inflight;           // input room of the pieces taken and not yet written
     ZSTD_CCtx **cctx;          // one per thread of the pool
+    uint8_t **scratch;         // one per thread: where it compresses a frame (out_cap bytes)
     size_t out_cap;
     // Volume in progress.
     mp_sha256 vsha;
@@ -196,11 +206,15 @@ static int v_header(void *ctx, uint32_t vol, const uint8_t hdr[64], mp_err *e) {
 
 // ---- other files: zstd frames --------------------------------------------------------------
 
+// Compresses a piece into the thread's buffer, which has room for the largest frame (every frame is
+// compressed with that room, as it always was: the same call gives the same bytes), and puts the
+// frame over the piece's input, which is no longer needed and has room for it.
 static int frame_work(void *vc, size_t i, unsigned tid) {
     p5out *o = vc;
     fslot *sl = &o->slots[i];
-    size_t r = ZSTD_compress2(o->cctx[tid], sl->out, o->out_cap, sl->in, sl->ilen);
-    if (ZSTD_isError(r)) return 1;
+    size_t r = ZSTD_compress2(o->cctx[tid], o->scratch[tid], o->out_cap, sl->buf, sl->ilen);
+    if (ZSTD_isError(r) || r > ZSTD_compressBound(sl->cap)) return 1;
+    memcpy(sl->buf, o->scratch[tid], r);
     sl->olen = r;
     return 0;
 }
@@ -208,14 +222,17 @@ static int frame_work(void *vc, size_t i, unsigned tid) {
 // Starts the pool and the compression contexts for the frames.
 static int frames_start(p5out *o, mp_err *e) {
     if (o->pipe) return 0;
-    // As many frames in memory as 1.0.1 had: compressing one takes far longer than reading the next.
-    o->nslots = o->threads;
+    o->nslots = FRAME_SLOTS;
     o->cur = -1;
+    o->inflight = 0;
     if (!o->slots) o->slots = calloc(o->nslots, sizeof *o->slots);
     if (!o->cctx) o->cctx = calloc(o->threads, sizeof *o->cctx);
-    int ok = o->slots && o->cctx;
-    for (unsigned t = 0; ok && t < o->threads; t++)
+    if (!o->scratch) o->scratch = calloc(o->threads, sizeof *o->scratch);
+    int ok = o->slots && o->cctx && o->scratch;
+    for (unsigned t = 0; ok && t < o->threads; t++) {
         if (!o->cctx[t] && (ok = (o->cctx[t] = ZSTD_createCCtx()) != NULL)) mp_zstd_set_long(o->cctx[t]);
+        if (ok && !o->scratch[t]) ok = (o->scratch[t] = malloc(o->out_cap)) != NULL;
+    }
     if (ok) ok = (o->pipe = mp_pipe_new(o->threads, o->nslots, frame_work, o)) != NULL;
     if (!ok) mp_err_set(e, "out of memory");
     return ok ? 0 : -1;
@@ -228,17 +245,17 @@ static void frames_stop(p5out *o) {
         mp_pipe_free(o->pipe);
         o->pipe = NULL;
     }
-    for (size_t i = 0; o->slots && i < o->nslots; i++) {
-        free(o->slots[i].in);
-        free(o->slots[i].out);
-    }
+    for (size_t i = 0; o->slots && i < o->nslots; i++) free(o->slots[i].buf);
     free(o->slots);
     o->slots = NULL;
-    if (o->cctx)
-        for (unsigned t = 0; t < o->threads; t++) ZSTD_freeCCtx(o->cctx[t]);
+    for (unsigned t = 0; o->cctx && t < o->threads; t++) ZSTD_freeCCtx(o->cctx[t]);
     free(o->cctx);
     o->cctx = NULL;
+    for (unsigned t = 0; o->scratch && t < o->threads; t++) free(o->scratch[t]);
+    free(o->scratch);
+    o->scratch = NULL;
     o->cur = -1;
+    o->inflight = 0;
 }
 
 // Writes a compressed piece: where its file starts (after the frames of the files before it), its
@@ -259,7 +276,7 @@ static int write_piece(p5out *o, const fslot *sl, int rc, mp_err *e) {
         fr->off = mp_wfile_size(o->f);
         fr->csize = (uint32_t)sl->olen;
         fr->usize = (uint32_t)sl->ilen;
-        if (put(o, sl->out, sl->olen, e) != 0) return -1;
+        if (put(o, sl->buf, sl->olen, e) != 0) return -1;
     }
     if (sl->last) {
         f->nframes = (uint32_t)(o->nframes - f->first_frame);
@@ -279,7 +296,12 @@ static int write_next(p5out *o, int wait, mp_err *e) {
         mp_err_set(e, "error compressing for the .p5z");
         return -1;
     }
-    int r = write_piece(o, &o->slots[s], rc, e);
+    fslot *sl = &o->slots[s];
+    int r = write_piece(o, sl, rc, e);
+    o->inflight -= sl->cap;
+    free(sl->buf);
+    sl->buf = NULL;
+    sl->cap = 0;
     mp_pipe_release(o->pipe, (size_t)s);
     return r != 0 ? -1 : 1;
 }
@@ -313,6 +335,27 @@ static fslot *open_slot(p5out *o, mp_err *e) {
     return sl;
 }
 
+// Room in the slot being filled for the next of n bytes: as much as the file still has to send by its
+// size (as much as these n, if more come than it said), up to a frame. Over threads * 32 MiB of input
+// in the pipeline, the oldest pieces are written first.
+static int slot_room(p5out *o, fslot *sl, size_t n, mp_err *e) {
+    if (sl->ilen < sl->cap) return 0;
+    uint64_t want = sl->ilen + (o->cur_left > n ? o->cur_left : n);
+    size_t cap = want < MP_LONG_FRAME ? (size_t)want : MP_LONG_FRAME;
+    size_t budget = (size_t)o->threads * MP_LONG_FRAME;
+    while (mp_pipe_pending(o->pipe) && o->inflight + (cap - sl->cap) > budget)
+        if (write_next(o, 1, e) < 0) return -1;
+    uint8_t *b = realloc(sl->buf, ZSTD_compressBound(cap));
+    if (!b) {
+        mp_err_set(e, "out of memory");
+        return -1;
+    }
+    o->inflight += cap - sl->cap;
+    sl->buf = b;
+    sl->cap = cap;
+    return 0;
+}
+
 // Sends the slot being filled to the pool (a piece without data needs no compression) and writes
 // whatever is already compressed.
 static int send_slot(p5out *o, int last, mp_err *e) {
@@ -329,6 +372,7 @@ static int f_begin(void *ctx, const char *rel, int role, uint64_t size, int64_t 
     if (!new_file(o, rel, role, P5Z_STORE_FRAMES, size, mtime, e)) return -1;
     o->cur_file = o->nfiles - 1;
     o->cur_first = 1;
+    o->cur_left = size;
     o->in_file = 1;
     return 0;
 }
@@ -339,16 +383,13 @@ static int f_write(void *ctx, const void *p, size_t n, mp_err *e) {
     while (n) {
         if (mp_cancel_check(e) != 0) return -1;
         fslot *sl = open_slot(o, e);
-        if (!sl) return -1;
-        if ((!sl->in && !(sl->in = malloc(MP_LONG_FRAME))) || (!sl->out && !(sl->out = malloc(o->out_cap)))) {
-            mp_err_set(e, "out of memory");
-            return -1;
-        }
-        size_t k = MP_LONG_FRAME - sl->ilen < n ? MP_LONG_FRAME - sl->ilen : n;
-        memcpy(sl->in + sl->ilen, b, k);
+        if (!sl || slot_room(o, sl, n, e) != 0) return -1;
+        size_t k = sl->cap - sl->ilen < n ? sl->cap - sl->ilen : n;
+        memcpy(sl->buf + sl->ilen, b, k);
         sl->ilen += k;
         b += k;
         n -= k;
+        o->cur_left = o->cur_left > k ? o->cur_left - k : 0;
         if (sl->ilen == MP_LONG_FRAME && send_slot(o, 0, e) != 0) return -1;
     }
     return 0;

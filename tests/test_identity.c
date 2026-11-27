@@ -64,13 +64,15 @@ static void fill_repeat(uint8_t *b, size_t n) {
 
 static int64_t g_mtime = 1700000000;
 
-static void put_file(const char *rel, const uint8_t *data, size_t n) {
+static void put_in(const char *dir, const char *rel, const uint8_t *data, size_t n) {
     char p[1024];
-    snprintf(p, sizeof p, MIXED "/%s", rel);
+    snprintf(p, sizeof p, "%s/%s", dir, rel);
     mpt_put(p, data, n);
     mp_err e = {{0}};
     if (mp_set_mtime(p, g_mtime++, &e) != 0) MP_FAIL_("mtime %s: %s", p, e.msg);
 }
+
+static void put_file(const char *rel, const uint8_t *data, size_t n) { put_in(MIXED, rel, data, n); }
 
 static int mixed_ready = 0;
 
@@ -238,6 +240,81 @@ MP_TEST(identity_basic) {
 MP_TEST(identity_mixed) {
     for (size_t i = 0; i < sizeof configs / sizeof *configs; i++)
         if (configs[i].mixed) check_config(&configs[i]);
+}
+
+// ---- loose files: many small ones and a few over one frame -------------------------------------
+
+#define LOOSE TMP "/loose"
+// The .p5z of the source below at level 3, recorded with the writer of 650653b, which compressed
+// as many frames at once as it had threads: the frames of several files at once must not change it.
+#define LOOSE_GOLDEN "7cc00e8023d21526820a54a7d252232c9dd8aa8bdb4de6621f98c8af4337335b"
+
+// Loose files in the order the source lists them: small ones of every kind (empty ones too), one of
+// 32 MiB and a byte (two frames), one of 70 MiB (three), one of exactly 64 MiB (two, and the piece
+// without data that ends it) and one of exactly 32 MiB between them, whose first 4 MiB are slow to
+// compress (the small files after it are done before it), and two packable files after.
+static void make_loose(void) {
+    mpt_clear(LOOSE);
+    rng = 88172645u;
+    g_mtime = 1700100000;
+    size_t big = 70u << 20;
+    uint8_t *b = malloc(big);
+    if (!b) {
+        MP_FAIL_("out of memory");
+        return;
+    }
+    const char *pj = "{\"titleId\":\"PPSA01234\",\"contentVersion\":\"01.000.000\"}";
+    put_in(LOOSE, "sce_sys/param.json", (const uint8_t *)pj, strlen(pj));
+    fill_repeat(b, (32u << 20) + 1);
+    put_in(LOOSE, "eboot.bin", b, (32u << 20) + 1);
+    fill_repeat(b, big);
+    put_in(LOOSE, "sce_module/big.prx", b, big);
+    for (int i = 0; i < 600; i++) {
+        char rel[64];
+        size_t n = (size_t)((i * 7919u) % 50000u);
+        static const char *dirs[] = {"sce_module/lib%03d.prx", "sce_sys/extra/f%03d.dat", "fakelib/m%03d.sprx"};
+        snprintf(rel, sizeof rel, dirs[i % 3], i);
+        if (i % 4 == 0) fill_noise(b, n);
+        else if (i % 4 == 1) fill_text(b, n);
+        else fill_mixed(b, n);
+        put_in(LOOSE, rel, b, n);
+        if (i == 200) {
+            fill_repeat(b, 64u << 20);
+            put_in(LOOSE, "sce_module/lib200_exact2.prx", b, 64u << 20);
+        } else if (i == 400) {
+            fill_mixed(b, 4u << 20);
+            fill_repeat(b + (4u << 20), 28u << 20);
+            put_in(LOOSE, "sce_sys/extra/f400_exact1.dat", b, 32u << 20);
+        }
+    }
+    fill_text(b, 300000);
+    put_in(LOOSE, "data/text.bin", b, 300000);
+    fill_mixed(b, 1u << 20);
+    put_in(LOOSE, "data/mixed.bin", b, 1u << 20);
+    free(b);
+}
+
+MP_TEST(identity_loose_frames) {
+    make_loose();
+    static const unsigned counts[] = {1, 3, 8};
+    for (size_t k = 0; k < sizeof counts / sizeof *counts; k++) {
+        char dst[512], got[65];
+        snprintf(dst, sizeof dst, TMP "/out/loose-t%u.p5z", counts[k]);
+        mp_pack_result r;
+        mp_err e = {{0}};
+        uint64_t t0 = mp_now_ns();
+        if (pack(LOOSE, dst, 1, 3, counts[k], MP_ZPK_VOLUME_LIMIT, &r, &e) != 0) {
+            MP_FAIL_("%u threads: %s", counts[k], e.msg);
+            continue;
+        }
+        hash_file(dst, got);
+        fprintf(stderr, "  loose frames, %u threads: %s (%llu loose files, %.1f s)\n", counts[k], got,
+                (unsigned long long)r.loose_files, (double)(mp_now_ns() - t0) / 1e9);
+        MP_CHECK_EQ_U64(r.loose_files, 605);
+        if (strcmp(got, LOOSE_GOLDEN)) MP_FAIL_("%u threads: %s, 650653b gave %s", counts[k], got, LOOSE_GOLDEN);
+        mpt_clear(dst);
+    }
+    mpt_clear(LOOSE);
 }
 
 // ---- mp_zpk_write with a sink in memory ---------------------------------------------------
@@ -679,6 +756,7 @@ int main(void) {
     mpt_clear(TMP "/out");
     MP_RUN(identity_basic);
     MP_RUN(identity_mixed);
+    MP_RUN(identity_loose_frames);
     MP_RUN(zpk_write_same_calls_and_sha);
     MP_RUN(zpk_write_progress_monotonic);
     MP_RUN(zpk_write_sink_failures);

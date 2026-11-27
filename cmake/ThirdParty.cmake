@@ -4,8 +4,9 @@
 
 set(MP_ZSTD_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/zstd/lib)
 set(MP_ZLIB_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/zlib)
+set(MP_LZ4_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/lz4/lib)
 
-if(NOT EXISTS ${MP_ZSTD_DIR}/zstd.h OR NOT EXISTS ${MP_ZLIB_DIR}/zlib.h)
+if(NOT EXISTS ${MP_ZSTD_DIR}/zstd.h OR NOT EXISTS ${MP_ZLIB_DIR}/zlib.h OR NOT EXISTS ${MP_LZ4_DIR}/lz4.h)
   message(FATAL_ERROR "The submodules are missing: run 'git submodule update --init'")
 endif()
 
@@ -34,3 +35,9 @@ list(TRANSFORM MP_ZLIB_SRC PREPEND ${MP_ZLIB_DIR}/)
 add_library(mp_zlib STATIC ${MP_ZLIB_SRC})
 target_include_directories(mp_zlib PUBLIC ${MP_ZLIB_DIR})
 mp_quiet(mp_zlib)
+
+# lz4's block format, for the LZ4 packs of a game packed already (AMPRPAK4): lz4.c only, its decoder (the
+# tests also make packs with its encoder); lz4frame, lz4hc and xxhash are not needed.
+add_library(mp_lz4 STATIC ${MP_LZ4_DIR}/lz4.c)
+target_include_directories(mp_lz4 PUBLIC ${MP_LZ4_DIR})
+mp_quiet(mp_lz4)

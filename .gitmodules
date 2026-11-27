@@ -7,3 +7,6 @@
 [submodule "third_party/par2cmdline-turbo"]
 	path = third_party/par2cmdline-turbo
 	url = https://github.com/animetosho/par2cmdline-turbo
+[submodule "third_party/lz4"]
+	path = third_party/lz4
+	url = https://github.com/lz4/lz4

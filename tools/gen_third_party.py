@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Generates THIRD_PARTY_NOTICES: zstd and zlib (from the submodules), the code of ProsperoPkgTool the
+"""Generates THIRD_PARTY_NOTICES: zstd, zlib and lz4 (from the submodules), the code of ProsperoPkgTool the
 engine adapts (its license, which the header of src/core/mp_playgo.c also keeps), the ampr-emu-ng
 inside the window (gui/bundled/ampr-emu-ng), the Go modules in gui/go.mod and par2cmdline-turbo (the
 submodule built as maxpack-par2).
@@ -183,6 +183,12 @@ def build():
     a = zh.index("Copyright (C)")
     b = zh.index("*/", a)
     w("\n".join(ln.strip() for ln in zh[a:b].splitlines()).strip("\n"))
+    w("")
+    w("lz4 1.10.0 - https://github.com/lz4/lz4 (third_party/lz4)")
+    w("  License: BSD-2-Clause (the lz4 library, lib/: MaxPack builds lib/lz4.c alone, which decodes the")
+    w("  chunks of LZ4 packs).")
+    w("")
+    w(read(os.path.join(ROOT, "third_party", "lz4", "lib", "LICENSE")))
     w("")
     prospero(w)
     w("")

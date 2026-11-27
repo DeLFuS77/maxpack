@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// A game packed already with zstd packs (ampr_zstd.index and ampr_zstd-NNN.pak, AMPRZPK1, as Dump Forge,
-// Alembic or a .zstd exFAT image make it), as a source of its original files: the loose files of the source
-// but the AMPR files (the indexes, the packs, ampr_commands.bin and the runtime's logs) and the other tool's
-// runtime (fakelib/libSceAmpr.sprx), and the files in its packs, decompressed as they are read, with the
-// size the packs give and the date ampr_emu.index gives. The packs are read from the source itself, so a
-// folder, an image or a package with packs in it all work; nothing is ever written to it.
+// A game packed already, as a source of its original files: with zstd packs (ampr_zstd.index and
+// ampr_zstd-NNN.pak, AMPRZPK1, as Dump Forge, Alembic or a .zstd exFAT image make it) or with LZ4 packs
+// (ampr_assets.index and its volumes, AMPRPAK4: drakmor's ampr_emu, exFAT2AMPR, Dump Forge's LZ4; see
+// mp_lz4pk.h). The loose files of the source but the AMPR files (the indexes, the packs and their sidecars,
+// ampr_commands.bin and the runtime's logs) and the other tool's runtime (fakelib/libSceAmpr.sprx), and the
+// files in its packs, decompressed as they are read, with the size the packs give and the date ampr_emu.index
+// (zstd) or the manifest (LZ4) gives. The packs are read from the source itself, so a folder, an image or a
+// package with packs in it all work; nothing is ever written to it.
 #ifndef MP_IMPORT_H
 #define MP_IMPORT_H
 
@@ -16,13 +18,14 @@
 // Why a packed game is refused (mp_import_info.code), for --progress json.
 #define MP_IMPORT_DAMAGED "packs_damaged"          // packs or indexes that are damaged or disagree
 #define MP_IMPORT_MISSING "packed_file_missing"    // a file ampr_emu.index lists is not there
-#define MP_IMPORT_LZ4 "packs_lz4"                  // LZ4 packs (ampr_assets*), which MaxPack does not read yet
+#define MP_IMPORT_LZ4 "packs_lz4"                  // LZ4 packs it does not read: an older manifest, or zstd ones too
 #define MP_IMPORT_TWICE "packed_and_loose"        // a path both loose and in the packs (or a file and a folder)
 #define MP_IMPORT_DLC "dlc_packed"                 // a DLC packed already (no eboot.bin), given as a game
 
 typedef struct {
     int packed;                 // the source is a game packed with zstd packs
-    int level;                  // the zstd level its packs say
+    const char *packs;          // "zstd" or "lz4" (static), NULL when it is not packed
+    int level;                  // the zstd level its packs say (0 for LZ4 packs)
     uint64_t packed_files, packed_bytes, volumes;
     const char *code;           // when it is refused: one of the codes above (NULL for anything else)
 } mp_import_info;
@@ -40,8 +43,9 @@ int mp_import_open(const char *path, int what, mp_source **out, mp_import_info *
 // The same for a source already open, base, which it takes when it succeeds (the source it gives holds it)
 // and leaves open when it fails; path only words the messages.
 int mp_import_source(const char *path, mp_source *base, int what, mp_source **out, mp_import_info *info, mp_err *e);
-// The packs of a source mp_import_open made of a packed game (NULL for any other source), valid while
-// it is open: a file of the source with a path the packs have is read from them.
+// The zstd packs of a source mp_import_open made of a packed game (NULL for any other source, and for LZ4
+// packs, which cannot go into a .p5z as they are), valid while it is open: a file of the source with a path
+// the packs have is read from them.
 mp_zpk *mp_import_zpk(mp_source *s);
 // 1 once reading a file of the packs found a block that is not what the runtime takes or does not decode: what
 // stopped was the packs (a read of the source that fails is not that).
@@ -55,7 +59,8 @@ int mp_import_take(void *s, uint64_t chunk, void *buf, size_t cap, uint32_t *len
 uint64_t mp_import_volume_bytes(mp_source *s);
 // 1 for a file of a packed game that mp_import_open leaves out (the AMPR files and the runtime).
 int mp_import_left_out(const char *path);
-// 1 for what LZ4 packs are at the root (ampr_assets.index, its packs, an ampr_assets folder), ASCII case aside.
+// 1 for what LZ4 packs are at the root (ampr_assets.index, its sidecars, its packs, an ampr_assets folder),
+// ASCII case aside.
 int mp_import_lz4(const char *path);
 
 #endif

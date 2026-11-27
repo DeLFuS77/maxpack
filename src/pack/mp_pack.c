@@ -173,6 +173,7 @@ int mp_pack_run(const char *src_path, mp_pack_out *out, const mp_pack_opts *o, m
     int level = kz ? mp_zpk_level(kz) : o->level;   // kept chunks keep their level, and the output says it
     r->from_packed = imp.packed;
     r->packed_level = imp.level;
+    r->packs = imp.packs;
     r->kept_packs = kz != NULL;
     size_t n = 0;
     // the DLC go in as files of the game: addcont0/... and the dlc_emu.ini MaxPack writes

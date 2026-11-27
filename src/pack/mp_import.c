@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// A game packed already with zstd packs as a source of its original files (mp_import.h): its loose files,
-// the AMPR files and the other tool's runtime left out, and the files of its packs, read decompressed from
-// them. The volumes are read through the source, so the packs may be in a folder, an image or a package.
+// A game packed already with zstd or LZ4 packs as a source of its original files (mp_import.h): its loose
+// files, the AMPR files and the other tool's runtime left out, and the files of its packs, read decompressed
+// from them. The volumes are read through the source, so the packs may be in a folder, an image or a package.
 #include "mp_import.h"
 
 #include <stdio.h>
@@ -10,6 +10,7 @@
 
 #include "mp_complete.h"
 #include "mp_idx3.h"
+#include "mp_lz4pk.h"
 #include "mp_pack.h"
 #include "mp_platform.h"
 #include "mp_source_impl.h"
@@ -34,6 +35,7 @@ typedef struct {
     mp_source *base;   // the source as it is
     mp_zpk *z;
     mp_zpk_volsrc vs;
+    mp_lz4pk *l;       // or LZ4 packs
     long *vol;         // the base's entry of each volume, -1 when it has none
     uint32_t nvol;
     long *bi;          // of each entry: its entry in the base, or -1
@@ -62,8 +64,9 @@ static int istarts(const char *s, const char *prefix) {
 }
 
 int mp_import_left_out(const char *path) {
-    return mp_pack_already_packed(path) || ieq(path, DUMP_INDEX) || ieq(path, "ampr_commands.bin") ||
-           ieq(path, "apr_emu.log") || ieq(path, "ampr_emu.log") || ieq(path, MP_RUNTIME_PATH);
+    return mp_pack_already_packed(path) || mp_import_lz4(path) || ieq(path, DUMP_INDEX) ||
+           ieq(path, "ampr_commands.bin") || ieq(path, "apr_emu.log") || ieq(path, "ampr_emu.log") ||
+           ieq(path, MP_RUNTIME_PATH);
 }
 
 int mp_import_lz4(const char *path) { return istarts(path, "ampr_assets"); }
@@ -129,6 +132,18 @@ static int vol_read(void *ctx, uint32_t vol, uint64_t off, void *buf, size_t n, 
     return mp_source_read(x->base, (size_t)x->vol[vol], off, buf, n, e);
 }
 
+static int lvol_read(void *ctx, uint32_t vol, uint64_t off, void *buf, size_t n, mp_err *e) {
+    imp *x = ctx;
+    if (vol >= x->nvol || x->vol[vol] < 0) {
+        mp_err_set(e, "volume %u of the LZ4 packs is missing", vol);
+        return -1;
+    }
+    mp_mutex_lock(x->mu);
+    x->vol_bytes += n;
+    mp_mutex_unlock(x->mu);
+    return mp_source_read(x->base, (size_t)x->vol[vol], off, buf, n, e);
+}
+
 static uint64_t vol_size(void *ctx, uint32_t vol) {
     imp *x = ctx;
     return vol < x->nvol && x->vol[vol] >= 0 ? mp_source_entry(x->base, (size_t)x->vol[vol])->size : 0;
@@ -175,6 +190,13 @@ static int imp_read(mp_source *s, size_t i, uint64_t off, void *buf, size_t len,
     imp *x = s->impl;
     if (x->zi[i] < 0) return mp_source_read(x->base, (size_t)x->bi[i], off, buf, len, e);
     int bad = 0;
+    if (x->l) {
+        if (mp_lz4pk_read_file(x->l, (size_t)x->zi[i], off, buf, len, &bad, e) != 0) {
+            if (bad) x->failed = 1;
+            return -1;
+        }
+        return 0;
+    }
     // keeping is set before the readers start and cleared after they end
     if (mp_zpk_read_file_ex(x->z, (size_t)x->zi[i], off, buf, len, x->keeping ? imp_seen : NULL, x, &bad, e) != 0) {
         if (bad) x->failed = 1;
@@ -186,6 +208,7 @@ static int imp_read(mp_source *s, size_t i, uint64_t off, void *buf, size_t len,
 static void imp_free(imp *x) {
     if (!x) return;
     mp_zpk_close(x->z);
+    mp_lz4pk_close(x->l);
     mp_source_close(x->base);
     kept_free(x);
     free(x->kept);
@@ -330,14 +353,114 @@ static int file_and_folder(const rec *v, size_t n, const char **file, const char
     return rc;
 }
 
-// The packed game base (with its index ix) as the source of its original files; base is taken when it succeeds.
-static int open_packed(const char *path, mp_source *base, size_t ix, mp_source **out, mp_import_info *info, mp_err *e) {
+static int cmp_row(const void *a, const void *b) {
+    const char *x = ((const mp_idx3_entry *)a)->app0_path, *y = ((const mp_idx3_entry *)b)->app0_path;
+    for (;; x++, y++) {
+        int p = lower((unsigned char)*x), q = lower((unsigned char)*y);
+        if (p != q || !p) return p - q;
+    }
+}
+
+// The entry of a name the runtime opens: the one named exactly so, else in another case; -1 for none.
+static long find_name(mp_source *s, const char *name) { return find_ci(s, name); }
+
+// LZ4 packs: the manifest (ix), the volumes it names, its CRC sidecar and runtime profile when they are there.
+// Its records are the list of the game's files (rows, with their sizes and dates, in folded path order); the
+// packed ones are given as files of the packs (v, n) and the base's entries that are volumes are marked (vol).
+static int open_lz4(const char *path, imp *x, size_t ix, uint8_t *volume, mp_idx3_entry **rows_out, size_t *nrows_out,
+                    mp_import_info *info, mp_err *e) {
+    mp_source *base = x->base;
+    uint8_t *d = NULL;
+    size_t len = 0;
+    mp_err ze = {{0}};
+    int older = 0, rc = -1;
+    if (read_whole(base, ix, ZPK_INDEX_MAX, &d, &len, &ze) != 0)
+        return refuse(info, MP_IMPORT_DAMAGED, e, path, "its ampr_assets.index cannot be read: %s", ze.msg);
+    if (mp_lz4pk_open(d, len, &x->l, &older, &ze) != 0) {
+        free(d);
+        return refuse(info, older ? MP_IMPORT_LZ4 : MP_IMPORT_DAMAGED, e, path,
+                      older ? "%s" : "its LZ4 packs are damaged: %s", ze.msg);
+    }
+    free(d);
+    d = NULL;
+    uint32_t np = mp_lz4pk_pack_count(x->l);
+    x->nvol = np;
+    if (!(x->vol = malloc((np ? np : 1) * sizeof *x->vol))) goto oom;
+    for (uint32_t k = 0; k < np; k++) {
+        x->vol[k] = find_name(base, mp_lz4pk_pack_name(x->l, k));
+        if (x->vol[k] < 0) {
+            char m[300];
+            snprintf(m, sizeof m, "volume %s of its LZ4 packs is missing", mp_lz4pk_pack_name(x->l, k));
+            return refuse(info, MP_IMPORT_DAMAGED, e, path, "%s", m);
+        }
+        volume[x->vol[k]] = 1;
+    }
+    mp_lz4pk_volsrc vs = {lvol_read, vol_size, x};
+    if (mp_lz4pk_volumes(x->l, &vs, &ze) != 0)
+        return refuse(info, MP_IMPORT_DAMAGED, e, path, "its LZ4 packs are damaged: %s", ze.msg);
+    // the sidecars: each one, when it is there, must be of these packs and right
+    long ci = find_name(base, MP_LZ4PK_CRC), ri = find_name(base, MP_LZ4PK_RUNTIME);
+    if (ci >= 0 && (read_whole(base, (size_t)ci, ZPK_INDEX_MAX, &d, &len, &ze) != 0 || mp_lz4pk_crcs(x->l, d, len, &ze) != 0)) {
+        free(d);
+        return refuse(info, MP_IMPORT_DAMAGED, e, path, "its LZ4 packs are damaged: %s", ze.msg);
+    }
+    free(d);
+    d = NULL;
+    if (ri >= 0 && (read_whole(base, (size_t)ri, 4096, &d, &len, &ze) != 0 || mp_lz4pk_runtime(x->l, d, len, &ze) != 0)) {
+        free(d);
+        return refuse(info, MP_IMPORT_DAMAGED, e, path, "its LZ4 packs are damaged: %s", ze.msg);
+    }
+    free(d);
+    size_t nf = mp_lz4pk_count(x->l);
+    mp_idx3_entry *rows = calloc(nf ? nf : 1, sizeof *rows);
+    if (!rows) goto oom;
+    for (size_t i = 0; i < nf; i++) {
+        const char *p = mp_lz4pk_path(x->l, i);
+        size_t pl = strlen(p);
+        if (!(rows[i].app0_path = malloc(pl + APP0_LEN + 1))) {
+            mp_idx3_entries_free(rows, nf);
+            goto oom;
+        }
+        memcpy(rows[i].app0_path, "/app0/", APP0_LEN);
+        memcpy(rows[i].app0_path + APP0_LEN, p, pl + 1);
+        rows[i].size = mp_lz4pk_size(x->l, i);
+        rows[i].mtime = mp_lz4pk_mtime(x->l, i);
+        if (mp_lz4pk_packed(x->l, i)) {
+            info->packed_files++;
+            info->packed_bytes += rows[i].size;
+        }
+    }
+    if (nf > 1) qsort(rows, nf, sizeof *rows, cmp_row);
+    for (size_t i = 1; i < nf; i++)
+        if (!cmp_row(&rows[i - 1], &rows[i])) {
+            char m[300];
+            snprintf(m, sizeof m, "%s is twice in its ampr_assets.index", rows[i].app0_path + APP0_LEN);
+            mp_idx3_entries_free(rows, nf);
+            return refuse(info, MP_IMPORT_DAMAGED, e, path, "%s", m);
+        }
+    *rows_out = rows;
+    *nrows_out = nf;
+    info->packed = 1;
+    info->packs = "lz4";
+    info->volumes = np;
+    rc = 0;
+    return rc;
+oom:
+    mp_err_set(e, "out of memory");
+    info->code = NULL;
+    return -1;
+}
+
+// The packed game base (with its index ix, zstd's or LZ4's) as the source of its original files; base is taken
+// when it succeeds.
+static int open_packed(const char *path, mp_source *base, size_t ix, int lz4, mp_source **out, mp_import_info *info,
+                       mp_err *e) {
     imp *x = calloc(1, sizeof *x);
     mp_source *s = calloc(1, sizeof *s);
     uint8_t *zidx = NULL, *didx = NULL;
     size_t zlen = 0, dlen = 0, nrows = 0, n = 0;
     mp_idx3_entry *rows = NULL;
-    uint8_t *used = NULL, *exact = NULL;
+    uint8_t *used = NULL, *exact = NULL, *volume = NULL;
     rec *v = NULL;
     mp_err ze = {{0}};
     int rc = -1;
@@ -348,60 +471,68 @@ static int open_packed(const char *path, mp_source *base, size_t ix, mp_source *
         return -1;
     }
     x->base = base;
-    x->vol = malloc(MP_ZPK_MAX_VOLUMES * sizeof *x->vol);
-    exact = calloc(MP_ZPK_MAX_VOLUMES, 1);
     x->mu = mp_mutex_new();
-    if (!x->vol || !exact || !x->mu) goto oom;
-    for (uint32_t k = 0; k < MP_ZPK_MAX_VOLUMES; k++) x->vol[k] = -1;
-    size_t nb = mp_source_count(base);
-    // each volume: the file named exactly as the index names it, as the runtime opens it; else one of the same
-    // name in another case (a file system that ignores case)
-    for (size_t i = 0; i < nb; i++) {
-        int ex = 0;
-        long vn = volume_number(mp_source_entry(base, i)->path, &ex);
-        if (vn >= 0 && (x->vol[vn] < 0 || (ex && !exact[vn]))) {
-            x->vol[vn] = (long)i;
-            exact[vn] = (uint8_t)ex;
+    size_t nb = mp_source_count(base), nz = 0;
+    volume = calloc(nb ? nb : 1, 1);   // the base's entries that are volumes of LZ4 packs
+    if (!x->mu || !volume) goto oom;
+    if (lz4) {
+        if (open_lz4(path, x, ix, volume, &rows, &nrows, info, e) != 0) goto done;
+        nz = mp_lz4pk_count(x->l);
+    } else {
+        x->vol = malloc(MP_ZPK_MAX_VOLUMES * sizeof *x->vol);
+        exact = calloc(MP_ZPK_MAX_VOLUMES, 1);
+        if (!x->vol || !exact) goto oom;
+        for (uint32_t k = 0; k < MP_ZPK_MAX_VOLUMES; k++) x->vol[k] = -1;
+        // each volume: the file named exactly as the index names it, as the runtime opens it; else one of the
+        // same name in another case (a file system that ignores case)
+        for (size_t i = 0; i < nb; i++) {
+            int ex = 0;
+            long vn = volume_number(mp_source_entry(base, i)->path, &ex);
+            if (vn >= 0 && (x->vol[vn] < 0 || (ex && !exact[vn]))) {
+                x->vol[vn] = (long)i;
+                exact[vn] = (uint8_t)ex;
+            }
         }
-    }
-    // the packs: the index, then every volume it names, checked as the console checks them
-    if (read_whole(base, ix, ZPK_INDEX_MAX, &zidx, &zlen, &ze) != 0) {
-        rc = refuse(info, MP_IMPORT_DAMAGED, e, path, "its ampr_zstd.index cannot be read: %s", ze.msg);
-        goto done;
-    }
-    x->nvol = zlen >= MP_ZPK_HEADER ? (uint32_t)(zidx[20] | zidx[21] << 8 | zidx[22] << 16 | (uint32_t)zidx[23] << 24) : 0;
-    if (x->nvol > MP_ZPK_MAX_VOLUMES) x->nvol = MP_ZPK_MAX_VOLUMES;   // mp_zpk_open refuses it
-    x->vs.read = vol_read;
-    x->vs.size = vol_size;
-    x->vs.ctx = x;
-    if (mp_zpk_open(zidx, zlen, &x->vs, &x->z, &ze) != 0) {
-        rc = refuse(info, MP_IMPORT_DAMAGED, e, path, "its packs are damaged: %s", ze.msg);
-        goto done;
-    }
-    info->packed = 1;
-    info->level = mp_zpk_level(x->z);
-    info->volumes = mp_zpk_volume_count(x->z);
-    info->packed_files = mp_zpk_count(x->z);
-    for (size_t i = 0; i < info->packed_files; i++) info->packed_bytes += mp_zpk_size(x->z, i);
-    // ampr_emu.index: the date of every packed file, and the list of the files of the game
-    long di = find_ci(base, DUMP_INDEX);
-    if (di < 0) {
-        rc = refuse(info, MP_IMPORT_DAMAGED, e, path, "it has packs but no %s, which gives the dates of the packed files",
-                    DUMP_INDEX);
-        goto done;
-    }
-    if (read_whole(base, (size_t)di, DUMP_INDEX_MAX, &didx, &dlen, &ze) != 0 ||
-        mp_idx3_parse(didx, dlen, &rows, &nrows, &ze) != 0) {
-        rc = refuse(info, MP_IMPORT_DAMAGED, e, path, "its ampr_emu.index is damaged: %s", ze.msg);
-        goto done;
+        // the packs: the index, then every volume it names, checked as the console checks them
+        if (read_whole(base, ix, ZPK_INDEX_MAX, &zidx, &zlen, &ze) != 0) {
+            rc = refuse(info, MP_IMPORT_DAMAGED, e, path, "its ampr_zstd.index cannot be read: %s", ze.msg);
+            goto done;
+        }
+        x->nvol = zlen >= MP_ZPK_HEADER ? (uint32_t)(zidx[20] | zidx[21] << 8 | zidx[22] << 16 | (uint32_t)zidx[23] << 24) : 0;
+        if (x->nvol > MP_ZPK_MAX_VOLUMES) x->nvol = MP_ZPK_MAX_VOLUMES;   // mp_zpk_open refuses it
+        x->vs.read = vol_read;
+        x->vs.size = vol_size;
+        x->vs.ctx = x;
+        if (mp_zpk_open(zidx, zlen, &x->vs, &x->z, &ze) != 0) {
+            rc = refuse(info, MP_IMPORT_DAMAGED, e, path, "its packs are damaged: %s", ze.msg);
+            goto done;
+        }
+        info->packed = 1;
+        info->packs = "zstd";
+        info->level = mp_zpk_level(x->z);
+        info->volumes = mp_zpk_volume_count(x->z);
+        info->packed_files = mp_zpk_count(x->z);
+        for (size_t i = 0; i < info->packed_files; i++) info->packed_bytes += mp_zpk_size(x->z, i);
+        // ampr_emu.index: the date of every packed file, and the list of the files of the game
+        long di = find_ci(base, DUMP_INDEX);
+        if (di < 0) {
+            rc = refuse(info, MP_IMPORT_DAMAGED, e, path, "it has packs but no %s, which gives the dates of the packed files",
+                        DUMP_INDEX);
+            goto done;
+        }
+        if (read_whole(base, (size_t)di, DUMP_INDEX_MAX, &didx, &dlen, &ze) != 0 ||
+            mp_idx3_parse(didx, dlen, &rows, &nrows, &ze) != 0) {
+            rc = refuse(info, MP_IMPORT_DAMAGED, e, path, "its ampr_emu.index is damaged: %s", ze.msg);
+            goto done;
+        }
+        nz = mp_zpk_count(x->z);
     }
     used = calloc(nrows ? nrows : 1, 1);
-    size_t nz = mp_zpk_count(x->z);
     v = calloc(nb + nz + 1, sizeof *v);
     if (!used || !v) goto oom;
     for (size_t i = 0; i < nb; i++) {
         const mp_entry *en = mp_source_entry(base, i);
-        if (mp_import_left_out(en->path)) continue;
+        if (mp_import_left_out(en->path) || volume[i]) continue;
         long r = mp_idx3_find(rows, nrows, en->path);
         if (r >= 0) used[r] = 1;
         v[n].en = *en;
@@ -411,7 +542,9 @@ static int open_packed(const char *path, mp_source *base, size_t ix, mp_source *
         n++;
     }
     for (size_t i = 0; i < nz; i++) {
-        const char *p = mp_zpk_path(x->z, i);
+        if (lz4 && !mp_lz4pk_packed(x->l, i)) continue;   // a loose file it lists
+        const char *p = lz4 ? mp_lz4pk_path(x->l, i) : mp_zpk_path(x->z, i);
+        uint64_t size = lz4 ? mp_lz4pk_size(x->l, i) : mp_zpk_size(x->z, i);
         long r = mp_idx3_find(rows, nrows, p);
         if (r >= 0) used[r] = 1;
         if (mp_import_left_out(p)) continue;   // inside the packs or loose, the same
@@ -419,18 +552,19 @@ static int open_packed(const char *path, mp_source *base, size_t ix, mp_source *
             rc = refuse(info, MP_IMPORT_DAMAGED, e, path, "%s is in its packs but its ampr_emu.index does not list it", p);
             goto done;
         }
-        if (rows[r].size != mp_zpk_size(x->z, i)) {
+        if (rows[r].size != size) {
             rc = refuse(info, MP_IMPORT_DAMAGED, e, path, "%s is not of the size its ampr_emu.index says", p);
             goto done;
         }
         v[n].en.path = (char *)p;
-        v[n].en.size = mp_zpk_size(x->z, i);
-        v[n].en.mtime = rows[r].mtime;
+        v[n].en.size = size;
+        v[n].en.mtime = lz4 ? mp_lz4pk_mtime(x->l, i) : rows[r].mtime;
         v[n].bi = -1;
         v[n].zi = (long)i;
         v[n].row = r;
         n++;
     }
+    const char *list = lz4 ? "ampr_assets.index" : "ampr_emu.index";
     // a path loose and in the packs, or a file and a folder at once
     if (n > 1) qsort(v, n, sizeof *v, cmp_rec);
     for (size_t i = 1; i < n; i++)
@@ -451,8 +585,8 @@ static int open_packed(const char *path, mp_source *base, size_t ix, mp_source *
     for (size_t i = 0; i < n; i++)
         if (v[i].zi < 0 && v[i].row >= 0 && rows[v[i].row].size != v[i].en.size && !may_lack(v[i].en.path)) {
             char m[300];
-            snprintf(m, sizeof m, "%s is not of the size its ampr_emu.index says (%llu bytes, not %llu): a copy cut short?",
-                     v[i].en.path, (unsigned long long)v[i].en.size, (unsigned long long)rows[v[i].row].size);
+            snprintf(m, sizeof m, "%s is not of the size its %s says (%llu bytes, not %llu): a copy cut short?",
+                     v[i].en.path, list, (unsigned long long)v[i].en.size, (unsigned long long)rows[v[i].row].size);
             rc = refuse(info, MP_IMPORT_MISSING, e, path, "%s", m);
             goto done;
         }
@@ -463,7 +597,7 @@ static int open_packed(const char *path, mp_source *base, size_t ix, mp_source *
     }
     if (missing) {
         char m[300];
-        snprintf(m, sizeof m, "its ampr_emu.index lists %s, which is not there (%zu %s missing)",
+        snprintf(m, sizeof m, "its %s lists %s, which is not there (%zu %s missing)", list,
                  rows[first].app0_path + APP0_LEN, missing, missing == 1 ? "file" : "files");
         rc = refuse(info, MP_IMPORT_MISSING, e, path, "%s", m);
         goto done;
@@ -484,7 +618,7 @@ static int open_packed(const char *path, mp_source *base, size_t ix, mp_source *
     s->container = base->container;
     s->compressed = base->compressed;
     s->dlc_package = base->dlc_package;
-    s->readers = base->readers;   // its readers by its kind: decoding zstd keeps up with any disk
+    s->readers = base->readers;   // its readers by its kind: decoding keeps up with any disk
     s->package_id = base->package_id ? imp_id : NULL;
     s->ndirs = base->ndirs;
     s->read = imp_read;
@@ -509,6 +643,7 @@ done:
     free(v);
     free(used);
     free(exact);
+    free(volume);
     mp_idx3_entries_free(rows, nrows);
     free(didx);
     free(zidx);
@@ -530,30 +665,36 @@ int mp_import_open(const char *path, int what, mp_source **out, mp_import_info *
 int mp_import_source(const char *path, mp_source *s, int what, mp_source **out, mp_import_info *info, mp_err *e) {
     *out = NULL;
     memset(info, 0, sizeof *info);
-    long ix = -1, vol = -1;
+    long ix = -1, vol = -1, lx = -1, lz4 = -1;
     for (size_t i = 0; i < mp_source_count(s); i++) {
         const char *p = mp_source_entry(s, i)->path;
-        if (mp_import_lz4(p)) {
-            return refuse(info, MP_IMPORT_LZ4, e, path, "%s",
-                          "it is packed with LZ4 packs (ampr_assets), which MaxPack does not read yet: give it as "
-                          "it was dumped, or packed with zstd packs");
+        // the indexes named exactly so, as the runtime opens them; else one in another case
+        if (ieq(p, MP_LZ4PK_INDEX)) {
+            if (lx < 0 || !strcmp(p, MP_LZ4PK_INDEX)) lx = (long)i;
+        } else if (mp_import_lz4(p)) {
+            if (lz4 < 0) lz4 = (long)i;
+        } else if (ieq(p, ZPK_INDEX)) {
+            if (ix < 0 || !strcmp(p, ZPK_INDEX)) ix = (long)i;
+        } else if (vol < 0 && mp_pack_already_packed(p)) {
+            vol = (long)i;
         }
-        // the index named exactly so, as the runtime opens it; else one in another case
-        if (ieq(p, ZPK_INDEX) && (ix < 0 || !strcmp(p, ZPK_INDEX))) ix = (long)i;
-        else if (vol < 0 && mp_pack_already_packed(p)) vol = (long)i;
     }
-    if (ix < 0 && vol >= 0) {
+    if ((lx >= 0 || lz4 >= 0) && (ix >= 0 || vol >= 0))
+        return refuse(info, MP_IMPORT_LZ4, e, path, "%s",
+                      "it has zstd and LZ4 packs at once (the console's runtime reads only the zstd ones): give it as it "
+                      "was dumped");
+    if ((ix < 0 && vol >= 0) || (lx < 0 && lz4 >= 0)) {
         char m[300];
-        snprintf(m, sizeof m, "it has %s but no ampr_zstd.index: its packs cannot be read",
-                 mp_source_entry(s, (size_t)vol)->path);
+        snprintf(m, sizeof m, "it has %s but no %s: its packs cannot be read", mp_source_entry(s, (size_t)(vol >= 0 ? vol : lz4))->path,
+                 vol >= 0 ? ZPK_INDEX : MP_LZ4PK_INDEX);
         return refuse(info, MP_IMPORT_DAMAGED, e, path, "%s", m);
     }
-    if (ix < 0) {
+    if (ix < 0 && lx < 0) {
         *out = s;
         return 0;
     }
     mp_source *g = NULL;
-    if (open_packed(path, s, (size_t)ix, &g, info, e) != 0) return -1;
+    if (open_packed(path, s, (size_t)(lx >= 0 ? lx : ix), lx >= 0, &g, info, e) != 0) return -1;
     // a game has eboot.bin, loose or packed; without it, it is a DLC (pack --dlc refuses those packed already)
     if (what == MP_OPEN_GAME && find_ci(g, "eboot.bin") < 0) {
         ((imp *)g->impl)->base = NULL;   // s stays the caller's

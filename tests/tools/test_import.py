@@ -2,12 +2,13 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Command-line tests of packing a game packed already with zstd packs.
 
-Usage: test_import.py <maxpack> <fixtures folder> <temporary folder> [<mp_fpkgtool>]
+Usage: test_import.py <maxpack> <fixtures folder> <temporary folder> [<mp_fpkgtool> [<mp_lz4pack>]]
 
 A packed folder (made with pack --folder) is packed again to a .p5z: the one of the dump at that level,
 from the folder and from an exFAT image of it alike; with --keep-packs its chunks are kept, at their
 level. info --json tells what it is, and what is damaged, missing or not zstd is refused with its code. The
-same from a PS5 package of the folder, with DLC, and with names that differ only in case beside the real ones.
+same from a PS5 package of the folder, with DLC, and with names that differ only in case beside the real ones;
+and from the same game in LZ4 packs (mp_lz4pack makes them), in a folder and in an exFAT image.
 """
 import importlib.util
 import json
@@ -18,6 +19,7 @@ import sys
 
 EXE, FX, TMP = sys.argv[1], sys.argv[2], sys.argv[3]
 FPKGTOOL = sys.argv[4] if len(sys.argv) > 4 else None
+LZ4PACK = sys.argv[5] if len(sys.argv) > 5 else None
 BASIC = os.path.join(FX, "basic.exfat")
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import make_exfat  # noqa: E402
@@ -196,7 +198,7 @@ with open(os.path.join(lz4, "sce_sys", "param.json"), "wb") as f:
     f.write(b'{"titleId":"PPSA01234"}')
 with open(os.path.join(lz4, "ampr_assets.index"), "wb") as f:
     f.write(b"AMPRPAK4" + bytes(56))
-refused("lz4", lz4, "packs_lz4", "LZ4")
+refused("lz4", lz4, "packs_damaged", "ampr_assets.index")   # a manifest that is a header and nothing else
 rc, out, _ = run("info", "--json", lz4)
 try:
     check("info_lz4", json.loads(out)["packs"] == "lz4", out)
@@ -343,6 +345,51 @@ try:
     check("no_level", json.loads(out)["packed_level"] == 0, out)
 except (ValueError, KeyError) as ex:
     check("no_level_json", False, repr(ex) + " " + out)
+
+# the game in LZ4 packs (other tool's split, 3 packs, LZ4, raw and shared chunks, the CRC sidecar and a runtime
+# profile): packed again it is the dump's .p5z, from a folder and from an exFAT image of it; --keep-packs cannot
+# keep LZ4 chunks: it is compressed again, and says so
+if LZ4PACK:
+    LZ4 = fresh(at("lz4game"))
+    p = subprocess.run([LZ4PACK, BASIC, LZ4], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    check("lz4_made", p.returncode == 0, p.stderr.decode("utf-8", "replace"))
+    rc, out, err = run("info", "--json", LZ4)
+    try:
+        info = json.loads(out)
+        check("lz4_info", info["packs"] == "lz4" and info["packed_level"] == 0 and info["unpacked_size"] == DUMP_SIZE
+              and info["volumes"] == 3 and info["content"] == "game", out)
+    except (ValueError, KeyError) as ex:
+        check("lz4_info_json", False, repr(ex) + " " + out + err)
+    for keep in ([], ["--keep-packs"]):
+        rc, out, err = pack(LZ4, at("lz4.p5z"), "--p5z", *keep)
+        res = result(out)
+        tag = "lz4" + ("_keep" if keep else "")
+        check(tag + "_identical", rc == 0 and same(at("a19.p5z"), at("lz4.p5z")), err)
+        check(tag + "_result", res.get("from_packed") is True and res.get("packs") == "lz4" and res.get("kept_packs") is False
+              and res.get("packed_level") == 0, out)
+        check(tag + "_says", "made from a packed game (LZ4 packs): compressed again" in err
+              and (not keep or "--keep-packs keeps zstd packs only" in err), err)
+    with open(fresh(at("lz4game.exfat")), "wb") as f:
+        f.write(image_of(LZ4))
+    rc, out, err = pack(at("lz4game.exfat"), at("lz4i.p5z"), "--p5z")
+    check("lz4_image_identical", rc == 0 and same(at("a19.p5z"), at("lz4i.p5z")), err)
+    # a damaged chunk, and a file it lists that is not there: refused with their codes
+    bad = copy_tree(LZ4, at("lz4_bad"))
+    with open(os.path.join(bad, "ampr_assets.index"), "rb") as f:
+        manifest = f.read()
+    nchunks, chunks = int.from_bytes(manifest[48:56], "little"), int.from_bytes(manifest[80:88], "little")
+    loc = int.from_bytes(manifest[chunks:chunks + 8], "little")
+    desc = int.from_bytes(manifest[chunks + 8:chunks + 12], "little")
+    where = (loc & ((1 << 48) - 1)) + ((desc & 0xFFFFF) + 1) // 2   # the middle of the first chunk
+    with open(os.path.join(bad, "ampr_assets-%03d.pak" % (loc >> 48)), "r+b") as f:
+        f.seek(where)
+        b = f.read(1)
+        f.seek(where)
+        f.write(bytes([b[0] ^ 0x5A]))
+    refused("lz4_damaged", bad, "packs_damaged", "damaged")
+    bad = copy_tree(LZ4, at("lz4_miss"))
+    os.remove(os.path.join(bad, "random.bin"))
+    refused("lz4_missing", bad, "packed_file_missing", "random.bin")
 
 print("%d failures" % len(failures))
 sys.exit(1 if failures else 0)

@@ -1149,7 +1149,8 @@ check("info_json_dump_index_ok", rc == 0 and c and c["checkable"] is True and c[
 rc, c, err = info_complete(os.path.join(DI, "broken"))
 check("info_json_dump_index_broken", rc == 0 and c and c["source"] == "dump_index" and c["missing"] == 2
       and c["size_mismatch"] == 1 and c["present"] == 10, str(c) + err)
-for name, reason in (("foreign", "dump_index_mismatch"), ("damaged", "dump_index_damaged"), ("packed", "dump_index_packed")):
+# packed/ has an ampr_assets.index that is only a header: LZ4 packs that cannot be read, so not checked
+for name, reason in (("foreign", "dump_index_mismatch"), ("damaged", "dump_index_damaged"), ("packed", "unreadable")):
     rc, c, err = info_complete(os.path.join(DI, name))
     check("info_json_dump_index_" + name, rc == 0 and c and c["checkable"] is False and c["reason"] == reason
           and c["source"] == "", str(c) + err)

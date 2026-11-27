@@ -87,8 +87,10 @@ typedef struct {
     unsigned dlc_data, dlc_license;
     uint64_t dlc_bytes;
     const char *dlc_error;
-    // made from a game packed already (mp_import.h): its packs' zstd level, and whether their chunks were kept
+    // made from a game packed already (mp_import.h): its packs ("zstd" or "lz4", static; NULL for a dump), their
+    // zstd level (0 for LZ4), and whether their chunks were kept (only zstd chunks can be)
     int from_packed, packed_level, kept_packs;
+    const char *packs;
     // why it stopped, as a code for a front end, when it says one (a packed game refused: mp_import.h), else NULL
     const char *code;
 } mp_pack_result;

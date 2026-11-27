@@ -153,7 +153,7 @@ static int describe_source(const char *path, mp_describe *d, mp_complete *c, mp_
         for (size_t i = 0; i < n; i++)
             if (!mp_import_left_out(mp_source_entry(s, i)->path)) d->unpacked_size += mp_source_entry(s, i)->size;
     }
-    // LZ4 packs (ampr_assets.index, its packs or folder at the root), which pack does not read yet
+    // LZ4 packs (ampr_assets.index, its sidecars, its packs or folder at the root): read below as pack reads them
     for (size_t i = 0; i < n; i++) {
         const char *p = mp_source_entry(s, i)->path;
         if (mp_import_lz4(p)) snprintf(d->packs, sizeof d->packs, "lz4");
@@ -170,14 +170,20 @@ static int describe_source(const char *path, mp_describe *d, mp_complete *c, mp_
     // a game packed already: the rest is of the files it was made of, as pack reads them (a param.json or an
     // eboot.bin in its packs too); packs that cannot be read so leave its files as they are, unchecked
     int unreadable = 0;
-    if (ix >= 0 && !strcmp(d->packs, "zstd")) {
+    if (d->packs[0]) {
         mp_source *g = NULL;
         mp_import_info ii;
         mp_err ie = {{0}};
-        if (mp_import_source(path, s, MP_OPEN_ANY, &g, &ii, &ie) == 0)
+        if (mp_import_source(path, s, MP_OPEN_ANY, &g, &ii, &ie) == 0) {
             s = g;
-        else
+            // what its files take unpacked and its packs, as pack reads them (the LZ4 manifest has no total)
+            d->unpacked_size = 0;
+            for (size_t i = 0; i < mp_source_count(s); i++) d->unpacked_size += mp_source_entry(s, i)->size;
+            d->packed_files = ii.packed_files;
+            d->volumes = ii.volumes;
+        } else {
             unreadable = 1;
+        }
     }
     long pj = find_ci(s, PARAM_PATH);
     if (pj >= 0) {

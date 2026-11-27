@@ -67,10 +67,11 @@ static void usage(FILE *out) {
             "one of them, usually compressed); a package is a PS5 debug package (FPKG, .pkg), which MaxPack\n"
             "decrypts with its passcode as it reads it. MaxPack tells which by its contents, not by its name.\n"
             "A game packed already with zstd packs (ampr_zstd.index and its ampr_zstd-NNN.pak, as Dump Forge\n"
-            "and Alembic make them, also inside an image such as a .zstd one) is packed from the files it was\n"
+            "and Alembic make them, also inside an image such as a .zstd one) or with LZ4 packs (ampr_assets.index\n"
+            "and its ampr_assets-NNN.pak, as ampr_emu and exFAT2AMPR make them) is packed from the files it was\n"
             "made of: its packs are read decompressed and packed again, the AMPR files and the other tool's\n"
-            "fakelib/libSceAmpr.sprx left out. Damaged packs, a file its ampr_emu.index lists that is not there\n"
-            "and LZ4 packs (ampr_assets) are refused.\n"
+            "fakelib/libSceAmpr.sprx left out. Damaged packs and a file its list gives that is not there are\n"
+            "refused.\n"
             "\n"
             "Options for pack, analyze, info, icon and verify --against:\n"
             "  --passcode P       the 32-character passcode of a package, if it is not the default\n"
@@ -87,7 +88,8 @@ static void usage(FILE *out) {
             "  --max-file-size N  with --p5z: stop and delete the .p5z if it goes over N bytes\n"
             "  --volume-limit N   for testing: volumes of at most N bytes (262208 to 4294901760,\n"
             "                     default 4294901760), to get several from a small game\n"
-            "  --keep-packs       for a game packed already: its packs' chunks go in as they are, decompressed\n"
+            "  --keep-packs       for a game packed already with zstd packs (LZ4 ones are always compressed\n"
+            "                     again): its packs' chunks go in as they are, decompressed\n"
             "                     only to check them and hash each file (faster); what is made keeps their\n"
             "                     zstd level, and --level is not used. What MaxPack leaves loose comes out\n"
             "                     of the packs, and what it packs that the packs lack is compressed at their\n"
@@ -1047,6 +1049,9 @@ static int run_pack(int argc, char **argv) {
     if (r.from_packed) {
         if (r.kept_packs)
             fprintf(hum, "  made from a packed game (zstd level %d): its packs kept as they are\n", r.packed_level);
+        else if (r.packs && !strcmp(r.packs, "lz4"))   // LZ4 chunks cannot go into a .p5z as they are
+            fprintf(hum, "  made from a packed game (LZ4 packs): compressed again at level %d%s\n", o.level,
+                    o.keep_packs ? " (--keep-packs keeps zstd packs only)" : "");
         else
             fprintf(hum, "  made from a packed game (zstd level %d): compressed again at level %d\n", r.packed_level, o.level);
     }
@@ -1066,13 +1071,13 @@ static int run_pack(int argc, char **argv) {
                  ",\"original_size\":%llu,\"output_size\":%llu,\"loose_bytes\":%llu,\"packed_bytes\":%llu,"
                  "\"stored_bytes\":%llu,\"volumes\":%llu,\"runtime_without_zstd\":%s,\"left_out_files\":%llu,"
                  "\"left_out_bytes\":%llu,\"dlc_data\":%u,\"dlc_license\":%u,\"dlc_bytes\":%llu,\"from_packed\":%s,"
-                 "\"packed_level\":%d,\"kept_packs\":%s,\"completeness\":",
+                 "\"packs\":\"%s\",\"packed_level\":%d,\"kept_packs\":%s,\"completeness\":",
                  (unsigned long long)(r.loose_bytes + r.packed_bytes),
                  (unsigned long long)(p5z ? psize : folder_bytes(dst)), (unsigned long long)r.loose_bytes,
                  (unsigned long long)r.packed_bytes, (unsigned long long)r.stored_bytes,
                  (unsigned long long)r.volumes, r.runtime_without_zstd ? "true" : "false",
                  (unsigned long long)r.left_out_files, (unsigned long long)r.left_out_bytes, r.dlc_data, r.dlc_license,
-                 (unsigned long long)r.dlc_bytes, r.from_packed ? "true" : "false", r.packed_level,
+                 (unsigned long long)r.dlc_bytes, r.from_packed ? "true" : "false", r.packs ? r.packs : "", r.packed_level,
                  r.kept_packs ? "true" : "false");
         mp_jbuf b = {0};
         mp_jbuf_raw(&b, extra);

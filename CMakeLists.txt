@@ -43,7 +43,7 @@ mp_warnings(maxpack_analyze)
 file(GLOB MP_PACK_SRC CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/pack/*.c)
 add_library(maxpack_pack STATIC ${MP_PACK_SRC})
 target_include_directories(maxpack_pack PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/pack)
-target_link_libraries(maxpack_pack PUBLIC maxpack_analyze)
+target_link_libraries(maxpack_pack PUBLIC maxpack_analyze mp_lz4)
 mp_warnings(maxpack_pack)
 
 # Minimal networking (phase 2): HTTP server and client.
@@ -273,7 +273,7 @@ if(MAXPACK_BUILD_TESTS)
   # pack of a game packed already, from the command line: a folder and an exFAT image of it (tests/tools/test_import.py)
   add_test(NAME test_import_cli COMMAND ${Python3_EXECUTABLE} -I
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/tools/test_import.py $<TARGET_FILE:maxpack> ${MP_FIXTURES_DIR}
-    ${MP_TEST_TMP}/import_cli $<TARGET_FILE:mp_fpkgtool>)
+    ${MP_TEST_TMP}/import_cli $<TARGET_FILE:mp_fpkgtool> $<TARGET_FILE:mp_lz4pack>)
   set_tests_properties(test_import_cli PROPERTIES FIXTURES_REQUIRED "exfat;fpkg;playgo" TIMEOUT 300)
   mp_add_test(test_cancel FIXTURES)
   mp_add_test(test_verify FIXTURES)
@@ -303,6 +303,12 @@ if(MAXPACK_BUILD_TESTS)
   add_executable(mp_cat tests/tools/mp_cat.c)
   target_link_libraries(mp_cat PRIVATE maxpack_core)
   mp_warnings(mp_cat)
+
+  # Test tool for test_import.py: a game's files made into LZ4 packs (tests/mp_lz4pack.h).
+  add_executable(mp_lz4pack tests/tools/mp_lz4pack.c)
+  target_link_libraries(mp_lz4pack PRIVATE maxpack_pack)
+  target_include_directories(mp_lz4pack PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests)
+  mp_warnings(mp_lz4pack)
 
   # Test tool for make_fpkg.py: encrypts the packages it writes with the engine's AES.
   add_executable(mp_fpkgtool tests/tools/mp_fpkgtool.c)

@@ -12,6 +12,7 @@
 #include "mp_hash.h"
 #include "mp_idx3.h"
 #include "mp_import.h"
+#include "mp_lz4pack.h"
 #include "mp_measure.h"
 #include "mp_source.h"
 #include "mp_zpk.h"
@@ -692,7 +693,7 @@ MP_TEST(refuses_an_unlisted_packed_file) {
     mpt_clear(TMP "/unlisted");
 }
 
-// LZ4 packs (ampr_assets.index and its packs) are not read yet.
+// An LZ4 manifest that is none (a header and nothing else) is damaged packs.
 MP_TEST(refuses_lz4_packs) {
     mpt_clear(TMP "/lz4");
     mpt_put_text(TMP "/lz4/eboot.bin", "EBOOT");
@@ -700,7 +701,7 @@ MP_TEST(refuses_lz4_packs) {
     uint8_t head[64] = "AMPRPAK4";
     mpt_put(TMP "/lz4/ampr_assets.index", head, sizeof head);
     mpt_put(TMP "/lz4/ampr_assets-000.pak", head, sizeof head);
-    refused(TMP "/lz4", MP_IMPORT_LZ4, "LZ4");
+    refused(TMP "/lz4", MP_IMPORT_DAMAGED, "ampr_assets.index");
     mpt_clear(TMP "/lz4");
 }
 
@@ -820,6 +821,234 @@ MP_TEST(cancel_while_reading_the_packs) {
     }
 }
 
+// ---- LZ4 packs -------------------------------------------------------------------------------
+
+#define LZ4F TMP "/lz4game"   // the dump in LZ4 packs: 3 packs of 4 KiB pages, LZ4, raw and shared chunks
+
+static int lz4_ready = 0;
+
+static void make_lz4(void) {
+    make_reference();
+    if (lz4_ready) return;
+    lz4_ready = 1;
+    mpt_clear(LZ4F);
+    mpt_lz4_opts o = {3, 4096, mpt_lz4_odd, 1, 1, 0, 0, 0};
+    if (mpt_lz4_pack(MPT_BASIC, LZ4F, &o) != 0) {
+        MP_FAIL_("could not make the LZ4 packs");
+        return;
+    }
+    // what the tests want of them
+    if (!o.lz4_chunks || !o.raw_chunks || !o.shared_chunks)
+        MP_FAIL_("%llu LZ4, %llu raw, %llu shared chunks", (unsigned long long)o.lz4_chunks,
+                 (unsigned long long)o.raw_chunks, (unsigned long long)o.shared_chunks);
+}
+
+// The game in LZ4 packs, packed again: the dump's .p5z byte for byte, whatever the thread count, also asked
+// to keep the packs (LZ4 chunks cannot go into a .p5z: it is compressed again and says so).
+MP_TEST(lz4_recompress_is_identical) {
+    make_lz4();
+    unsigned threads[2] = {1, all_threads()};
+    for (int k = 0; k < 2; k++)
+        for (int keep = 0; keep < 2; keep++) {
+            mp_pack_result r;
+            mp_err e = {{0}};
+            if (pack_ex(LZ4F, TMP "/lz4.p5z", 1, 19, threads[k], MP_ZPK_VOLUME_LIMIT, keep, &r, &e) != 0) {
+                MP_FAIL_("%u threads, keep %d: %s", threads[k], keep, e.msg);
+                continue;
+            }
+            if (!same_bytes(A19, TMP "/lz4.p5z")) MP_FAIL_("%u threads, keep %d: not the dump's .p5z", threads[k], keep);
+            MP_CHECK(r.from_packed == 1 && r.kept_packs == 0 && r.packed_level == 0);
+            MP_CHECK_STR(r.packs, "lz4");
+            mpt_clear(TMP "/lz4.p5z");
+        }
+}
+
+// As the packer sees it: the dump's files, sizes, dates and bytes; no AMPR file, no runtime.
+MP_TEST(lz4_source_has_the_original_files) {
+    make_lz4();
+    mp_source *a = NULL, *b = NULL;
+    mp_import_info info;
+    mp_err e = {{0}};
+    MP_CHECK(mp_source_open(MPT_BASIC, &a, &e) == 0);
+    MP_CHECK(mp_import_open(LZ4F, MP_OPEN_GAME, &b, &info, &e) == 0);
+    if (!a || !b) {
+        MP_FAIL_("%s", e.msg);
+        mp_source_close(a);
+        mp_source_close(b);
+        return;
+    }
+    MP_CHECK(info.packed == 1 && info.level == 0 && info.volumes == 3);
+    MP_CHECK_STR(info.packs, "lz4");
+    MP_CHECK(mp_import_zpk(b) == NULL);   // nothing to keep
+    MP_CHECK_EQ_U64(mp_source_count(a), mp_source_count(b));
+    uint8_t *x = malloc(1u << 20), *y = malloc(1u << 20);
+    for (size_t i = 0; i < mp_source_count(a) && i < mp_source_count(b); i++) {
+        const mp_entry *ea = mp_source_entry(a, i), *eb = mp_source_entry(b, i);
+        MP_CHECK_STR(ea->path, eb->path);
+        MP_CHECK_EQ_U64(ea->size, eb->size);
+        MP_CHECK(ea->mtime == eb->mtime);
+        // a read across a chunk's end too
+        size_t n = ea->size > (1u << 20) ? (1u << 20) : (size_t)ea->size, from = n > 70000 ? 70000 : 0;
+        MP_CHECK(mp_source_read(a, i, from, x, n - from, &e) == 0);
+        MP_CHECK(mp_source_read(b, i, from, y, n - from, &e) == 0);
+        if (memcmp(x, y, n - from)) MP_FAIL_("%s reads otherwise", ea->path);
+    }
+    free(x);
+    free(y);
+    mp_source_close(a);
+    mp_source_close(b);
+    MP_CHECK(mp_import_left_out("ampr_assets.index") && mp_import_left_out("ampr_assets.index.crc") &&
+             mp_import_left_out("AMPR_ASSETS.INDEX.RUNTIME") && mp_import_left_out("ampr_assets-002.pak"));
+}
+
+static uint8_t *memmem_simple(uint8_t *h, size_t n, const char *needle) {
+    size_t k = strlen(needle);
+    for (size_t i = 0; k && i + k <= n; i++)
+        if (!memcmp(h + i, needle, k)) return h + i;
+    return NULL;
+}
+
+// The manifest of a copy, its record of path changed in place (to what of the same length) and sealed again.
+static void lz4_rename(const char *dir, const char *from, const char *to) {
+    char p[512];
+    snprintf(p, sizeof p, "%s/ampr_assets.index", dir);
+    size_t n = 0;
+    uint8_t *d = mpt_slurp(p, &n);
+    uint8_t *at = d ? memmem_simple(d, n, from) : NULL;
+    if (!at || strlen(from) != strlen(to)) {
+        MP_FAIL_("no %s in the manifest", from);
+    } else {
+        memcpy(at, to, strlen(to));
+        mpt_put(p, d, n);
+        if (mpt_lz4_reseal(p) != 0) MP_FAIL_("reseal");
+    }
+    free(d);
+}
+
+// A chunk record of the manifest of a copy pointed past its pack, and sealed again.
+static void lz4_chunk_out(const char *dir) {
+    char p[512];
+    snprintf(p, sizeof p, "%s/ampr_assets.index", dir);
+    size_t n = 0;
+    uint8_t *d = mpt_slurp(p, &n);
+    if (!d || n < MP_LZ4PK_HEADER) {
+        MP_FAIL_("no manifest");
+        free(d);
+        return;
+    }
+    uint64_t chunks = mpt_r64(d + 80);
+    uint64_t loc = mpt_r64(d + chunks);
+    mpt_w64(d + chunks, (loc & 0xFFFF000000000000ull) | (64ull << 20));   // 64 MiB into its pack
+    mpt_put(p, d, n);
+    if (mpt_lz4_reseal(p) != 0) MP_FAIL_("reseal");
+    free(d);
+}
+
+// The first chunk of that codec: its pack and place, from the manifest.
+static int lz4_chunk_of(const char *dir, int codec, uint32_t *pack, uint64_t *off, uint32_t *stored) {
+    char p[512];
+    snprintf(p, sizeof p, "%s/ampr_assets.index", dir);
+    size_t n = 0;
+    uint8_t *d = mpt_slurp(p, &n);
+    int found = 0;
+    for (uint64_t k = 0; d && k < mpt_r64(d + 48) && !found; k++) {
+        const uint8_t *c = d + mpt_r64(d + 80) + 12 * k;
+        uint32_t desc = mpt_r32(c + 8);
+        if ((int)((desc >> 20) & 3) != codec || desc & 1u << 22) continue;
+        *off = mpt_r64(c) & ((1ull << 48) - 1);
+        *pack = (uint32_t)(mpt_r64(c) >> 48);
+        *stored = (desc & 0xFFFFF) + 1;
+        found = 1;
+    }
+    free(d);
+    if (!found) MP_FAIL_("no chunk of codec %d", codec);
+    return found ? 0 : -1;
+}
+
+MP_TEST(lz4_refuses_damage) {
+    make_lz4();
+    const char *bad = TMP "/lz4bad";
+    uint32_t pack = 0, stored = 0;
+    uint64_t off = 0;
+    char p[512];
+    // a byte of an LZ4 chunk, and of a raw one (the CRC sidecar tells it)
+    for (int codec = 1; codec >= 0; codec--) {
+        copy_tree(LZ4F, bad);
+        if (lz4_chunk_of(bad, codec, &pack, &off, &stored) != 0) return;
+        snprintf(p, sizeof p, "%s/ampr_assets-%03u.pak", bad, pack);
+        flip_byte(p, off + stored / 2);
+        refused(bad, MP_IMPORT_DAMAGED, codec ? "chunk" : "CRC");
+    }
+    // the manifest's CRC, a volume's header, the CRC sidecar's, the runtime profile's
+    const char *what[] = {"ampr_assets.index", "ampr_assets-001.pak", "ampr_assets.index.crc", "ampr_assets.index.runtime"};
+    uint64_t at[] = {300, 30, 50, 40};
+    for (int i = 0; i < 4; i++) {
+        copy_tree(LZ4F, bad);
+        snprintf(p, sizeof p, "%s/%s", bad, what[i]);
+        flip_byte(p, at[i]);
+        refused(bad, MP_IMPORT_DAMAGED, what[i]);
+    }
+    // a chunk past the end of its pack, with the manifest's CRCs right
+    copy_tree(LZ4F, bad);
+    lz4_chunk_out(bad);
+    refused(bad, MP_IMPORT_DAMAGED, "chunk");
+    // a volume missing
+    copy_tree(LZ4F, bad);
+    mpt_clear(TMP "/lz4bad/ampr_assets-002.pak");
+    refused(bad, MP_IMPORT_DAMAGED, "ampr_assets-002.pak");
+    mpt_clear(bad);
+}
+
+MP_TEST(lz4_refuses_tricky_paths) {
+    make_lz4();
+    const char *bad = TMP "/lz4path";
+    // a path out of the game, and one that is not under /app0/
+    const char *from[] = {"/app0/data/frag.bin", "/app0/data/frag.bin"};
+    const char *to[] = {"/app0/../a/frag.bin", "/app9/data/frag.bin"};
+    for (int i = 0; i < 2; i++) {
+        copy_tree(LZ4F, bad);
+        lz4_rename(bad, from[i], to[i]);
+        refused(bad, MP_IMPORT_DAMAGED, "path");
+    }
+    mpt_clear(bad);
+}
+
+MP_TEST(lz4_refuses_missing_and_twice) {
+    make_lz4();
+    const char *bad = TMP "/lz4miss";
+    copy_tree(LZ4F, bad);
+    mpt_clear(TMP "/lz4miss/random.bin");   // loose in the packs' game
+    refused(bad, MP_IMPORT_MISSING, "random.bin");
+    copy_tree(LZ4F, bad);
+    mpt_put_text(TMP "/lz4miss/data/frag.bin", "a loose copy of a packed file");
+    refused(bad, MP_IMPORT_TWICE, "data/frag.bin");
+    copy_tree(LZ4F, bad);
+    mpt_put_text(TMP "/lz4miss/data/frag.bin/child.txt", "a loose file under a packed one");
+    refused(bad, MP_IMPORT_TWICE, "data/frag.bin");
+    mpt_clear(bad);
+}
+
+// LZ4 packs of an older manifest (AMPRPAK3) are not read; nor a game with zstd and LZ4 packs at once.
+MP_TEST(lz4_refuses_other_kinds) {
+    make_lz4();
+    const char *bad = TMP "/lz4old";
+    copy_tree(LZ4F, bad);
+    char p[512];
+    snprintf(p, sizeof p, "%s/ampr_assets.index", bad);
+    size_t n = 0;
+    uint8_t *d = mpt_slurp(p, &n);
+    if (d) {
+        d[7] = '3';
+        mpt_put(p, d, n);
+    }
+    free(d);
+    refused(bad, MP_IMPORT_LZ4, "AMPRPAK3");
+    copy_tree(LZ4F, bad);
+    mpt_copy_file(FOLDER "/ampr_zstd.index", TMP "/lz4old/ampr_zstd.index");
+    refused(bad, MP_IMPORT_LZ4, "zstd");
+    mpt_clear(bad);
+}
+
 int main(void) {
     mp_err e = {{0}};
     mpt_clear(TMP);
@@ -842,5 +1071,11 @@ int main(void) {
     MP_RUN(leaves_out_ampr_files_in_the_packs);
     MP_RUN(refuses_a_chunk_of_two_frames);
     MP_RUN(cancel_while_reading_the_packs);
+    MP_RUN(lz4_recompress_is_identical);
+    MP_RUN(lz4_source_has_the_original_files);
+    MP_RUN(lz4_refuses_damage);
+    MP_RUN(lz4_refuses_tricky_paths);
+    MP_RUN(lz4_refuses_missing_and_twice);
+    MP_RUN(lz4_refuses_other_kinds);
     MP_TEST_MAIN_END();
 }

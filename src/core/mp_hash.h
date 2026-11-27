@@ -8,7 +8,7 @@
 // XXH64 (the copy of xxhash that zstd ships, inline).
 uint64_t mp_xxh64(const void *p, size_t n, uint64_t seed);
 
-// SHA-256 (FIPS 180-4), in portable C.
+// SHA-256 (FIPS 180-4), in portable C and with the CPU's SHA instructions where there are any.
 typedef struct {
     uint32_t h[8];
     uint64_t len;
@@ -19,9 +19,10 @@ void mp_sha256_init(mp_sha256 *s);
 void mp_sha256_update(mp_sha256 *s, const void *p, size_t n);
 void mp_sha256_final(mp_sha256 *s, uint8_t out[32]);
 void mp_sha256_hex(const uint8_t d[32], char out[65]);
-// 1 if SHA-256 runs on the CPU's SHA instructions (64-bit x86 PCs that have them), 0 if on the
-// portable code; the digests are the same. mp_sha256_use_accel(0) forces the portable code (for the
-// tests) and mp_sha256_use_accel(1) goes back to the instructions where there are any.
+// 1 if SHA-256 runs on the CPU's SHA instructions (on 64-bit x86, PCs and console alike, when the CPU
+// has them; on 64-bit ARM when built for a CPU that has them, as for Apple's), 0 if on the portable
+// code; the digests are the same. mp_sha256_use_accel(0) forces the portable code (for the tests)
+// and mp_sha256_use_accel(1) goes back to the instructions where there are any.
 int mp_sha256_accel(void);
 void mp_sha256_use_accel(int on);
 

@@ -205,8 +205,8 @@ static void dec_block(const mp_aes128 *a, const uint8_t *in, uint8_t *out) {
 }
 
 // ---- the CPU's AES instructions (AES-NI) ----------------------------------------------------
-// On the same 64-bit x86 PCs as mp_hash's SHA instructions; the console build (and any other CPU)
-// takes the portable code above.
+// On 64-bit x86 PCs (Windows, Linux and macOS); the console build (and any other CPU) takes the
+// portable code above.
 #if (defined(_M_X64) || defined(__x86_64__)) && (defined(_WIN32) || defined(__linux__) || defined(__APPLE__))
 #define MP_AES_NI 1
 #include <immintrin.h>

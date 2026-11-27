@@ -57,18 +57,33 @@ static void sha_block(uint32_t h[8], const uint8_t *p) {
     h[7] += k;
 }
 
-// SHA-256 with the CPU's SHA instructions (x86 SHA extensions: Intel since Goldmont and Ice Lake, AMD
-// since Zen), several times faster than the portable code. Only on 64-bit x86 PCs (Windows, Linux,
-// macOS); elsewhere, and on CPUs without them, the portable code runs. Same digests either way.
-#if (defined(_M_X64) || defined(__x86_64__)) && (defined(_WIN32) || defined(__linux__) || defined(__APPLE__))
+static const uint32_t IV[8] = {0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+                               0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19};
+
+// SHA-256 with the CPU's SHA instructions, several times faster than the portable code:
+// - on 64-bit x86 (the PCs and the console), the SHA extensions (Intel since Goldmont and Ice Lake,
+//   AMD since Zen) when CPUID says the CPU has them. Only the function that uses them is built for
+//   them (a target attribute; MSVC needs none), so the rest of the build keeps its flags;
+// - on 64-bit ARM, the ARMv8 SHA-2 instructions when the compiler builds for a CPU that has them, as
+//   it does for every Mac with Apple silicon.
+// Elsewhere the portable code runs. The digests are the same, and the instructions are only used once
+// they have given the portable code's digest of a message of two blocks (accel_ok).
+// clang for Sony's systems (__SCE__) declares in <immintrin.h> only the intrinsics of the features the
+// whole build is for: the console's default CPU (znver2) has these three; a build for less keeps the
+// portable code.
+#if (defined(_M_X64) || defined(__x86_64__)) && \
+    (!defined(__SCE__) || (defined(__SHA__) && defined(__SSE4_1__) && defined(__SSSE3__)))
 #define MP_SHA_NI 1
 #include <immintrin.h>
 #ifdef _MSC_VER
 #include <intrin.h>
-#define MP_SHA_TARGET
 #else
 #include <cpuid.h>
+#endif
+#if defined(__GNUC__) || defined(__clang__)
 #define MP_SHA_TARGET __attribute__((target("sha,sse4.1,ssse3")))
+#else
+#define MP_SHA_TARGET
 #endif
 
 static int cpu_has_sha(void) {
@@ -92,7 +107,7 @@ static int cpu_has_sha(void) {
     return (b >> 29 & 1) && (c >> 19 & 1) && (c >> 9 & 1);
 }
 
-MP_SHA_TARGET static void sha_blocks_ni(uint32_t h[8], const uint8_t *p, size_t nblocks) {
+MP_SHA_TARGET static void sha_blocks_hw(uint32_t h[8], const uint8_t *p, size_t nblocks) {
     const __m128i bswap = _mm_set_epi64x(0x0c0d0e0f08090a0bULL, 0x0405060700010203ULL);
     // The instructions keep the state as two halves, ABEF and CDGH.
     __m128i t = _mm_shuffle_epi32(_mm_loadu_si128((const __m128i *)&h[0]), 0xB1);
@@ -125,6 +140,56 @@ MP_SHA_TARGET static void sha_blocks_ni(uint32_t h[8], const uint8_t *p, size_t 
     _mm_storeu_si128((__m128i *)&h[0], s0);
     _mm_storeu_si128((__m128i *)&h[4], s1);
 }
+
+#elif defined(__aarch64__) && (defined(__ARM_FEATURE_SHA2) || defined(__ARM_FEATURE_CRYPTO))
+#define MP_SHA_ARM 1
+#include <arm_neon.h>
+
+// The instructions take the state as it is, A..D and E..H.
+static void sha_blocks_hw(uint32_t h[8], const uint8_t *p, size_t nblocks) {
+    uint32x4_t abcd = vld1q_u32(&h[0]), efgh = vld1q_u32(&h[4]);
+    for (; nblocks; nblocks--, p += 64) {
+        uint32x4_t abcd0 = abcd, efgh0 = efgh, w[4];
+        for (int i = 0; i < 4; i++) w[i] = vreinterpretq_u32_u8(vrev32q_u8(vld1q_u8(p + 16 * i)));
+        // Rounds 4g..4g+3 with the message words W(g); then W(g+4), from W(g)..W(g+3), in its place.
+        for (int g = 0; g < 16; g++) {
+            uint32x4_t wk = vaddq_u32(w[g & 3], vld1q_u32(&K[4 * g])), a = abcd;
+            abcd = vsha256hq_u32(abcd, efgh, wk);
+            efgh = vsha256h2q_u32(efgh, a, wk);
+            if (g < 12)
+                w[g & 3] = vsha256su1q_u32(vsha256su0q_u32(w[g & 3], w[(g + 1) & 3]), w[(g + 2) & 3],
+                                           w[(g + 3) & 3]);
+        }
+        abcd = vaddq_u32(abcd, abcd0);
+        efgh = vaddq_u32(efgh, efgh0);
+    }
+    vst1q_u32(&h[0], abcd);
+    vst1q_u32(&h[4], efgh);
+}
+#endif
+
+#if defined(MP_SHA_NI) || defined(MP_SHA_ARM)
+#define MP_SHA_HW 1
+
+// Whether the instructions can be used: the CPU has them (x86: CPUID) and they give the portable
+// code's state for the padded 448-bit message of FIPS 180-2 (two blocks).
+static int accel_ok(void) {
+#ifdef MP_SHA_NI
+    if (!cpu_has_sha()) return 0;
+#endif
+    uint8_t m[128] = {0};
+    memcpy(m, "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq", 56);
+    m[56] = 0x80;
+    m[126] = 0x01;   // the length, 448 bits
+    m[127] = 0xC0;
+    uint32_t hw[8], sw[8];
+    memcpy(hw, IV, sizeof IV);
+    memcpy(sw, IV, sizeof IV);
+    sha_blocks_hw(hw, m, 2);
+    sha_block(sw, m);
+    sha_block(sw, m + 64);
+    return !memcmp(hw, sw, sizeof hw);
+}
 #endif
 
 // Which code runs: -1 not decided yet, 0 portable, 1 the CPU's SHA instructions. Every thread
@@ -142,8 +207,8 @@ static int g_accel = -1;
 int mp_sha256_accel(void) {
     int a = (int)ACCEL_LOAD();
     if (a < 0) {
-#ifdef MP_SHA_NI
-        a = cpu_has_sha();
+#ifdef MP_SHA_HW
+        a = accel_ok();
 #else
         a = 0;
 #endif
@@ -155,9 +220,9 @@ int mp_sha256_accel(void) {
 void mp_sha256_use_accel(int on) { ACCEL_STORE(on ? -1 : 0); }   // -1: decided again
 
 static void sha_blocks(uint32_t h[8], const uint8_t *p, size_t nblocks) {
-#ifdef MP_SHA_NI
+#ifdef MP_SHA_HW
     if (mp_sha256_accel()) {
-        sha_blocks_ni(h, p, nblocks);
+        sha_blocks_hw(h, p, nblocks);
         return;
     }
 #endif
@@ -165,9 +230,7 @@ static void sha_blocks(uint32_t h[8], const uint8_t *p, size_t nblocks) {
 }
 
 void mp_sha256_init(mp_sha256 *s) {
-    static const uint32_t iv[8] = {0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
-                                   0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19};
-    memcpy(s->h, iv, sizeof iv);
+    memcpy(s->h, IV, sizeof IV);
     s->len = 0;
     s->n = 0;
 }

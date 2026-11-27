@@ -46,6 +46,13 @@ mp_zpk *mp_import_zpk(mp_source *s);
 // 1 once reading a file of the packs found a block that is not what the runtime takes or does not decode: what
 // stopped was the packs (a read of the source that fails is not that).
 int mp_import_failed(mp_source *s);
+// --keep-packs: while on, a read of s (the source mp_import_open made of a packed game) keeps the stored bytes of
+// each compressed block it decodes, for mp_import_take to give once (mp_zpk_opts.keep_take, with s as its ctx):
+// the bytes copied are the ones decoded and hashed, read once. Off, what is kept goes.
+void mp_import_keep(mp_source *s, int on);
+int mp_import_take(void *s, uint64_t chunk, void *buf, size_t cap, uint32_t *len);
+// The bytes read from the volumes of its packs so far (0 for another source).
+uint64_t mp_import_volume_bytes(mp_source *s);
 // 1 for a file of a packed game that mp_import_open leaves out (the AMPR files and the runtime).
 int mp_import_left_out(const char *path);
 // 1 for what LZ4 packs are at the root (ampr_assets.index, its packs, an ampr_assets folder), ASCII case aside.

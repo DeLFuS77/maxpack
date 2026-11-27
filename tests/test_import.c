@@ -467,6 +467,69 @@ MP_TEST(keep_packs_round_trip) {
     mpt_clear(TMP "/k-dump.p5z");
 }
 
+// A sink that takes the volumes and keeps nothing.
+static int null_vol(void *ctx, uint32_t vol, mp_err *e) {
+    (void)ctx;
+    (void)vol;
+    (void)e;
+    return 0;
+}
+static int null_write(void *ctx, const void *p, size_t n, mp_err *e) {
+    (void)p;
+    (void)e;
+    *(uint64_t *)ctx += n;
+    return 0;
+}
+static int null_header(void *ctx, uint32_t vol, const uint8_t hdr[64], mp_err *e) {
+    (void)ctx;
+    (void)vol;
+    (void)hdr;
+    (void)e;
+    return 0;
+}
+
+// Its packs kept, each chunk is read from them once: the bytes copied are the very ones decoded and hashed
+// (a second read could give others, and doubles what a slow disk reads).
+MP_TEST(keep_packs_reads_each_chunk_once) {
+    make_level5();
+    mp_source *s = NULL;
+    mp_import_info info;
+    mp_err e = {{0}};
+    if (mp_import_open(F5, MP_OPEN_GAME, &s, &info, &e) != 0) {
+        MP_FAIL_("%s", e.msg);
+        return;
+    }
+    mp_zpk *z = mp_import_zpk(s);
+    size_t n = mp_source_count(s), np = 0;
+    uint32_t *files = malloc(n * sizeof *files);
+    long *keep = malloc(n * sizeof *keep);
+    uint8_t (*sha)[32] = malloc(n * sizeof *sha);
+    mp_rules *rules = mp_rules_new();
+    for (size_t i = 0; i < n; i++) {
+        const mp_entry *en = mp_source_entry(s, i);
+        if (mp_rules_classify(rules, en->path, en->size) != MP_PACKABLE) continue;
+        files[np] = (uint32_t)i;
+        keep[np++] = mp_zpk_find(z, en->path);
+    }
+    mp_rules_free(rules);
+    uint64_t before = mp_import_volume_bytes(s), written = 0;
+    mp_zpk_sink sink = {null_vol, null_write, null_vol, null_header, &written};
+    mp_zpk_opts zo = {5, 4, MP_ZPK_VOLUME_LIMIT, NULL, 0, z, keep, mp_import_take, s};
+    uint8_t *index = NULL;
+    size_t len = 0;
+    mp_zpk_stats st;
+    mp_import_keep(s, 1);
+    MP_CHECK(mp_zpk_write(s, files, np, &zo, &sink, &index, &len, sha, &st, &e) == 0);
+    mp_import_keep(s, 0);
+    MP_CHECK_EQ_U64(mp_import_volume_bytes(s) - before, mp_zpk_stored_bytes(z));
+    MP_CHECK_EQ_U64(written, mp_zpk_stored_bytes(z));
+    free(index);
+    free(files);
+    free(keep);
+    free(sha);
+    mp_source_close(s);
+}
+
 // The level an index says (byte 17), with its header CRC made again.
 static void relabel(const char *index, int level) {
     size_t n = 0;
@@ -767,6 +830,7 @@ int main(void) {
     MP_RUN(source_has_the_original_files);
     MP_RUN(keep_packs_round_trip);
     MP_RUN(keep_packs_of_another_tool);
+    MP_RUN(keep_packs_reads_each_chunk_once);
     MP_RUN(refuses_a_damaged_block);
     MP_RUN(refuses_a_damaged_index_or_volume);
     MP_RUN(refuses_a_missing_file);

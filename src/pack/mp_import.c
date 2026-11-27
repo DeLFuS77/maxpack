@@ -19,6 +19,16 @@
 #define ZPK_INDEX_MAX (512u << 20)  // what ampr-emu-ng takes (AMPR_EMU_PACK_INDEX_MAX_BYTES)
 #define DUMP_INDEX_MAX (512u << 20)
 #define APP0_LEN 6u                 // "/app0/" before each path of ampr_emu.index
+#define KEPT_BUCKETS 4096u
+#define KEPT_MAX (512ull << 20)     // stored bytes kept for --keep-packs at most (the read-ahead holds 256 MiB)
+
+// The stored bytes of a compressed block a read decoded, until the writer takes them (mp_import_keep).
+typedef struct kept {
+    uint64_t chunk;
+    uint32_t len;
+    struct kept *next;
+    uint8_t data[];
+} kept;
 
 typedef struct {
     mp_source *base;   // the source as it is
@@ -29,6 +39,11 @@ typedef struct {
     long *bi;          // of each entry: its entry in the base, or -1
     long *zi;          // or its file in the packs, or -1
     volatile int failed;   // a block of the packs read was not what the runtime takes, or did not decode
+    mp_mutex *mu;          // for what follows
+    uint64_t vol_bytes;    // read from the volumes
+    int keeping;           // mp_import_keep
+    kept **kept;           // KEPT_BUCKETS lists, by chunk record
+    uint64_t kept_bytes;
 } imp;
 
 static int lower(int c) { return c >= 'A' && c <= 'Z' ? c + 32 : c; }
@@ -108,6 +123,9 @@ static int vol_read(void *ctx, uint32_t vol, uint64_t off, void *buf, size_t n, 
         mp_err_set(e, "volume ampr_zstd-%03u.pak is missing", vol);
         return -1;
     }
+    mp_mutex_lock(x->mu);
+    x->vol_bytes += n;
+    mp_mutex_unlock(x->mu);
     return mp_source_read(x->base, (size_t)x->vol[vol], off, buf, n, e);
 }
 
@@ -118,11 +136,47 @@ static uint64_t vol_size(void *ctx, uint32_t vol) {
 
 // ---- the source -------------------------------------------------------------------------------
 
+static size_t kept_bucket(uint64_t chunk) { return (size_t)(((chunk ^ (chunk >> 29)) * 0x9E3779B97F4A7C15ull) >> 52); }
+
+// A compressed block just decoded and checked: its stored bytes kept for the writer, while keeping (a block
+// stored raw is the bytes read: nothing to keep). Without memory, or past KEPT_MAX, the writer reads it again.
+static void imp_seen(void *ctx, uint64_t chunk, const uint8_t *stored, uint32_t len) {
+    imp *x = ctx;
+    if (!(chunk >> 62)) return;
+    kept *k = malloc(sizeof *k + len);
+    if (!k) return;
+    k->chunk = chunk;
+    k->len = len;
+    memcpy(k->data, stored, len);
+    mp_mutex_lock(x->mu);
+    if (!x->keeping || !x->kept || x->kept_bytes + len > KEPT_MAX) {
+        mp_mutex_unlock(x->mu);
+        free(k);
+        return;
+    }
+    size_t b = kept_bucket(chunk);
+    k->next = x->kept[b];
+    x->kept[b] = k;
+    x->kept_bytes += len;
+    mp_mutex_unlock(x->mu);
+}
+
+static void kept_free(imp *x) {
+    for (size_t b = 0; x->kept && b < KEPT_BUCKETS; b++)
+        while (x->kept[b]) {
+            kept *k = x->kept[b];
+            x->kept[b] = k->next;
+            free(k);
+        }
+    x->kept_bytes = 0;
+}
+
 static int imp_read(mp_source *s, size_t i, uint64_t off, void *buf, size_t len, mp_err *e) {
     imp *x = s->impl;
     if (x->zi[i] < 0) return mp_source_read(x->base, (size_t)x->bi[i], off, buf, len, e);
     int bad = 0;
-    if (mp_zpk_read_file_ex(x->z, (size_t)x->zi[i], off, buf, len, NULL, NULL, &bad, e) != 0) {
+    // keeping is set before the readers start and cleared after they end
+    if (mp_zpk_read_file_ex(x->z, (size_t)x->zi[i], off, buf, len, x->keeping ? imp_seen : NULL, x, &bad, e) != 0) {
         if (bad) x->failed = 1;
         return -1;
     }
@@ -133,9 +187,12 @@ static void imp_free(imp *x) {
     if (!x) return;
     mp_zpk_close(x->z);
     mp_source_close(x->base);
+    kept_free(x);
+    free(x->kept);
     free(x->vol);
     free(x->bi);
     free(x->zi);
+    mp_mutex_free(x->mu);
     free(x);
 }
 
@@ -146,6 +203,50 @@ static const char *imp_id(const mp_source *s) { return mp_source_package_id(((co
 mp_zpk *mp_import_zpk(mp_source *s) { return s && s->close == imp_close ? ((imp *)s->impl)->z : NULL; }
 
 int mp_import_failed(mp_source *s) { return s && s->close == imp_close && ((imp *)s->impl)->failed; }
+
+uint64_t mp_import_volume_bytes(mp_source *s) {
+    if (!s || s->close != imp_close) return 0;
+    imp *x = s->impl;
+    mp_mutex_lock(x->mu);
+    uint64_t n = x->vol_bytes;
+    mp_mutex_unlock(x->mu);
+    return n;
+}
+
+void mp_import_keep(mp_source *s, int on) {
+    if (!s || s->close != imp_close) return;
+    imp *x = s->impl;
+    mp_mutex_lock(x->mu);
+    if (on && !x->kept) x->kept = calloc(KEPT_BUCKETS, sizeof *x->kept);   // none: every block is read again
+    x->keeping = on && x->kept;
+    if (!on) kept_free(x);
+    mp_mutex_unlock(x->mu);
+}
+
+int mp_import_take(void *ctx, uint64_t chunk, void *buf, size_t cap, uint32_t *len) {
+    mp_source *s = ctx;
+    if (!s || s->close != imp_close) return 0;
+    imp *x = s->impl;
+    kept *k = NULL;
+    mp_mutex_lock(x->mu);
+    if (x->kept) {
+        kept **at = &x->kept[kept_bucket(chunk)];
+        while (*at && (*at)->chunk != chunk) at = &(*at)->next;
+        if ((k = *at)) {
+            *at = k->next;
+            x->kept_bytes -= k->len;
+        }
+    }
+    mp_mutex_unlock(x->mu);
+    if (!k) return 0;
+    int got = k->len <= cap;
+    if (got) {
+        memcpy(buf, k->data, k->len);
+        *len = k->len;
+    }
+    free(k);
+    return got;
+}
 
 typedef struct {
     mp_entry en;
@@ -249,7 +350,8 @@ static int open_packed(const char *path, mp_source *base, size_t ix, mp_source *
     x->base = base;
     x->vol = malloc(MP_ZPK_MAX_VOLUMES * sizeof *x->vol);
     exact = calloc(MP_ZPK_MAX_VOLUMES, 1);
-    if (!x->vol || !exact) goto oom;
+    x->mu = mp_mutex_new();
+    if (!x->vol || !exact || !x->mu) goto oom;
     for (uint32_t k = 0; k < MP_ZPK_MAX_VOLUMES; k++) x->vol[k] = -1;
     size_t nb = mp_source_count(base);
     // each volume: the file named exactly as the index names it, as the runtime opens it; else one of the same

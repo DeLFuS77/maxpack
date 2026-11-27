@@ -326,9 +326,12 @@ int mp_pack_run(const char *src_path, mp_pack_out *out, const mp_pack_opts *o, m
         if (kz && !(keep = malloc(npack * sizeof *keep))) goto oom;
         for (size_t k = 0; kz && k < npack; k++) keep[k] = mp_zpk_find(kz, mp_source_entry(src, packable[k])->path);
         mp_progress_init(&prog, phase, ptotal, o->progress);
-        mp_zpk_opts zo = {level, o->threads, o->volume_limit, &prog, 0, kz, keep};
+        // a kept chunk: the stored bytes the read of its file decoded, read once
+        mp_zpk_opts zo = {level, o->threads, o->volume_limit, &prog, 0, kz, keep, kz ? mp_import_take : NULL, game};
         psha = malloc(npack * sizeof *psha);
+        if (kz) mp_import_keep(game, 1);
         int zr = psha ? mp_zpk_write(src, packable, npack, &zo, &out->zpk, &zidx, &zidx_len, psha, &st, e) : -1;
+        if (kz) mp_import_keep(game, 0);
         if (prog.print) fprintf(stderr, "\r%s: 100.0 %%\n", phase);
         mp_progress_free(&prog);
         if (zr != 0) {

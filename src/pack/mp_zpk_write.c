@@ -4,7 +4,8 @@
 // pipeline: a read-ahead reads the files in that order in big pieces with a few threads and computes
 // each file's SHA-256, one thread cuts the pieces into blocks, a pool that lives for the whole pack
 // compresses them and this thread writes them, all at the same time. A block whose chunk is kept
-// (--keep-packs) is not compressed: the pool takes its stored bytes from the packs it comes from.
+// (--keep-packs) is not compressed: the pool takes the stored bytes its read decoded (keep_take), so what is
+// written is what was hashed, read once; when it has none, it reads them again and checks they decode to it.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -51,18 +52,33 @@ typedef struct {
     size_t out_cap;
     int level;
     mp_zpk *keep_from;
+    int (*keep_take)(void *ctx, uint64_t chunk, void *buf, size_t cap, uint32_t *len);
+    void *keep_ctx;
 } cctx_set;
+
+// Stored bytes read again decode to the block read before, the one hashed.
+static int same_block(const uint8_t *stored, uint32_t n, const uint8_t *plain, size_t len, mp_err *e) {
+    uint8_t *dec = malloc(len ? len : 1);
+    size_t got = dec ? ZSTD_decompress(dec, len, stored, n) : 0;
+    int same = dec && !ZSTD_isError(got) && got == len && !memcmp(dec, plain, len);
+    free(dec);
+    if (!same) mp_err_set(e, "a block of the packs read again is not the one read before: they changed while they were read");
+    return same;
+}
 
 static int compress_work(void *vc, size_t i, unsigned tid) {
     cctx_set *c = vc;
     item *it = &c->items[i];
     if (it->keep) {
-        // a chunk stored raw holds the bytes read; a compressed one is read from its packs as it is
+        // a chunk stored raw holds the bytes read; a compressed one, the stored bytes its read decoded
         it->codec = (int)(it->keep >> 62);
         it->out_len = it->len;
         if (!it->codec) return 0;
         uint32_t stored = 0;
-        if (mp_zpk_read_stored(c->keep_from, it->keep, it->out, c->out_cap, &stored, &it->err) != 0) return 1;
+        if (!c->keep_take || c->keep_take(c->keep_ctx, it->keep, it->out, c->out_cap, &stored) != 1) {
+            if (mp_zpk_read_stored(c->keep_from, it->keep, it->out, c->out_cap, &stored, &it->err) != 0) return 1;
+            if (!same_block(it->out, stored, it->in, it->len, &it->err)) return 1;
+        }
         it->out_len = stored;
         return 0;
     }
@@ -204,7 +220,8 @@ int mp_zpk_write_chunks(mp_source *src, const uint32_t *files, size_t n, const m
     uint64_t *first = malloc((n ? n : 1) * sizeof *first);
     item *items = calloc(nslots, sizeof *items);
     uint8_t *inbuf = malloc(nslots * MP_BLOCK_V1);
-    cctx_set cs = {items, calloc(threads, sizeof(ZSTD_CCtx *)), ZSTD_compressBound(MP_BLOCK_V1), o->level, o->keep_from};
+    cctx_set cs = {items, calloc(threads, sizeof(ZSTD_CCtx *)), ZSTD_compressBound(MP_BLOCK_V1), o->level, o->keep_from,
+                   o->keep_take, o->keep_ctx};
     uint8_t *outbuf = malloc(nslots * cs.out_cap);
     uint32_t *order = malloc((n ? n : 1) * sizeof *order);
     uint8_t (*osha)[32] = malloc((n ? n : 1) * sizeof *osha);   // in the index's order

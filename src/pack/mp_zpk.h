@@ -36,6 +36,11 @@ typedef struct {
     // still read, so its SHA-256 is that of its contents). keep NULL: every file is compressed.
     struct mp_zpk *keep_from;
     const long *keep;
+    // Where a kept chunk's stored bytes come from: take(keep_ctx, chunk, buf, cap, &len) gives (1) the ones
+    // the read of its file just decoded, so they are read once and are the bytes hashed; else (0, or take
+    // NULL) they are read from keep_from again, and must decode to what was hashed.
+    int (*keep_take)(void *ctx, uint64_t chunk, void *buf, size_t cap, uint32_t *len);
+    void *keep_ctx;
 } mp_zpk_opts;
 
 typedef struct {

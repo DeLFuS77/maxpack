@@ -229,7 +229,7 @@ static int file_and_folder(const rec *v, size_t n, const char **file, const char
     return rc;
 }
 
-// The packed game base (with its index ix) as the source of its original files; base is taken.
+// The packed game base (with its index ix) as the source of its original files; base is taken when it succeeds.
 static int open_packed(const char *path, mp_source *base, size_t ix, mp_source **out, mp_import_info *info, mp_err *e) {
     imp *x = calloc(1, sizeof *x);
     mp_source *s = calloc(1, sizeof *s);
@@ -243,7 +243,6 @@ static int open_packed(const char *path, mp_source *base, size_t ix, mp_source *
     if (!x || !s) {
         free(s);
         free(x);
-        mp_source_close(base);
         mp_err_set(e, "out of memory");
         return -1;
     }
@@ -403,6 +402,7 @@ done:
         free(s->entries);
         free(s);
     }
+    if (x) x->base = NULL;   // the caller's still
     imp_free(x);
     free(v);
     free(used);
@@ -418,11 +418,20 @@ int mp_import_open(const char *path, int what, mp_source **out, mp_import_info *
     memset(info, 0, sizeof *info);
     mp_source *s = NULL;
     if (mp_source_open_as(path, what, &s, e) != 0) return -1;
+    if (mp_import_source(path, s, what, out, info, e) != 0) {
+        mp_source_close(s);
+        return -1;
+    }
+    return 0;
+}
+
+int mp_import_source(const char *path, mp_source *s, int what, mp_source **out, mp_import_info *info, mp_err *e) {
+    *out = NULL;
+    memset(info, 0, sizeof *info);
     long ix = -1, vol = -1;
     for (size_t i = 0; i < mp_source_count(s); i++) {
         const char *p = mp_source_entry(s, i)->path;
         if (mp_import_lz4(p)) {
-            mp_source_close(s);
             return refuse(info, MP_IMPORT_LZ4, e, path, "%s",
                           "it is packed with LZ4 packs (ampr_assets), which MaxPack does not read yet: give it as "
                           "it was dumped, or packed with zstd packs");
@@ -435,12 +444,22 @@ int mp_import_open(const char *path, int what, mp_source **out, mp_import_info *
         char m[300];
         snprintf(m, sizeof m, "it has %s but no ampr_zstd.index: its packs cannot be read",
                  mp_source_entry(s, (size_t)vol)->path);
-        mp_source_close(s);
         return refuse(info, MP_IMPORT_DAMAGED, e, path, "%s", m);
     }
     if (ix < 0) {
         *out = s;
         return 0;
     }
-    return open_packed(path, s, (size_t)ix, out, info, e);
+    mp_source *g = NULL;
+    if (open_packed(path, s, (size_t)ix, &g, info, e) != 0) return -1;
+    // a game has eboot.bin, loose or packed; without it, it is a DLC (pack --dlc refuses those packed already)
+    if (what == MP_OPEN_GAME && find_ci(g, "eboot.bin") < 0) {
+        ((imp *)g->impl)->base = NULL;   // s stays the caller's
+        mp_source_close(g);
+        return refuse(info, MP_IMPORT_DLC, e, path, "%s",
+                      "it has no eboot.bin: it is a DLC packed already, which MaxPack does not take yet: give it as it "
+                      "was dumped");
+    }
+    *out = g;
+    return 0;
 }

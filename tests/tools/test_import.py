@@ -292,5 +292,49 @@ for keep in ([], ["--keep-packs"]):
     check("dlc_identical" + ("_keep" if keep else ""), rc == 0 and res.get("dlc_data") == 1 and res.get("from_packed") is True
           and same(at("mini_dlc.p5z"), at("mini_dlc_again.p5z")), err)
 
+# a DLC packed already is a DLC, not a game: info --json says so, and pack refuses it (pack --dlc refuses it too)
+rc, _, err = run("pack", DLC, "-o", fresh(at("dlc_packed")), "--folder")
+check("pack_dlc_folder", rc == 0, err)
+rc, out, err = run("info", "--json", at("dlc_packed"))
+try:
+    info = json.loads(out)
+    check("dlc_packed_info", info["content"] == "dlc" and info["packs"] == "zstd" and info["title_id"] == "PPSA00000"
+          and info["dlc_data"] is True, out)
+except (ValueError, KeyError) as ex:
+    check("dlc_packed_info_json", False, repr(ex) + " " + out + err)
+rc, out, err = pack(at("dlc_packed"), at("dlc_packed.p5z"), "--p5z")
+check("dlc_packed_refused", rc == 1 and result(out).get("error") == "dlc_packed" and "DLC" in err
+      and not os.path.exists(at("dlc_packed.p5z")), "%d %s %s" % (rc, out, err))
+
+# a packed game that carries the list of the original package's files: as complete in an image as in a folder,
+# as its dump is (its packed files are counted, the packs are not)
+COMPLETE = os.path.join(FX, "playgo", "complete")
+rc, _, err = run("pack", COMPLETE, "-o", fresh(at("complete_packed")), "--folder", "--volume-limit", "1000000")
+check("pack_complete_folder", rc == 0, err)
+with open(fresh(at("complete_packed.exfat")), "wb") as f:
+    f.write(image_of(at("complete_packed")))
+KEYS = ("checkable", "reason", "source", "listed", "present", "missing", "extra_count", "leftover_count")
+rc, out, _ = run("info", "--json", COMPLETE)
+dump = {k: json.loads(out)["completeness"][k] for k in KEYS}
+check("complete_dump", dump["checkable"] is True and dump["missing"] == 0, str(dump))
+for name in ("complete_packed", "complete_packed.exfat"):
+    rc, out, err = run("info", "--json", at(name))
+    try:
+        got = {k: json.loads(out)["completeness"][k] for k in KEYS}
+        check("completeness_" + name, got == dump, "%s != %s" % (got, dump))
+    except (ValueError, KeyError) as ex:
+        check("completeness_" + name + "_json", False, repr(ex) + " " + out + err)
+
+# a level outside 1..22 in a broken index's header is no level
+bad = copy_tree(FOLDER, at("bad_level"))
+with open(os.path.join(bad, "ampr_zstd.index"), "r+b") as f:
+    f.seek(17)
+    f.write(bytes([200]))
+rc, out, _ = run("info", "--json", bad)
+try:
+    check("no_level", json.loads(out)["packed_level"] == 0, out)
+except (ValueError, KeyError) as ex:
+    check("no_level_json", False, repr(ex) + " " + out)
+
 print("%d failures" % len(failures))
 sys.exit(1 if failures else 0)

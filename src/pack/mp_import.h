@@ -18,6 +18,7 @@
 #define MP_IMPORT_MISSING "packed_file_missing"    // a file ampr_emu.index lists is not there
 #define MP_IMPORT_LZ4 "packs_lz4"                  // LZ4 packs (ampr_assets*), which MaxPack does not read yet
 #define MP_IMPORT_TWICE "packed_and_loose"        // a path both loose and in the packs (or a file and a folder)
+#define MP_IMPORT_DLC "dlc_packed"                 // a DLC packed already (no eboot.bin), given as a game
 
 typedef struct {
     int packed;                 // the source is a game packed with zstd packs
@@ -34,7 +35,11 @@ typedef struct {
 // and a file ampr_emu.index lists that is neither loose nor packed, or loose of another size (the files that
 // are left out, OS junk and what dump tools leave behind aside). The names the runtime opens (the index, the
 // volumes) are taken as it names them, and in another case only when there are none so.
+// Asked for a game only (MP_OPEN_GAME), a packed source without eboot.bin is a DLC packed already: refused too.
 int mp_import_open(const char *path, int what, mp_source **out, mp_import_info *info, mp_err *e);
+// The same for a source already open, base, which it takes when it succeeds (the source it gives holds it)
+// and leaves open when it fails; path only words the messages.
+int mp_import_source(const char *path, mp_source *base, int what, mp_source **out, mp_import_info *info, mp_err *e);
 // The packs of a source mp_import_open made of a packed game (NULL for any other source), valid while
 // it is open: a file of the source with a path the packs have is read from them.
 mp_zpk *mp_import_zpk(mp_source *s);

@@ -18,7 +18,6 @@
 #define RUNTIME_MAX (64u << 20)
 #define PARAM_MAX (1u << 20)
 #define ICON_MAX (16u << 20)
-#define ZPK_INDEX_MAX (1u << 30)
 #define DUMP_INDEX_MAX (512u << 20)
 
 static int ieq(const char *a, const char *b) {
@@ -87,7 +86,7 @@ static void index_counts(mp_source *s, size_t i, mp_describe *d) {
     if (mp_source_entry(s, i)->size < sizeof h || mp_source_read(s, i, 0, h, sizeof h, NULL) != 0 ||
         memcmp(h, "AMPRZPK1", 8) != 0)
         return;
-    d->packed_level = h[17];
+    d->packed_level = h[17] >= 1 && h[17] <= 22 ? h[17] : 0;   // a broken header says none
     d->volumes = rd32(h + 20);
     d->packed_files = rd64(h + 40);
     d->unpacked_size = rd64(h + 96);
@@ -124,74 +123,14 @@ static int dlc_of_ini(const uint8_t *bytes, size_t len, mp_dlc_list *dlc, mp_err
     return 0;
 }
 
-// A compressed folder against its table: its loose files (not the packs and their index, which
-// MaxPack made) and the files in its packs. A table that is not loose may be in the packs. Packs
-// that cannot be opened leave it unchecked ("unreadable"). dlc, when not NULL, gets what the folder
-// of each DLC holds, in the same files (only the loose ones when the packs cannot be opened).
-static int complete_packed(const char *dir, mp_source *s, size_t ix, mp_complete *c, mp_dlc_list *dlc, mp_err *e) {
+// A packed game whose packs cannot be read as pack reads them: not checked ("unreadable"); dlc, when not NULL,
+// gets what the folder of each DLC holds of its loose files.
+static int complete_unreadable(mp_source *s, mp_complete *c, mp_dlc_list *dlc, mp_err *e) {
     memset(c, 0, sizeof *c);
-    uint8_t *idx = NULL, *table = NULL;
-    size_t idx_len = 0, table_len = 0;
-    mp_zpk_volsrc vs = {0};
-    mp_zpk *z = NULL;
-    mp_err ze = {{0}};
-    if (read_entry(s, ix, ZPK_INDEX_MAX, &idx, &idx_len, &ze) != 0 || mp_zpk_volsrc_dir(dir, &vs, &ze) != 0 ||
-        mp_zpk_open(idx, idx_len, &vs, &z, &ze) != 0) {
-        free(idx);
-        mp_zpk_volsrc_free(&vs);
-        int rc = mp_complete_check(NULL, 0, NULL, 0, c, NULL);
-        c->reason = "unreadable";
-        if (rc != 0) mp_err_set(e, "out of memory");
-        if (rc == 0 && dlc) rc = dlc_sizes_of_source(s, dlc, e);
-        return rc;
-    }
-    free(idx);
-    size_t n = mp_source_count(s), nz = mp_zpk_count(z), k = 0;
-    mp_cfile *files = malloc((n + nz + 1) * sizeof *files);
-    int rc = -1;
-    if (!files) goto oom;
-    for (size_t i = 0; i < n; i++) {
-        const mp_entry *en = mp_source_entry(s, i);
-        if (ieq(en->path, INDEX_PATH) || mp_glob_match("ampr_zstd-*.pak", en->path)) continue;
-        files[k].path = en->path;
-        files[k++].size = en->size;
-    }
-    for (size_t i = 0; i < nz; i++) {
-        files[k].path = mp_zpk_path(z, i);
-        files[k++].size = mp_zpk_size(z, i);
-    }
-    qsort(files, k, sizeof *files, cmp_cfile);
-    if (dlc) mp_dlc_sizes(dlc, files, k);
-    long t = find_ci(s, MP_PLAYGO_TABLE_PATH);
-    int unreadable = 0;
-    if (t >= 0) {
-        unreadable = read_entry(s, (size_t)t, MP_PLAYGO_TABLE_MAX, &table, &table_len, NULL) != 0;
-    } else {
-        for (size_t i = 0; i < nz; i++) {
-            if (!ieq(mp_zpk_path(z, i), MP_PLAYGO_TABLE_PATH)) continue;
-            uint64_t size = mp_zpk_size(z, i);
-            table = size <= MP_PLAYGO_TABLE_MAX ? malloc((size_t)size + 1) : NULL;
-            if (!table || mp_zpk_read_file(z, i, 0, table, (size_t)size, NULL) != 0) {
-                free(table);
-                table = NULL;
-                unreadable = 1;
-            } else {
-                table_len = (size_t)size;
-            }
-            break;
-        }
-    }
-    if (mp_complete_check(files, k, table, table_len, c, NULL) != 0) goto oom;
-    if (unreadable) c->reason = "unreadable";
-    rc = 0;
-    goto done;
-oom:
-    mp_err_set(e, "out of memory");
-done:
-    free(table);
-    free(files);
-    mp_zpk_close(z);
-    mp_zpk_volsrc_free(&vs);
+    int rc = mp_complete_check(NULL, 0, NULL, 0, c, NULL);
+    c->reason = "unreadable";
+    if (rc != 0) mp_err_set(e, "out of memory");
+    if (rc == 0 && dlc) rc = dlc_sizes_of_source(s, dlc, e);
     return rc;
 }
 
@@ -228,6 +167,18 @@ static int describe_source(const char *path, mp_describe *d, mp_complete *c, mp_
         d->has_zstd_runtime = has_marker(b, len);
         free(b);
     }
+    // a game packed already: the rest is of the files it was made of, as pack reads them (a param.json or an
+    // eboot.bin in its packs too); packs that cannot be read so leave its files as they are, unchecked
+    int unreadable = 0;
+    if (ix >= 0 && !strcmp(d->packs, "zstd")) {
+        mp_source *g = NULL;
+        mp_import_info ii;
+        mp_err ie = {{0}};
+        if (mp_import_source(path, s, MP_OPEN_ANY, &g, &ii, &ie) == 0)
+            s = g;
+        else
+            unreadable = 1;
+    }
     long pj = find_ci(s, PARAM_PATH);
     if (pj >= 0) {
         uint8_t *b = NULL;
@@ -240,9 +191,9 @@ static int describe_source(const char *path, mp_describe *d, mp_complete *c, mp_
     }
     if (!d->content_id[0]) snprintf(d->content_id, sizeof d->content_id, "%s", mp_source_package_id(s));
     // a DLC: its package's content ID, and the title ID of it (what pack --dlc matches with the game's).
-    // A package is what its content type says; a folder or image, one with param.json and no eboot.bin
-    d->dlc = mp_source_kind_of(s) == MP_SRC_FPKG ? mp_source_is_dlc_package(s)
-                                                 : !d->packed && pj >= 0 && find_ci(s, "eboot.bin") < 0;
+    // A package is what its content type says; a folder or image, one with param.json and no eboot.bin, packed
+    // or not (pack refuses one packed already, as pack --dlc does)
+    d->dlc = mp_source_kind_of(s) == MP_SRC_FPKG ? mp_source_is_dlc_package(s) : pj >= 0 && find_ci(s, "eboot.bin") < 0;
     if (d->dlc) {
         if (mp_source_is_dlc_package(s)) snprintf(d->content_id, sizeof d->content_id, "%s", mp_source_package_id(s));
         if (strlen(d->content_id) >= 16 && d->content_id[6] == '-')
@@ -261,10 +212,10 @@ static int describe_source(const char *path, mp_describe *d, mp_complete *c, mp_
     if (c || dlc) {
         mp_complete scratch, *cc = c ? c : &scratch;
         int crc = 0;
-        if (ix >= 0 && mp_source_kind_of(s) == MP_SRC_DIR) {
-            crc = complete_packed(path, s, (size_t)ix, cc, dlc, e);
+        memset(&scratch, 0, sizeof scratch);
+        if (unreadable) {
+            crc = complete_unreadable(s, cc, dlc, e);
         } else {
-            memset(&scratch, 0, sizeof scratch);
             if (c) crc = mp_complete_source(s, c, NULL, e);
             if (crc == 0 && dlc) crc = dlc_sizes_of_source(s, dlc, e);
         }

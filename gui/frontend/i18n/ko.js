@@ -211,7 +211,7 @@ texts.ko = {
   detail_packs_damaged: "팩이 손상되었습니다. 압축할 수 없습니다",
   detail_packed_file_missing: "ampr_emu.index / ampr_assets.index에 있는 파일이 없거나 크기가 다릅니다. 완전한 사본을 지정하세요",
   detail_packs_lz4: "LZ4 팩이 MaxPack이 읽지 못하는 종류입니다 (이전 버전이거나 zstd 팩과 함께 있음). 덤프한 그대로의 것을 지정하세요",
-  detail_packed_and_loose: "같은 파일이 팩 안과 밖에 모두 있습니다(또는 파일이자 폴더입니다). 하나만 남기세요",
+  detail_packed_and_loose: "같은 파일이 팩 안과 밖에 모두 있고 두 사본이 다릅니다(또는 파일이자 폴더입니다). 하나만 남기세요",
   detail_dlc_packed: "이미 패킹된 DLC는 MaxPack이 아직 받지 않습니다. 덤프한 그대로의 것을 지정하세요",
   detail_from_packed: "패킹된 게임에서 만들었으며 다시 압축했습니다",
   detail_from_packed_kept: level => "패킹된 게임에서 만들었으며 팩을 유지했습니다 (zstd 수준 " + level + ")",

@@ -211,7 +211,7 @@ texts.zh = {
   detail_packs_damaged: "其数据包已损坏：无法压缩",
   detail_packed_file_missing: "缺少其 ampr_emu.index / ampr_assets.index 列出的文件，或其大小不同：请提供完整的副本",
   detail_packs_lz4: "它的 LZ4 数据包属于 MaxPack 无法读取的类型（较旧的版本，或与 zstd 数据包并存）：请提供按原样转储的版本",
-  detail_packed_and_loose: "某个文件同时位于数据包内外（或既是文件又是文件夹）：只保留一个",
+  detail_packed_and_loose: "某个文件同时位于数据包内外且两份内容不同（或既是文件又是文件夹）：只保留一个",
   detail_dlc_packed: "已打包的 DLC，MaxPack 尚不支持：请提供按原样转储的版本",
   detail_from_packed: "由已打包的游戏制作，已重新压缩",
   detail_from_packed_kept: level => "由已打包的游戏制作，保留其数据包（zstd 级别 " + level + "）",

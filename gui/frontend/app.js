@@ -747,11 +747,11 @@ function paintFacts(row) {
   }
   fact(facts, t("factInstalled"), size(game.InstallSize));
   if (game.P5zSize) fact(facts, ".p5z", size(game.P5zSize));
-  // what it saves: the .p5z, or the compressed folder installed, against the original
-  const made = game.P5zSize || (game.Packed ? game.InstallSize : 0);
+  // what it saves: the .p5z, or the compressed folder installed (zstd or LZ4), against the original
+  const compressed = !!game.Packed || packedAlready(game), made = game.P5zSize || (compressed ? game.InstallSize : 0);
   if (made && game.OriginalSize > made) fact(facts, t("factSaved"), t("smallerBy")(Math.round((1 - made / game.OriginalSize) * 100)) + " · " + size(game.OriginalSize - made));
-  fact(facts, t("factPacked"), game.Packed ? t("yes") : t("no"));
-  if (game.Packed || packedAlready(game)) fact(facts, t("factPacks"), t("packsOf")(game.PackedFiles || 0, game.Volumes || 0));
+  fact(facts, t("factPacked"), compressed ? t("yes") : t("no"));
+  if (compressed) fact(facts, t("factPacks"), t("packsOf")(game.PackedFiles || 0, game.Volumes || 0));
   fact(facts, "ampr-emu-ng", game.HasZstdRuntime ? t("runtimeZstd") : game.HasRuntime ? t("runtimeOld") : t("runtimeNone"));
   // the repair data of a .p5z (its card, as a double click opens it): how much, or none
   if (game.Kind === "p5z") fact(facts, t("factRepair"), repairFactText(row.repair));

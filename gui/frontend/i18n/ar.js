@@ -214,7 +214,7 @@ texts.ar = {
   detail_packs_damaged: "حزمها تالفة: لا يمكن ضغطها",
   detail_packed_file_missing: "ملف يذكره ampr_emu.index / ampr_assets.index الخاص بها مفقود أو بحجم آخر: قدّم نسخة كاملة",
   detail_packs_lz4: "حزم LZ4 الخاصة بها من نوع لا يقرؤه MaxPack (إصدار أقدم، أو معها حزم zstd): قدّمها كما استُخرجت",
-  detail_packed_and_loose: "ملف موجود خارج حزمها وداخلها معًا (أو هو ملف ومجلد معًا): أبقِ واحدًا فقط",
+  detail_packed_and_loose: "ملف موجود خارج حزمها وداخلها معًا والنسختان مختلفتان (أو هو ملف ومجلد معًا): أبقِ واحدًا فقط",
   detail_dlc_packed: "محتوى DLC محزّم بالفعل لا يقبله MaxPack بعد: قدّمه كما استُخرج",
   detail_from_packed: "صُنع من لعبة محزّمة، وأُعيد ضغطه",
   detail_from_packed_kept: level => "صُنع من لعبة محزّمة، مع الإبقاء على حزمها (zstd، المستوى " + level + ")",

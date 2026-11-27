@@ -211,7 +211,7 @@ texts.es = {
   detail_packs_damaged: "sus packs están dañados: no se puede comprimir",
   detail_packed_file_missing: "falta un archivo que lista su ampr_emu.index / ampr_assets.index, o tiene otro tamaño: da una copia entera",
   detail_packs_lz4: "sus packs LZ4 son de un tipo que MaxPack no lee (una versión anterior, o con packs zstd al lado): dalo tal como se volcó",
-  detail_packed_and_loose: "un archivo está suelto y en sus packs a la vez (o es archivo y carpeta): deja solo uno",
+  detail_packed_and_loose: "un archivo está suelto y en sus packs a la vez, y las dos copias no son iguales (o es archivo y carpeta): deja solo uno",
   detail_dlc_packed: "un DLC ya empaquetado, que MaxPack aún no admite: dalo tal como se volcó",
   detail_from_packed: "hecho a partir de un juego empaquetado, comprimido de nuevo",
   detail_from_packed_kept: level => "hecho a partir de un juego empaquetado, con sus packs (zstd nivel " + level + ")",

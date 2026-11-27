@@ -211,7 +211,7 @@ texts.ja = {
   detail_packs_damaged: "パックが壊れています。圧縮できません",
   detail_packed_file_missing: "ampr_emu.index / ampr_assets.index にあるファイルが見つからないか、サイズが違います。完全なコピーを指定してください",
   detail_packs_lz4: "LZ4 パックが MaxPack の読めない種類です（古いバージョン、または zstd パックと併存）。ダンプしたままのものを指定してください",
-  detail_packed_and_loose: "同じファイルがパックの中と外の両方にあります（またはファイルとフォルダーを兼ねています）。どちらか一方だけにしてください",
+  detail_packed_and_loose: "同じファイルがパックの中と外の両方にあり、2 つの内容が異なります（またはファイルとフォルダーを兼ねています）。どちらか一方だけにしてください",
   detail_dlc_packed: "パック済みの DLC は MaxPack ではまだ扱えません。ダンプしたままのものを指定してください",
   detail_from_packed: "パック済みのゲームから作成し、圧縮し直しました",
   detail_from_packed_kept: level => "パック済みのゲームから作成、パックはそのまま（zstd レベル " + level + "）",

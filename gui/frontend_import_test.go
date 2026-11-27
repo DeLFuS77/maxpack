@@ -22,7 +22,8 @@ const radios = [{ value: "again", checked: false }, { value: "keep", checked: fa
 const context = { navigator: {}, console, Promise };
 context.window = context;
 context.document = { readyState: "loading", addEventListener() {}, getElementById: byId,
-  querySelectorAll: sel => (sel === 'input[name="packed-games"]' ? radios : []), querySelector: () => element() };
+  querySelectorAll: sel => (sel === 'input[name="packed-games"]' ? radios : []), querySelector: () => element(),
+  createElement: () => ({ textContent: "", className: "" }) };
 vm.createContext(context);
 let source = "";
 for (const name of ["i18n/base.js", "i18n/en.js", "app.js"]) source += fs.readFileSync(path.join(dir, name), "utf8") + "\n;\n";
@@ -54,6 +55,15 @@ console.log(vm.runInContext(` + "`" + `(() => {
   const noRuntime = builtInRuntime() ? "" : t("warn_needs_runtime");
   if (rowWarnings(state.lists.compress[2]).join() !== noRuntime) say("an LZ4 game for the console: " + rowWarnings(state.lists.compress[2]).join());
   state.settings = Object.assign({}, defaults);
+  // the card of Details says a game with LZ4 packs is compressed, with its packs, as one with zstd packs
+  for (const game of [zstd, lz4]) {
+    const items = [];
+    const card = Object.assign(row("details", Object.assign({}, game, { PackedFiles: 7, Volumes: 2 })),
+      { tr: { querySelector: () => ({ hidden: false, replaceChildren() {}, append: (...x) => items.push(...x) }) } });
+    paintFacts(card);
+    const texts = items.map(x => x.textContent), at = texts.indexOf(t("factPacked"));
+    if (at < 0 || texts[at + 1] !== t("yes") || !texts.includes(t("packsOf")(7, 2))) say("the card of a " + game.Packs + " game: " + texts.join(" | "));
+  }
   // a level a broken header gives is none: the note says zstd only
   if (packedNote(Object.assign({}, zstd, { PackedLevel: 0 })) !== "already packed (zstd)") say("the note without a level: " + packedNote(Object.assign({}, zstd, { PackedLevel: 0 })));
   // a .zstd (an exFAT image with a game packed already in it) is taken where an image is

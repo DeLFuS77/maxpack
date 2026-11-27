@@ -187,7 +187,7 @@ type RenameResult struct {
 // it is.
 func newName(it Item, template string) string {
 	switch {
-	case it.Kind == "folder" && it.Packed:
+	case it.Kind == "folder" && (it.Packed || it.Packs == "lz4"): // one for the console, zstd or LZ4
 		return idName(it)
 	case it.Kind == "folder":
 		return folderName(it, template)

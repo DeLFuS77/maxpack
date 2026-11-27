@@ -34,19 +34,26 @@ console.log(vm.runInContext(` + "`" + `(() => {
   const row = (section, game) => ({ section, game: Object.assign({ Name: "A", TitleID: "PPSA01234", OriginalSize: 10 }, game), warnings: [], state: "", detail: "" });
   const zstd = { Kind: "folder", Packed: true, Packs: "zstd", PackedLevel: 5, OriginalSize: 100, UnpackedSize: 300, HasZstdRuntime: true, Path: "D:/games/Starfall" };
   const image = { Kind: "exfat", Packed: true, Packs: "zstd", PackedLevel: 19, OriginalSize: 100, ImageSize: 120, Path: "D:/games/Starfall.zstd" };
-  const lz4 = { Kind: "folder", Packs: "lz4", OriginalSize: 100, Path: "D:/games/Copper" };
+  const lz4 = { Kind: "folder", Packs: "lz4", OriginalSize: 100, UnpackedSize: 300, HasZstdRuntime: true, Path: "D:/games/Copper" };
   const dump = { Kind: "folder", OriginalSize: 100, Path: "D:/games/Vale" };
-  // a game packed with zstd packs goes in Compress, with no warning; one with LZ4 packs does not, and says why
+  // a game packed with zstd or LZ4 packs goes in Compress, with no warning
   state.lists.compress = [row("compress", zstd), row("compress", image), row("compress", lz4), row("compress", dump)];
   const ready = readyRows("compress").map(r => r.game.Path);
-  if (ready.join() !== [zstd.Path, image.Path, dump.Path].join()) say("the rows that go: " + ready.join());
+  if (ready.join() !== [zstd.Path, image.Path, lz4.Path, dump.Path].join()) say("the rows that go: " + ready.join());
   if (rowWarnings(state.lists.compress[0]).length) say("a zstd game is warned of: " + rowWarnings(state.lists.compress[0]).join());
-  if (rowWarnings(state.lists.compress[2]).join() !== t("detail_packs_lz4")) say("an LZ4 game says: " + rowWarnings(state.lists.compress[2]).join());
+  if (rowWarnings(state.lists.compress[2]).length) say("an LZ4 game is warned of: " + rowWarnings(state.lists.compress[2]).join());
   if (!packedZstd(zstd) || !packedZstd(image) || packedZstd(lz4) || packedZstd(dump) || packedZstd({ Kind: "p5z", Packed: true })) say("packedZstd");
-  if (!cannotCompress(lz4) || cannotCompress(zstd) || cannotCompress(dump) || !cannotCompress({ Kind: "folder", Packed: true })) say("cannotCompress");
+  if (!packedAlready(zstd) || !packedAlready(lz4) || packedAlready(dump) || packedAlready({ Kind: "p5z", Packed: true, Packs: "zstd" })) say("packedAlready");
+  if (cannotCompress(lz4) || cannotCompress(zstd) || cannotCompress(dump) || !cannotCompress({ Kind: "folder", Packed: true })) say("cannotCompress");
   // its row says it is packed already, with what and at what level
   if (packedNote(zstd) !== "already packed (zstd, level 5)") say("the note of a zstd game: " + packedNote(zstd));
-  if (packedNote(dump) !== "" || packedNote(lz4) !== "") say("the note of another game");
+  if (packedNote(lz4) !== "already packed (LZ4)") say("the note of an LZ4 game: " + packedNote(lz4));
+  if (packedNote(dump) !== "") say("the note of a dump: " + packedNote(dump));
+  // a folder for the console loses the runtime the other tool gave it, even one that reads zstd
+  state.settings = Object.assign({}, defaults, { Mode: "folder", Runtime: "" });
+  const noRuntime = builtInRuntime() ? "" : t("warn_needs_runtime");
+  if (rowWarnings(state.lists.compress[2]).join() !== noRuntime) say("an LZ4 game for the console: " + rowWarnings(state.lists.compress[2]).join());
+  state.settings = Object.assign({}, defaults);
   // a level a broken header gives is none: the note says zstd only
   if (packedNote(Object.assign({}, zstd, { PackedLevel: 0 })) !== "already packed (zstd)") say("the note without a level: " + packedNote(Object.assign({}, zstd, { PackedLevel: 0 })));
   // a .zstd (an exFAT image with a game packed already in it) is taken where an image is
@@ -64,6 +71,10 @@ console.log(vm.runInContext(` + "`" + `(() => {
   paintRow(Object.assign(row("compress", zstd), { path: zstd.Path, tr: { querySelector: folderCell, classList: { toggle() {} } } }));
   const line = String(folderCells[".file"].textContent);
   if (!line.includes("already packed (zstd, level 5)") || line.includes(t("kindPacked"))) say("the line of a packed folder: " + line);
+  const lz4Cells = {}, lz4Cell = sel => (lz4Cells[sel] = lz4Cells[sel] || stub());
+  paintRow(Object.assign(row("compress", lz4), { path: lz4.Path, tr: { querySelector: lz4Cell, classList: { toggle() {} } } }));
+  const lz4Line = String(lz4Cells[".file"].textContent);
+  if (!lz4Line.includes("already packed (LZ4)") || lz4Line.includes(t("kindPacked"))) say("the line of an LZ4 folder: " + lz4Line);
   // its DLC go inside it, as a dump's
   const dlc = row("compress", { Kind: "folder", Content: "dlc", DLCData: true, ContentID: "UP0000-PPSA01234_00-DLCDLCDLCDLCDLC0", TitleID: "PPSA01234", Path: "D:/dlc/A" });
   state.lists.compress = [row("compress", zstd), dlc];
@@ -76,6 +87,10 @@ console.log(vm.runInContext(` + "`" + `(() => {
   state.lists.compress = [row("compress", dump)];
   paintPackedChoice();
   if (!document.getElementById("packed-block").hidden) say("the choice shows with no packed game");
+  // LZ4 packs cannot be kept: a game with them alone brings no choice
+  state.lists.compress = [row("compress", lz4)];
+  paintPackedChoice();
+  if (!document.getElementById("packed-block").hidden) say("the choice shows with an LZ4 game alone");
   state.lists.compress = [row("compress", zstd)];
   paintPackedChoice();
   if (document.getElementById("packed-block").hidden) say("the choice does not show with a packed game");
@@ -108,7 +123,7 @@ console.log(vm.runInContext(` + "`" + `(() => {
 // TestPagePackedGames: a game packed already with zstd packs is no error in Compress: it goes, its row says it
 // is packed already and at what level, its DLC go inside it, the choice of compressing it again or keeping its
 // packs shows when the list has one, and its row says, once made, what it was made from; one with LZ4 packs
-// does not go, and says why.
+// goes too, its row saying so, and brings no choice (it is always compressed again).
 func TestPagePackedGames(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {

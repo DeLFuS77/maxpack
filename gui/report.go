@@ -190,7 +190,7 @@ func kindWords(g ReportGame) string {
 	case g.Kind == "p5z":
 		return ".p5z"
 	case g.Kind == "" || g.Kind == "folder":
-		if g.Packed {
+		if g.Packed || g.Packs == "lz4" { // a folder for the console, with zstd or LZ4 packs
 			return "compressed folder"
 		}
 		return "dump folder"
@@ -344,8 +344,8 @@ func (a *App) reportText(r ReportRequest) string {
 		switch g.Packs {
 		case "zstd":
 			line("Packed already: zstd packs, level %d", g.PackedLevel)
-		case "lz4":
-			line("Packed already: LZ4 packs")
+		case "lz4": // whatever Settings says of packed games: its chunks cannot go in as they are
+			line("Packed already: LZ4 packs (always compressed again)")
 		}
 		line("Size: %s", sized(g.OriginalSize))
 		if jobs.IsImage(g.Kind) && g.ImageSize > 0 {

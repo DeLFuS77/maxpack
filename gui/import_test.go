@@ -95,16 +95,18 @@ func TestReportSaysPacks(t *testing.T) {
 	text := a.reportText(ReportRequest{Section: "compress", Mode: "p5z", Games: []ReportGame{
 		{Kind: "folder", Packed: true, Packs: "zstd", PackedLevel: 5, OriginalSize: 20, State: "ok", Detail: "from_packed_kept:5"},
 		{Kind: "exfat", Packed: true, Packs: "zstd", PackedLevel: 19, OriginalSize: 20, ImageSize: 22, State: "ok", Detail: "from_packed"},
+		{Kind: "folder", Packs: "lz4", OriginalSize: 20, State: "ok", Detail: "from_packed"},
 		{Kind: "folder", Packs: "lz4", OriginalSize: 20, State: "error", Detail: "packs_lz4"},
 		{Kind: "folder", OriginalSize: 20},
 	}})
 	for _, want := range []string{"Packed already: zstd packs, level 5", "Result: ok (from_packed_kept:5)", "Packed already: zstd packs, level 19",
-		"Result: ok (from_packed)", "Packed already: LZ4 packs", "Result: error (packs_lz4)"} {
+		"Result: ok (from_packed)", "Packed already: LZ4 packs (always compressed again)", "Result: error (packs_lz4)"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("the report does not say %q:\n%s", want, text)
 		}
 	}
-	if strings.Count(text, "Packed already:") != 3 {
+	// a folder with LZ4 packs is a compressed one, as one with zstd packs: only the last is a dump
+	if strings.Count(text, "Packed already:") != 4 || strings.Count(text, "dump folder") != 1 || strings.Count(text, "compressed folder") != 3 {
 		t.Errorf("the report:\n%s", text)
 	}
 }

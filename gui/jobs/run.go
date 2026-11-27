@@ -442,7 +442,7 @@ func (r *Runner) one(ctx context.Context, i int, p Plan, o Options) outcome {
 		// as what was made holds them too, the DLC that went inside it (the engine's count has them)
 		if original, output := number(result, "original_size"), number(result, "output_size"); compress {
 			// (the engine's is the game's files unpacked: of a game packed already, what it takes on disk too)
-			if IsImage(p.Item.Kind) || p.Item.PackedZstd() {
+			if IsImage(p.Item.Kind) || p.Item.PackedAlready() {
 				if original = p.Item.SizeBefore(); original > 0 {
 					original += p.Item.AddDLCSize
 				}

@@ -403,12 +403,15 @@ function kindName(game) {
 }
 // a game packed already: one with zstd packs (Dump Forge, Alembic, a folder for the console, also in an image)
 // is compressed from the files it was made of, again or with its packs kept (KeepPacks); one with LZ4 packs
-// cannot be yet, nor can what an engine that did not say its packs saw packed
+// (ampr_emu, exFAT2AMPR) from its files too, always again (LZ4 chunks cannot go in as they are); what an
+// engine that did not say its packs saw packed cannot be
 const packedZstd = game => !!game && game.Kind !== "p5z" && game.Packs === "zstd";
-const cannotCompress = game => !!game && (game.Packs === "lz4" || (!!game.Packed && !packedZstd(game)));
-// what the row of a game packed already with zstd says of it: "already packed (zstd, level 5)", or without
-// the level when its header gives none
+const packedAlready = game => !!game && game.Kind !== "p5z" && (game.Packs === "zstd" || game.Packs === "lz4");
+const cannotCompress = game => !!game && !!game.Packed && !packedZstd(game);
+// what the row of a game packed already says of it: "already packed (zstd, level 5)", or without the level
+// when its header gives none; "already packed (LZ4)"
 function packedNote(game) {
+  if (packedAlready(game) && game.Packs === "lz4") return t("packedLz4");
   if (!packedZstd(game)) return "";
   const level = Number(game.PackedLevel) || 0;
   return level >= 1 && level <= 22 ? t("packedZstd")(level) : t("packedZstdOnly");
@@ -479,8 +482,9 @@ function rowWarnings(row) {
     if (late.length) list.push(t("dlcLate")(namesOf(late)));
     return list;
   }
-  // a game packed already in a way Compress does not take; one with zstd packs is no warning (its line says it)
-  if (row.section === "compress" && cannotCompress(game)) list.push(t(game.Packs === "lz4" ? "detail_packs_lz4" : "detail_already_packed"));
+  // a game packed already in a way Compress does not take; one with zstd or LZ4 packs is no warning (its line
+  // says it)
+  if (row.section === "compress" && cannotCompress(game)) list.push(t("detail_already_packed"));
   // a dump that lacks files of the original game makes a backup that lacks them too: said before
   // it is packed, which it still is
   if (row.section === "compress" && !cannotCompress(game)) {
@@ -494,7 +498,7 @@ function rowWarnings(row) {
   // only a folder needs ampr-emu-ng in its fakelib/: MaxPack for the console puts its own in when it
   // plays a .p5z. A folder that lacks one is given the one in use, when there is one
   // (a game packed already loses the runtime the other tool gave it)
-  const lacks = row.section === "compress" && modeOf("compress") === "folder" && !cannotCompress(game) && (packedZstd(game) || !game.HasZstdRuntime) && !runtimeInUse();
+  const lacks = row.section === "compress" && modeOf("compress") === "folder" && !cannotCompress(game) && (packedAlready(game) || !game.HasZstdRuntime) && !runtimeInUse();
   // made without a runtime that reads zstd: its note says it already
   const told = row.state === "ok" && /(^|; )runtime_without_zstd($|; )/.test(row.detail);
   if ((lacks || row.warnings.includes("needs_runtime")) && !told) list.push(t("warn_needs_runtime"));
@@ -747,7 +751,7 @@ function paintFacts(row) {
   const made = game.P5zSize || (game.Packed ? game.InstallSize : 0);
   if (made && game.OriginalSize > made) fact(facts, t("factSaved"), t("smallerBy")(Math.round((1 - made / game.OriginalSize) * 100)) + " · " + size(game.OriginalSize - made));
   fact(facts, t("factPacked"), game.Packed ? t("yes") : t("no"));
-  if (game.Packed) fact(facts, t("factPacks"), t("packsOf")(game.PackedFiles || 0, game.Volumes || 0));
+  if (game.Packed || packedAlready(game)) fact(facts, t("factPacks"), t("packsOf")(game.PackedFiles || 0, game.Volumes || 0));
   fact(facts, "ampr-emu-ng", game.HasZstdRuntime ? t("runtimeZstd") : game.HasRuntime ? t("runtimeOld") : t("runtimeNone"));
   // the repair data of a .p5z (its card, as a double click opens it): how much, or none
   if (game.Kind === "p5z") fact(facts, t("factRepair"), repairFactText(row.repair));
@@ -792,7 +796,7 @@ function paintRow(row) {
   // read, that it is being read, or where it is
   const file = tr.querySelector(".file"), dlc = dlcCountOf(row);
   // a folder packed already says it once, with its packs
-  const packedFolder = row.section === "compress" && packedZstd(game) && !isDlc(game) && !imageKinds[game.Kind];
+  const packedFolder = row.section === "compress" && packedAlready(game) && !isDlc(game) && !imageKinds[game.Kind];
   if (game) file.textContent = [game.TitleID, game.Version && t("versionOf")(game.Version), !packedFolder && kindName(game), row.section === "compress" && packedNote(game), dlc && t("withDlc")(dlc), unpackedNote(game)].filter(Boolean).join(" · ");
   else file.textContent = row.error ? row.path : t("reading");
   tr.querySelector(".size").textContent = game ? size(onDisk(game)) : "";

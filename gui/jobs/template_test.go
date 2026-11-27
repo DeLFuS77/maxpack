@@ -160,12 +160,14 @@ func TestRenamePlan(t *testing.T) {
 	image := Item{Path: mk("harbor.exfat", false), Kind: "exfat", Name: "Iron Harbor", TitleID: "PPSA10002", Version: "01.000.000"}
 	dump := Item{Path: mk("neon-dump", true), Kind: "folder", Name: "Neon Meridian", TitleID: "PPSA10003", Version: "01.000.000"}
 	packed := Item{Path: mk("packed", true), Kind: "folder", Packed: true, Name: "Lost Signal", TitleID: "PPSA10004"}
+	// a folder with LZ4 packs is one for the console too: it keeps its TITLE_ID
+	lz4 := Item{Path: mk("lz4", true), Kind: "folder", Packs: "lz4", Name: "Lost Signal", TitleID: "PPSA10007"}
 	done := Item{Path: mk("Quiet Tide [PPSA10005].p5z", false), Kind: "p5z", Name: "Quiet Tide", TitleID: "PPSA10005"}
 	mk("Glass Orbit [PPSA10006].p5z", false)
 	taken := Item{Path: mk("orbit.p5z", false), Kind: "p5z", Name: "Glass Orbit", TitleID: "PPSA10006"}
 	twin := Item{Path: mk("starfall copy.p5z", false), Kind: "p5z", Name: "Starfall Odyssey", TitleID: "PPSA10001", Version: "01.000.021"}
 	unread := Item{Path: mk("broken.p5z", false)}
-	plans := PlanRename([]Item{p5z, image, dump, packed, done, taken, twin, unread}, "{title} [{id}] [v{version}]")
+	plans := PlanRename([]Item{p5z, image, dump, packed, done, taken, twin, unread, lz4}, "{title} [{id}] [v{version}]")
 	want := []struct{ name, block string }{
 		{"Starfall Odyssey [PPSA10001] [v01.000.021].p5z", ""},
 		{"Iron Harbor [PPSA10002] [v01.000.000].exfat", ""},
@@ -175,6 +177,7 @@ func TestRenamePlan(t *testing.T) {
 		{"Glass Orbit [PPSA10006].p5z", "name_taken"},
 		{"Starfall Odyssey [PPSA10001] [v01.000.021].p5z", "duplicate_target"},
 		{"", "cannot_read"},
+		{"PPSA10007", ""},
 	}
 	for i, w := range want {
 		p := plans[i]

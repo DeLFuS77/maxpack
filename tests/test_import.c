@@ -793,6 +793,45 @@ MP_TEST(refuses_a_chunk_of_two_frames) {
     mpt_clear(TMP "/frames");
 }
 
+// A loose copy beside the packs that is the packed file itself (a game packed in place with its files kept) is
+// taken once, from the packs; one that differs, in a byte or in its size, is refused: keep only one.
+MP_TEST(takes_a_loose_copy_the_same_as_the_packed_one) {
+    make_reference();
+    const char *dir = TMP "/zinplace";
+    copy_tree(FOLDER, dir);
+    mp_source *src = NULL;
+    mp_err e = {{0}};
+    long at = mp_source_open(MPT_BASIC, &src, &e) == 0 ? mp_source_find(src, "data/big.bin") : -1;
+    const mp_entry *en = at >= 0 ? mp_source_entry(src, (size_t)at) : NULL;
+    uint8_t *b = en ? malloc((size_t)en->size) : NULL;
+    if (!b || mp_source_read(src, (size_t)at, 0, b, (size_t)en->size, &e) != 0) {
+        MP_FAIL_("data/big.bin of the dump: %s", e.msg);
+        free(b);
+        mp_source_close(src);
+        return;
+    }
+    mpt_put(TMP "/zinplace/data/big.bin", b, (size_t)en->size);
+    mp_set_mtime(TMP "/zinplace/data/big.bin", en->mtime, NULL);
+    for (int keep = 0; keep < 2; keep++) {
+        mp_pack_result res;
+        if (pack_ex(dir, TMP "/zinplace.p5z", 1, 19, 3, MP_ZPK_VOLUME_LIMIT, keep, &res, &e) != 0) {
+            MP_FAIL_("keep %d: %s", keep, e.msg);
+            continue;
+        }
+        if (!keep) MP_CHECK(same_bytes(A19, TMP "/zinplace.p5z"));
+        mpt_clear(TMP "/zinplace.p5z");
+    }
+    b[1000] ^= 0x5A;   // a byte of it
+    mpt_put(TMP "/zinplace/data/big.bin", b, (size_t)en->size);
+    refused(dir, MP_IMPORT_TWICE, "differ");
+    b[1000] ^= 0x5A;   // the same bytes, one fewer
+    mpt_put(TMP "/zinplace/data/big.bin", b, (size_t)en->size - 1);
+    refused(dir, MP_IMPORT_TWICE, "differ");
+    free(b);
+    mp_source_close(src);
+    mpt_clear(dir);
+}
+
 // Cancelled in the middle of the packs: it says it was cancelled, not that the packs are damaged, and the .p5z
 // goes.
 static int cancel_calls;
@@ -1051,6 +1090,131 @@ MP_TEST(lz4_refuses_other_kinds) {
     mpt_copy_file(FOLDER "/ampr_zstd.index", TMP "/lz4old/ampr_zstd.index");
     refused(bad, MP_IMPORT_LZ4, "zstd");
     mpt_clear(bad);
+}
+
+// The same for LZ4 packs, as `ampr_pack.py pack --root app0 --output app0` leaves a game: its packed files
+// still loose beside the packs (64 KiB pages, streaming, random-access and hot files too).
+MP_TEST(lz4_takes_a_game_packed_in_place) {
+    make_reference();
+    const char *dir = TMP "/lz4inplace", *bad = TMP "/lz4twin";
+    mpt_clear(dir);
+    mpt_lz4_opts o = {2, 65536, mpt_lz4_odd, 1, 0, 0, 0, 0, 1, 1, 0, 0};
+    if (mpt_lz4_pack(MPT_BASIC, dir, &o) != 0) {
+        MP_FAIL_("could not make the LZ4 packs");
+        return;
+    }
+    for (int keep = 0; keep < 2; keep++) {
+        mp_pack_result res;
+        mp_err e = {{0}};
+        if (pack_ex(dir, TMP "/lz4inplace.p5z", 1, 19, 3, MP_ZPK_VOLUME_LIMIT, keep, &res, &e) != 0) {
+            MP_FAIL_("keep %d: %s", keep, e.msg);
+            continue;
+        }
+        MP_CHECK(same_bytes(A19, TMP "/lz4inplace.p5z"));
+        mpt_clear(TMP "/lz4inplace.p5z");
+    }
+    copy_tree(dir, bad);
+    flip_byte(TMP "/lz4twin/data/frag.bin", 30000);
+    refused(bad, MP_IMPORT_TWICE, "differ");
+    copy_tree(dir, bad);
+    mpt_put_text(TMP "/lz4twin/data/frag.bin", "a loose copy of another size");
+    refused(bad, MP_IMPORT_TWICE, "differ");
+    mpt_clear(bad);
+    mpt_clear(dir);
+}
+
+#define LZ4G TMP "/lz4bare"   // without the CRC file and the runtime profile, as most are deployed
+
+// LZ4 packs with no sidecar, 64 KiB pages, streaming, random-access and hot files and the tool's runtime in the
+// packs: the dump's .p5z all the same, the runtime left out of what it counts; a damaged LZ4 chunk is still
+// told, by its decoding.
+MP_TEST(lz4_without_sidecars) {
+    make_reference();
+    mpt_clear(LZ4G);
+    mpt_lz4_opts o = {2, 65536, mpt_lz4_odd, 0, 0, 0, 0, 0, 1, 0, 1, 0};
+    if (mpt_lz4_pack(MPT_BASIC, LZ4G, &o) != 0) {
+        MP_FAIL_("could not make the LZ4 packs");
+        return;
+    }
+    if (!o.lz4_chunks || !o.raw_chunks || !o.shared_chunks || !o.streaming_chunks)
+        MP_FAIL_("%llu LZ4, %llu raw, %llu shared, %llu streaming chunks", (unsigned long long)o.lz4_chunks,
+                 (unsigned long long)o.raw_chunks, (unsigned long long)o.shared_chunks,
+                 (unsigned long long)o.streaming_chunks);
+    MP_CHECK(mp_path_kind(LZ4G "/" MP_LZ4PK_CRC) == 0 && mp_path_kind(LZ4G "/" MP_LZ4PK_RUNTIME) == 0);
+    unsigned threads[2] = {1, all_threads()};
+    for (int k = 0; k < 2; k++) {
+        mp_pack_result res;
+        mp_err e = {{0}};
+        if (pack_ex(LZ4G, TMP "/lz4bare.p5z", 1, 19, threads[k], MP_ZPK_VOLUME_LIMIT, 0, &res, &e) != 0) {
+            MP_FAIL_("%u threads: %s", threads[k], e.msg);
+            continue;
+        }
+        MP_CHECK(same_bytes(A19, TMP "/lz4bare.p5z"));
+        mpt_clear(TMP "/lz4bare.p5z");
+    }
+    // what it says it packs: the files of the game in the packs, the runtime that is there too not counted
+    size_t n = 0;
+    uint8_t *d = mpt_slurp(LZ4G "/" MP_LZ4PK_INDEX, &n);
+    mp_lz4pk *l = NULL;
+    mp_err e = {{0}};
+    uint64_t files = 0, bytes = 0;
+    if (d && mp_lz4pk_open(d, n, &l, NULL, &e) == 0) {
+        for (size_t i = 0; i < mp_lz4pk_count(l); i++)
+            if (mp_lz4pk_packed(l, i) && !mp_import_left_out(mp_lz4pk_path(l, i))) {
+                files++;
+                bytes += mp_lz4pk_size(l, i);
+            }
+        mp_lz4pk_close(l);
+    } else {
+        MP_FAIL_("%s", e.msg);
+    }
+    free(d);
+    mp_source *g = NULL;
+    mp_import_info info;
+    if (mp_import_open(LZ4G, MP_OPEN_GAME, &g, &info, &e) == 0) {
+        MP_CHECK_EQ_U64(info.packed_files, files);
+        MP_CHECK_EQ_U64(info.packed_bytes, bytes);
+        mp_source_close(g);
+    } else {
+        MP_FAIL_("%s", e.msg);
+    }
+    // an LZ4 chunk of zeros does not decode
+    const char *bad = TMP "/lz4bare_bad";
+    copy_tree(LZ4G, bad);
+    uint32_t pack = 0, stored = 0;
+    uint64_t off = 0;
+    if (lz4_chunk_of(bad, 1, &pack, &off, &stored) == 0) {
+        char p[512];
+        snprintf(p, sizeof p, "%s/ampr_assets-%03u.pak", bad, pack);
+        size_t vn = 0;
+        uint8_t *v = mpt_slurp(p, &vn);
+        if (v && off + stored <= vn) {
+            memset(v + off, 0, stored);
+            mpt_put(p, v, vn);
+            refused(bad, MP_IMPORT_DAMAGED, "does not decode");
+        } else {
+            MP_FAIL_("no chunk at %llu", (unsigned long long)off);
+        }
+        free(v);
+    }
+    mpt_clear(bad);
+}
+
+MP_TEST(lz4_cancel_while_reading_the_packs) {
+    make_lz4();
+    cancel_calls = 0;
+    mp_progress_hook h = {cancel_soon, NULL};
+    mp_progress_set_hook(&h);
+    mp_pack_result res;
+    mp_err e = {{0}};
+    int rc = pack_ex(LZ4F, TMP "/lz4cancelled.p5z", 1, 19, 2, MP_ZPK_VOLUME_LIMIT, 0, &res, &e);
+    mp_progress_set_hook(NULL);
+    int was = mp_cancelled();
+    mp_cancel_reset();
+    MP_CHECK(rc == -1 && was);
+    MP_CHECK_CONTAINS(e.msg, "cancelled");
+    MP_CHECK(res.code == NULL);
+    MP_CHECK(mp_path_kind(TMP "/lz4cancelled.p5z") == 0);
 }
 
 // ---- LZ4 packs: the reader alone ------------------------------------------------------------
@@ -1337,6 +1501,7 @@ int main(void) {
     MP_RUN(refuses_a_loose_file_cut_short);
     MP_RUN(leaves_out_ampr_files_in_the_packs);
     MP_RUN(refuses_a_chunk_of_two_frames);
+    MP_RUN(takes_a_loose_copy_the_same_as_the_packed_one);
     MP_RUN(cancel_while_reading_the_packs);
     MP_RUN(lz4_recompress_is_identical);
     MP_RUN(lz4_source_has_the_original_files);
@@ -1344,6 +1509,9 @@ int main(void) {
     MP_RUN(lz4_refuses_tricky_paths);
     MP_RUN(lz4_refuses_missing_and_twice);
     MP_RUN(lz4_refuses_other_kinds);
+    MP_RUN(lz4_takes_a_game_packed_in_place);
+    MP_RUN(lz4_without_sidecars);
+    MP_RUN(lz4_cancel_while_reading_the_packs);
     MP_RUN(lz4_reader_refusals);
     MP_RUN(lz4_refuses_shared_chunk_ranges);
     MP_RUN(lz4_refuses_counts_over_the_runtime_caps);

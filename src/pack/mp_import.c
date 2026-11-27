@@ -40,7 +40,9 @@ typedef struct {
     uint32_t nvol;
     long *bi;          // of each entry: its entry in the base, or -1
     long *zi;          // or its file in the packs, or -1
+    long *li;          // of a file of the packs: its loose copy in the base, compared as it is read, or -1
     volatile int failed;   // a block of the packs read was not what the runtime takes, or did not decode
+    volatile int differs;  // or a loose copy was not the packed file
     mp_mutex *mu;          // for what follows
     uint64_t vol_bytes;    // read from the volumes
     int keeping;           // mp_import_keep
@@ -186,6 +188,32 @@ static void kept_free(imp *x) {
     x->kept_bytes = 0;
 }
 
+// The loose copy of file i of the packs against what was read of it (buf, len at off): the same bytes, or the
+// game has two files of one name.
+static int same_as_loose(imp *x, mp_source *s, size_t i, uint64_t off, const uint8_t *buf, size_t len, mp_err *e) {
+    size_t piece = len < (1u << 20) ? len : (1u << 20);
+    uint8_t *b = malloc(piece ? piece : 1);
+    if (!b) {
+        mp_err_set(e, "out of memory");
+        return -1;
+    }
+    int rc = 0;
+    for (size_t done = 0; !rc && done < len; done += piece) {
+        size_t k = len - done < piece ? len - done : piece;
+        if (mp_source_read(x->base, (size_t)x->li[i], off + done, b, k, e) != 0) {
+            rc = -1;
+        } else if (memcmp(b, buf + done, k)) {
+            mp_err_set(e, "%s is both loose and in its packs, and the two copies differ: keep only one",
+                       s->entries[i].path);
+            x->differs = 1;
+            x->failed = 1;
+            rc = -1;
+        }
+    }
+    free(b);
+    return rc;
+}
+
 static int imp_read(mp_source *s, size_t i, uint64_t off, void *buf, size_t len, mp_err *e) {
     imp *x = s->impl;
     if (x->zi[i] < 0) return mp_source_read(x->base, (size_t)x->bi[i], off, buf, len, e);
@@ -195,14 +223,12 @@ static int imp_read(mp_source *s, size_t i, uint64_t off, void *buf, size_t len,
             if (bad) x->failed = 1;
             return -1;
         }
-        return 0;
-    }
-    // keeping is set before the readers start and cleared after they end
-    if (mp_zpk_read_file_ex(x->z, (size_t)x->zi[i], off, buf, len, x->keeping ? imp_seen : NULL, x, &bad, e) != 0) {
+    } else if (mp_zpk_read_file_ex(x->z, (size_t)x->zi[i], off, buf, len, x->keeping ? imp_seen : NULL, x, &bad, e) !=
+               0) {   // keeping is set before the readers start and cleared after they end
         if (bad) x->failed = 1;
         return -1;
     }
-    return 0;
+    return x->li[i] >= 0 ? same_as_loose(x, s, i, off, buf, len, e) : 0;
 }
 
 static void imp_free(imp *x) {
@@ -215,6 +241,7 @@ static void imp_free(imp *x) {
     free(x->vol);
     free(x->bi);
     free(x->zi);
+    free(x->li);
     mp_mutex_free(x->mu);
     free(x);
 }
@@ -226,6 +253,8 @@ static const char *imp_id(const mp_source *s) { return mp_source_package_id(((co
 mp_zpk *mp_import_zpk(mp_source *s) { return s && s->close == imp_close ? ((imp *)s->impl)->z : NULL; }
 
 int mp_import_failed(mp_source *s) { return s && s->close == imp_close && ((imp *)s->impl)->failed; }
+
+int mp_import_differs(mp_source *s) { return s && s->close == imp_close && ((imp *)s->impl)->differs; }
 
 uint64_t mp_import_volume_bytes(mp_source *s) {
     if (!s || s->close != imp_close) return 0;
@@ -274,6 +303,7 @@ int mp_import_take(void *ctx, uint64_t chunk, void *buf, size_t cap, uint32_t *l
 typedef struct {
     mp_entry en;
     long bi, zi;
+    long li;    // of a file of the packs: its loose copy, or -1
     long row;   // its row of ampr_emu.index, or -1
 } rec;
 
@@ -425,10 +455,6 @@ static int open_lz4(const char *path, imp *x, size_t ix, uint8_t *volume, mp_idx
         memcpy(rows[i].app0_path + APP0_LEN, p, pl + 1);
         rows[i].size = mp_lz4pk_size(x->l, i);
         rows[i].mtime = mp_lz4pk_mtime(x->l, i);
-        if (mp_lz4pk_packed(x->l, i)) {
-            info->packed_files++;
-            info->packed_bytes += rows[i].size;
-        }
     }
     if (nf > 1) qsort(rows, nf, sizeof *rows, cmp_row);
     for (size_t i = 1; i < nf; i++)
@@ -511,8 +537,6 @@ static int open_packed(const char *path, mp_source *base, size_t ix, int lz4, mp
         info->packs = "zstd";
         info->level = mp_zpk_level(x->z);
         info->volumes = mp_zpk_volume_count(x->z);
-        info->packed_files = mp_zpk_count(x->z);
-        for (size_t i = 0; i < info->packed_files; i++) info->packed_bytes += mp_zpk_size(x->z, i);
         // ampr_emu.index: the date of every packed file, and the list of the files of the game
         long di = find_ci(base, DUMP_INDEX);
         if (di < 0) {
@@ -527,6 +551,7 @@ static int open_packed(const char *path, mp_source *base, size_t ix, int lz4, mp
         }
         nz = mp_zpk_count(x->z);
     }
+    const char *list = lz4 ? "ampr_assets.index" : "ampr_emu.index";
     used = calloc(nrows ? nrows : 1, 1);
     v = calloc(nb + nz + 1, sizeof *v);
     if (!used || !v) goto oom;
@@ -538,6 +563,7 @@ static int open_packed(const char *path, mp_source *base, size_t ix, int lz4, mp
         v[n].en = *en;
         v[n].bi = (long)i;
         v[n].zi = -1;
+        v[n].li = -1;
         v[n].row = r;
         n++;
     }
@@ -548,30 +574,50 @@ static int open_packed(const char *path, mp_source *base, size_t ix, int lz4, mp
         long r = mp_idx3_find(rows, nrows, p);
         if (r >= 0) used[r] = 1;
         if (mp_import_left_out(p)) continue;   // inside the packs or loose, the same
-        if (r < 0) {
-            rc = refuse(info, MP_IMPORT_DAMAGED, e, path, "%s is in its packs but its ampr_emu.index does not list it", p);
+        char m[300];
+        if (r < 0 || rows[r].size != size) {
+            snprintf(m, sizeof m, r < 0 ? "%s is in its packs but its %s does not list it" : "%s is not of the size its %s says",
+                     p, list);
+            rc = refuse(info, MP_IMPORT_DAMAGED, e, path, "%s", m);
             goto done;
         }
-        if (rows[r].size != size) {
-            rc = refuse(info, MP_IMPORT_DAMAGED, e, path, "%s is not of the size its ampr_emu.index says", p);
-            goto done;
-        }
+        info->packed_files++;   // of the game: what is left out of it is not
+        info->packed_bytes += size;
         v[n].en.path = (char *)p;
         v[n].en.size = size;
         v[n].en.mtime = lz4 ? mp_lz4pk_mtime(x->l, i) : rows[r].mtime;
         v[n].bi = -1;
         v[n].zi = (long)i;
+        v[n].li = -1;
         v[n].row = r;
         n++;
     }
-    const char *list = lz4 ? "ampr_assets.index" : "ampr_emu.index";
-    // a path loose and in the packs, or a file and a folder at once
+    // a path loose and in the packs: the packed file kept beside the packs (a game packed in place, which the
+    // runtime plays from the packs) is taken once, from the packs, its loose copy compared as it is read; of
+    // another size, or twice in the packs, it is refused
     if (n > 1) qsort(v, n, sizeof *v, cmp_rec);
-    for (size_t i = 1; i < n; i++)
-        if (!strcmp(v[i - 1].en.path, v[i].en.path)) {
-            rc = refuse(info, MP_IMPORT_TWICE, e, path, "%s is both loose and in its packs: keep only one", v[i].en.path);
+    size_t w = 0;
+    for (size_t i = 0; i < n; i++) {
+        if (!w || strcmp(v[w - 1].en.path, v[i].en.path)) {
+            v[w++] = v[i];
+            continue;
+        }
+        rec *a = &v[w - 1], *b = &v[i], *packed_one = a->zi >= 0 ? a : b, *loose = a->zi >= 0 ? b : a;
+        char m[300];
+        if ((a->zi >= 0) == (b->zi >= 0)) {
+            rc = refuse(info, MP_IMPORT_TWICE, e, path, "%s is twice in its packs: keep only one", a->en.path);
             goto done;
         }
+        if (loose->en.size != packed_one->en.size) {
+            snprintf(m, sizeof m, "%s is both loose and in its packs, and the two copies differ (%llu and %llu bytes): keep only one",
+                     a->en.path, (unsigned long long)loose->en.size, (unsigned long long)packed_one->en.size);
+            rc = refuse(info, MP_IMPORT_TWICE, e, path, "%s", m);
+            goto done;
+        }
+        packed_one->li = loose->bi;
+        *a = *packed_one;
+    }
+    n = w;
     const char *file = NULL, *under = NULL;
     int packed = 0, ff = file_and_folder(v, n, &file, &under, &packed);
     if (ff < 0) goto oom;
@@ -605,13 +651,15 @@ static int open_packed(const char *path, mp_source *base, size_t ix, int lz4, mp
     s->entries = calloc(n ? n : 1, sizeof *s->entries);
     x->bi = malloc((n ? n : 1) * sizeof *x->bi);
     x->zi = malloc((n ? n : 1) * sizeof *x->zi);
-    if (!s->entries || !x->bi || !x->zi) goto oom;
+    x->li = malloc((n ? n : 1) * sizeof *x->li);
+    if (!s->entries || !x->bi || !x->zi || !x->li) goto oom;
     for (size_t i = 0; i < n; i++) {
         s->entries[i] = v[i].en;
         if (!(s->entries[i].path = mp_strdup(v[i].en.path))) goto oom;
         s->n = i + 1;
         x->bi[i] = v[i].bi;
         x->zi[i] = v[i].zi;
+        x->li[i] = v[i].li;
     }
     s->kind = base->kind;
     s->inner = base->inner;

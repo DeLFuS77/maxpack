@@ -19,7 +19,7 @@
 #define MP_IMPORT_DAMAGED "packs_damaged"          // packs or indexes that are damaged or disagree
 #define MP_IMPORT_MISSING "packed_file_missing"    // a file ampr_emu.index lists is not there
 #define MP_IMPORT_LZ4 "packs_lz4"                  // LZ4 packs it does not read: an older manifest, or zstd ones too
-#define MP_IMPORT_TWICE "packed_and_loose"        // a path both loose and in the packs (or a file and a folder)
+#define MP_IMPORT_TWICE "packed_and_loose"        // a path loose and packed, not the same (or a file and a folder)
 #define MP_IMPORT_DLC "dlc_packed"                 // a DLC packed already (no eboot.bin), given as a game
 
 typedef struct {
@@ -32,12 +32,15 @@ typedef struct {
 
 // Opens path as mp_source_open_as does (what: MP_OPEN_GAME, MP_OPEN_DLC or MP_OPEN_ANY) and, when it is a
 // packed game, gives the source of its original files instead (info->packed). A source that is not packed
-// is given as it is. Refused, with e and info->code set: LZ4 packs, a pack volume without its index, packs
-// or indexes that are damaged or disagree with each other (no ampr_emu.index, a packed file it does not list
-// or lists with another size), a path both loose and packed or a file that is a folder too (ASCII case aside),
-// and a file ampr_emu.index lists that is neither loose nor packed, or loose of another size (the files that
-// are left out, OS junk and what dump tools leave behind aside). The names the runtime opens (the index, the
-// volumes) are taken as it names them, and in another case only when there are none so.
+// is given as it is. Refused, with e and info->code set: LZ4 packs it does not read, a pack volume without its
+// index, packs or indexes that are damaged or disagree with each other (no ampr_emu.index, a packed file it
+// does not list or lists with another size), a path both loose and packed whose loose copy is of another size
+// or a file that is a folder too (ASCII case aside), and a file ampr_emu.index lists that is neither loose nor
+// packed, or loose of another size (the files that are left out, OS junk and what dump tools leave behind
+// aside). A loose copy of the size of the packed file (a game packed in place, its files kept) is taken once,
+// from the packs, and compared with them as it is read (mp_import_differs). info->packed_files and
+// packed_bytes count the files of the game in the packs, not what is left out of it. The names the runtime
+// opens (the index, the volumes) are taken as it names them, and in another case only when there are none so.
 // Asked for a game only (MP_OPEN_GAME), a packed source without eboot.bin is a DLC packed already: refused too.
 int mp_import_open(const char *path, int what, mp_source **out, mp_import_info *info, mp_err *e);
 // The same for a source already open, base, which it takes when it succeeds (the source it gives holds it)
@@ -50,6 +53,9 @@ mp_zpk *mp_import_zpk(mp_source *s);
 // 1 once reading a file of the packs found a block that is not what the runtime takes or does not decode: what
 // stopped was the packs (a read of the source that fails is not that).
 int mp_import_failed(mp_source *s);
+// 1 once reading a file of the packs found its loose copy is not the same (mp_import_failed is 1 too): the game
+// has two files of one name.
+int mp_import_differs(mp_source *s);
 // --keep-packs: while on, a read of s (the source mp_import_open made of a packed game) keeps the stored bytes of
 // each compressed block it decodes, for mp_import_take to give once (mp_zpk_opts.keep_take, with s as its ctx):
 // the bytes copied are the ones decoded and hashed, read once. Off, what is kept goes.

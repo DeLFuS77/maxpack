@@ -374,12 +374,14 @@ oom:
     mp_err_set(e, "out of memory");
 done:
 #undef LEFT_OUT
-    // what stopped it was the packs of the game: a block or a volume that is damaged
+    // what stopped it was the packs of the game: a block or a volume that is damaged, or a loose copy of a
+    // packed file that is not the same
     if (rc != 0 && src && mp_import_failed(game) && !mp_cancelled()) {
         char why[sizeof e->msg];
         snprintf(why, sizeof why, "%s", e ? e->msg : "");
-        mp_err_set(e, "%s: its packs are damaged: %s", src_path, why);
-        r->code = MP_IMPORT_DAMAGED;
+        int twice = mp_import_differs(game);
+        mp_err_set(e, twice ? "%s: %s" : "%s: its packs are damaged: %s", src_path, why);
+        r->code = twice ? MP_IMPORT_TWICE : MP_IMPORT_DAMAGED;
     }
     free(keep);
     free(fin.v);   // its entries are man's

@@ -163,6 +163,23 @@ All notable changes to MaxPack are listed here. The format follows
 - The HTTP client of the engine takes headers of its own and a response as soon as its `Content-Length`
   has arrived.
 
+### Changed
+
+- **Verifying and packing are faster on CPUs with SHA instructions, and the loose files of a `.p5z` use
+  all the threads, with the same output byte for byte.** SHA-256, which `verify --quick` computes over
+  a `.p5z`'s volumes and files and `pack`, `unpack` and `verify` over every file, runs on the x86 SHA
+  extensions on the console too when its CPU reports them (only the PC build used them; the console
+  read a 35.5 GB `.p5z` in `verify --quick` at about 182 MB/s, the speed of the portable code) and on
+  the ARMv8 SHA-2 instructions on Macs with Apple silicon. Elsewhere it stays on the portable code, and
+  the instructions are used only once they give its digests. On a 32-thread PC they hash at about
+  2 GB/s, against 0.4 GB/s for the portable code. The loose files' zstd 19 frames (up to 32 MiB each)
+  went through one 32 MiB slot per thread, so while a large frame was compressed the small files
+  behind it left the other threads idle; now up to as many bytes as those slots held, in pieces of any
+  size, are compressed at once, and a generated game with 228 MB of loose files packs to a `.p5z` in
+  6.1 s instead of 9.7 with the default threads (7.3 s instead of 12.4 with 5). Frames, order and
+  index are the same: a new identity test packs many small loose files among files of over 32 MiB at
+  1, 3 and 8 threads to the bytes the previous engine wrote.
+
 ### Fixed
 
 - **The size of an image or a package in the lists** is what its file takes on disk, as the file manager

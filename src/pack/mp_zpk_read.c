@@ -382,6 +382,17 @@ int mp_zpk_chunk(const mp_zpk *z, size_t i, uint32_t k, uint32_t *vol, uint64_t 
     return 0;
 }
 
+int mp_zpk_read_stored(mp_zpk *z, uint64_t c, void *buf, size_t cap, uint32_t *stored, mp_err *e) {
+    uint32_t n = C_STORED(c);
+    if (n > cap || C_VOL(c) >= z->nvol) {
+        mp_err_set(e, "invalid ampr_zstd.index: a block record that is not one");
+        return -1;
+    }
+    if (z->vs.read(z->vs.ctx, C_VOL(c), C_OFF(c), buf, n, e) != 0) return -1;
+    *stored = n;
+    return 0;
+}
+
 int mp_zpk_read_file(mp_zpk *z, size_t i, uint64_t off, void *buf, size_t n, mp_err *e) {
     if (i >= z->n || off > z->f[i].size || n > z->f[i].size - off) {
         mp_err_set(e, "read outside the packed file");

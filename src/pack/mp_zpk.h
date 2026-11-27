@@ -31,6 +31,11 @@ typedef struct {
     uint64_t volume_limit;  // MP_ZPK_VOLUME_LIMIT (smaller in tests)
     mp_progress *prog;
     uint32_t first_volume;  // the id of the first volume written (0; more when a .p5z grows)
+    // Chunks taken as they are (--keep-packs): files[k] with keep[k] >= 0 is file keep[k] of keep_from, of the
+    // same size, whose chunks are written as they are stored there instead of being compressed (the file is
+    // still read, so its SHA-256 is that of its contents). keep NULL: every file is compressed.
+    struct mp_zpk *keep_from;
+    const long *keep;
 } mp_zpk_opts;
 
 typedef struct {
@@ -118,6 +123,9 @@ int mp_zpk_chunk(const mp_zpk *z, size_t i, uint32_t k, uint32_t *vol, uint64_t 
                  int *codec);
 // Reads [off, off+n) of file i decoding its blocks; checks sizes and checksums.
 int mp_zpk_read_file(mp_zpk *z, size_t i, uint64_t off, void *buf, size_t n, mp_err *e);
+// The bytes chunk record c (one of mp_zpk_file_chunks') takes in its volume, as they are stored: *stored of
+// them, at most cap, into buf. 0, or -1 with e set.
+int mp_zpk_read_stored(mp_zpk *z, uint64_t c, void *buf, size_t cap, uint32_t *stored, mp_err *e);
 void mp_zpk_close(mp_zpk *z);
 
 int mp_zpk_volsrc_dir(const char *dir, mp_zpk_volsrc *out, mp_err *e);   // opens on demand

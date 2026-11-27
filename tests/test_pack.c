@@ -268,15 +268,18 @@ MP_TEST(pack_refuses_stale_volume) {
     mp_pack_opts o = quiet(2);
     mp_pack_result r;
     MP_CHECK(pack_to(TMP "/stale_src", TMP "/stale_out", &o, &r, &e) == -1);
-    MP_CHECK_CONTAINS(e.msg, "already packed");
+    MP_CHECK_CONTAINS(e.msg, "no ampr_zstd.index");
+    MP_CHECK_STR(r.code, "packs_damaged");
 }
 
-MP_TEST(pack_refuses_packed_source) {
+// A packed folder is packed again from the files it was made of (test_import.c tests it whole).
+MP_TEST(pack_takes_packed_source) {
     mp_pack_opts o = quiet(2);
     mp_pack_result r;
     mp_err e = {{0}};
-    MP_CHECK(pack_to(TMP "/basic", TMP "/repack", &o, &r, &e) == -1);
-    MP_CHECK_CONTAINS(e.msg, "already packed");
+    MP_CHECK(pack_to(TMP "/basic", TMP "/repack", &o, &r, &e) == 0);
+    MP_CHECK(r.from_packed == 1);
+    MP_CHECK(same_trees(TMP "/basic", TMP "/repack"));
 }
 
 MP_TEST(pack_replaces_ampr_files) {
@@ -382,7 +385,7 @@ int main(void) {
     MP_RUN(pack_refuses_case_dups);
     MP_RUN(pack_dir_not_created_on_refusal);
     MP_RUN(pack_refuses_stale_volume);
-    MP_RUN(pack_refuses_packed_source);
+    MP_RUN(pack_takes_packed_source);
     MP_RUN(pack_replaces_ampr_files);
     MP_RUN(pack_many_small_files);
     MP_TEST_MAIN_END();

@@ -3,7 +3,8 @@
 // writes them in that same order, so the output does not depend on the number of threads. It is a
 // pipeline: a read-ahead reads the files in that order in big pieces with a few threads and computes
 // each file's SHA-256, one thread cuts the pieces into blocks, a pool that lives for the whole pack
-// compresses them and this thread writes them, all at the same time.
+// compresses them and this thread writes them, all at the same time. A block whose chunk is kept
+// (--keep-packs) is not compressed: the pool takes its stored bytes from the packs it comes from.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -40,6 +41,8 @@ typedef struct {
     size_t len, out_len;
     int codec;
     uint8_t *in, *out;
+    uint64_t keep;   // the chunk record of the packs whose stored bytes it takes, or 0 (none is: offsets start at 64)
+    mp_err err;      // why it failed
 } item;
 
 typedef struct {
@@ -47,11 +50,22 @@ typedef struct {
     ZSTD_CCtx **cctx;
     size_t out_cap;
     int level;
+    mp_zpk *keep_from;
 } cctx_set;
 
 static int compress_work(void *vc, size_t i, unsigned tid) {
     cctx_set *c = vc;
     item *it = &c->items[i];
+    if (it->keep) {
+        // a chunk stored raw holds the bytes read; a compressed one is read from its packs as it is
+        it->codec = (int)(it->keep >> 62);
+        it->out_len = it->len;
+        if (!it->codec) return 0;
+        uint32_t stored = 0;
+        if (mp_zpk_read_stored(c->keep_from, it->keep, it->out, c->out_cap, &stored, &it->err) != 0) return 1;
+        it->out_len = stored;
+        return 0;
+    }
     size_t f = mp_zstd_block(c->cctx[tid], c->level, 18, it->in, it->len, it->out, c->out_cap);
     it->codec = f && f < it->len;
     it->out_len = it->codec ? f : it->len;
@@ -65,6 +79,8 @@ typedef struct {
     mp_readahead *ra;
     item *items;
     mp_pipe *pipe;
+    const uint64_t *keep;   // of each block, in order, the chunk it keeps (0: it is compressed); NULL: none
+    uint64_t next;          // the next block's number
     int failed;
     mp_err err;
 } reader;
@@ -79,6 +95,8 @@ static void read_blocks(void *arg) {
             if (slot < 0) return;   // the writer stopped
             item *it = &r->items[slot];
             it->len = pc.len - at < MP_BLOCK_V1 ? pc.len - at : MP_BLOCK_V1;
+            it->keep = r->keep ? r->keep[r->next] : 0;
+            r->next++;
             if (mp_cancel_check(&r->err) != 0) {
                 r->failed = 1;
                 mp_pipe_abort(r->pipe);
@@ -157,6 +175,28 @@ int mp_zpk_write_chunks(mp_source *src, const uint32_t *files, size_t n, const m
         free(fo);
         return -1;
     }
+    // the chunks kept, block by block in the index's order
+    uint64_t *keep_rec = NULL;
+    if (o->keep && o->keep_from) {
+        if (!(keep_rec = calloc((size_t)(nchunks ? nchunks : 1), sizeof *keep_rec))) {
+            mp_err_set(e, "out of memory");
+            free(fo);
+            return -1;
+        }
+        for (size_t i = 0; i < n; i++) {
+            long zi = o->keep[fo[i].pos];
+            uint64_t cnt = 0;
+            if (zi < 0) continue;
+            const uint64_t *rec = mp_zpk_file_chunks(o->keep_from, (size_t)zi, &cnt);
+            if (mp_zpk_size(o->keep_from, (size_t)zi) != fo[i].size) {
+                mp_err_set(e, "%s is not of the size of its packed file", fo[i].path);
+                free(keep_rec);
+                free(fo);
+                return -1;
+            }
+            if (cnt) memcpy(keep_rec + fo[i].first, rec, (size_t)cnt * sizeof *rec);
+        }
+    }
 
     size_t nslots = ring_slots(threads);
     uint64_t *chunk_rec = malloc((size_t)(nchunks ? nchunks : 1) * sizeof *chunk_rec);
@@ -164,7 +204,7 @@ int mp_zpk_write_chunks(mp_source *src, const uint32_t *files, size_t n, const m
     uint64_t *first = malloc((n ? n : 1) * sizeof *first);
     item *items = calloc(nslots, sizeof *items);
     uint8_t *inbuf = malloc(nslots * MP_BLOCK_V1);
-    cctx_set cs = {items, calloc(threads, sizeof(ZSTD_CCtx *)), ZSTD_compressBound(MP_BLOCK_V1), o->level};
+    cctx_set cs = {items, calloc(threads, sizeof(ZSTD_CCtx *)), ZSTD_compressBound(MP_BLOCK_V1), o->level, o->keep_from};
     uint8_t *outbuf = malloc(nslots * cs.out_cap);
     uint32_t *order = malloc((n ? n : 1) * sizeof *order);
     uint8_t (*osha)[32] = malloc((n ? n : 1) * sizeof *osha);   // in the index's order
@@ -194,6 +234,7 @@ int mp_zpk_write_chunks(mp_source *src, const uint32_t *files, size_t n, const m
     if (mp_readahead_open(src, order, n, osha, &ro, &rd.ra, e) != 0) goto done;
     rd.items = items;
     rd.pipe = pipe;
+    rd.keep = keep_rec;
     if (mp_thread_start(&rthread, read_blocks, &rd) != 0) {
         mp_err_set(e, "could not start the reading thread");
         goto done;
@@ -208,7 +249,10 @@ int mp_zpk_write_chunks(mp_source *src, const uint32_t *files, size_t n, const m
         item *it = &items[slot];
         failed = 1;
         if (wrc != 0) {
-            if (mp_cancel_check(e) == 0) mp_err_set(e, "compression error");
+            if (mp_cancel_check(e) == 0) {
+                if (it->err.msg[0] && e) *e = it->err;
+                else mp_err_set(e, "compression error");
+            }
             break;
         }
         if (mp_cancel_check(e) != 0) break;
@@ -281,6 +325,7 @@ done:
     free(outbuf);
     free(order);
     free(osha);
+    free(keep_rec);
     free(fo);
     return rc;
 }

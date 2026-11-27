@@ -24,6 +24,10 @@ typedef struct {
     // --dlc: the game's DLC (packages, folders or images) to pack with it, in this order (mp_dlc.h)
     const char *const *dlc;
     size_t ndlc;
+    // --keep-packs: of a game packed already (mp_import.h), the chunks of its packs go into the output as they
+    // are, decompressed only to hash them, and the output keeps their level (level is not used); else, and
+    // for any other game, its files are compressed at level
+    int keep_packs;
 } mp_pack_opts;
 
 void mp_pack_opts_default(mp_pack_opts *o);
@@ -83,6 +87,10 @@ typedef struct {
     unsigned dlc_data, dlc_license;
     uint64_t dlc_bytes;
     const char *dlc_error;
+    // made from a game packed already (mp_import.h): its packs' zstd level, and whether their chunks were kept
+    int from_packed, packed_level, kept_packs;
+    // why it stopped, as a code for a front end, when it says one (a packed game refused: mp_import.h), else NULL
+    const char *code;
 } mp_pack_result;
 
 int mp_pack_run(const char *src_path, mp_pack_out *out, const mp_pack_opts *o, mp_pack_result *r,

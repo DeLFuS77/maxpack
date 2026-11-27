@@ -3,7 +3,9 @@
 // sends the files to the output in this order: loose files, packs, ampr_emu.index, runtime,
 // replaced originals and, last, ampr_zstd.index (without it the runtime mounts nothing). With
 // leave_out_leftovers, what dump tools leave behind that the game's own list proves is not the
-// game's goes nowhere: not loose, not packed, not in either index nor in the manifest.
+// game's goes nowhere: not loose, not packed, not in either index nor in the manifest. A game packed
+// already is read as the files it was made of (mp_import.h); with keep_packs its packs' chunks are
+// written as they are.
 #include "mp_pack.h"
 #include "mp_param.h"
 
@@ -14,6 +16,7 @@
 #include "mp_dlc.h"
 #include "mp_hash.h"
 #include "mp_idx3.h"
+#include "mp_import.h"
 #include "mp_platform.h"
 #include "mp_rules.h"
 
@@ -156,9 +159,21 @@ int mp_pack_run(const char *src_path, mp_pack_out *out, const mp_pack_opts *o, m
     size_t idx3_len = 0, zidx_len = 0, rt_len = 0;
     mp_pack_manifest man;
     memset(&man, 0, sizeof man);
+    long *keep = NULL;
     int rc = -1;
 
-    if (mp_source_open(src_path, &src, e) != 0) return -1;
+    // a game packed already: the files it was made of, read from its packs
+    mp_import_info imp;
+    if (mp_import_open(src_path, MP_OPEN_GAME, &src, &imp, e) != 0) {
+        r->code = imp.code;
+        return -1;
+    }
+    mp_source *game = src;   // the game, before its DLC: the packs are its own
+    mp_zpk *kz = o->keep_packs ? mp_import_zpk(game) : NULL;
+    int level = kz ? mp_zpk_level(kz) : o->level;   // kept chunks keep their level, and the output says it
+    r->from_packed = imp.packed;
+    r->packed_level = imp.level;
+    r->kept_packs = kz != NULL;
     size_t n = 0;
     // the DLC go in as files of the game: addcont0/... and the dlc_emu.ini MaxPack writes
     if (o->ndlc) {
@@ -202,8 +217,9 @@ int mp_pack_run(const char *src_path, mp_pack_out *out, const mp_pack_opts *o, m
     for (size_t i = 0; i < n; i++) {
         const char *p = mp_source_entry(src, i)->path;
         if (mp_pack_already_packed(p)) {
-            // A loose volume without its index too: it would clash with the new volumes.
-            mp_err_set(e, "%s is already packed (it has %s); repacking will come later", src_path, p);
+            // Never from mp_import_open, which leaves them out of a packed game and refuses a loose volume
+            // without its index: one would clash with the new volumes.
+            mp_err_set(e, "%s is already packed (it has %s)", src_path, p);
             goto done;
         }
         if (ieq(p, "ampr_emu.index")) orig_idx3 = i;
@@ -305,9 +321,12 @@ int mp_pack_run(const char *src_path, mp_pack_out *out, const mp_pack_opts *o, m
         uint64_t ptotal = 0;
         for (size_t k = 0; k < npack; k++) ptotal += mp_source_entry(src, packable[k])->size;
         char phase[64];
-        snprintf(phase, sizeof phase, "Packing (zstd level %d)", o->level);
+        snprintf(phase, sizeof phase, kz ? "Packing (keeping the packs, zstd level %d)" : "Packing (zstd level %d)", level);
+        // the files the packs have keep their chunks; the ones the other tool left loose are compressed
+        if (kz && !(keep = malloc(npack * sizeof *keep))) goto oom;
+        for (size_t k = 0; kz && k < npack; k++) keep[k] = mp_zpk_find(kz, mp_source_entry(src, packable[k])->path);
         mp_progress_init(&prog, phase, ptotal, o->progress);
-        mp_zpk_opts zo = {o->level, o->threads, o->volume_limit, &prog};
+        mp_zpk_opts zo = {level, o->threads, o->volume_limit, &prog, 0, kz, keep};
         psha = malloc(npack * sizeof *psha);
         int zr = psha ? mp_zpk_write(src, packable, npack, &zo, &out->zpk, &zidx, &zidx_len, psha, &st, e) : -1;
         if (prog.print) fprintf(stderr, "\r%s: 100.0 %%\n", phase);
@@ -343,7 +362,7 @@ int mp_pack_run(const char *src_path, mp_pack_out *out, const mp_pack_opts *o, m
     fin.n = 0;
     for (size_t i = 0; i < n; i++)
         if (man.v[i].path) fin.v[fin.n++] = man.v[i];
-    fin.level = o->level;
+    fin.level = level;
     if (mp_cancel_check(e) != 0 || out->finish(out->ctx, &fin, e) != 0) goto done;
     rc = 0;
     goto done;
@@ -351,6 +370,14 @@ oom:
     mp_err_set(e, "out of memory");
 done:
 #undef LEFT_OUT
+    // what stopped it was the packs of the game: a block or a volume that is damaged
+    if (rc != 0 && src && mp_import_failed(game) && !mp_cancelled()) {
+        char why[sizeof e->msg];
+        snprintf(why, sizeof why, "%s", e ? e->msg : "");
+        mp_err_set(e, "%s: its packs are damaged: %s", src_path, why);
+        r->code = MP_IMPORT_DAMAGED;
+    }
+    free(keep);
     free(fin.v);   // its entries are man's
     free(cls);
     man.n = n;

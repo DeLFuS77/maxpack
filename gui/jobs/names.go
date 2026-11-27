@@ -77,10 +77,15 @@ var imageExt = map[string]string{"exfat": ".exfat", "ufs2": ".ffpkg", "pfs": ".f
 // ImageExts are the extensions of the images (and of a package), in the order the window names them.
 var ImageExts = []string{".exfat", ".ffpkg", ".ffpfs", ".ffpfsc", ".pkg"}
 
-// IsImageName tells whether a name has the extension of an image, in any case.
+// TakenExts are the extensions a file of a game is taken by: the images' and a package's, and .zstd, the exFAT
+// image with a game packed already in it as ModGames44 names it (the engine tells it by its contents). What
+// the window names an image by is ImageExts: a .zstd renamed gets the extension of its kind.
+var TakenExts = append(append([]string{}, ImageExts...), ".zstd")
+
+// IsImageName tells whether a name has the extension of an image (TakenExts), in any case.
 func IsImageName(name string) bool {
 	ext := strings.ToLower(filepath.Ext(name))
-	for _, image := range ImageExts {
+	for _, image := range TakenExts {
 		if ext == image {
 			return true
 		}

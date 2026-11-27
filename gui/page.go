@@ -109,7 +109,7 @@ type PlanView struct {
 // takes are the games a section works on.
 type takes struct{ dumps, images, p5z bool }
 
-// The images are the ones ShadowMountPlus mounts (jobs.ImageExts): .exfat, .ffpkg, .ffpfs, .ffpfsc.
+// The images are the ones ShadowMountPlus mounts, a package and a .zstd (jobs.TakenExts).
 var sectionTakes = map[string]takes{
 	"compress": {dumps: true, images: true},
 	// Rename names .p5z files, dump folders and images by what they are
@@ -120,10 +120,10 @@ var sectionTakes = map[string]takes{
 	"details": {dumps: true, images: true, p5z: true},
 }
 
-// imagePatterns are the images in the "Add files" dialog: "*.exfat;*.ffpkg;*.ffpfs;*.ffpfsc".
+// imagePatterns are the images in the "Add files" dialog: "*.exfat;*.ffpkg;*.ffpfs;*.ffpfsc;*.pkg;*.zstd".
 var imagePatterns = func() string {
-	patterns := make([]string, len(jobs.ImageExts))
-	for i, ext := range jobs.ImageExts {
+	patterns := make([]string, len(jobs.TakenExts))
+	for i, ext := range jobs.TakenExts {
 		patterns[i] = "*" + ext
 	}
 	return strings.Join(patterns, ";")

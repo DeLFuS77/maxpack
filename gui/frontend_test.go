@@ -81,7 +81,7 @@ func pageCodes() []string {
 		"mostly_changed", "no_packs_left", "other_game", "same_version", "no_title_id", "not_a_game", "changed_meanwhile",
 		"dump_packed",
 		// a game packed already (pack): refused, and how it was made
-		"packs_damaged", "packed_file_missing", "packs_lz4", "from_packed", "from_packed_kept",
+		"packs_damaged", "packed_file_missing", "packs_lz4", "packed_and_loose", "dlc_packed", "from_packed", "from_packed_kept",
 		// a .p5z sent to the console (jobs/send.go): how it ended, and what the console and the engine say
 		"sent", "no_console", "send_unreachable", "send_receive_off", "send_bad_code", "send_locked", "send_exists", "send_busy",
 		"send_no_space", "send_fat32", "send_bad_name", "send_no_drive", "send_verify_failed", "send_console_cancelled",

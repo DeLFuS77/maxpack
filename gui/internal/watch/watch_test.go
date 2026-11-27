@@ -53,7 +53,7 @@ func TestWhatCounts(t *testing.T) {
 	dir := t.TempDir()
 	dump(t, filepath.Join(dir, "Game"), true)
 	dump(t, filepath.Join(dir, "Game DLC"), false)
-	for _, name := range []string{"a.exfat", "b.FFPKG", "c.ffpfs", "d.ffpfsc", "e.pkg", "notes.txt", "f.p5z", "g.zip"} {
+	for _, name := range []string{"a.exfat", "b.FFPKG", "c.ffpfs", "d.ffpfsc", "e.pkg", "i.zstd", "notes.txt", "f.p5z", "g.zip"} {
 		write(t, filepath.Join(dir, name), "x")
 	}
 	dump(t, filepath.Join(dir, "deeper", "Other"), true)
@@ -67,7 +67,7 @@ func TestWhatCounts(t *testing.T) {
 	}
 	c.pass(61 * time.Second)
 	found, err := w.Poll()
-	if want := []string{"Game", "Game DLC", "a.exfat", "b.FFPKG", "c.ffpfs", "d.ffpfsc", "e.pkg"}; err != nil || !slices.Equal(names(found), want) {
+	if want := []string{"Game", "Game DLC", "a.exfat", "b.FFPKG", "c.ffpfs", "d.ffpfsc", "e.pkg", "i.zstd"}; err != nil || !slices.Equal(names(found), want) {
 		t.Fatalf("%v %v, want %v", names(found), err, want)
 	}
 	// once handed over, never again while it is as it was

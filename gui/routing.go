@@ -41,7 +41,7 @@ func (f *FilesAdd) list(space string) *[]string {
 // spaceOf tells the space a path goes to, by its name and whether it is a folder: the one asked
 // for when it takes it (Verify takes .p5z files and folders, compressed or not, as the page tells
 // them apart; Details takes them all; Compress folders and images); else Compress for a folder or
-// an image (.exfat, .ffpkg, .ffpfs, .ffpfsc), and Details for a .p5z (any case), whose card offers
+// an image (.exfat, .ffpkg, .ffpfs, .ffpfsc, .pkg, .zstd), and Details for a .p5z (any case), whose card offers
 // Verify and Decompress. Anything else goes nowhere (""). The name is only the quick hint: the
 // list the path goes to asks the engine what it is.
 func spaceOf(name string, folder bool, asked string) string {

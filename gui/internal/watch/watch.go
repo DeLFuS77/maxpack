@@ -23,8 +23,9 @@ import (
 	"time"
 )
 
-// The extensions of the images and packages a folder can get (jobs.ImageExts and .pkg).
-var exts = []string{".exfat", ".ffpkg", ".ffpfs", ".ffpfsc", ".pkg"}
+// The extensions of the images and packages a folder can get (jobs.TakenExts: the images, .pkg, and .zstd, an
+// exFAT image with a game packed already in it).
+var exts = []string{".exfat", ".ffpkg", ".ffpfs", ".ffpfsc", ".pkg", ".zstd"}
 
 // What MaxPack writes apart while it works (jobs.TmpSuffix, jobs.OldSuffix) is never new.
 var apart = []string{".maxpack-tmp", ".maxpack-old"}

@@ -44,7 +44,8 @@ const notStarted = ["waiting", "queued"];
 const presets = [[3, 1, 6], [12, 7, 14], [19, 15, 22]];
 // the images of a game ShadowMountPlus mounts and the PS5 packages, which the window takes as it
 // takes a dump folder (jobs.ImageExts): by their extension until the engine says what each one is
-const images = [".exfat", ".ffpkg", ".ffpfs", ".ffpfsc", ".pkg"].map(type => [type, ""]);
+// (jobs.TakenExts: and .zstd, an exFAT image with a game packed already in it, as ModGames44 names it)
+const images = [".exfat", ".ffpkg", ".ffpfs", ".ffpfsc", ".pkg", ".zstd"].map(type => [type, ""]);
 // what each section takes, as the empty list says it: [type, its text or none]
 const takes = {
   compress: [["", "typeDump"], ...images],
@@ -394,7 +395,7 @@ function kindName(game) {
   let name;
   switch (game.Kind) {
     case "p5z": return ".p5z";
-    case "folder": case "": case undefined: name = game.Packed ? t("kindPacked") : t("kindDump"); break;
+    case "folder": case "": case undefined: name = game.Packed || game.Packs === "lz4" ? t("kindPacked") : t("kindDump"); break;
     default: name = imageName(game.Kind);
   }
   // a DLC, with files of its own or a license only
@@ -405,8 +406,13 @@ function kindName(game) {
 // cannot be yet, nor can what an engine that did not say its packs saw packed
 const packedZstd = game => !!game && game.Kind !== "p5z" && game.Packs === "zstd";
 const cannotCompress = game => !!game && (game.Packs === "lz4" || (!!game.Packed && !packedZstd(game)));
-// what the row of a game packed already with zstd says of it: "already packed (zstd, level 5)"
-const packedNote = game => (packedZstd(game) ? t("packedZstd")(Number(game.PackedLevel) || 0) : "");
+// what the row of a game packed already with zstd says of it: "already packed (zstd, level 5)", or without
+// the level when its header gives none
+function packedNote(game) {
+  if (!packedZstd(game)) return "";
+  const level = Number(game.PackedLevel) || 0;
+  return level >= 1 && level <= 22 ? t("packedZstd")(level) : t("packedZstdOnly");
+}
 // an image by its kind: exFAT, UFS2, PFS, a PFS container that holds one of them, or a PS5 package
 function imageName(kind) {
   switch (kind) {
@@ -603,6 +609,8 @@ const gamesItIs = row => state.lists.compress.filter(other => readRow(other) && 
 // engine would refuse it, and so stop the whole game it went with
 function dlcErrorOf(row) {
   if (row.section !== "compress" || !readRow(row) || !isDlc(row.game)) return "";
+  // pack --dlc takes a DLC as it was dumped
+  if (row.game.Packed || row.game.Packs) return t("detail_dlc_packed");
   if (!validContentId(row.game.ContentID)) return t("dlcBadId");
   const games = gamesItIs(row);
   return games.length ? t("dlcIsGame")(namesOf(games)) : "";
@@ -783,7 +791,9 @@ function paintRow(row) {
   // its ID, version and what it is (with what the game takes unpacked when its file is not that); until
   // read, that it is being read, or where it is
   const file = tr.querySelector(".file"), dlc = dlcCountOf(row);
-  if (game) file.textContent = [game.TitleID, game.Version && t("versionOf")(game.Version), kindName(game), row.section === "compress" && packedNote(game), dlc && t("withDlc")(dlc), unpackedNote(game)].filter(Boolean).join(" · ");
+  // a folder packed already says it once, with its packs
+  const packedFolder = row.section === "compress" && packedZstd(game) && !isDlc(game) && !imageKinds[game.Kind];
+  if (game) file.textContent = [game.TitleID, game.Version && t("versionOf")(game.Version), !packedFolder && kindName(game), row.section === "compress" && packedNote(game), dlc && t("withDlc")(dlc), unpackedNote(game)].filter(Boolean).join(" · ");
   else file.textContent = row.error ? row.path : t("reading");
   tr.querySelector(".size").textContent = game ? size(onDisk(game)) : "";
 

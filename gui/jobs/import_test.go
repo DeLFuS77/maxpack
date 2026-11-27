@@ -83,6 +83,10 @@ func TestPackedGameSaysWhatItWasMadeFrom(t *testing.T) {
 		if sum.Done != 1 || *state != StateOK || !hasPart(*detail, c.note) {
 			t.Errorf("keep %v: %+v, %s %q", c.keep, sum, *state, *detail)
 		}
+		// saved against what the packed folder takes on disk (100), not its files unpacked (the engine's 10)
+		if sum.Saved != 100-8 {
+			t.Errorf("keep %v: saved %d", c.keep, sum.Saved)
+		}
 	}
 	// a dump says nothing of it
 	o := Options{Mode: ModeP5z, Dest: t.TempDir()}
@@ -116,11 +120,23 @@ func TestCompressPackedGameReal(t *testing.T) {
 		o := Options{Mode: ModeP5z, Dest: t.TempDir(), Level: 9, KeepPacks: c.keep}
 		on, state, detail := lastDetail()
 		plans := PlanCompress([]Item{packed}, o, newFS())
-		if sum := (&Runner{Core: engine, OnItem: on}).Run(context.Background(), plans, o); sum.Done != 1 || *state != StateOK || !hasPart(*detail, c.note) {
+		sum := (&Runner{Core: engine, OnItem: on}).Run(context.Background(), plans, o)
+		if sum.Done != 1 || *state != StateOK || !hasPart(*detail, c.note) {
 			t.Errorf("keep %v: %+v, %s %q", c.keep, sum, *state, *detail)
 		}
-		if made := describe(t, engine, plans[0].Out); made.Kind != "p5z" || made.OriginalSize != dump.OriginalSize {
+		made := describe(t, engine, plans[0].Out)
+		if made.Kind != "p5z" || made.OriginalSize != dump.OriginalSize {
 			t.Errorf("keep %v: %+v", c.keep, made)
+		}
+		// what the disk gets back: the packed folder against its .p5z, not the game unpacked against it
+		info, _ := os.Stat(plans[0].Out)
+		if want := uint64(0); info != nil && packed.OriginalSize > uint64(info.Size()) {
+			want = packed.OriginalSize - uint64(info.Size())
+			if sum.Saved != want {
+				t.Errorf("keep %v: saved %d, the disk got back %d", c.keep, sum.Saved, want)
+			}
+		} else if sum.Saved != want {
+			t.Errorf("keep %v: saved %d, the .p5z is not smaller", c.keep, sum.Saved)
 		}
 	}
 }

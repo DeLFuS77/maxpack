@@ -17,7 +17,7 @@ func TestImageNames(t *testing.T) {
 	for name, want := range map[string]bool{
 		"game.exfat": true, "GAME.EXFAT": true, "game.ffpkg": true, "game.FFPkg": true, "game.ffpfs": true,
 		"game.ffpfsc": true, "game.FFPFSC": true, "D:/dumps/Iron Harbor.ffpfsc": true,
-		"game.pkg": true, "Game.PKG": true,
+		"game.pkg": true, "Game.PKG": true, "game.zstd": true, "GAME.ZSTD": true,
 		"game.p5z": false, "game.ffpfscx": false, "game.ffp": false, "ffpkg": false, "game": false, "game.pkgx": false, "pkg": false,
 	} {
 		if got := IsImageName(name); got != want {

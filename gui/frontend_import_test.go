@@ -47,12 +47,23 @@ console.log(vm.runInContext(` + "`" + `(() => {
   // its row says it is packed already, with what and at what level
   if (packedNote(zstd) !== "already packed (zstd, level 5)") say("the note of a zstd game: " + packedNote(zstd));
   if (packedNote(dump) !== "" || packedNote(lz4) !== "") say("the note of another game");
+  // a level a broken header gives is none: the note says zstd only
+  if (packedNote(Object.assign({}, zstd, { PackedLevel: 0 })) !== "already packed (zstd)") say("the note without a level: " + packedNote(Object.assign({}, zstd, { PackedLevel: 0 })));
+  // a .zstd (an exFAT image with a game packed already in it) is taken where an image is
+  for (const section of ["compress", "details", "rename"]) if (!takes[section].some(([type]) => type === ".zstd")) say(section + " does not take a .zstd");
+  for (const section of ["decompress", "verify"]) if (takes[section].some(([type]) => type === ".zstd")) say(section + " takes a .zstd");
+  // a packed folder says it once, and an LZ4 one is no dump
+  if (kindName(lz4) !== t("kindPacked")) say("kindName of an LZ4 folder: " + kindName(lz4));
   const stub = () => ({ textContent: "", hidden: false, className: "", classList: { toggle() {}, add() {}, remove() {} }, style: {}, dataset: {},
     replaceChildren() {}, append() {}, setAttribute() {}, removeAttribute() {}, querySelector: () => stub() });
   const cells = {}, cell = sel => (cells[sel] = cells[sel] || stub());
   const painted = Object.assign(row("compress", image), { path: image.Path, tr: { querySelector: cell, classList: { toggle() {} } } });
   paintRow(painted);
   if (!String(cells[".file"].textContent).includes("already packed (zstd, level 19)")) say("the line of a packed image: " + cells[".file"].textContent);
+  const folderCells = {}, folderCell = sel => (folderCells[sel] = folderCells[sel] || stub());
+  paintRow(Object.assign(row("compress", zstd), { path: zstd.Path, tr: { querySelector: folderCell, classList: { toggle() {} } } }));
+  const line = String(folderCells[".file"].textContent);
+  if (!line.includes("already packed (zstd, level 5)") || line.includes(t("kindPacked"))) say("the line of a packed folder: " + line);
   // its DLC go inside it, as a dump's
   const dlc = row("compress", { Kind: "folder", Content: "dlc", DLCData: true, ContentID: "UP0000-PPSA01234_00-DLCDLCDLCDLCDLC0", TitleID: "PPSA01234", Path: "D:/dlc/A" });
   state.lists.compress = [row("compress", zstd), dlc];
@@ -78,7 +89,13 @@ console.log(vm.runInContext(` + "`" + `(() => {
   const made = Object.assign(row("compress", zstd), { state: "ok", detail: "from_packed_kept:5" });
   if (!goodNote(made)) say("what it was made from is not good news");
   // and a packed game that is refused says why
-  for (const code of ["packs_damaged", "packed_file_missing", "packs_lz4"]) {
+  // a DLC packed already is a DLC that goes nowhere yet: it says why, and goes inside no game
+  const packedDlc = row("compress", { Kind: "folder", Content: "dlc", DLCData: true, Packed: true, Packs: "zstd", PackedLevel: 19,
+    ContentID: "UP0000-PPSA01234_00-DLCDLCDLCDLCDLC0", TitleID: "PPSA01234", Path: "D:/dlc/B" });
+  state.lists.compress = [row("compress", zstd), packedDlc];
+  if (dlcErrorOf(packedDlc) !== t("detail_dlc_packed")) say("a packed DLC says: " + dlcErrorOf(packedDlc));
+  if (dlcRowsOf(state.lists.compress[0]).length !== 0 || readyRows("compress").includes(packedDlc)) say("a packed DLC goes inside a game");
+  for (const code of ["packs_damaged", "packed_file_missing", "packs_lz4", "packed_and_loose", "dlc_packed"]) {
     if (detailText(code) !== t("detail_" + code) || /^Something/.test(detailText(code))) say(code + ": " + detailText(code));
   }
   // the report of a game says its packs, never its name

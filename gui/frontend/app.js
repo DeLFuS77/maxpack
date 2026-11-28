@@ -53,11 +53,13 @@ const takes = {
   verify: [[".p5z", ""], ["", "typePacked"]],
   details: [["", "typeDump"], ...images, [".p5z", ""]],
   rename: [["", "typeDump"], ...images, [".p5z", ""]],
+  // the Console section sends .p5z, from the library folder and from elsewhere
+  console: [[".p5z", ""]],
 };
 const defaultTemplate = "{title} [{id}]";
 const defaults = { Lang: "", Theme: "system", Runtime: "", LastDest: "", Mode: "p5z", Level: 19, DeleteOriginals: false, DeletePermanently: false, LowPriority: false, NameTemplate: defaultTemplate, Threads: 0,
   RepairData: false, RepairPercent: 5, Passcode: "", KeepLeftovers: false, KeepPacks: false, ConsoleIP: "", ConsoleCode: "",
-  WatchOn: false, WatchFolder: "", WatchSend: false, QuietEnd: false, UpdateCheck: false };
+  WatchOn: false, WatchFolder: "", WatchSend: false, QuietEnd: false, UpdateCheck: false, LibraryFolder: "" };
 // the shares of repair data the window offers (a PAR2 set next to each .p5z)
 const percents = [1, 5, 10];
 
@@ -73,7 +75,8 @@ const state = {
   settings: Object.assign({}, defaults),
   setup: null,
   unpackTo: load("unpackTo", "original") === "console" ? "console" : "original",
-  lists: { compress: [], decompress: [], verify: [], details: [], rename: [] },
+  // the rows of each section; the Console section's are the .p5z of the library (see syncConsoleRows)
+  lists: { compress: [], decompress: [], verify: [], details: [], rename: [], console: [] },
   // whether this run of Compress deletes the originals once checked: what Settings says, until
   // it is changed next to Compress
   deleteOriginals: false,
@@ -101,6 +104,25 @@ const state = {
   update: null,
   updateAsked: false,
   updateTold: false,
+  // the Console section: what the console has (ConsoleState; null until it answers), its icons by title ID (asked
+  // once each time the section opens), the library as Library read it last (null until then) and whether it is
+  // being read, the .p5z given from elsewhere while the window is open (Details, Compress, the watched folder) and
+  // the ones of them to mark once their rows are there
+  console: null,
+  consoleIcons: {},
+  consoleIconAsked: new Set(),
+  library: null,
+  libraryBusy: false,
+  others: [],
+  consolePick: new Set(),
+  // the console's drives to send to, for its address and code (key): asked, or why not; and the one chosen
+  drives: null,
+  driveChoice: "",
+  // the box that connects to the console: open with Change, its fields filled once as it opens, what it does
+  // ("save", "find") and what it says
+  connect: { open: false, filled: false, busy: "", text: "", tone: "" },
+  // Delete what arrived of a send left on the console, at work: its name, and the seconds the console asks to wait
+  leftDiscard: null,
 };
 
 // whether a queue is running: the window took it, and has not said its end yet
@@ -177,8 +199,12 @@ function newRow(path, section) {
   tr.querySelector(".to-add-dlc").addEventListener("click", () => growRow(row, "add_dlc"));
   tr.querySelector(".to-update").addEventListener("click", () => growRow(row, "update"));
   tr.querySelector(".grow-anyway").addEventListener("click", () => growAnyway(row));
-  tr.querySelector(".to-send").addEventListener("click", () => sendRows([row]));
+  // Send to the console opens the Console section with the .p5z marked
+  tr.querySelector(".to-send").addEventListener("click", () => openConsoleWith([row.path]));
   tr.querySelector(".send-discard").addEventListener("click", () => discardOnConsole(row));
+  // a row of the Console section: marked to send, and one that needs repair opens in Details
+  tr.querySelector(".pick").addEventListener("change", event => { row.picked = !!event.target.checked; paintStart(); paintSummary(); paintDriveSelect(); });
+  tr.querySelector(".open-details").addEventListener("click", () => repairInDetails(row));
   // the entrance of a row and the pop of what it saved play once: a row put back in the list
   // (every render puts them all back) does not play them again
   tr.addEventListener("animationend", event => {
@@ -837,11 +863,12 @@ function paintRow(row) {
   card.hidden = !(row.section === "details" && game && game.Kind === "p5z");
   card.querySelector(".to-verify").textContent = t("verify");
   card.querySelector(".to-decompress").textContent = t("decompress");
-  // and what makes it grow: DLC added to it, or a new dump of its game
+  // and what makes it grow: DLC added to it, or a new dump of its game; Send to the console opens the Console
+  // section, also while a queue runs (the send waits for it there)
   for (const [cls, key] of [[".to-add-dlc", "addDlcCard"], [".to-update", "updateCard"], [".to-send", "sendCard"]]) {
     const button = card.querySelector(cls);
     button.textContent = t(key);
-    button.disabled = state.busy;
+    button.disabled = state.busy && cls !== ".to-send";
   }
   // what a send that did not end left on the console can be deleted from there, once asked
   const discard = tr.querySelector(".send-discard");
@@ -873,6 +900,7 @@ function paintRow(row) {
   note.className = "note " + (row.error || dlcError || row.state === "error" ? "bad" : goodNote(row) ? "good" : "warn");
   paintFacts(row);
   paintState(row);
+  if (row.section === "console") paintConsoleRow(row);
 }
 
 function paintState(row) {
@@ -928,10 +956,15 @@ function tellBar(bar, share, label) {
 
 // ---- the page ----------------------------------------------------------------------------------
 
+// the section shown; the Console section reads the library and the console as it opens, and asks the console
+// again only while it is shown. It gives what opening it asked for, once answered
 function setSection(section) {
+  const was = state.section;
   state.section = section;
+  if (was === "console" && section !== "console") leaveConsole();
   render();
   if (section === "settings") previewNames(state.settings.NameTemplate || defaultTemplate);
+  return section === "console" && was !== "console" ? enterConsole() : Promise.resolve();
 }
 
 function paintTexts() {
@@ -1002,7 +1035,7 @@ function paintPackedChoice() {
 function paintOptions() {
   const section = state.section, s = state.settings;
   document.querySelectorAll("#options [data-for]").forEach(block => { block.hidden = !block.dataset.for.split(" ").includes(section); });
-  $("options").hidden = section === "details" || section === "settings";
+  $("options").hidden = section === "details" || section === "settings" || section === "console";
   $("delete-originals").checked = state.deleteOriginals;
   $("delete-hint").textContent = state.deleteOriginals ? t(s.DeletePermanently ? "deleteForGood" : "deleteToBin") : "";
   $("rename-template").textContent = s.NameTemplate || defaultTemplate;
@@ -1276,12 +1309,15 @@ async function loadExplorer() {
 }
 
 function paintStart() {
-  const section = state.section, list = state.lists[section] || [];
-  const start = $("start"), acts = queues.includes(section) || section === "rename";
-  start.hidden = !acts || (running() && section !== "rename");
-  start.textContent = acts ? t(section) : "";
-  // Compress waits for every row to be read: a DLC still being read must not be left out of its game
-  start.disabled = state.busy || !go.has() || !!(state.setup && state.setup.coreError) || !list.some(row => row.game && !(section === "compress" && isDlc(row.game)))
+  const section = state.section, list = state.lists[section] || [], consoleOn = section === "console";
+  const start = $("start"), acts = queues.includes(section) || section === "rename" || consoleOn;
+  // the Console section's Send stays while another queue runs: what it sends waits for that one to end
+  start.hidden = !acts || (running() && section !== "rename" && !(consoleOn && state.job.section !== "console"));
+  start.textContent = consoleOn ? t("sendGo") : acts ? t(section) : "";
+  // Compress waits for every row to be read: a DLC still being read must not be left out of its game; Send, for a
+  // .p5z marked and a drive of the console to send it to
+  start.disabled = consoleOn ? !go.has() || !!(state.setup && state.setup.coreError) || !pickedRows().length || !chosenDrive()
+    : state.busy || !go.has() || !!(state.setup && state.setup.coreError) || !list.some(row => row.game && !(section === "compress" && isDlc(row.game)))
     || (section === "compress" && readingRows(section).length > 0)
     || (section === "rename" && (running() || !list.some(row => row.renameTo && !row.renameBlock && row.state !== "ok")));
   $("cancel").hidden = !running();
@@ -1317,7 +1353,7 @@ function paintSummary() {
       : [job.rate > 0 ? t("speed")(size(job.rate)) : "", left >= 1 ? t("timeLeft")(time(Math.round(left))) : ""].filter(Boolean).join(" · ");
     return;
   }
-  $("summary-text").textContent = listedText(state.lists[state.section] || []);
+  $("summary-text").textContent = state.section === "console" ? pickedText() : listedText(state.lists[state.section] || []);
   bar.hidden = true;
   // why Compress waits, else how the last queue of this section ended, in the language of now
   const last = job && job.summary && job.section === state.section;
@@ -1326,7 +1362,7 @@ function paintSummary() {
 }
 
 function render() {
-  const section = state.section, settings = section === "settings";
+  const section = state.section, settings = section === "settings", consoleOn = section === "console";
   paintTexts();
   paintNav();
   $("work").hidden = settings;
@@ -1334,9 +1370,13 @@ function render() {
   document.body.classList.toggle("busy", state.busy);
   if (!settings) {
     paintHead();
-    paintList();
-    $("toolbar").hidden = !(state.lists[section] || []).length;
+    // the Console section has its own page in place of the list
+    $("drop").hidden = consoleOn;
+    $("console-page").hidden = !consoleOn;
+    if (consoleOn) paintConsole(); else paintList();
+    $("toolbar").hidden = consoleOn || !(state.lists[section] || []).length;
   }
+  paintDriveSelect();
   paintOptions();
   paintSettings();
   paintStart();
@@ -1535,9 +1575,10 @@ async function plan(section, rows, opts, auto) {
 }
 
 // startQueue starts the queue of the section open; kind "protect" adds repair data to the .p5z of
-// Verify, and "repair" repairs the damaged ones with theirs (the ones given, or all that can be)
+// Verify, and "repair" repairs the damaged ones with theirs (the ones given, or all that can be); a .p5z
+// that grows is one of Details, and one sent ("send") a row of the Console section
 async function startQueue(kind, only, extra, auto) {
-  const section = grows.includes(kind) || kind === "send" ? "details" : kind ? "verify" : auto ? "compress" : state.section;
+  const section = kind === "send" ? "console" : grows.includes(kind) ? "details" : kind ? "verify" : auto ? "compress" : state.section;
   if (state.busy || !(queues.includes(section) || grows.includes(kind) || kind === "send")) return;
   // a DLC still being read would be left out of its game
   if (section === "compress" && readingRows(section).length) {
@@ -1754,15 +1795,18 @@ const validConsoleIp = ip => {
     && (found[5] === undefined || (Number(found[5]) >= 1 && Number(found[5]) <= 65535));
 };
 const validConsoleCode = code => /^\d{6}$/.test(String(code));
-// what a .p5z of Details takes to send
+// what a .p5z of the Console section takes to send
 const sendSize = row => Number(row.game && (row.game.P5zSize || row.game.OriginalSize)) || 0;
 // the room the console keeps on a drive beyond the .p5z (the contract's margin)
 const sendMargin = 256 * 1024 * 1024;
-// a drive of the console as the send dialog says it: its name, and its free space of its size
+// a drive of the console by the id a send takes ("internal", "usb0"...)
+function driveName(id) {
+  const usb = /^usb(\d+)$/.exec(id || "");
+  return id === "internal" ? t("driveInternal") : usb ? t("driveUsb")(Number(usb[1]) + 1) : String(id || "");
+}
+// a drive of the console to send to: its name, and its free space of its size
 function driveText(drive) {
-  const usb = /^usb(\d+)$/.exec(drive.id || "");
-  const name = drive.id === "internal" ? t("driveInternal") : usb ? t("driveUsb")(Number(usb[1]) + 1) : String(drive.id || "");
-  return t("driveLine")(name, size(Number(drive.free) || 0), size(Number(drive.total) || 0));
+  return t("driveLine")(driveName(drive.id), size(Number(drive.free) || 0), size(Number(drive.total) || 0));
 }
 // whether the .p5z of rows fit on a drive, with the console's margin
 const driveFits = (drive, rows) => (Number(drive.free) || 0) >= rows.reduce((sum, row) => sum + sendSize(row), 0) + sendMargin;
@@ -1777,79 +1821,10 @@ function madeP5z(job) {
   return inQueue(job).filter(row => row.state === "ok" && /\.p5z$/i.test(row.out || "")).map(row => row.out);
 }
 
-// sendRows sends .p5z of Details to the console of Settings, one after another: its drives are asked for,
-// one is chosen in the send dialog (with its free space), and the queue goes with its bar, its cancel and
-// its end card
-async function sendRows(rows) {
-  rows = rows.filter(row => row.game && row.game.Kind === "p5z");
-  if (!rows.length) return;
-  if (state.busy) { toast(t("sendBusy")); return; }
-  if (!validConsoleIp(state.settings.ConsoleIP) || !validConsoleCode(state.settings.ConsoleCode)) {
-    toast(t("sendNoConsole"));
-    setSection("settings");
-    return;
-  }
-  // the dialog opens at once, asking the console for its drives: Cancel stops the question, and nothing
-  // else starts meanwhile
-  $("send-list").replaceChildren(...rows.map(row => line(row.game.Name || baseName(row.path), size(sendSize(row)))));
-  $("send-drives").replaceChildren();
-  $("send-asking").hidden = false;
-  $("send-asking").textContent = t("sendAsking");
-  $("send-go").disabled = true;
-  state.busy = true;
-  render();
-  const answer = ask($("send-dialog"));
-  let view = null;
-  try {
-    view = await Promise.race([go.call("ConsoleDrives").catch(error => ({ drives: [], error: "io", message: message(error) })), answer.then(() => null)]);
-  } finally {
-    if (!view) {
-      go.call("CancelConsoleDrives").catch(() => {});
-      state.busy = false;
-      render();
-    }
-  }
-  if (!view) return;
-  // busy until a drive is picked: nothing else starts under the dialog
-  const done = () => { state.busy = false; render(); };
-  if (view.error || !view.drives || !view.drives.length) {
-    done();
-    if ($("send-dialog").open) $("send-dialog").close("cancel");
-    toast(sendErrorText(view.error || "no_drive", view.message));
-    return;
-  }
-  $("send-asking").hidden = true;
-  $("send-go").disabled = false;
-  const last = load("sendDrive", "");
-  const chosen = view.drives.some(drive => drive.id === last) ? last : (view.drives.find(drive => driveFits(drive, rows)) || view.drives[0]).id;
-  $("send-drives").replaceChildren(...view.drives.map(drive => {
-    const label = document.createElement("label"), input = document.createElement("input"), text = document.createElement("span");
-    const name = document.createElement("b"), room = document.createElement("small");
-    label.className = "choice" + (driveFits(drive, rows) ? "" : " no-room");
-    input.type = "radio";
-    input.name = "send-drive";
-    input.value = drive.id;
-    input.checked = drive.id === chosen;
-    name.textContent = driveText(drive);
-    room.textContent = driveFits(drive, rows) ? (drive.fs || "") : t("sendNoRoom");
-    text.append(name, room);
-    label.append(input, text);
-    return label;
-  }));
-  const answered = await answer;
-  done();
-  if (answered !== "send") return;
-  const picked = document.querySelector('input[name="send-drive"]:checked');
-  const drive = picked ? picked.value : chosen;
-  save("sendDrive", drive);
-  for (const row of rows) Object.assign(row, { sentDrive: drive, redone: false });
-  startQueue("send", rows, { Drive: drive });
-}
-
 // a send that did not end with the game on the console, where what arrived stays (stopped here or on the
 // console, cut off, stalled or slept through, a write error, arrived damaged, or a drive that filled up with
 // part of it there): it can be deleted there
-const leftOnConsole = row => row.section === "details" && !!row.game && row.game.Kind === "p5z"
+const leftOnConsole = row => row.section === "console" && !!row.game && row.game.Kind === "p5z"
   && /^send_(kept|may_keep|console_stopped|stalled|slept|write_error|unreachable|verify_failed|no_space_kept)(:|$)/.test(row.detail || "");
 // Delete what arrived on the console: asked first, as it cannot be undone (the next send starts from nothing)
 async function discardOnConsole(row) {
@@ -1876,25 +1851,538 @@ async function discardOnConsole(row) {
   }
 }
 
-// the console is letting go of a receive of a .p5z to delete (discard:waiting): its row says so, with the seconds
-// until it is asked again, for the whole wait (Delete what arrived then says what came of it)
+// the console is letting go of a receive of a .p5z to delete (discard:waiting): its row of the Console section says
+// so, with the seconds until it is asked again, for the whole wait (Delete what arrived then says what came of it);
+// for a send left on the console, its line in the header
 function onDiscardWaiting(event) {
-  const row = state.lists.details.find(r => event && pathKey(r.path) === pathKey(event.path || ""));
-  if (!row) return;
-  row.detail = "send_letting_go: " + Math.max(1, Math.round(Number(event.seconds) || 1));
-  paintRow(row);
+  const path = (event && event.path) || "", seconds = Math.max(1, Math.round(Number(event && event.seconds) || 1));
+  const row = state.lists.console.find(r => pathKey(r.path) === pathKey(path));
+  if (row) {
+    row.detail = "send_letting_go: " + seconds;
+    paintRow(row);
+    return;
+  }
+  if (state.leftDiscard && state.leftDiscard.name === path) {
+    state.leftDiscard.seconds = seconds;
+    if (state.section === "console") paintConsoleHead();
+  }
 }
 
-// the end card of Compress: the .p5z it made go to Details, and from there to the console once read
-async function sendMade(job) {
+// the end card of Compress: the .p5z it made open in the Console section, marked to send
+function sendMade(job) {
   const paths = madeP5z(job);
-  if (!paths.length) return;
-  addPaths("details", paths);
-  setSection("details");
-  const wanted = new Set(paths.map(pathKey));
-  const rowsOf = () => state.lists.details.filter(row => wanted.has(pathKey(row.path)));
-  for (let waited = 0; waited < 120 && rowsOf().some(row => !row.game && !row.error); waited++) await new Promise(done => setTimeout(done, 250));
-  sendRows(rowsOf());
+  return paths.length ? openConsoleWith(paths) : Promise.resolve();
+}
+
+// ---- the Console section ------------------------------------------------------------------------------
+
+// What a .p5z of the PC is on the console, by title ID and version (the console gives no SHA-256): "on_console",
+// "other_version" or "absent"; "needs_repair" whatever the console has, when something added to it stopped halfway
+// (Details repairs it). Its DLC do not count.
+function consoleMark(item, games) {
+  if (item && item.interrupted) return "needs_repair";
+  const same = item && item.titleId ? (games || []).filter(game => game.titleId === item.titleId) : [];
+  if (!same.length) return "absent";
+  return same.some(game => game.version === item.version) ? "on_console" : "other_version";
+}
+// what can be marked to send: a .p5z that was read, and that the console does not have in that version (it would
+// refuse it); another version can, with its warning
+const canSend = (item, games) => !!item && !item.error && ["other_version", "absent"].includes(consoleMark(item, games));
+// whether a console game is in the PC's column too: the same title ID and version
+const alsoOnPc = (game, items) => !!game.titleId && (items || []).some(item => !item.error && item.titleId === game.titleId && item.version === game.version);
+// the header's words for what the window says of the console (ConsoleState), and before it answered
+function consoleStateKey(view) {
+  if (!view) return "consoleLooking";
+  return { connected: "consoleConnected", receive_off: "consoleReceiveOff", unreachable: "consoleUnreachable", no_console: "consoleNone" }[view.state] || "consoleUnreachable";
+}
+// whether the console said what it has (it does with Receive games from the PC off too)
+const consoleKnown = view => !!view && (view.state === "connected" || view.state === "receive_off");
+// the console's games as the page knows them now: none while it does not answer
+const consoleGames = () => (consoleKnown(state.console) ? state.console.games || [] : []);
+// the cover of a console game: its icon on the console, else the one of a .p5z of the PC of that title ID, else none
+function consoleCover(game, icons, items) {
+  if (icons && icons[game.titleId]) return icons[game.titleId];
+  const pc = (items || []).find(item => item.titleId === game.titleId && item.icon);
+  return pc ? pc.icon : "";
+}
+// what a game of the console is: a .p5z, a package or a folder
+const consoleKindText = kind => (kind === "p5z" ? ".p5z" : kind === "pkg" ? ".pkg" : kind === "folder" ? t("consoleKindFolder") : String(kind || ""));
+// a drive of the console by the label it gives it ("Internal", "USB 1"), with its free space of its size
+function diskText(disk) {
+  const label = String(disk.label || ""), usb = /^usb\s*(\d+)$/i.exec(label);
+  const name = /^internal$/i.test(label) ? t("driveInternal") : usb ? t("driveUsb")(Number(usb[1])) : label || String(disk.kind || "");
+  return t("driveLine")(name, size(Number(disk.free) || 0), size(Number(disk.total) || 0));
+}
+// the drive of a send left on the console, which says where it is there but not the drive's id: the internal
+// storage is /data, a USB drive /mnt/usbN; else the drive chosen last
+function leftDrive(path) {
+  const where = String(path || "");
+  if (/^\/data(\/|$)/.test(where)) return "internal";
+  const usb = /^\/mnt\/(usb\d+)(\/|$)/.exec(where);
+  return usb ? usb[1] : load("sendDrive", "");
+}
+// the name of the .p5z a send left there, without the .maxpack-recv the console keeps it under
+const leftName = entry => String((entry && (entry.name || (entry.path ? baseName(entry.path) : ""))) || "").replace(/\.maxpack-recv$/i, "");
+// a date the console gives (seconds since 1970) as the language writes it
+function dateText(at) {
+  const seconds = Number(at) || 0, when = new Date(seconds > 1e12 ? seconds : seconds * 1000);
+  try {
+    return isolate(when.toLocaleDateString(languageInfo(state.lang)[2] || state.lang, { year: "numeric", month: "short", day: "numeric" }));
+  } catch {
+    return isolate(when.toISOString().slice(0, 10));
+  }
+}
+// whether the console of Settings is there to send to: its address and its code
+const consoleSet = () => validConsoleIp(state.settings.ConsoleIP || "") && validConsoleCode(state.settings.ConsoleCode || "");
+
+// a .p5z of the library as the game of its row: what the queue and the window need of it
+const libraryGame = item => ({ Path: item.path, Name: item.name || baseName(item.path), TitleID: item.titleId || "", Version: item.version || "",
+  Kind: "p5z", OriginalSize: Number(item.size) || 0, P5zSize: Number(item.size) || 0, Icon: item.icon || "" });
+// a row of the Console section that is sending, or waits to
+const queuedRow = row => !!row.sendWait || (running() && state.job.rows.includes(row) && !ended.includes(row.state));
+// the rows marked to send that can go now
+const pickedRows = () => state.lists.console.filter(row => row.picked && !!row.game && canSend(row.item, consoleGames()) && !queuedRow(row));
+// what is marked, at the foot of the section
+function pickedText() {
+  const rows = pickedRows();
+  return rows.length ? t("consolePicked")(rows.length, rows.reduce((sum, row) => sum + sendSize(row), 0)) : t("consolePickNone");
+}
+
+// the rows of the Console section are the library's, in its order (the folder's .p5z, then the others): each one
+// keeps its row, with what it went through, from one read to the next; one sending or waiting to stays, also when
+// its file left the folder meanwhile
+function syncConsoleRows(items) {
+  const old = new Map(state.lists.console.map(row => [pathKey(row.path), row]));
+  const rows = [];
+  for (const item of items) {
+    const key = pathKey(item.path);
+    let row = old.get(key);
+    if (!row) {
+      row = newRow(item.path, "console");
+      row.tr.classList.add("enter");
+    }
+    old.delete(key);
+    Object.assign(row, { item, error: item.error || "", game: item.error ? null : libraryGame(item) });
+    rows.push(row);
+  }
+  for (const row of old.values()) if (queuedRow(row)) rows.push(row);
+  state.lists.console = rows;
+}
+// the .p5z given from elsewhere, each once, for the window's life
+function addOthers(paths) {
+  const have = new Set(state.others.map(pathKey));
+  for (const path of paths || []) {
+    if (typeof path !== "string" || !path || have.has(pathKey(path))) continue;
+    have.add(pathKey(path));
+    state.others.push(path);
+  }
+}
+// Send to the console of Details and of the end card of Compress: the Console section opens with them, marked
+// (also the ones outside the library, under Other files)
+function openConsoleWith(paths) {
+  const given = (paths || []).filter(path => typeof path === "string" && path);
+  addOthers(given);
+  for (const path of given) state.consolePick.add(pathKey(path));
+  return state.section === "console" ? loadLibrary() : setSection("console");
+}
+// the rows asked to be marked, once they are there, if they can be sent
+function applyPicks() {
+  let first = null;
+  for (const row of state.lists.console) {
+    const key = pathKey(row.path);
+    if (!state.consolePick.has(key)) continue;
+    state.consolePick.delete(key);
+    if (!row.game || !canSend(row.item, consoleGames()) || queuedRow(row)) continue;
+    row.picked = true;
+    first = first || row;
+  }
+  return first;
+}
+
+// The library: read as the section opens, with Read again, and when the .p5z from elsewhere change. One read at a
+// time; one asked meanwhile reads once that one ends, and the ones asked after it share it.
+let libraryChain = Promise.resolve(), libraryQueued = null;
+function loadLibrary() {
+  if (!libraryQueued) libraryQueued = libraryChain = libraryChain.then(() => { libraryQueued = null; return readLibrary(); });
+  return libraryQueued;
+}
+async function readLibrary() {
+  state.libraryBusy = true;
+  if (state.section === "console") render();
+  const view = await go.call("Library", state.others.slice())
+    .catch(error => ({ folder: state.settings.LibraryFolder || "", items: [], error: "unreadable", message: message(error) }));
+  state.libraryBusy = false;
+  state.library = Object.assign({ folder: "", items: [], error: "" }, view || {});
+  syncConsoleRows(state.library.items || []);
+  const first = applyPicks();
+  if (state.section !== "console") return;
+  render();
+  if (first && first.tr.scrollIntoView) first.tr.scrollIntoView({ block: "nearest" });
+}
+// Use this folder: the folder where Compress leaves what it makes becomes the library
+async function useLastDest() {
+  const folder = state.settings.LastDest || "";
+  if (!folder) return;
+  await keep({ LibraryFolder: folder });
+  return loadLibrary();
+}
+// Choose…: another folder for the library, which the window keeps
+async function chooseLibrary() {
+  const folder = await go.call("ChooseLibraryFolder").catch(error => { toast(message(error)); return ""; });
+  if (!folder) return;
+  // the window kept it: the settings the page writes next keep it too
+  state.settings = Object.assign({}, state.settings, { LibraryFolder: folder });
+  return loadLibrary();
+}
+// Needs repair: the .p5z opens in Details, which repairs it
+const repairInDetails = row => takeTo(row, "details");
+
+// The console is asked what it has as the section opens and every 3 s while it is shown (the window answers within
+// 3 s, and for a while without asking again after it did not answer); its drives once it answers.
+let consoleTimer = 0, consolePolling = false;
+function enterConsole() {
+  state.consoleIconAsked = new Set();
+  // the drives again, for their free space now, unless the console refused the code (only Save tries it again)
+  if (state.drives && !state.drives.asking && !codeRefused(state.drives.error)) state.drives = null;
+  if (consoleTimer) clearInterval(consoleTimer);
+  consoleTimer = setInterval(() => { if (state.section === "console") pollConsole(); }, 3000);
+  return Promise.all([loadLibrary(), pollConsole()]);
+}
+function leaveConsole() {
+  if (consoleTimer) clearInterval(consoleTimer);
+  consoleTimer = 0;
+}
+async function pollConsole() {
+  if (consolePolling) return;
+  consolePolling = true;
+  const answer = await go.call("ConsoleState").catch(() => null);
+  consolePolling = false;
+  const view = answer || { state: "unreachable", address: state.settings.ConsoleIP || "", games: [], images: [], disks: [], left: [], receiving: false };
+  const changed = JSON.stringify(view) !== JSON.stringify(state.console);
+  state.console = view;
+  // drives it could not give are asked again once it answers again, unless it refused the code
+  if (view.state !== "connected" && state.drives && !state.drives.asking && !state.drives.drives.length && !codeRefused(state.drives.error)) state.drives = null;
+  if (changed && state.section === "console") render();
+  askIcons(view.games || []);
+  sendWaiting();
+  return ensureDrives();
+}
+// the icons of the console's games, one at a time, each asked once each time the section opens
+async function askIcons(games) {
+  for (const game of games) {
+    const id = game.titleId;
+    if (!id || state.consoleIconAsked.has(id)) continue;
+    state.consoleIconAsked.add(id);
+    const icon = await go.call("ConsoleIcon", id).catch(() => "");
+    state.consoleIcons[id] = icon || "";
+    if (icon && state.section === "console") paintConsoleGames();
+  }
+}
+
+// The console's drives, to choose the one to send to: they take the pairing code, which the console counts when it
+// is wrong (five in a row lock this PC out for a minute). So they are asked once the console answers, for its
+// address and code, and never again by themselves after it refused the code.
+const drivesKey = () => (state.settings.ConsoleIP || "") + " " + (state.settings.ConsoleCode || "");
+const codeRefused = error => error === "bad_code" || error === "locked";
+async function ensureDrives() {
+  const key = drivesKey();
+  if (!consoleSet() || !state.console || state.console.state !== "connected" || (state.drives && state.drives.key === key)) return;
+  state.drives = { key, drives: [], error: "", message: "", asking: true };
+  paintDriveSelect();
+  const view = await go.call("ConsoleDrives").catch(error => ({ drives: [], error: "io", message: message(error) })) || { drives: [], error: "io", message: "" };
+  if (!state.drives || state.drives.key !== key) return;
+  const drives = view.drives || [];
+  state.drives = { key, drives, error: view.error || (drives.length ? "" : "no_drive"), message: view.message || "", asking: false };
+  if (state.section === "console") render();
+}
+// the drive to send to: the one chosen, else the last one used, else the first with room for what is marked
+function chosenDrive() {
+  const drives = (state.drives && state.drives.drives) || [];
+  if (!drives.length) return "";
+  for (const id of [state.driveChoice, load("sendDrive", "")]) if (id && drives.some(drive => drive.id === id)) return id;
+  const rows = pickedRows();
+  return (drives.find(drive => driveFits(drive, rows)) || drives[0]).id;
+}
+
+// Send: what is marked goes to the console, to the drive chosen, through the one queue of the window
+function sendMarked() {
+  const rows = pickedRows(), drive = chosenDrive();
+  if (!rows.length || !drive) return;
+  save("sendDrive", drive);
+  state.driveChoice = drive;
+  for (const row of rows) Object.assign(row, { picked: false, sentDrive: drive, redone: false });
+  if (state.busy) toast(t("sendQueuedWait"));
+  return queueSend(rows, drive, false);
+}
+// rows to send wait in the list, as Waiting, until nothing else runs (auto: the watched folder's, which ask nothing)
+function queueSend(rows, drive, auto) {
+  for (const row of rows) Object.assign(row, { state: "waiting", detail: "", sendWait: { drive, auto: !!auto } });
+  render();
+  return sendWaiting();
+}
+// the sends that wait go once nothing runs: the first one with the others of its drive (and of its kind); the rest
+// when that queue ends (job:done tries again, and so do the console's polls and the watched folder's timer)
+async function sendWaiting() {
+  if (state.busy) return;
+  const waiting = state.lists.console.filter(row => row.sendWait);
+  if (!waiting.length) return;
+  const { drive, auto } = waiting[0].sendWait;
+  const rows = waiting.filter(row => row.sendWait.drive === drive && row.sendWait.auto === auto);
+  for (const row of rows) row.sendWait = null;
+  await startQueue("send", rows, { Drive: drive }, auto);
+  // not started (a question answered with Cancel, an error): they wait no more
+  for (const row of rows) if (row.state === "waiting" && !(running() && state.job.rows.includes(row))) row.state = "";
+  render();
+  if (!state.busy) return sendWaiting();
+}
+
+// The box that connects to the console: the address and the code are checked here first, then kept in Settings
+// with one question to the console (SaveConsole), whose answer it says.
+function connectSay(text, tone) {
+  Object.assign(state.connect, { text: text || "", tone: tone || "" });
+  paintConnect();
+}
+async function saveConsole() {
+  const c = state.connect;
+  if (c.busy) return;
+  const ip = $("connect-ip").value.trim(), code = $("connect-code").value.trim();
+  if (!validConsoleIp(ip)) { connectSay(t("consoleIpBad"), "bad"); return; }
+  if (!validConsoleCode(code)) { connectSay(t("consoleCodeBad"), "bad"); return; }
+  // the box stays open until the console takes them, whatever Settings holds meanwhile
+  Object.assign(c, { busy: "save", open: true });
+  connectSay(t("connectChecking"), "");
+  const view = await go.call("SaveConsole", ip, code).catch(error => ({ error: "save_failed", message: message(error) })) || { error: "", message: "" };
+  c.busy = "";
+  // kept even when the console did not take them, as Settings keeps them; not when Settings could not be written
+  if (view.error !== "save_failed" && view.error !== "bad_ip") {
+    state.settings = Object.assign({}, state.settings, { ConsoleIP: ip, ConsoleCode: code });
+    // the code was tried once: what the console said of it stands until it is saved again
+    state.drives = view.error ? { key: drivesKey(), drives: [], error: view.error, message: view.message || "", asking: false } : null;
+  }
+  if (!view.error) {
+    Object.assign(c, { open: false, text: "", tone: "" });
+    toast(t("connectOk"));
+  } else {
+    connectSay(view.error === "save_failed" ? t("connectSaveFailed") + (view.message ? ": " + view.message : "") : sendErrorText(view.error, view.message), "bad");
+  }
+  render();
+  // the header follows the console of Settings now (asking what it has takes no code)
+  pollConsole();
+}
+// Find on the network: the first console with MaxPack that answers fills the address (the code is typed: only the
+// console shows it)
+async function findConsoles() {
+  const c = state.connect;
+  if (c.busy) return;
+  c.busy = "find";
+  connectSay(t("connectFinding"), "");
+  const found = await go.call("FindConsoles").catch(() => []) || [];
+  c.busy = "";
+  if (found.length) {
+    $("connect-ip").value = found[0];
+    connectSay(t("connectFound")(found.join(", ")), "ok");
+  } else {
+    connectSay(t("connectNoneFound"), "bad");
+  }
+}
+
+// Delete what arrived of a send left on the console (receive_left): asked first, then on its drive, by its name
+async function discardLeft(entry) {
+  const name = leftName(entry);
+  if (!name) return;
+  if (state.busy) { toast(t("sendBusy")); return; }
+  $("discard-text").textContent = t("discardText")(name);
+  if (await ask($("discard-dialog")) !== "delete") return;
+  state.busy = true;
+  state.leftDiscard = { name, seconds: 0 };
+  render();
+  try {
+    const view = await go.call("DiscardOnConsole", name, leftDrive(entry.path)).catch(error => ({ error: "io", message: message(error) })) || { error: "" };
+    if (view.error === "delete_failed" && view.detail) { toast(t("detail_send_delete_failed") + ": " + view.detail); return; }
+    if (view.error) { toast(sendErrorText(view.error, view.message)); return; }
+    toast(t(view.deleted === false ? "discardNothing" : "discardDone")(name));
+  } finally {
+    state.busy = false;
+    state.leftDiscard = null;
+    render();
+    pollConsole();
+  }
+}
+
+// the page of the section: the console at the top, the box that connects to it, the PC's column and the console's
+function paintConsole() {
+  paintConsoleHead();
+  paintConnect();
+  paintLibrary();
+  paintConsoleGames();
+}
+function paintConsoleHead() {
+  const view = state.console, known = consoleKnown(view);
+  $("console-state").textContent = t(consoleStateKey(view));
+  $("console-address").textContent = view && view.address ? ltr(view.address) : "";
+  $("console-dot").className = "console-dot " + (view ? view.state : "looking");
+  // Receive games from the PC is turned on from the console's browser; a console that does not answer is asked again
+  const hint = !view ? "" : view.state === "receive_off" ? t("consoleReceiveOffHint") : view.state === "unreachable" ? t("consoleUnreachableHint") : "";
+  $("console-hint").hidden = !hint;
+  $("console-hint").textContent = hint;
+  $("console-hint").className = view && view.state === "receive_off" ? "warning" : "hint";
+  $("console-change").hidden = !consoleSet() || state.connect.open;
+  $("console-disks").replaceChildren(...(known ? view.disks || [] : []).map(disk => {
+    const item = document.createElement("li");
+    item.textContent = diskText(disk);
+    return item;
+  }));
+  const left = known ? view.left || [] : [];
+  $("console-left-block").hidden = !left.length;
+  $("console-left").replaceChildren(...left.map(leftLine));
+}
+// a send left on the console: its name, what arrived of it, and Delete what arrived
+function leftLine(entry) {
+  const item = document.createElement("li"), name = document.createElement("b"), about = document.createElement("span"), button = document.createElement("button");
+  const file = leftName(entry), letting = state.leftDiscard && state.leftDiscard.name === file && state.leftDiscard.seconds;
+  name.textContent = file;
+  about.textContent = [size(Number(entry.size) || 0), letting ? t("detail_send_letting_go")(state.leftDiscard.seconds) : ""].filter(Boolean).join(" · ");
+  button.className = "link";
+  button.textContent = t("sendDiscard");
+  button.disabled = state.busy;
+  button.addEventListener("click", () => discardLeft(entry));
+  item.append(name, about, button);
+  return item;
+}
+// the box is open while no console is set, or once Change opens it; its fields are filled once as it opens
+function paintConnect() {
+  const c = state.connect, open = !consoleSet() || c.open;
+  $("console-connect").hidden = !open;
+  if (open && !c.filled) {
+    $("connect-ip").value = state.settings.ConsoleIP || "";
+    $("connect-code").value = state.settings.ConsoleCode || "";
+    c.filled = true;
+  }
+  if (!open) c.filled = false;
+  $("connect-cancel").hidden = !consoleSet();
+  for (const id of ["connect-save", "connect-find", "connect-ip", "connect-code"]) $(id).disabled = !!c.busy || !go.has();
+  $("connect-status").hidden = !c.text;
+  $("connect-status").textContent = c.text;
+  $("connect-status").className = "connect-status " + c.tone;
+}
+// the PC's column: the library folder (or the question of which one, the first time), its .p5z and the others
+function paintLibrary() {
+  const view = state.library, folder = (view && view.folder) || "", dest = state.settings.LastDest || "";
+  const noFolder = !!view && view.error === "no_folder";
+  $("library-path-row").hidden = !folder;
+  $("library-folder").textContent = folder ? ltr(folder) : "";
+  $("library-folder").title = folder;
+  $("library-ask").hidden = !noFolder;
+  $("library-proposed").hidden = !dest;
+  $("library-proposed").textContent = dest ? t("libraryProposed")(ltr(dest)) : "";
+  $("library-use").hidden = !dest;
+  $("library-error").hidden = !(view && view.error === "unreadable");
+  $("library-error").textContent = t("libraryUnreadable");
+  const rows = state.lists.console, mine = rows.filter(row => !(row.item && row.item.other)), other = rows.filter(row => row.item && row.item.other);
+  $("library-reading").hidden = !(state.libraryBusy && !view);
+  $("library-empty").hidden = !view || !!view.error || mine.length > 0;
+  $("library-empty").textContent = t("libraryEmpty");
+  for (const row of rows) paintRow(row);
+  $("console-rows").replaceChildren(...mine.map(row => row.tr));
+  $("console-other-block").hidden = !other.length;
+  $("console-other-rows").replaceChildren(...other.map(row => row.tr));
+  // the column of the state shows once a row has one, as in the list
+  $("console-table").classList.toggle("no-state", !mine.some(row => row.state));
+  $("console-other-table").classList.toggle("no-state", !other.some(row => row.state));
+  for (const id of ["library-reread", "library-choose", "library-ask-choose", "library-use"]) $(id).disabled = state.libraryBusy || !go.has();
+}
+// what a row of the Console section adds to a row of the list: its box to mark it, and what it is on the console
+function paintConsoleRow(row) {
+  const tr = row.tr, item = row.item || {}, games = consoleGames(), mark = consoleMark(item, games);
+  const name = (row.game && row.game.Name) || baseName(row.path);
+  const sendable = !!row.game && canSend(item, games) && !queuedRow(row);
+  if (!sendable) row.picked = false;
+  const pick = tr.querySelector(".pick");
+  pick.hidden = false;
+  pick.disabled = !sendable;
+  pick.checked = !!row.picked;
+  pick.setAttribute("aria-label", t("pickToSend")(name));
+  pick.title = t("pickToSend")(name);
+  // what it is on the console, once the console said what it has; one that needs repair, always
+  const shown = !row.error && (consoleKnown(state.console) || mark === "needs_repair");
+  const badge = tr.querySelector(".mark");
+  badge.hidden = !shown;
+  badge.className = "mark " + mark;
+  if (mark === "on_console") badge.textContent = t("markOnConsole");
+  else if (mark === "other_version") badge.textContent = t("markOtherVersion")([...new Set(games.filter(game => game.titleId === item.titleId).map(game => game.version))].join(", "));
+  else if (mark === "needs_repair") badge.textContent = t("markNeedsRepair");
+  else badge.textContent = t("markAbsent");
+  const why = tr.querySelector(".mark-why");
+  why.hidden = !shown || (mark !== "other_version" && mark !== "needs_repair");
+  why.textContent = mark === "other_version" ? t("markOtherVersionWarn") : mark === "needs_repair" ? t("needsRepairWhy") : "";
+  const open = tr.querySelector(".open-details");
+  open.hidden = !shown || mark !== "needs_repair";
+  open.textContent = t("repairInDetails");
+}
+// the console's column: its games and its images, or why there are none to show; nothing in it is a button
+function paintConsoleGames() {
+  const view = state.console, known = consoleKnown(view), items = (state.library && state.library.items) || [];
+  const games = known ? view.games || [] : [], images = known ? view.images || [] : [];
+  const why = !view ? t("consoleLooking") : view.state === "no_console" ? t("consoleNoData_none") : view.state === "unreachable" ? t("consoleNoData_unreachable")
+    : games.length || images.length ? "" : t("consoleGamesNone");
+  $("console-games-why").hidden = !why;
+  $("console-games-why").textContent = why;
+  $("console-games").replaceChildren(...games.map(game => consoleGameLine(game, items)));
+  $("console-images-block").hidden = !images.length;
+  $("console-images").replaceChildren(...images.map(image => consoleImageLine(image)));
+}
+// a game of the console: its cover, name, version, what it is, its drive and size (none for a folder), and its marks
+function consoleGameLine(game, items) {
+  const line = $("console-game-template").content.firstElementChild.cloneNode(true);
+  const cover = consoleCover(game, state.consoleIcons, items), icon = line.querySelector("img.icon");
+  icon.hidden = !cover;
+  if (cover) icon.src = cover;
+  line.querySelector(".cover").hidden = !!cover;
+  line.querySelector(".title").textContent = game.name || game.titleId || "—";
+  line.querySelector(".file").textContent = [game.titleId, game.version && t("versionOf")(game.version), consoleKindText(game.kind), game.drive && driveName(game.drive)].filter(Boolean).join(" · ");
+  line.querySelector(".size").textContent = game.kind === "folder" || !Number(game.size) ? "" : size(game.size);
+  const marks = [];
+  if (game.verified) marks.push(game.verified.ok ? ["ok", t("consoleVerified")(dateText(game.verified.at))] : ["bad", t("consoleVerifyFailed")(dateText(game.verified.at))]);
+  if (game.status === "duplicate") marks.push(["warn", t("consoleDuplicate")]);
+  if (alsoOnPc(game, items)) marks.push(["pc", t("markAlsoOnPc")]);
+  line.querySelector(".pills").replaceChildren(...marks.map(([tone, text]) => {
+    const pill = document.createElement("span");
+    pill.className = "pill " + tone;
+    pill.textContent = text;
+    return pill;
+  }));
+  return line;
+}
+// an image of the console: the console says only its file and its title ID
+function consoleImageLine(image) {
+  const line = $("console-game-template").content.firstElementChild.cloneNode(true);
+  line.querySelector("img.icon").hidden = true;
+  line.querySelector(".title").textContent = baseName(image.path || "");
+  line.querySelector(".file").textContent = image.titleId || "";
+  return line;
+}
+// the drive to send to, at the foot of the section: the console's drives with their free space, or why there are
+// none yet
+function paintDriveSelect() {
+  const on = state.section === "console", d = state.drives, drives = (d && d.drives) || [];
+  $("console-drive-row").hidden = !on || !drives.length;
+  const note = !on || !consoleSet() || !d ? "" : d.asking ? t("sendAsking") : d.error ? sendErrorText(d.error, d.message) : "";
+  $("console-drive-note").hidden = !note;
+  $("console-drive-note").textContent = note;
+  if (!on || !drives.length) return;
+  const rows = pickedRows(), select = $("console-drive");
+  const options = drives.map(drive => [drive.id, driveText(drive) + (driveFits(drive, rows) ? "" : " · " + t("sendNoRoom"))]);
+  const sign = JSON.stringify(options);
+  if (select.dataset.sign !== sign) {
+    select.replaceChildren(...options.map(([id, text]) => {
+      const option = document.createElement("option");
+      option.value = id;
+      option.textContent = text;
+      return option;
+    }));
+    select.dataset.sign = sign;
+  }
+  select.value = chosenDrive();
 }
 
 // ---- the watched folder ------------------------------------------------------------------------------
@@ -1985,21 +2473,21 @@ function watchTick() {
   if (state.busy) return; // the end of what runs tries again
   startQueue("", ready, undefined, true);
 }
-// what the watched folder made, once its queue ended, goes to the console too: to the drive last chosen
+// what the watched folder made, once its queue ended, goes to the console too, to the drive last chosen: through the
+// Console section, where it shows (the section does not open for it), in the one queue
 async function sendWatched(job) {
   const paths = madeP5z(job).filter(path => job.rows.some(row => row && row.watched && row.out === path));
   if (!paths.length) { watchSoon(); return; }
-  if (!validConsoleIp(state.settings.ConsoleIP) || !validConsoleCode(state.settings.ConsoleCode)) { toast(t("sendNoConsole")); watchSoon(); return; }
-  addPaths("details", paths);
-  const wanted = new Set(paths.map(pathKey));
+  if (!consoleSet()) { toast(t("sendNoConsole")); watchSoon(); return; }
   // the .p5z made again of a game that changed: the console may have the older copy
   const redone = new Set(job.rows.filter(row => row && row.watched && /(^|; )watch_redone($|; )/.test(row.detail || "")).map(row => pathKey(row.out)));
-  const rowsOf = () => state.lists.details.filter(row => wanted.has(pathKey(row.path)));
-  for (let waited = 0; waited < 120 && rowsOf().some(row => !row.game && !row.error); waited++) await new Promise(done => setTimeout(done, 250));
-  const rows = rowsOf().filter(row => row.game && row.game.Kind === "p5z");
-  for (const row of rows) row.redone = redone.has(pathKey(row.path));
-  if (rows.length && !state.busy) startQueue("send", rows, { Drive: load("sendDrive", "") }, true);
-  else watchSoon();
+  addOthers(paths);
+  await loadLibrary();
+  const wanted = new Set(paths.map(pathKey)), drive = load("sendDrive", "");
+  const rows = state.lists.console.filter(row => wanted.has(pathKey(row.path)) && row.game && !queuedRow(row));
+  for (const row of rows) Object.assign(row, { redone: redone.has(pathKey(row.path)), sentDrive: drive });
+  if (rows.length) queueSend(rows, drive, true);
+  watchSoon();
 }
 
 // ---- what the window tells of a queue -----------------------------------------------------------
@@ -2066,7 +2554,7 @@ function onDone(summary) {
   state.cancelling = false;
   state.paused = false;
   state.pausing = false;
-  if (!job) { render(); return; }
+  if (!job) { render(); sendWaiting(); return; }
   job.summary = summary;
   render();
   if ((writes.includes(job.section) || grows.includes(job.mode) || job.mode === "send") && summary.Done + summary.Failed > 0) showDone(job, summary);
@@ -2076,6 +2564,8 @@ function onDone(summary) {
   if (job.watched && state.settings.WatchSend && madeP5z(job).length) sendWatched(job);
   else watchSoon();
   if (job.mode === "protect") toast(t("protectedCount")(summary.Protected || 0));
+  // the sends that waited for this queue go now
+  sendWaiting();
 }
 
 // the games of a queue, in the words of the notice of the system (noticeText in notify.go)
@@ -2478,7 +2968,7 @@ async function renameAll() {
       const row = rows[n];
       if (result.State === "ok") {
         renamed++;
-        // the game is at its new name, in every list that has it
+        // the game is at its new name, in every list that has it, and among the .p5z the Console section was given
         for (const list of Object.values(state.lists)) {
           for (const other of list) {
             if (pathKey(other.path) !== pathKey(result.From)) continue;
@@ -2486,6 +2976,7 @@ async function renameAll() {
             if (other.game) other.game = Object.assign({}, other.game, { Path: result.To });
           }
         }
+        state.others = state.others.map(path => (pathKey(path) === pathKey(result.From) ? result.To : path));
       }
       Object.assign(row, { state: result.State, detail: result.State === "ok" ? "" : result.Detail });
     });
@@ -2570,7 +3061,8 @@ function onKey(event) {
   if (action === "cancel" && (typing || !running())) return;
   const works = state.section !== "settings";
   if (action === "addFiles" || action === "addFolder") {
-    if (!works || !go.has()) return;
+    // the Console section's .p5z are its library folder's and the ones sent to it
+    if (!works || state.section === "console" || !go.has()) return;
     event.preventDefault();
     go.call(action === "addFiles" ? "ChooseFiles" : "ChooseFolder", state.section).then(paths => addPaths(state.section, paths), error => toast(message(error)));
     return;
@@ -2669,7 +3161,22 @@ function wire() {
   $("add-folder").addEventListener("click", chooseFolder);
   $("empty-folder").addEventListener("click", chooseFolder);
   $("clear").addEventListener("click", clearList);
-  $("start").addEventListener("click", () => (state.section === "rename" ? renameAll() : startQueue()));
+  $("start").addEventListener("click", () => (state.section === "rename" ? renameAll() : state.section === "console" ? sendMarked() : startQueue()));
+  // the Console section: the box that connects to the console, the library folder, and the drive to send to
+  $("console-change").addEventListener("click", () => {
+    Object.assign(state.connect, { open: true, filled: false, text: "", tone: "" });
+    render();
+    $("connect-ip").focus();
+  });
+  $("connect-cancel").addEventListener("click", () => { Object.assign(state.connect, { open: false, text: "", tone: "" }); render(); });
+  $("connect-save").addEventListener("click", saveConsole);
+  $("connect-find").addEventListener("click", findConsoles);
+  for (const id of ["connect-ip", "connect-code"]) $(id).addEventListener("keydown", event => { if (event.key === "Enter") { event.preventDefault(); saveConsole(); } });
+  $("library-reread").addEventListener("click", () => loadLibrary());
+  $("library-choose").addEventListener("click", chooseLibrary);
+  $("library-ask-choose").addEventListener("click", chooseLibrary);
+  $("library-use").addEventListener("click", useLastDest);
+  $("console-drive").addEventListener("change", () => { state.driveChoice = $("console-drive").value; paintStart(); });
   // the repair data: Compress gives it to each .p5z when ticked (5 % the first time), as Settings
   // keeps it; Verify adds it to the .p5z of the list, or repairs the damaged ones with theirs
   $("repair-data").addEventListener("change", () => { keep({ RepairData: $("repair-data").checked }); render(); });
@@ -2694,15 +3201,17 @@ function wire() {
     const passcode = $("pref-passcode").value.trim();
     $("passcode-bad").hidden = validPasscode(passcode);
     if (!validPasscode(passcode) || passcode === (state.settings.Passcode || "")) return;
-    keep({ Passcode: passcode });
+    const kept = keep({ Passcode: passcode });
     for (const list of Object.values(state.lists))
       for (const row of list)
-        if (row.error && /--passcode/.test(row.error)) {
+        if (row.section !== "console" && row.error && /--passcode/.test(row.error)) {
           row.error = "";
           row.game = null;
           paintRow(row);
           describe(row);
         }
+    // the library is read again with it once it is kept (the window reads each .p5z again for a new passcode)
+    if (state.lists.console.some(row => row.error && /--passcode/.test(row.error))) kept.then(() => loadLibrary());
   });
   // the console's address and code: kept once each one is one (or empty, none)
   for (const [id, bad, valid, key] of [["pref-console-ip", "console-ip-bad", validConsoleIp, "ConsoleIP"], ["pref-console-code", "console-code-bad", validConsoleCode, "ConsoleCode"]]) {
@@ -2828,9 +3337,10 @@ async function main() {
   loadExplorer();
   checkUpdate();
   offerLeftovers();
-  // the watched folder, now that the page listens; what waits (no destination, no room) is tried again now and then
+  // the watched folder, now that the page listens; what waits (no destination, no room) is tried again now and then,
+  // and so are the sends that wait for the queue (after a comparison of levels or a measure, which tell no job:done)
   go.call("StartWatch").then(status => { state.watch = Object.assign({ existing: 0 }, status || state.watch); }, () => {});
-  setInterval(() => { if (watchedRows().some(row => !row.state && !row.watchHeld)) watchSoon(); }, 30000);
+  setInterval(() => { if (watchedRows().some(row => !row.state && !row.watchHeld)) watchSoon(); sendWaiting(); }, 30000);
 }
 
 // what a run cut short (a crash, a power cut) left apart is offered for deletion as MaxPack opens

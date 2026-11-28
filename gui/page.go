@@ -301,6 +301,11 @@ func sectionOptions(section string, o jobs.Options) (jobs.Options, error) {
 		if o.Mode != jobs.ModeAddDLC && o.Mode != jobs.ModeUpdate && o.Mode != jobs.ModeSend {
 			return o, fmt.Errorf("the section %q only adds DLC to a .p5z, updates one and sends one", section)
 		}
+	case "console":
+		// the Console section sends .p5z to the console: nothing else
+		if o.Mode != jobs.ModeSend {
+			return o, fmt.Errorf("the section %q only sends a .p5z to the console", section)
+		}
 	default:
 		return o, fmt.Errorf("the section %q does not do jobs", section)
 	}

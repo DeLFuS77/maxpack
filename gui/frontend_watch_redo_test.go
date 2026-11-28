@@ -59,18 +59,17 @@ const watchRedoChecks = `
   const append = calls.find(call => call.startsWith("Append "));
   if (!append || !append.includes('"Name":"A"') || append.includes('"Name":"B"') || append.includes('"Name":"C"') || !append.includes('],[],["D:/d/A.p5z"],false]')) say("joined: " + append);
   if (rows[1].detail !== "watch_other_version: 01.000.000 01.002.000" || rows[2].detail !== "watch_older_version: 01.002.000 01.000.000") say("joined, left out: " + rows[1].detail + " " + rows[2].detail);
-  // sent to the console too: a console that has the older copy says so
+  // sent to the console too, from the Console section: a console that has the older copy says so
   state.job = null;
   state.busy = false;
-  const sentRow = { path: "D:/d/A.p5z", section: "details", game: { Name: "A", Kind: "p5z", P5zSize: 10 }, error: "", state: "", detail: "", warnings: [] };
-  state.lists.details = [sentRow];
-  addPaths = () => {};
   state.settings.ConsoleIP = "192.168.1.20";
   state.settings.ConsoleCode = "482913";
-  window.answers = { Plan: [], Space: [] };
+  window.answers = { Plan: [], Space: [], Library: { folder: "D:/d", error: "", items: [{ path: "D:/d/A.p5z", name: "A", titleId: "PPSA10001", version: "01.000.000", size: 10, icon: "", interrupted: false, other: false, error: "" }] } };
   await sendWatched({ section: "compress", mode: "p5z", watched: true, rows: [{ path: "D:/w/A", watched: true, state: "ok", out: "D:/d/A.p5z", detail: "watch_redone; original_kept_watched" }] });
-  if (!sentRow.redone) say("the .p5z made again is not marked");
-  state.job = { section: "details", mode: "send", rows: [sentRow], running: true, early: {} };
+  const sentRow = state.lists.console.find(r => r.path === "D:/d/A.p5z");
+  if (!sentRow || sentRow.section !== "console") say("the .p5z made is not a row of the Console section");
+  else if (!sentRow.redone) say("the .p5z made again is not marked");
+  state.job = { section: "console", mode: "send", rows: [sentRow], running: true, early: {} };
   onItem({ i: 0, state: "error", detail: "send_exists" });
   if (sentRow.detail !== "send_exists_older") say("the console's older copy: " + sentRow.detail);
   if (detailText("send_exists_older") !== t("detail_send_exists_older")) say("the text of the older copy");

@@ -155,7 +155,8 @@ func TestPageAccessible(t *testing.T) {
 			}
 		}
 	})
-	for _, id := range []string{"status", "toast", "send-asking", "levels-status", "measure-status"} {
+	// the Console section: the console's state, the box that connects to it, and its drives being asked
+	for _, id := range []string{"status", "toast", "console-state", "connect-status", "console-drive-note", "levels-status", "measure-status"} {
 		node := ids[id]
 		if node == nil {
 			t.Errorf("no #%s", id)

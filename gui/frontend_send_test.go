@@ -29,7 +29,7 @@ console.log(vm.runInContext(` + "`" + `(() => {
   // its steps: the bytes go, then the console verifies them; its bar goes by the size of the .p5z
   if (stepsOf({ mode: "send" }).join() !== "sending,verifying") say("steps: " + stepsOf({ mode: "send" }));
   if (!working.includes("sending")) say("sending is not a state at work");
-  const row = { path: "D:/g.p5z", section: "details", game: { Name: "Copper Vale", Kind: "p5z", OriginalSize: 9000, P5zSize: 3000 }, state: "", warnings: [] };
+  const row = { path: "D:/g.p5z", section: "console", game: { Name: "Copper Vale", Kind: "p5z", OriginalSize: 9000, P5zSize: 3000 }, state: "", warnings: [] };
   if (sendSize(row) !== 3000) say("the size sent: " + sendSize(row));
   // the console of Settings
   for (const ip of ["192.168.1.20", "10.0.0.5:8095", "0.0.0.0"]) if (!validConsoleIp(ip)) say("refused: " + ip);
@@ -56,12 +56,12 @@ console.log(vm.runInContext(` + "`" + `(() => {
   if (madeP5z(job).join() !== "D:/a.p5z") say("the .p5z made: " + madeP5z(job));
   if (madeP5z(Object.assign({}, job, { mode: "folder" })).length || madeP5z(Object.assign({}, job, { section: "details" })).length) say("folders or Details are sent");
   // what a send that did not end leaves on the console can be deleted there, and only that
-  const left = d => ({ section: "details", game: { Kind: "p5z" }, detail: d });
+  const left = d => ({ section: "console", game: { Kind: "p5z" }, detail: d });
   for (const d of ["send_kept", "send_console_stopped", "send_stalled", "send_write_error", "send_unreachable", "send_verify_failed: ampr_zstd-001.pak"])
     if (!leftOnConsole(left(d))) say("not left on the console: " + d);
   for (const d of ["sent", "send_exists", "send_bad_code", "send_discarded", "", "send_no_space"])
     if (leftOnConsole(left(d))) say("left on the console: " + d);
-  if (leftOnConsole(Object.assign(left("send_kept"), { section: "compress" }))) say("a row of Compress");
+  if (leftOnConsole(Object.assign(left("send_kept"), { section: "compress" })) || leftOnConsole(Object.assign(left("send_kept"), { section: "details" }))) say("a row of Compress or Details");
   for (const code of ["kept", "console_stopped", "stalled", "write_error", "discarded"])
     if (detailText("send_" + code) !== t("detail_send_" + code)) say("the detail send_" + code);
   if (!goodNote({ state: "ok", detail: "send_discarded" }) && goodNote({ state: "cancelled", detail: "send_kept" })) say("good news");
@@ -72,9 +72,9 @@ console.log(vm.runInContext(` + "`" + `(() => {
 })()` + "`" + `, context));
 `
 
-// TestPageSend: Send to the console, from the card of a .p5z in Details and from the end card of Compress:
-// the console of Settings, its drives and their free space, the steps and bar of the queue, and what the
-// console and the engine say, in the page's words.
+// TestPageSend: Send to the console, from the Console section (where the card of a .p5z in Details and the end card
+// of Compress open it): the console of Settings, its drives and their free space, the steps and bar of the queue, and
+// what the console and the engine say, in the page's words.
 func TestPageSend(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
@@ -95,13 +95,13 @@ func TestPageSend(t *testing.T) {
 // there can be deleted (contract v3), and Delete what arrived says when there was nothing of it there.
 func TestPageSendLeftOnConsole(t *testing.T) {
 	runPage(t, `
-  const left = d => ({ section: "details", path: "D:/g.p5z", game: { Kind: "p5z", Name: "Copper Vale" }, detail: d, state: "error", warnings: [] });
+  const left = d => ({ section: "console", path: "D:/g.p5z", game: { Kind: "p5z", Name: "Copper Vale" }, detail: d, state: "error", warnings: [] });
   for (const d of ["send_no_space_kept", "send_slept"]) if (!leftOnConsole(left(d))) say("not left on the console: " + d);
   for (const d of ["send_nothing_left", "send_no_space", "send_exists_older"]) if (leftOnConsole(left(d))) say("left on the console: " + d);
   for (const code of ["no_space_kept", "slept", "nothing_left", "discard_busy", "delete_failed"])
     if (detailText("send_" + code) !== t("detail_send_" + code)) say("the detail send_" + code + ": " + detailText("send_" + code));
   for (const code of ["discard_busy", "delete_failed"]) if (sendErrorText(code) !== t("detail_send_" + code)) say("the error " + code);
-  // the send dialog says what the console checks: every volume, and the loose files
+  // the Console section says what the console checks: every volume, and the loose files
   if (!/loose file/.test(t("sendText"))) say("sendText: " + t("sendText"));
   // nothing of it there: said so, not "deleted"
   render = () => {};
@@ -133,7 +133,7 @@ func TestPageSendLeftOnConsole(t *testing.T) {
   if (toasts.join() !== t("detail_send_discard_unsupported")) say("an older console: " + toasts);
   // while the console lets go of a receive of it, its row says so for the whole wait (with the seconds), and then
   // what came of it
-  state.lists.details = [row];
+  state.lists.console = [row];
   row.detail = "send_kept";
   let release;
   window.answers = { DiscardOnConsole: new Promise(done => { release = done; }) };

@@ -43,6 +43,12 @@ func send(mode string, args []string) int {
 		fail = "bad_code"
 	}
 	if hasArg(args, "--drives") {
+		if path := os.Getenv(CallsEnv); path != "" {
+			if f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644); err == nil {
+				fmt.Fprintln(f, strings.Join(args, "	"))
+				f.Close()
+			}
+		}
 		if wait, _ := strconv.Atoi(os.Getenv(DrivesWaitEnv)); wait > 0 {
 			time.Sleep(time.Duration(wait) * time.Millisecond)
 		}

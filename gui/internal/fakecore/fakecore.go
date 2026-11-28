@@ -67,7 +67,7 @@ const Env = "MP_FAKE_CORE"
 // LinesEnv is the file where "pauses" keeps each line of its input.
 const LinesEnv = "MP_FAKE_LINES"
 
-// CallsEnv is the file where "info" keeps each call of info and icon, one line of tab-separated arguments.
+// CallsEnv is the file where "info" keeps each call of info and icon, and "sends" each call of send --drives, one line of tab-separated arguments.
 const CallsEnv = "MP_FAKE_CALLS"
 
 // InfoEnv is the file of what "info" says of each game: {"<name>": {<info --json>}, ...}.

@@ -512,6 +512,7 @@ texts.en = {
   sendDrive: "Drive of the console",
   driveInternal: "Internal storage",
   driveUsb: n => "USB drive " + n,
+  driveExtended: n => "Extended storage " + n,
   driveLine: (name, free, total) => name + " · " + free + " free of " + total,
   sendNoRoom: "not enough free space for them",
   sendGo: "Send",

@@ -512,6 +512,7 @@ texts.ko = {
   sendDrive: "콘솔의 드라이브",
   driveInternal: "내장 저장소",
   driveUsb: n => "USB 드라이브 " + n,
+  driveExtended: n => "확장 저장소 " + n,
   driveLine: (name, free, total) => name + " · " + total + " 중 " + free + " 남음",
   sendNoRoom: "여유 공간이 부족합니다",
   sendGo: "보내기",

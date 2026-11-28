@@ -512,6 +512,7 @@ texts.ja = {
   sendDrive: "コンソールのドライブ",
   driveInternal: "内蔵ストレージ",
   driveUsb: n => "USB ドライブ " + n,
+  driveExtended: n => "拡張ストレージ " + n,
   driveLine: (name, free, total) => name + " · 空き " + free + " / " + total,
   sendNoRoom: "空き容量が足りません",
   sendGo: "送る",

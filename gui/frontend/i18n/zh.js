@@ -512,6 +512,7 @@ texts.zh = {
   sendDrive: "主机的磁盘",
   driveInternal: "内部存储",
   driveUsb: n => "USB 磁盘 " + n,
+  driveExtended: n => "扩展存储 " + n,
   driveLine: (name, free, total) => name + " · 可用 " + free + "，共 " + total,
   sendNoRoom: "可用空间不足",
   sendGo: "发送",

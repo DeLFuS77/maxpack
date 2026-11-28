@@ -864,7 +864,7 @@ function paintRow(row) {
   card.querySelector(".to-verify").textContent = t("verify");
   card.querySelector(".to-decompress").textContent = t("decompress");
   // and what makes it grow: DLC added to it, or a new dump of its game; Send to the console opens the Console
-  // section, also while a queue runs (the send waits for it there)
+  // section with it marked, also while a queue runs (Send there then waits for that queue)
   for (const [cls, key] of [[".to-add-dlc", "addDlcCard"], [".to-update", "updateCard"], [".to-send", "sendCard"]]) {
     const button = card.querySelector(cls);
     button.textContent = t(key);
@@ -1311,8 +1311,9 @@ async function loadExplorer() {
 function paintStart() {
   const section = state.section, list = state.lists[section] || [], consoleOn = section === "console";
   const start = $("start"), acts = queues.includes(section) || section === "rename" || consoleOn;
-  // the Console section's Send stays while another queue runs: what it sends waits for that one to end
-  start.hidden = !acts || (running() && section !== "rename" && !(consoleOn && state.job.section !== "console"));
+  // the Console section's Send shows whenever a console is set, also beside Cancel while a queue runs (its own sends
+  // too): what it sends then waits for that queue to end
+  start.hidden = consoleOn ? !consoleSet() : !acts || (running() && section !== "rename");
   start.textContent = consoleOn ? t("sendGo") : acts ? t(section) : "";
   // Compress waits for every row to be read: a DLC still being read must not be left out of its game; Send, for a
   // .p5z marked and a drive of the console to send it to
@@ -1799,10 +1800,18 @@ const validConsoleCode = code => /^\d{6}$/.test(String(code));
 const sendSize = row => Number(row.game && (row.game.P5zSize || row.game.OriginalSize)) || 0;
 // the room the console keeps on a drive beyond the .p5z (the contract's margin)
 const sendMargin = 256 * 1024 * 1024;
-// a drive of the console by the id a send takes ("internal", "usb0"...)
+// a drive of the console by the id a send takes ("internal", "usb0", "ext0"...: 0-based, said from 1)
 function driveName(id) {
-  const usb = /^usb(\d+)$/.exec(id || "");
-  return id === "internal" ? t("driveInternal") : usb ? t("driveUsb")(Number(usb[1]) + 1) : String(id || "");
+  const usb = /^usb(\d+)$/.exec(id || ""), ext = /^ext(\d+)$/.exec(id || "");
+  return id === "internal" ? t("driveInternal") : usb ? t("driveUsb")(Number(usb[1]) + 1) : ext ? t("driveExtended")(Number(ext[1]) + 1) : String(id || "");
+}
+// a drive of the console by its mount, as a game of it says where it is: the internal storage is /data, a USB
+// drive /mnt/usbN and extended storage /mnt/extN (0-based, said from 1, as the console's labels say them)
+function mountName(mount) {
+  const where = String(mount || ""), drive = /^\/mnt\/(usb|ext)(\d+)\/?$/.exec(where);
+  if (/^\/data\/?$/.test(where)) return t("driveInternal");
+  if (drive) return drive[1] === "usb" ? t("driveUsb")(Number(drive[2]) + 1) : t("driveExtended")(Number(drive[2]) + 1);
+  return where;
 }
 // a drive of the console to send to: its name, and its free space of its size
 function driveText(drive) {
@@ -1826,29 +1835,39 @@ function madeP5z(job) {
 // part of it there): it can be deleted there
 const leftOnConsole = row => row.section === "console" && !!row.game && row.game.Kind === "p5z"
   && /^send_(kept|may_keep|console_stopped|stalled|slept|write_error|unreachable|verify_failed|no_space_kept)(:|$)/.test(row.detail || "");
-// Delete what arrived on the console: asked first, as it cannot be undone (the next send starts from nothing)
-async function discardOnConsole(row) {
-  if (!leftOnConsole(row)) return;
+// Delete what arrived on the console of a send that did not end (name: the .p5z as it is said; path: what the
+// window is given, of which the console uses only the file name; drive: the drive it is on there). Asked first, as it
+// cannot be undone (the next send starts from nothing); nothing else starts meanwhile. hooks.start() runs once it
+// goes, and hooks.end(view) with the console's answer once it is done.
+async function discardArrived(name, path, drive, hooks) {
   if (state.busy) { toast(t("sendBusy")); return; }
-  $("discard-text").textContent = t("discardText")(row.game.Name || baseName(row.path));
+  $("discard-text").textContent = t("discardText")(name);
   if (await ask($("discard-dialog")) !== "delete") return;
   state.busy = true;
+  if (hooks.start) hooks.start();
   render();
-  // while the console lets go of it, the row says so (onDiscardWaiting); refused, it is as it was, to try again
-  const was = row.detail;
+  let view = null;
   try {
-    const view = await go.call("DiscardOnConsole", row.path, row.sentDrive || load("sendDrive", "")).catch(error => ({ error: "io", message: message(error) }));
-    if (view.error) row.detail = was;
+    view = await go.call("DiscardOnConsole", path, drive).catch(error => ({ error: "io", message: message(error) })) || { error: "" };
     // the console could not delete it: its own words go with the text
-    if (view.error === "delete_failed" && view.detail) { toast(t("detail_send_delete_failed") + ": " + view.detail); return; }
-    if (view.error) { toast(sendErrorText(view.error, view.message)); return; }
+    if (view.error === "delete_failed" && view.detail) toast(t("detail_send_delete_failed") + ": " + view.detail);
+    else if (view.error) toast(sendErrorText(view.error, view.message));
     // nothing of it was there (the console had deleted it, or it never came): said so, not "deleted"
-    row.detail = view.deleted === false ? "send_nothing_left" : "send_discarded";
-    toast(t(view.deleted === false ? "discardNothing" : "discardDone")(row.game.Name || baseName(row.path)));
+    else toast(t(view.deleted === false ? "discardNothing" : "discardDone")(name));
   } finally {
     state.busy = false;
+    if (hooks.end) hooks.end(view || { error: "io" });
     render();
   }
+}
+// Delete what arrived of the .p5z of a row: while the console lets go of it, the row says so (onDiscardWaiting);
+// refused, it is as it was, to try again
+function discardOnConsole(row) {
+  if (!leftOnConsole(row)) return Promise.resolve();
+  const was = row.detail;
+  return discardArrived(row.game.Name || baseName(row.path), row.path, row.sentDrive || load("sendDrive", ""), {
+    end: view => { row.detail = view.error ? was : view.deleted === false ? "send_nothing_left" : "send_discarded"; },
+  });
 }
 
 // the console is letting go of a receive of a .p5z to delete (discard:waiting): its row of the Console section says
@@ -1907,10 +1926,12 @@ function consoleCover(game, icons, items) {
 }
 // what a game of the console is: a .p5z, a package or a folder
 const consoleKindText = kind => (kind === "p5z" ? ".p5z" : kind === "pkg" ? ".pkg" : kind === "folder" ? t("consoleKindFolder") : String(kind || ""));
-// a drive of the console by the label it gives it ("Internal", "USB 1"), with its free space of its size
+// a drive of the console by the label it gives it ("Internal", "USB 1", "Extended 1": from 1), with its free space
+// of its size
 function diskText(disk) {
-  const label = String(disk.label || ""), usb = /^usb\s*(\d+)$/i.exec(label);
-  const name = /^internal$/i.test(label) ? t("driveInternal") : usb ? t("driveUsb")(Number(usb[1])) : label || String(disk.kind || "");
+  const label = String(disk.label || ""), usb = /^usb\s*(\d+)$/i.exec(label), ext = /^extended\s*(\d+)$/i.exec(label);
+  const name = /^internal$/i.test(label) ? t("driveInternal") : usb ? t("driveUsb")(Number(usb[1])) : ext ? t("driveExtended")(Number(ext[1]))
+    : label || String(disk.kind || "");
   return t("driveLine")(name, size(Number(disk.free) || 0), size(Number(disk.total) || 0));
 }
 // the drive of a send left on the console, which says where it is there but not the drive's id: the internal
@@ -2186,27 +2207,15 @@ async function findConsoles() {
   }
 }
 
-// Delete what arrived of a send left on the console (receive_left): asked first, then on its drive, by its name
-async function discardLeft(entry) {
+// Delete what arrived of a send left on the console (receive_left): on its drive, by its name; its line says while
+// the console lets go of it, and the console is asked again once it is done
+function discardLeft(entry) {
   const name = leftName(entry);
-  if (!name) return;
-  if (state.busy) { toast(t("sendBusy")); return; }
-  $("discard-text").textContent = t("discardText")(name);
-  if (await ask($("discard-dialog")) !== "delete") return;
-  state.busy = true;
-  state.leftDiscard = { name, seconds: 0 };
-  render();
-  try {
-    const view = await go.call("DiscardOnConsole", name, leftDrive(entry.path)).catch(error => ({ error: "io", message: message(error) })) || { error: "" };
-    if (view.error === "delete_failed" && view.detail) { toast(t("detail_send_delete_failed") + ": " + view.detail); return; }
-    if (view.error) { toast(sendErrorText(view.error, view.message)); return; }
-    toast(t(view.deleted === false ? "discardNothing" : "discardDone")(name));
-  } finally {
-    state.busy = false;
-    state.leftDiscard = null;
-    render();
-    pollConsole();
-  }
+  if (!name) return Promise.resolve();
+  return discardArrived(name, name, leftDrive(entry.path), {
+    start: () => { state.leftDiscard = { name, seconds: 0 }; },
+    end: () => { state.leftDiscard = null; pollConsole(); },
+  });
 }
 
 // the page of the section: the console at the top, the box that connects to it, the PC's column and the console's
@@ -2339,7 +2348,7 @@ function consoleGameLine(game, items) {
   if (cover) icon.src = cover;
   line.querySelector(".cover").hidden = !!cover;
   line.querySelector(".title").textContent = game.name || game.titleId || "—";
-  line.querySelector(".file").textContent = [game.titleId, game.version && t("versionOf")(game.version), consoleKindText(game.kind), game.drive && driveName(game.drive)].filter(Boolean).join(" · ");
+  line.querySelector(".file").textContent = [game.titleId, game.version && t("versionOf")(game.version), consoleKindText(game.kind), mountName(game.drive)].filter(Boolean).join(" · ");
   line.querySelector(".size").textContent = game.kind === "folder" || !Number(game.size) ? "" : size(game.size);
   const marks = [];
   if (game.verified) marks.push(game.verified.ok ? ["ok", t("consoleVerified")(dateText(game.verified.at))] : ["bad", t("consoleVerifyFailed")(dateText(game.verified.at))]);

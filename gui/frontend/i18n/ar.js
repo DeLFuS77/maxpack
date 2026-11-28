@@ -515,6 +515,7 @@ texts.ar = {
   sendDrive: "قرص جهاز اللعب",
   driveInternal: "التخزين الداخلي",
   driveUsb: n => "قرص USB " + n,
+  driveExtended: n => "التخزين الموسّع " + n,
   driveLine: (name, free, total) => name + " · " + free + " متاحة من " + total,
   sendNoRoom: "لا توجد مساحة كافية لها",
   sendGo: "إرسال",

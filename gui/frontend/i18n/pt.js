@@ -512,6 +512,7 @@ texts.pt = {
   sendDrive: "Disco do console",
   driveInternal: "Armazenamento interno",
   driveUsb: n => "Disco USB " + n,
+  driveExtended: n => "Armazenamento estendido " + n,
   driveLine: (name, free, total) => name + " · " + free + " livres de " + total,
   sendNoRoom: "não há espaço livre suficiente para eles",
   sendGo: "Enviar",

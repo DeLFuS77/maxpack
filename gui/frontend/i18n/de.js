@@ -512,6 +512,7 @@ texts.de = {
   sendDrive: "Laufwerk der Konsole",
   driveInternal: "Interner Speicher",
   driveUsb: n => "USB-Laufwerk " + n,
+  driveExtended: n => "Erweiterter Speicher " + n,
   driveLine: (name, free, total) => name + " · " + free + " frei von " + total,
   sendNoRoom: "nicht genug freier Platz für sie",
   sendGo: "Senden",

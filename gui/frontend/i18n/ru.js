@@ -515,6 +515,7 @@ texts.ru = {
   sendDrive: "Диск консоли",
   driveInternal: "Внутренняя память",
   driveUsb: n => "USB-диск " + n,
+  driveExtended: n => "Расширенное хранилище " + n,
   driveLine: (name, free, total) => name + " · свободно " + free + " из " + total,
   sendNoRoom: "для них не хватает свободного места",
   sendGo: "Отправить",

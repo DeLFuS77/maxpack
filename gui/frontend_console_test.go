@@ -74,6 +74,14 @@ console.log(vm.runInContext(` + "`" + `(() => {
   if (driveName("internal") !== t("driveInternal") || driveName("usb0") !== t("driveUsb")(1)) say("driveName");
   if (diskText({ label: "Internal", free: 5, total: 10 }) !== t("driveLine")(t("driveInternal"), size(5), size(10))) say("diskText internal: " + diskText({ label: "Internal", free: 5, total: 10 }));
   if (diskText({ label: "USB 1", free: 5, total: 10 }) !== t("driveLine")(t("driveUsb")(1), size(5), size(10))) say("diskText usb");
+  if (diskText({ label: "Extended 1", free: 5, total: 10 }) !== t("driveLine")(t("driveExtended")(1), size(5), size(10))) say("diskText extended: " + diskText({ label: "Extended 1", free: 5, total: 10 }));
+  if (driveName("ext0") !== t("driveExtended")(1)) say("driveName ext0: " + driveName("ext0"));
+  // a console game says where it is by the mount of its drive (0-based, as the console mounts them): the same names
+  // as its disks, and anything else as it is
+  for (const [mount, want] of [["/data", t("driveInternal")], ["/mnt/usb0", t("driveUsb")(1)], ["/mnt/usb1", t("driveUsb")(2)],
+    ["/mnt/ext0", t("driveExtended")(1)], ["/mnt/ext1", t("driveExtended")(2)], ["/mnt/sandbox", "/mnt/sandbox"], ["", ""]])
+    if (mountName(mount) !== want) say("mountName(" + mount + "): " + mountName(mount) + ", not " + want);
+  if (typeof t("driveExtended") !== "function" || !t("driveExtended")(2).includes("2")) say("driveExtended");
   // what a console game is, and its verify
   if (consoleKindText("p5z") !== ".p5z" || consoleKindText("pkg") !== ".pkg" || consoleKindText("folder") !== t("consoleKindFolder")) say("consoleKindText");
   // the sections that take a queue: the Console section sends, and only that
@@ -114,8 +122,8 @@ const consoleFixture = `
     item("E:/x/E.p5z", "Ember Reach", "PPSA01237", "01.000.000", { other: true })] };
   const consoleView = { state: "connected", address: "192.168.1.20", receiving: false, images: [{ path: "/data/homebrew/x.exfat", kind: "exfat", titleId: "PPSA01238" }],
     disks: [{ label: "Internal", kind: "internal", total: 2e12, free: 1e12 }], left: [],
-    games: [{ titleId: "PPSA01234", name: "Copper Vale", version: "01.000.000", kind: "p5z", drive: "usb0", size: 3000, status: "", verified: { at: 1700000000, ok: true } },
-      { titleId: "PPSA01235", name: "Iron Bay", version: "01.000.000", kind: "p5z", drive: "usb0", size: 4000, status: "", verified: null }] };
+    games: [{ titleId: "PPSA01234", name: "Copper Vale", version: "01.000.000", kind: "p5z", drive: "/mnt/usb0", size: 3000, status: "", verified: { at: 1700000000, ok: true } },
+      { titleId: "PPSA01235", name: "Iron Bay", version: "01.000.000", kind: "p5z", drive: "/mnt/usb0", size: 4000, status: "", verified: null }] };
   window.answers = { Library: library, ConsoleState: consoleView, ConsoleIcon: "", ConsoleDrives: { drives: [{ id: "usb0", free: 1e12, total: 2e12, fs: "exfat" }], error: "", message: "" } };
   const intervals = [], cleared = [];
   window.setInterval = (fn, ms) => { intervals.push(ms); return 7; };
@@ -180,6 +188,37 @@ func TestConsolePageSend(t *testing.T) {
   // left: the console is asked no more
   setSection("details");
   if (cleared.join() !== "7") say("the console is still asked: " + cleared);
+`)
+}
+
+// TestConsolePageSendWhileSending: while a send of the Console section runs, Send stays beside Cancel, and what is
+// marked then says Waiting and goes once that send ends, in the one queue.
+func TestConsolePageSendWhileSending(t *testing.T) {
+	runPage(t, consoleFixture+`
+  await setSection("console");
+  const plan = name => ({ Item: { Name: name }, Block: "", Warnings: [], Replace: null });
+  window.answers.Plan = [plan("Iron Bay")];
+  window.answers.Space = [];
+  window.answers.Start = null;
+  rowOf("D:/lib/B.p5z").picked = true;
+  await sendMarked();
+  if (!running() || state.job.section !== "console" || state.job.rows.map(row => row.path).join() !== "D:/lib/B.p5z") say("the first send did not start");
+  paintStart();
+  if ($("start").hidden || $("cancel").hidden) say("Send is not beside Cancel while the send runs: start hidden " + $("start").hidden + ", cancel hidden " + $("cancel").hidden);
+  rowOf("E:/x/E.p5z").picked = true;
+  paintStart();
+  if ($("start").disabled) say("Send cannot be pressed while the send runs");
+  calls.length = 0;
+  window.answers.Plan = [plan("Ember Reach")];
+  await sendMarked();
+  if (rowOf("E:/x/E.p5z").state !== "waiting") say("what is marked during the send does not wait: " + rowOf("E:/x/E.p5z").state);
+  if (calls.some(call => /^(Plan|Start) /.test(call))) say("a second queue started: " + calls);
+  if (state.job.rows.includes(rowOf("E:/x/E.p5z"))) say("it joined the send at work");
+  // the first send ends: the one that waited goes
+  onDone({ Done: 1, Failed: 0 });
+  for (let n = 0; n < 50; n++) await null;
+  const start = calls.find(call => call.startsWith("Start "));
+  if (!start || !start.startsWith('Start ["console",') || !start.includes("Ember Reach") || start.includes("Iron Bay")) say("after the first send: " + start);
 `)
 }
 

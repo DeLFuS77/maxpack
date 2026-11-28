@@ -19,13 +19,13 @@ const tinyPNG = "\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00
 
 func stateJSON(pairingOn string) string {
 	return `{"games":[
- {"title_id":"PPSA01234","title_name":"Sample Game","version":"01.000.000","path":"/data/a.p5z","kind":"p5z","packing":"x","drive":"usb0","size":1000,"status":"","error":"","verified":{"kind":"quick","at":1700000000,"ok":true,"files_ok":3,"files_bad":0}},
- {"title_id":"PPSA01234","title_name":"Sample Game","version":"01.001.000","kind":"pkg","drive":"usb0","size":2000,"status":"duplicate","verified":null},
- {"title_id":"PPSA01235","title_name":"Folder Game","version":"01.000.000","kind":"folder","drive":"internal","size":0,"status":"","verified":null}],
- "images":[{"path":"/data/x.exfat","kind":"exfat","title_id":"PPSA01236","other":1}],
- "drives":[{"mount":"/mnt/usb0","label":"USB 0","kind":"usb","total":1000000,"free":400000,"ejectable":true},{"mount":"/user","label":"Internal","kind":"internal","total":2000000,"free":5}],
+ {"title_id":"PPSA01234","title_name":"Sample Game","version":"01.000.000","path":"/mnt/usb0/homebrew/a.p5z","kind":"p5z","packing":"x","drive":"/mnt/usb0","size":1000,"status":"","error":"","verified":{"kind":"quick","at":1700000000,"ok":true,"files_ok":3,"files_bad":0}},
+ {"title_id":"PPSA01234","title_name":"Sample Game","version":"01.001.000","kind":"pkg","drive":"/mnt/usb0","size":2000,"status":"duplicate","verified":null},
+ {"title_id":"PPSA01235","title_name":"Folder Game","version":"01.000.000","kind":"folder","drive":"/data","size":0,"status":"","verified":null}],
+ "images":[{"path":"/data/homebrew/x.exfat","kind":"exfat","title_id":"PPSA01236","other":1}],
+ "drives":[{"mount":"/mnt/usb0","label":"USB 1","kind":"usb","total":1000000,"free":400000,"ejectable":true},{"mount":"/data","label":"Internal","kind":"internal","total":2000000,"free":5}],
  "receive":null,
- "receive_left":[{"path":"/data/r.p5z","name":"r.p5z","size":77}],
+ "receive_left":[{"path":"/data/homebrew/r.p5z.maxpack-recv","name":"r.p5z","size":77}],
  "pairing":{"on":` + pairingOn + `,"code":"123456","here":true},
  "extra":{"ignored":true}}`
 }
@@ -62,23 +62,23 @@ func TestConsoleStateMaps(t *testing.T) {
 		t.Fatalf("games: %+v", v.Games)
 	}
 	g := v.Games[0]
-	if g.TitleID != "PPSA01234" || g.Name != "Sample Game" || g.Version != "01.000.000" || g.Kind != "p5z" || g.Drive != "usb0" ||
+	if g.TitleID != "PPSA01234" || g.Name != "Sample Game" || g.Version != "01.000.000" || g.Kind != "p5z" || g.Drive != "/mnt/usb0" ||
 		g.Size != 1000 || g.Verified == nil || g.Verified.At != 1700000000 || !g.Verified.OK {
 		t.Errorf("game 0: %+v", g)
 	}
 	if v.Games[1].Status != "duplicate" || v.Games[1].Verified != nil || v.Games[1].Kind != "pkg" {
 		t.Errorf("game 1: %+v", v.Games[1])
 	}
-	if v.Games[2].Kind != "folder" || v.Games[2].Size != 0 {
+	if v.Games[2].Kind != "folder" || v.Games[2].Size != 0 || v.Games[2].Drive != "/data" {
 		t.Errorf("game 2: %+v", v.Games[2])
 	}
-	if len(v.Images) != 1 || v.Images[0] != (ConsoleImage{Path: "/data/x.exfat", Kind: "exfat", TitleID: "PPSA01236"}) {
+	if len(v.Images) != 1 || v.Images[0] != (ConsoleImage{Path: "/data/homebrew/x.exfat", Kind: "exfat", TitleID: "PPSA01236"}) {
 		t.Errorf("images: %+v", v.Images)
 	}
-	if len(v.Disks) != 2 || v.Disks[0] != (ConsoleDisk{Label: "USB 0", Kind: "usb", Total: 1000000, Free: 400000}) {
+	if len(v.Disks) != 2 || v.Disks[0] != (ConsoleDisk{Label: "USB 1", Kind: "usb", Total: 1000000, Free: 400000}) || v.Disks[1] != (ConsoleDisk{Label: "Internal", Kind: "internal", Total: 2000000, Free: 5}) {
 		t.Errorf("disks: %+v", v.Disks)
 	}
-	if len(v.Left) != 1 || v.Left[0] != (ConsoleLeft{Path: "/data/r.p5z", Name: "r.p5z", Size: 77}) {
+	if len(v.Left) != 1 || v.Left[0] != (ConsoleLeft{Path: "/data/homebrew/r.p5z.maxpack-recv", Name: "r.p5z", Size: 77}) {
 		t.Errorf("left: %+v", v.Left)
 	}
 }

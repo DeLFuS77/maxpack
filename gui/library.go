@@ -23,8 +23,7 @@ type LibraryItem struct {
 	Name        string `json:"name"`
 	TitleID     string `json:"titleId"`
 	Version     string `json:"version"`
-	Size        int64  `json:"size"`        // the file's size on disk
-	Icon        string `json:"icon"`        // data URL, "" when none
+	Size        int64  `json:"size"`        // the file's size on disk; its cover is asked apart (LibraryIcon)
 	Interrupted bool   `json:"interrupted"` // interrupted_append: shown as "needs repair", never sent
 	Other       bool   `json:"other"`       // came from Details, Compress or the watched folder, not the folder
 	Error       string `json:"error"`       // why it could not be read, "" when read
@@ -43,6 +42,14 @@ type libraryEntry struct {
 	mtime    time.Time
 	passcode string // what it was read with: another passcode reads it again
 	item     LibraryItem
+}
+
+// libraryIconEntry is the cover of a file (a data URL, "" when it has none), kept as a libraryEntry is.
+type libraryIconEntry struct {
+	size     int64
+	mtime    time.Time
+	passcode string
+	icon     string
 }
 
 // libraryReaders is how many files are read by the engine at once.
@@ -64,7 +71,6 @@ func readLibraryItem(engine, path string, size int64) LibraryItem {
 		item.Name = filepath.Base(path)
 	}
 	item.Interrupted, _ = info["interrupted_append"].(bool)
-	item.Icon = libraryIcon(engine, path)
 	return item
 }
 
@@ -171,6 +177,47 @@ func (a *App) libraryItem(engine string, engineErr error, path string) LibraryIt
 	a.libraryCache[key] = libraryEntry{info.Size(), info.ModTime(), passcode, item}
 	a.libraryMutex.Unlock()
 	return item
+}
+
+// ForgetLibraryErrors drops what was kept of the files that could not be read, so that the next Library reads
+// them again (Read again); what was read stays kept.
+func (a *App) ForgetLibraryErrors() {
+	a.libraryMutex.Lock()
+	defer a.libraryMutex.Unlock()
+	for key, kept := range a.libraryCache {
+		if kept.item.Error != "" {
+			delete(a.libraryCache, key)
+		}
+	}
+}
+
+// LibraryIcon is the cover of a .p5z of the Console tab's list as a data URL, "" when it has none or is not a
+// file. It is asked apart from Library, which the page reads often, with the engine's read-only icon, and kept
+// (none too) while the file's size and time and the passcode are the same.
+func (a *App) LibraryIcon(path string) string {
+	info, err := os.Stat(path)
+	if err != nil || !info.Mode().IsRegular() {
+		return ""
+	}
+	key, passcode := pathKey(path), strings.Join(core.PasscodeArgs(), " ")
+	a.libraryMutex.Lock()
+	kept, ok := a.libraryIcons[key]
+	a.libraryMutex.Unlock()
+	if ok && kept.size == info.Size() && kept.mtime.Equal(info.ModTime()) && kept.passcode == passcode {
+		return kept.icon
+	}
+	engine, err := a.engine()
+	if err != nil {
+		return ""
+	}
+	icon := libraryIcon(engine, path)
+	a.libraryMutex.Lock()
+	if a.libraryIcons == nil {
+		a.libraryIcons = map[string]libraryIconEntry{}
+	}
+	a.libraryIcons[key] = libraryIconEntry{info.Size(), info.ModTime(), passcode, icon}
+	a.libraryMutex.Unlock()
+	return icon
 }
 
 // ChooseLibraryFolder asks for the library folder, from the one set (else the last destination), and keeps

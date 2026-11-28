@@ -55,10 +55,10 @@ console.log(vm.runInContext(` + "`" + `(() => {
     if (consoleStateKey(view) !== key) say("the state of " + JSON.stringify(view) + ": " + consoleStateKey(view));
     if (typeof t(key) !== "string" || !t(key)) say("no text " + key);
   }
-  // the cover: the console's icon, else the one of the PC's .p5z of that title ID, else none
+  // the cover: the console's icon, else the one of a row of the PC's .p5z of that title ID (LibraryIcon), else none
   if (consoleCover(games[0], { PPSA01234: "data:a" }, []) !== "data:a") say("the console's icon");
-  if (consoleCover(games[2], {}, [{ titleId: "PPSA01235", icon: "data:b" }]) !== "data:b") say("the PC's icon");
-  if (consoleCover(games[2], {}, []) !== "" || consoleCover(games[2], { PPSA01235: "" }, [{ titleId: "PPSA01235", icon: "" }]) !== "") say("no icon");
+  if (consoleCover(games[2], {}, [{ item: { titleId: "PPSA01235" }, icon: "data:b" }]) !== "data:b") say("the PC's icon");
+  if (consoleCover(games[2], {}, []) !== "" || consoleCover(games[2], { PPSA01235: "" }, [{ item: { titleId: "PPSA01235" }, icon: "" }]) !== "") say("no icon");
   // what a send that did not end left on the console is deleted from the row of the Console section
   const left = (d, section) => ({ section: section || "console", game: { Kind: "p5z" }, detail: d });
   if (!leftOnConsole(left("send_kept")) || !leftOnConsole(left("send_stalled"))) say("a row of the Console section with send_kept");
@@ -114,7 +114,7 @@ func TestConsolePage(t *testing.T) {
 // console has, one it has in another version, one whose addition stopped halfway, one that could not be read, and
 // one from elsewhere; a console that has two of them, and one drive.
 const consoleFixture = `
-  const item = (path, name, titleId, version, more) => Object.assign({ path, name, titleId, version, size: 3000, icon: "", interrupted: false, other: false, error: "" }, more || {});
+  const item = (path, name, titleId, version, more) => Object.assign({ path, name, titleId, version, size: 3000, interrupted: false, other: false, error: "" }, more || {});
   const library = { folder: "D:/lib", error: "", items: [
     item("D:/lib/A.p5z", "Copper Vale", "PPSA01234", "01.000.000"),
     item("D:/lib/B.p5z", "Iron Bay", "PPSA01235", "01.001.000", { size: 5000 }),
@@ -159,7 +159,7 @@ func TestConsolePageSend(t *testing.T) {
   calls.length = 0;
   state.others = ["E:/x/E.p5z"];
   await loadLibrary();
-  if (calls.filter(call => call.startsWith("Library")).join() !== 'Library [["E:/x/E.p5z"]]') say("Read again: " + calls);
+  if (calls.filter(call => call.startsWith("Library [")).join() !== 'Library [["E:/x/E.p5z"]]') say("Read again: " + calls);
   // marked while a compression runs: they wait, said, and nothing starts
   for (const p of ["D:/lib/A.p5z", "D:/lib/B.p5z", "D:/lib/C.p5z", "D:/lib/D.p5z", "E:/x/E.p5z"]) rowOf(p).picked = true;
   if (pickedRows().map(row => row.path).join() !== "D:/lib/B.p5z,E:/x/E.p5z") say("what is marked to send: " + pickedRows().map(row => row.path));
@@ -316,6 +316,56 @@ func TestConsolePageLibraryReads(t *testing.T) {
   await loadLibrary();
   if (!calls.some(call => call.startsWith("Library ["))) say("a read after one that broke does not ask the window: " + calls);
   if (state.lists.console.length !== 5) say("the rows after a read that broke: " + state.lists.console.length);
+  // Read again: what could not be read is read again too (the window forgets it first); another read keeps it
+  calls.length = 0;
+  await loadLibrary(true);
+  const forget = calls.indexOf("ForgetLibraryErrors"), read = calls.findIndex(call => call.startsWith("Library ["));
+  if (forget < 0 || read < forget) say("Read again does not read again what could not be read: " + calls);
+  calls.length = 0;
+  await loadLibrary();
+  if (calls.includes("ForgetLibraryErrors") || !calls.some(call => call.startsWith("Library ["))) say("a read that is not Read again: " + calls);
+`)
+}
+
+// TestConsolePageLibraryIcons: the covers of the library's .p5z are asked apart from the list, once per row and again
+// only when its size changed; a console game without an icon of its own shows the one of the PC's .p5z of its title
+// ID; and a row's picture is set only when its cover changed.
+func TestConsolePageLibraryIcons(t *testing.T) {
+	runPage(t, consoleFixture+`
+  const cover = "data:image/png;base64,QQ==";
+  window.answers.LibraryIcon = cover;
+  const asked = () => calls.filter(call => call.startsWith("LibraryIcon ")).map(call => JSON.parse(call.slice("LibraryIcon ".length))[0]);
+  const settle = async () => { for (let n = 0; n < 100; n++) await null; };
+  await setSection("console");
+  await settle();
+  // the ones that were read, each once; not the one that could not be
+  if (asked().join() !== "D:/lib/A.p5z,D:/lib/B.p5z,D:/lib/C.p5z,E:/x/E.p5z") say("the covers asked: " + asked());
+  if (rowOf("D:/lib/A.p5z").game.Icon !== cover || rowOf("D:/lib/D.p5z").game) say("the cover of a row: " + rowOf("D:/lib/A.p5z").game.Icon);
+  // read again with nothing changed: no cover is asked again, and each row keeps its own
+  calls.length = 0;
+  await loadLibrary();
+  await settle();
+  if (asked().length) say("asked again with nothing changed: " + asked());
+  if (rowOf("D:/lib/A.p5z").game.Icon !== cover) say("the cover after a read: " + rowOf("D:/lib/A.p5z").game.Icon);
+  // a .p5z whose size changed: its cover is asked again, and only its
+  window.answers.Library = { folder: "D:/lib", error: "", items: library.items.map(it => (it.path === "D:/lib/B.p5z" ? Object.assign({}, it, { size: 6000 }) : it)) };
+  window.answers.LibraryIcon = "data:image/png;base64,Qg==";
+  calls.length = 0;
+  await loadLibrary();
+  await settle();
+  if (asked().join() !== "D:/lib/B.p5z") say("after B changed size: " + asked());
+  if (rowOf("D:/lib/B.p5z").game.Icon !== "data:image/png;base64,Qg==" || rowOf("D:/lib/A.p5z").game.Icon !== cover) say("the covers after B changed size");
+  // a console game without an icon of its own: the one of the PC's .p5z of its title ID
+  if (consoleCover({ titleId: "PPSA01234" }, {}, state.lists.console) !== cover) say("the PC's cover for a console game: " + consoleCover({ titleId: "PPSA01234" }, {}, state.lists.console));
+  // a row's picture is set only when its cover changed
+  const row = rowOf("D:/lib/A.p5z"), parts = {};
+  row.tr.querySelector = selector => parts[selector] || (parts[selector] = document.createElement("x"));
+  const img = row.tr.querySelector("img.icon");
+  let sets = 0;
+  Object.defineProperty(img, "src", { set(value) { sets++; this.shown = value; }, get() { return this.shown || ""; } });
+  paintRow(row);
+  paintRow(row);
+  if (sets !== 1 || img.shown !== cover || img.hidden) say("the picture of a row is set " + sets + " times: " + img.shown);
 `)
 }
 

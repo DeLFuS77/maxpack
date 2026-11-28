@@ -819,7 +819,11 @@ function paintRow(row) {
   const tr = row.tr, game = row.game;
   const icon = tr.querySelector("img.icon"), cover = tr.querySelector(".cover");
   icon.hidden = !(game && game.Icon);
-  if (!icon.hidden) icon.src = game.Icon;
+  // the picture is given again only when it changed: every render paints every row
+  if (!icon.hidden && icon.shownIcon !== game.Icon) {
+    icon.src = game.Icon;
+    icon.shownIcon = game.Icon;
+  }
   cover.hidden = !icon.hidden;
   cover.classList.toggle("loading", !game && !row.error);
   tr.title = row.path;
@@ -1925,10 +1929,11 @@ function consoleStateKey(view) {
 const consoleKnown = view => !!view && (view.state === "connected" || view.state === "receive_off");
 // the console's games as the page knows them now: none while it does not answer
 const consoleGames = () => (consoleKnown(state.console) ? state.console.games || [] : []);
-// the cover of a console game: its icon on the console, else the one of a .p5z of the PC of that title ID, else none
-function consoleCover(game, icons, items) {
+// the cover of a console game: its icon on the console, else the one of a row of the PC's .p5z of that title ID (rows:
+// the Console section's, with the cover LibraryIcon gave), else none
+function consoleCover(game, icons, rows) {
   if (icons && icons[game.titleId]) return icons[game.titleId];
-  const pc = (items || []).find(item => item.titleId === game.titleId && item.icon);
+  const pc = (rows || []).find(row => row.item && row.item.titleId === game.titleId && row.icon);
   return pc ? pc.icon : "";
 }
 // what a game of the console is: a .p5z, a package or a folder
@@ -1963,9 +1968,9 @@ function dateText(at) {
 // whether the console of Settings is there to send to: its address and its code
 const consoleSet = () => validConsoleIp(state.settings.ConsoleIP || "") && validConsoleCode(state.settings.ConsoleCode || "");
 
-// a .p5z of the library as the game of its row: what the queue and the window need of it
-const libraryGame = item => ({ Path: item.path, Name: item.name || baseName(item.path), TitleID: item.titleId || "", Version: item.version || "",
-  Kind: "p5z", OriginalSize: Number(item.size) || 0, P5zSize: Number(item.size) || 0, Icon: item.icon || "" });
+// a .p5z of the library as the game of its row: what the queue and the window need of it, with the cover of its row
+const libraryGame = (item, icon) => ({ Path: item.path, Name: item.name || baseName(item.path), TitleID: item.titleId || "", Version: item.version || "",
+  Kind: "p5z", OriginalSize: Number(item.size) || 0, P5zSize: Number(item.size) || 0, Icon: icon || "" });
 // a row of the Console section that is sending, or waits to
 const queuedRow = row => !!row.sendWait || (running() && state.job.rows.includes(row) && !ended.includes(row.state));
 // the rows marked to send that can go now
@@ -1990,7 +1995,7 @@ function syncConsoleRows(items) {
       row.tr.classList.add("enter");
     }
     old.delete(key);
-    Object.assign(row, { item, error: item.error || "", game: item.error ? null : libraryGame(item) });
+    Object.assign(row, { item, error: item.error || "", game: item.error ? null : libraryGame(item, row.icon) });
     rows.push(row);
   }
   for (const row of old.values()) if (queuedRow(row)) rows.push(row);
@@ -2045,8 +2050,11 @@ function applyPicks() {
 
 // The library: read as the section opens, with Read again, and when the .p5z from elsewhere change. One read at a
 // time; one asked meanwhile reads once that one ends (whether it read or broke), and the ones asked after it share it.
-let libraryChain = Promise.resolve(), libraryQueued = null;
-function loadLibrary() {
+// The window keeps what it read of each file, and why one could not be read, until the file changes: Read again
+// (retry) has it read again what could not be read.
+let libraryChain = Promise.resolve(), libraryQueued = null, libraryRetry = false;
+function loadLibrary(retry) {
+  if (retry) libraryRetry = true;
   const read = () => { libraryQueued = null; return readLibrary(); };
   if (!libraryQueued) libraryQueued = libraryChain = libraryChain.then(read, read);
   return libraryQueued;
@@ -2054,6 +2062,10 @@ function loadLibrary() {
 async function readLibrary() {
   state.libraryBusy = true;
   if (state.section === "console") render();
+  if (libraryRetry) {
+    libraryRetry = false;
+    await go.call("ForgetLibraryErrors").catch(() => {});
+  }
   const view = await go.call("Library", state.others.slice())
     .catch(error => ({ folder: state.settings.LibraryFolder || "", items: [], error: "unreadable", message: message(error) }));
   state.libraryBusy = false;
@@ -2063,6 +2075,30 @@ async function readLibrary() {
   if (state.section !== "console") return;
   render();
   if (first && first.tr.scrollIntoView) first.tr.scrollIntoView({ block: "nearest" });
+  askLibraryIcons();
+}
+// The covers of the library's .p5z are asked apart from it (it is read often, they are not small): one at a time,
+// once for each row that was read, and again only when the size of its file changed
+let libraryIconsAsking = false;
+async function askLibraryIcons() {
+  if (libraryIconsAsking) return;
+  libraryIconsAsking = true;
+  try {
+    for (;;) {
+      const row = state.lists.console.find(row => row.game && row.item && row.iconFor !== row.item.size);
+      if (!row) return;
+      row.iconFor = row.item.size;
+      const icon = (await go.call("LibraryIcon", row.path).catch(() => "")) || "";
+      row.icon = icon;
+      if (row.game) row.game.Icon = icon;
+      if (state.section !== "console") continue;
+      paintRow(row);
+      // a console game without an icon of its own shows this one
+      if (consoleGames().some(game => game.titleId === row.item.titleId)) paintConsoleGames();
+    }
+  } finally {
+    libraryIconsAsking = false;
+  }
 }
 // Use this folder: the folder where Compress leaves what it makes becomes the library
 async function useLastDest() {
@@ -2368,7 +2404,7 @@ function paintConsoleGames() {
 // a game of the console: its cover, name, version, what it is, its drive and size (none for a folder), and its marks
 function consoleGameLine(game, items) {
   const line = $("console-game-template").content.firstElementChild.cloneNode(true);
-  const cover = consoleCover(game, state.consoleIcons, items), icon = line.querySelector("img.icon");
+  const cover = consoleCover(game, state.consoleIcons, state.lists.console), icon = line.querySelector("img.icon");
   icon.hidden = !cover;
   if (cover) icon.src = cover;
   line.querySelector(".cover").hidden = !!cover;
@@ -3211,7 +3247,7 @@ function wire() {
   $("connect-save").addEventListener("click", saveConsole);
   $("connect-find").addEventListener("click", findConsoles);
   for (const id of ["connect-ip", "connect-code"]) $(id).addEventListener("keydown", event => { if (event.key === "Enter") { event.preventDefault(); saveConsole(); } });
-  $("library-reread").addEventListener("click", () => loadLibrary());
+  $("library-reread").addEventListener("click", () => loadLibrary(true));
   $("library-choose").addEventListener("click", chooseLibrary);
   $("library-ask-choose").addEventListener("click", chooseLibrary);
   $("library-use").addEventListener("click", useLastDest);

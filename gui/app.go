@@ -65,9 +65,10 @@ type App struct {
 	// the dialog that chooses folders, when not the one of the system
 	chooseFolders func() ([]string, error)
 
-	// what the Console tab read of each .p5z of its list (see library.go), by pathKey
+	// what the Console tab read of each .p5z of its list (see library.go), and its cover, by pathKey
 	libraryMutex sync.Mutex
 	libraryCache map[string]libraryEntry
+	libraryIcons map[string]libraryIconEntry
 
 	// what the Console tab asked of the console (see consolestate.go): the back-off after a failure, and its icons
 	consoleMutex   sync.Mutex

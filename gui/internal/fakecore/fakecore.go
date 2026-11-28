@@ -38,7 +38,8 @@ import (
 //   - "bad-verify": as "writes", but verify finds a damaged file.
 //   - "writes-info": as "writes", and info --json as "info" (by the name of the file, its tmp name too).
 //   - "info": info --json says of a game what the JSON file InfoEnv has under the name of its file
-//     or folder, and fails for any other; icon finds none. info --json takes --read-only before the
+//     or folder, and fails for any other; icon writes the head of a PNG (-o) for a game whose JSON
+//     there has "icon": true, and finds none for any other. info --json takes --read-only before the
 //     path, and icon takes it before the path too. When CallsEnv names a file, each call of info or
 //     icon adds a line to it: its arguments, separated by tabs.
 //   - "levels": analyze --levels tells two levels (3 and 19) as it goes and in its result, with the
@@ -128,6 +129,29 @@ func run(mode string, args []string) int {
 			}
 			fmt.Fprintln(os.Stderr, "error: not a game:", target)
 			return 1
+		}
+		if len(args) >= 4 && args[0] == "icon" {
+			target, out := args[1], ""
+			if target == "--read-only" {
+				target = args[2]
+			}
+			for i := 1; i+1 < len(args); i++ {
+				if args[i] == "-o" {
+					out = args[i+1]
+				}
+			}
+			var infos map[string]struct {
+				Icon bool `json:"icon"`
+			}
+			data, _ := os.ReadFile(os.Getenv(InfoEnv))
+			json.Unmarshal(data, &infos)
+			if info, ok := infos[filepath.Base(target)]; ok && info.Icon && out != "" {
+				// the signature of a PNG and its first chunk's head: the window keeps the bytes as they are
+				png := []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 0, 0, 0, 13, 'I', 'H', 'D', 'R'}
+				if os.WriteFile(out, png, 0o644) == nil {
+					return 0
+				}
+			}
 		}
 		fmt.Fprintln(os.Stderr, "error: no icon")
 		return 1

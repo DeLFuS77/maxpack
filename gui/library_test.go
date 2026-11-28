@@ -3,6 +3,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,9 +15,9 @@ import (
 	"github.com/DeLFuS77/maxpack/gui/settings"
 )
 
-// libraryFolder makes a folder with two .p5z the engine knows (B.P5Z with an interrupted change), one it does
-// not, a text file, and a subfolder named like a .p5z that holds another; the engine is the fake one in "info"
-// mode, which keeps its calls. It gives the app, the folder and a function that reads the lines of the calls.
+// libraryFolder makes a folder with two .p5z the engine knows (A.p5z with an icon, B.P5Z with an interrupted
+// change and none), one it does not, a text file, and a subfolder named like a .p5z that holds another; the engine
+// is the fake one in "info" mode, which keeps its calls. It gives the app, the folder and a function that reads the lines of the calls.
 func libraryFolder(t *testing.T) (*App, string, func() []string) {
 	t.Helper()
 	folder := t.TempDir()
@@ -29,7 +30,7 @@ func libraryFolder(t *testing.T) (*App, string, func() []string) {
 	os.WriteFile(filepath.Join(folder, "C.p5z", "D.p5z"), make([]byte, 7), 0o644)
 	work := t.TempDir()
 	infos := filepath.Join(work, "info.json")
-	os.WriteFile(infos, []byte(`{"A.p5z": {"kind": "p5z", "name": "Copper Vale", "title_id": "PPSA01234", "version": "01.002", "interrupted_append": false},
+	os.WriteFile(infos, []byte(`{"A.p5z": {"kind": "p5z", "name": "Copper Vale", "title_id": "PPSA01234", "version": "01.002", "interrupted_append": false, "icon": true},
 		"B.P5Z": {"kind": "p5z", "name": "Iron Harbor", "title_id": "PPSA01235", "version": "01.000", "interrupted_append": true},
 		"other.p5z": {"kind": "p5z", "name": "Salt Fen", "title_id": "PPSA01236", "version": "01.001", "interrupted_append": false}}`), 0o644)
 	calls := filepath.Join(work, "calls.txt")
@@ -85,6 +86,10 @@ func TestLibraryListsFirstLevelP5z(t *testing.T) {
 	if bad.Error == "" || bad.Interrupted {
 		t.Errorf("bad: %+v", bad)
 	}
+	// the covers are asked apart (LibraryIcon): the list, asked every time the section opens, carries none
+	if data, _ := json.Marshal(view); strings.Contains(string(data), "data:image") || strings.Contains(string(data), `"icon"`) {
+		t.Errorf("the list carries icons: %s", data)
+	}
 }
 
 type fileState struct {
@@ -115,7 +120,9 @@ func folderState(t *testing.T, folder string) map[string]fileState {
 func TestLibraryNeverWrites(t *testing.T) {
 	a, folder, calls := libraryFolder(t)
 	before := folderState(t, folder)
-	a.Library(nil)
+	for _, it := range a.Library(nil).Items {
+		a.LibraryIcon(it.Path)
+	}
 	after := folderState(t, folder)
 	if len(before) != len(after) {
 		t.Fatalf("before %v, after %v", before, after)
@@ -128,6 +135,9 @@ func TestLibraryNeverWrites(t *testing.T) {
 	lines := calls()
 	if len(lines) == 0 {
 		t.Fatal("the engine was not asked")
+	}
+	if !strings.Contains("\n"+strings.Join(lines, "\n"), "\nicon\t") {
+		t.Errorf("no icon was asked: %q", lines)
 	}
 	for _, line := range lines {
 		if !strings.Contains("\t"+line+"\t", "\t--read-only\t") {
@@ -243,5 +253,69 @@ func TestLibraryRereadsAfterPasscodeChange(t *testing.T) {
 	a.Library(nil)
 	if n := len(calls()); n != seen {
 		t.Errorf("with the same passcode, %d more calls", n-seen)
+	}
+}
+
+// The cover of a .p5z of the library is asked apart, with the engine's read-only icon, and kept (none too) while
+// the file's size and time and the passcode are the same; a folder, or a file that is not there, is not asked.
+func TestLibraryIcon(t *testing.T) {
+	t.Cleanup(func() { core.SetPasscode("") })
+	core.SetPasscode("")
+	a, folder, calls := libraryFolder(t)
+	first, second := filepath.Join(folder, "A.p5z"), filepath.Join(folder, "B.P5Z")
+	if got := a.LibraryIcon(first); !strings.HasPrefix(got, "data:image/png;base64,") {
+		t.Fatalf("icon of A: %.40q", got)
+	}
+	if got := a.LibraryIcon(second); got != "" {
+		t.Errorf("icon of B, which has none: %.40q", got)
+	}
+	seen := len(calls())
+	a.LibraryIcon(first)
+	a.LibraryIcon(second)
+	if n := len(calls()); n != seen {
+		t.Errorf("asked again %d times with nothing changed", n-seen)
+	}
+	if a.LibraryIcon(filepath.Join(folder, "C.p5z")) != "" || a.LibraryIcon(filepath.Join(folder, "gone.p5z")) != "" || len(calls()) != seen {
+		t.Errorf("a folder or a missing file: %q", calls()[seen:])
+	}
+	f, err := os.OpenFile(first, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Write([]byte{1})
+	f.Close()
+	if got := a.LibraryIcon(first); got == "" || len(calls()) != seen+1 || !strings.Contains(calls()[seen], "A.p5z") {
+		t.Errorf("after A grew: %.40q, %q", got, calls()[seen:])
+	}
+	core.SetPasscode(testPasscode)
+	if a.LibraryIcon(first); len(calls()) != seen+2 {
+		t.Errorf("after the passcode changed: %q", calls()[seen:])
+	}
+	for _, line := range calls() {
+		if !strings.HasPrefix(line, "icon\t") || !strings.Contains("\t"+line+"\t", "\t--read-only\t") {
+			t.Errorf("not a read-only icon: %q", line)
+		}
+	}
+}
+
+// Read again (ForgetLibraryErrors, then Library) reads again what could not be read, and only that: what was read
+// stays kept. Without it, a file that could not be read is not asked again until it changes.
+func TestLibraryReadAgainRetriesErrors(t *testing.T) {
+	a, _, calls := libraryFolder(t)
+	a.Library(nil)
+	seen := len(calls())
+	a.ForgetLibraryErrors()
+	view := a.Library(nil)
+	again := calls()[seen:]
+	if len(again) != 1 || !strings.HasPrefix(again[0], "info\t") || !strings.Contains(again[0], "bad.p5z") {
+		t.Errorf("Read again asked: %q", again)
+	}
+	if len(view.Items) != 3 || view.Items[2].Error == "" || view.Items[0].Name != "Copper Vale" {
+		t.Errorf("%+v", view.Items)
+	}
+	seen = len(calls())
+	a.Library(nil)
+	if n := len(calls()); n != seen {
+		t.Errorf("a look after Read again asked %d more times", n-seen)
 	}
 }

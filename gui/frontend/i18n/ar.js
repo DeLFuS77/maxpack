@@ -676,6 +676,8 @@ texts.ar = {
   consoleKindFolder: "مجلد",
   consoleVerified: date => "تم التحقق في " + date,
   consoleVerifyFailed: date => "فشل التحقق في " + date,
+  consoleVerifiedNoDate: "تم التحقق",
+  consoleVerifyFailedNoDate: "فشل التحقق",
   consoleDuplicate: "مكرر",
   markAlsoOnPc: "على الحاسوب أيضًا",
   consolePicked: (n, bytes) => arCount(n, "ملف ‎.p5z‎ واحد محدد", "ملفا ‎.p5z‎ محددان", "ملفات ‎.p5z‎ محددة", "ملفًا ‎.p5z‎ محددًا") + " · " + size(bytes),

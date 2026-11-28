@@ -676,6 +676,8 @@ texts.ru = {
   consoleKindFolder: "папка",
   consoleVerified: date => "проверено " + date,
   consoleVerifyFailed: date => "проверка не прошла " + date,
+  consoleVerifiedNoDate: "проверено",
+  consoleVerifyFailedNoDate: "проверка не прошла",
   consoleDuplicate: "дубликат",
   markAlsoOnPc: "Есть и на ПК",
   consolePicked: (n, bytes) => "Отмечено .p5z: " + n + " · " + size(bytes),

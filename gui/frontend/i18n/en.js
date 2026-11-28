@@ -673,6 +673,8 @@ texts.en = {
   consoleKindFolder: "folder",
   consoleVerified: date => "verified " + date,
   consoleVerifyFailed: date => "verify failed " + date,
+  consoleVerifiedNoDate: "Verified",
+  consoleVerifyFailedNoDate: "Verification failed",
   consoleDuplicate: "duplicate",
   markAlsoOnPc: "Also on the PC",
   consolePicked: (n, bytes) => (n === 1 ? "1 .p5z marked" : n + " .p5z marked") + " · " + size(bytes),

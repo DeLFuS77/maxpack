@@ -673,6 +673,8 @@ texts.de = {
   consoleKindFolder: "Ordner",
   consoleVerified: date => "geprüft am " + date,
   consoleVerifyFailed: date => "Prüfung fehlgeschlagen am " + date,
+  consoleVerifiedNoDate: "geprüft",
+  consoleVerifyFailedNoDate: "Prüfung fehlgeschlagen",
   consoleDuplicate: "Duplikat",
   markAlsoOnPc: "Auch auf dem PC",
   consolePicked: (n, bytes) => (n === 1 ? "1 .p5z markiert" : n + " .p5z markiert") + " · " + size(bytes),

@@ -1828,6 +1828,16 @@ function mountName(mount) {
 function driveText(drive) {
   return t("driveLine")(driveName(drive.id), size(Number(drive.free) || 0), size(Number(drive.total) || 0));
 }
+// a drive of ConsoleDrives with the free space and size the header has for the same disk (the latest ConsoleState),
+// so both say the same; as it is when the console has not listed that disk. The id stays the one the engine takes.
+function driveWithState(drive, disks) {
+  const usb = /^usb(\d+)$/.exec(drive.id || ""), ext = /^ext(\d+)$/.exec(drive.id || "");
+  const label = drive.id === "internal" ? "Internal" : usb ? "USB " + (Number(usb[1]) + 1) : ext ? "Extended " + (Number(ext[1]) + 1) : "";
+  const disk = label && (disks || []).find(one => one.label === label);
+  return disk ? Object.assign({}, drive, { free: disk.free, total: disk.total }) : drive;
+}
+// the drives to choose from, with the figures of the header
+const stateDrives = () => ((state.drives && state.drives.drives) || []).map(drive => driveWithState(drive, state.console && state.console.disks));
 // whether the .p5z of rows fit on a drive, with the console's margin
 const driveFits = (drive, rows) => (Number(drive.free) || 0) >= rows.reduce((sum, row) => sum + sendSize(row), 0) + sendMargin;
 // why the console could not be asked or refused, in the page's words
@@ -1964,6 +1974,14 @@ function dateText(at) {
   } catch {
     return isolate(when.toISOString().slice(0, 10));
   }
+}
+// the mark of a game's last verify: with its date only when the console's clock was set (a clock that never was
+// reads 2012, and a date before 2020 is not one worth showing)
+const clockSetFrom = Date.UTC(2020, 0, 1) / 1000;
+function verifiedText(verified) {
+  const at = Number(verified.at) || 0, seconds = at > 1e12 ? at / 1000 : at, dated = seconds >= clockSetFrom;
+  if (verified.ok) return dated ? t("consoleVerified")(dateText(at)) : t("consoleVerifiedNoDate");
+  return dated ? t("consoleVerifyFailed")(dateText(at)) : t("consoleVerifyFailedNoDate");
 }
 // whether the console of Settings is there to send to: its address and its code
 const consoleSet = () => validConsoleIp(state.settings.ConsoleIP || "") && validConsoleCode(state.settings.ConsoleCode || "");
@@ -2178,7 +2196,7 @@ async function ensureDrives() {
 }
 // the drive to send to: the one chosen, else the last one used, else the first with room for what is marked
 function chosenDrive() {
-  const drives = (state.drives && state.drives.drives) || [];
+  const drives = stateDrives();
   if (!drives.length) return "";
   for (const id of [state.driveChoice, load("sendDrive", "")]) if (id && drives.some(drive => drive.id === id)) return id;
   const rows = pickedRows();
@@ -2412,7 +2430,7 @@ function consoleGameLine(game, items) {
   line.querySelector(".file").textContent = [game.titleId, game.version && t("versionOf")(game.version), consoleKindText(game.kind), mountName(game.drive)].filter(Boolean).join(" · ");
   line.querySelector(".size").textContent = game.kind === "folder" || !Number(game.size) ? "" : size(game.size);
   const marks = [];
-  if (game.verified) marks.push(game.verified.ok ? ["ok", t("consoleVerified")(dateText(game.verified.at))] : ["bad", t("consoleVerifyFailed")(dateText(game.verified.at))]);
+  if (game.verified) marks.push(game.verified.ok ? ["ok", verifiedText(game.verified)] : ["bad", verifiedText(game.verified)]);
   if (game.status === "duplicate") marks.push(["warn", t("consoleDuplicate")]);
   if (alsoOnPc(game, items)) marks.push(["pc", t("markAlsoOnPc")]);
   line.querySelector(".pills").replaceChildren(...marks.map(([tone, text]) => {
@@ -2434,7 +2452,7 @@ function consoleImageLine(image) {
 // the drive to send to, at the foot of the section: the console's drives with their free space, or why there are
 // none yet
 function paintDriveSelect() {
-  const on = state.section === "console", d = state.drives, drives = (d && d.drives) || [];
+  const on = state.section === "console", d = state.drives, drives = stateDrives();
   $("console-drive-row").hidden = !on || !drives.length;
   const note = !on || !consoleSet() || !d ? "" : d.asking ? t("sendAsking") : d.error ? sendErrorText(d.error, d.message) : "";
   $("console-drive-note").hidden = !note;

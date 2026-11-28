@@ -673,6 +673,8 @@ texts.it = {
   consoleKindFolder: "cartella",
   consoleVerified: date => "verificato il " + date,
   consoleVerifyFailed: date => "verifica fallita il " + date,
+  consoleVerifiedNoDate: "verificato",
+  consoleVerifyFailedNoDate: "verifica fallita",
   consoleDuplicate: "duplicato",
   markAlsoOnPc: "Anche sul PC",
   consolePicked: (n, bytes) => (n === 1 ? "1 .p5z selezionato" : n + " .p5z selezionati") + " · " + size(bytes),

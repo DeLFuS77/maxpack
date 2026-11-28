@@ -85,6 +85,25 @@ console.log(vm.runInContext(` + "`" + `(() => {
   if (typeof t("driveExtended") !== "function" || !t("driveExtended")(2).includes("2")) say("driveExtended");
   // what a console game is, and its verify
   if (consoleKindText("p5z") !== ".p5z" || consoleKindText("pkg") !== ".pkg" || consoleKindText("folder") !== t("consoleKindFolder")) say("consoleKindText");
+  // a verify mark carries its date only when the console's clock was set (2020 or later); 2012 is a clock never set
+  const at2012 = Date.UTC(2012, 0, 6) / 1000, at2026 = Date.UTC(2026, 5, 6) / 1000;
+  if (verifiedText({ ok: true, at: at2012 }) !== t("consoleVerifiedNoDate")) say("a 2012 verify: " + verifiedText({ ok: true, at: at2012 }));
+  if (verifiedText({ ok: true, at: at2026 }) !== t("consoleVerified")(dateText(at2026))) say("a 2026 verify: " + verifiedText({ ok: true, at: at2026 }));
+  if (verifiedText({ ok: false, at: at2012 }) !== t("consoleVerifyFailedNoDate")) say("a failed verify of 2012: " + verifiedText({ ok: false, at: at2012 }));
+  if (verifiedText({ ok: false, at: at2026 }) !== t("consoleVerifyFailed")(dateText(at2026))) say("a failed verify of 2026: " + verifiedText({ ok: false, at: at2026 }));
+  if (verifiedText({ ok: true, at: 0 }) !== t("consoleVerifiedNoDate")) say("a verify with no date: " + verifiedText({ ok: true, at: 0 }));
+  if (verifiedText({ ok: true, at: Date.UTC(2020, 0, 1) / 1000 }) !== t("consoleVerified")(dateText(Date.UTC(2020, 0, 1) / 1000))) say("a verify of 2020-01-01");
+  // a drive of the select takes its free space and size from the same disk of the header, when the console has it
+  const disks = [{ label: "Internal", free: 11, total: 21 }, { label: "USB 1", free: 12, total: 22 }, { label: "Extended 1", free: 13, total: 23 }];
+  for (const [drive, free, total] of [[{ id: "internal", free: 1, total: 2 }, 11, 21], [{ id: "usb0", free: 1, total: 2 }, 12, 22], [{ id: "ext0", free: 1, total: 2 }, 13, 23]]) {
+    const got = driveWithState(drive, disks);
+    if (got.free !== free || got.total !== total || got.id !== drive.id) say("driveWithState of " + drive.id + ": " + JSON.stringify(got));
+  }
+  for (const drive of [{ id: "usb1", free: 1, total: 2 }, { id: "ext1", free: 1, total: 2 }, { id: "internal", free: 1, total: 2 }]) {
+    const got = driveWithState(drive, drive.id === "internal" ? [] : disks);
+    if (JSON.stringify(got) !== JSON.stringify(drive)) say("driveWithState with no disk for " + drive.id + ": " + JSON.stringify(got));
+  }
+  if (JSON.stringify(driveWithState({ id: "usb0", free: 1, total: 2 }, undefined)) !== '{"id":"usb0","free":1,"total":2}') say("driveWithState with no disks");
   // the sections that take a queue: the Console section sends, and only that
   if (queues.includes("console")) say("the Console section has a queue of its own");
   if (!state.lists.console || takes.console.map(([type]) => type).join() !== ".p5z") say("the Console section's list");
@@ -189,6 +208,27 @@ func TestConsolePageSend(t *testing.T) {
   // left: the console is asked no more
   setSection("details");
   if (cleared.join() !== "7") say("the console is still asked: " + cleared);
+`)
+}
+
+// TestConsolePageDriveFigures: the select of drives says the free space the header says (the latest ConsoleState)
+// for the same disk, and what decides whether the marked .p5z fit uses it too; the ids stay the ones of the drives.
+func TestConsolePageDriveFigures(t *testing.T) {
+	runPage(t, consoleFixture+`
+  window.answers.ConsoleState = Object.assign({}, consoleView, { disks: [{ label: "USB 1", kind: "usb", total: 2e12, free: 5e11 }] });
+  await setSection("console");
+  paintDriveSelect();
+  const select = $("console-drive");
+  if (!select.dataset.sign.includes(size(5e11)) || select.dataset.sign.includes(size(1e12))) say("the select does not say the header's figure: " + select.dataset.sign);
+  if (chosenDrive() !== "usb0") say("the id: " + chosenDrive());
+  // the console answers again with another free space: the select follows
+  state.console = Object.assign({}, state.console, { disks: [{ label: "USB 1", kind: "usb", total: 2e12, free: 4e11 }] });
+  paintDriveSelect();
+  if (!select.dataset.sign.includes(size(4e11)) || select.dataset.sign.includes(size(5e11))) say("the select does not follow the header: " + select.dataset.sign);
+  // it fits by the header's figure: 4e11 free is enough for 3000 bytes, 100 bytes free is not
+  state.console = Object.assign({}, state.console, { disks: [{ label: "USB 1", kind: "usb", total: 2e12, free: 100 }] });
+  paintDriveSelect();
+  if (!select.dataset.sign.includes(t("sendNoRoom"))) say("no room by the header's figure is not said: " + select.dataset.sign);
 `)
 }
 

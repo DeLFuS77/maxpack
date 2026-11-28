@@ -673,6 +673,8 @@ texts.es = {
   consoleKindFolder: "carpeta",
   consoleVerified: date => "verificado el " + date,
   consoleVerifyFailed: date => "falló la verificación el " + date,
+  consoleVerifiedNoDate: "verificado",
+  consoleVerifyFailedNoDate: "falló la verificación",
   consoleDuplicate: "duplicado",
   markAlsoOnPc: "También en el PC",
   consolePicked: (n, bytes) => (n === 1 ? "1 .p5z marcado" : n + " .p5z marcados") + " · " + size(bytes),

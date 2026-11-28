@@ -673,6 +673,8 @@ texts.fr = {
   consoleKindFolder: "dossier",
   consoleVerified: date => "vérifié le " + date,
   consoleVerifyFailed: date => "vérification échouée le " + date,
+  consoleVerifiedNoDate: "vérifié",
+  consoleVerifyFailedNoDate: "vérification échouée",
   consoleDuplicate: "doublon",
   markAlsoOnPc: "Aussi sur le PC",
   consolePicked: (n, bytes) => (n < 2 ? n + " .p5z coché" : n + " .p5z cochés") + " · " + size(bytes),

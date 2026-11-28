@@ -673,6 +673,8 @@ texts.pt = {
   consoleKindFolder: "pasta",
   consoleVerified: date => "verificado em " + date,
   consoleVerifyFailed: date => "falhou na verificação em " + date,
+  consoleVerifiedNoDate: "verificado",
+  consoleVerifyFailedNoDate: "falhou na verificação",
   consoleDuplicate: "duplicado",
   markAlsoOnPc: "Também no PC",
   consolePicked: (n, bytes) => (n === 1 ? "1 .p5z marcado" : n + " .p5z marcados") + " · " + size(bytes),

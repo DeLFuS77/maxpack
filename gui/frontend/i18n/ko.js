@@ -673,6 +673,8 @@ texts.ko = {
   consoleKindFolder: "폴더",
   consoleVerified: date => date + " 검증됨",
   consoleVerifyFailed: date => date + " 검증 실패",
+  consoleVerifiedNoDate: "검증됨",
+  consoleVerifyFailedNoDate: "검증 실패",
   consoleDuplicate: "중복",
   markAlsoOnPc: "PC에도 있음",
   consolePicked: (n, bytes) => ".p5z " + n + "개 선택 · " + size(bytes),

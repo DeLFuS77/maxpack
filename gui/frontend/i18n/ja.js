@@ -673,6 +673,8 @@ texts.ja = {
   consoleKindFolder: "フォルダー",
   consoleVerified: date => date + " に検証済み",
   consoleVerifyFailed: date => date + " の検証で失敗",
+  consoleVerifiedNoDate: "検証済み",
+  consoleVerifyFailedNoDate: "検証に失敗",
   consoleDuplicate: "重複",
   markAlsoOnPc: "PC にもあり",
   consolePicked: (n, bytes) => n + " 件の .p5z を選択 · " + size(bytes),

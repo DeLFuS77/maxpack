@@ -673,6 +673,8 @@ texts.zh = {
   consoleKindFolder: "文件夹",
   consoleVerified: date => "已于 " + date + " 校验",
   consoleVerifyFailed: date => "于 " + date + " 校验失败",
+  consoleVerifiedNoDate: "已校验",
+  consoleVerifyFailedNoDate: "校验失败",
   consoleDuplicate: "重复",
   markAlsoOnPc: "PC 上也有",
   consolePicked: (n, bytes) => "已勾选 " + n + " 个 .p5z · " + size(bytes),

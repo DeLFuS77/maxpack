@@ -39,9 +39,10 @@ type LibraryView struct {
 
 // libraryEntry is what was read of a file, for as long as its size and time are the same.
 type libraryEntry struct {
-	size  int64
-	mtime time.Time
-	item  LibraryItem
+	size     int64
+	mtime    time.Time
+	passcode string // what it was read with: another passcode reads it again
+	item     LibraryItem
 }
 
 // libraryReaders is how many files are read by the engine at once.
@@ -151,10 +152,11 @@ func (a *App) libraryItem(engine string, engineErr error, path string) LibraryIt
 		return LibraryItem{Path: path, Name: filepath.Base(path), Error: message}
 	}
 	key := pathKey(path)
+	passcode := strings.Join(core.PasscodeArgs(), " ")
 	a.libraryMutex.Lock()
 	kept, ok := a.libraryCache[key]
 	a.libraryMutex.Unlock()
-	if ok && kept.size == info.Size() && kept.mtime.Equal(info.ModTime()) {
+	if ok && kept.size == info.Size() && kept.mtime.Equal(info.ModTime()) && kept.passcode == passcode {
 		return kept.item
 	}
 	if engineErr != nil {
@@ -166,7 +168,7 @@ func (a *App) libraryItem(engine string, engineErr error, path string) LibraryIt
 	if a.libraryCache == nil {
 		a.libraryCache = map[string]libraryEntry{}
 	}
-	a.libraryCache[key] = libraryEntry{info.Size(), info.ModTime(), item}
+	a.libraryCache[key] = libraryEntry{info.Size(), info.ModTime(), passcode, item}
 	a.libraryMutex.Unlock()
 	return item
 }

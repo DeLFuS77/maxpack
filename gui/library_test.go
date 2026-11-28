@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DeLFuS77/maxpack/gui/core"
 	"github.com/DeLFuS77/maxpack/gui/internal/fakecore"
 	"github.com/DeLFuS77/maxpack/gui/settings"
 )
@@ -209,5 +210,36 @@ func TestLibraryUnreadable(t *testing.T) {
 	settings.Save(saved)
 	if view := a.Library(nil); view.Error != "unreadable" || len(view.Items) != 0 {
 		t.Errorf("%+v", view)
+	}
+}
+
+// What was read of a file (or why it could not be) is read again when the passcode changes, though the file
+// did not: a wrong passcode must not leave its error on screen.
+func TestLibraryRereadsAfterPasscodeChange(t *testing.T) {
+	t.Cleanup(func() { core.SetPasscode("") })
+	core.SetPasscode("")
+	a, _, calls := libraryFolder(t)
+	a.Library(nil)
+	seen := len(calls())
+	a.Library(nil)
+	if n := len(calls()); n != seen {
+		t.Fatalf("a second look asked the engine %d more times", n-seen)
+	}
+	core.SetPasscode(testPasscode)
+	a.Library(nil)
+	infoCalls := 0
+	for _, line := range calls()[seen:] {
+		if strings.HasPrefix(line, "info\t") {
+			infoCalls++
+		}
+	}
+	// A.p5z, B.P5Z and bad.p5z: each is read again, with the passcode
+	if infoCalls != 3 {
+		t.Errorf("%d info calls after the passcode changed, expected 3: %q", infoCalls, calls()[seen:])
+	}
+	seen = len(calls())
+	a.Library(nil)
+	if n := len(calls()); n != seen {
+		t.Errorf("with the same passcode, %d more calls", n-seen)
 	}
 }

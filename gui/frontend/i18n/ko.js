@@ -678,4 +678,5 @@ texts.ko = {
   consolePicked: (n, bytes) => ".p5z " + n + "개 선택 · " + size(bytes),
   consolePickNone: "보낼 .p5z를 선택하세요.",
   sendQueuedWait: "진행 중인 작업이 끝나면 콘솔로 보냅니다.",
+  dropConsoleOnlyP5z: "콘솔로는 .p5z 파일만 보냅니다. 나머지는 제외했습니다.",
 };

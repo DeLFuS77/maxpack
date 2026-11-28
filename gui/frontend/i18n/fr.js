@@ -678,4 +678,5 @@ texts.fr = {
   consolePicked: (n, bytes) => (n < 2 ? n + " .p5z coché" : n + " .p5z cochés") + " · " + size(bytes),
   consolePickNone: "Cochez les .p5z à envoyer.",
   sendQueuedWait: "Ils partent vers la console dès que ce qui est en cours se termine.",
+  dropConsoleOnlyP5z: "Seuls les fichiers .p5z vont à la console ; le reste a été laissé de côté.",
 };

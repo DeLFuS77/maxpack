@@ -678,4 +678,5 @@ texts.ja = {
   consolePicked: (n, bytes) => n + " 件の .p5z を選択 · " + size(bytes),
   consolePickNone: "送る .p5z にチェックを入れてください。",
   sendQueuedWait: "実行中の処理が終わったらコンソールへ送ります。",
+  dropConsoleOnlyP5z: "コンソールへ送れるのは .p5z ファイルだけです。それ以外は除きました。",
 };

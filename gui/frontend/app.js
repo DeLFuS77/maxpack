@@ -203,7 +203,7 @@ function newRow(path, section) {
   tr.querySelector(".to-send").addEventListener("click", () => openConsoleWith([row.path]));
   tr.querySelector(".send-discard").addEventListener("click", () => discardOnConsole(row));
   // a row of the Console section: marked to send, and one that needs repair opens in Details
-  tr.querySelector(".pick").addEventListener("change", event => { row.picked = !!event.target.checked; paintStart(); paintSummary(); paintDriveSelect(); });
+  tr.querySelector(".pick").addEventListener("change", event => pickRow(row, !!event.target.checked));
   tr.querySelector(".open-details").addEventListener("click", () => repairInDetails(row));
   // the entrance of a row and the pop of what it saved play once: a row put back in the list
   // (every render puts them all back) does not play them again
@@ -326,9 +326,16 @@ function takeTo(row, section) {
 
 // files dropped on the window: to the section open in Verify and Details; else to
 // Compress or Decompress by what they are (the files given to MaxPack from outside the window go
-// to Compress or Details instead, see addSent)
+// to Compress or Details instead, see addSent); on the Console section, its .p5z go under Other files,
+// marked, and nothing else goes anywhere
 async function dropped(paths) {
   showDrop(false);
+  if (state.section === "console") {
+    const p5z = (paths || []).filter(path => /\.p5z$/i.test(path));
+    if (p5z.length < (paths || []).length) toast(t("dropConsoleOnlyP5z"));
+    if (p5z.length) await openConsoleWith(p5z);
+    return;
+  }
   if (state.section === "verify" || state.section === "details" || state.section === "rename") {
     if (!await expandAndAdd(paths, state.section)) toast(t("dropNothing"));
     return;
@@ -1935,12 +1942,12 @@ function diskText(disk) {
   return t("driveLine")(name, size(Number(disk.free) || 0), size(Number(disk.total) || 0));
 }
 // the drive of a send left on the console, which says where it is there but not the drive's id: the internal
-// storage is /data, a USB drive /mnt/usbN; else the drive chosen last
+// storage is /data, a USB drive /mnt/usbN and extended storage /mnt/extN; else the drive chosen last
 function leftDrive(path) {
   const where = String(path || "");
   if (/^\/data(\/|$)/.test(where)) return "internal";
-  const usb = /^\/mnt\/(usb\d+)(\/|$)/.exec(where);
-  return usb ? usb[1] : load("sendDrive", "");
+  const drive = /^\/mnt\/((?:usb|ext)\d+)(\/|$)/.exec(where);
+  return drive ? drive[1] : load("sendDrive", "");
 }
 // the name of the .p5z a send left there, without the .maxpack-recv the console keeps it under
 const leftName = entry => String((entry && (entry.name || (entry.path ? baseName(entry.path) : ""))) || "").replace(/\.maxpack-recv$/i, "");
@@ -2006,6 +2013,22 @@ function openConsoleWith(paths) {
   for (const path of given) state.consolePick.add(pathKey(path));
   return state.section === "console" ? loadLibrary() : setSection("console");
 }
+// the box of a row of the Console section: marks it to send, or not; unticking one that waits to be sent takes it
+// back, and it is not sent
+function pickRow(row, on) {
+  if (row.sendWait) {
+    if (on) return;
+    withdrawSend(row);
+    render();
+    return;
+  }
+  row.picked = !!on;
+  paintStart();
+  paintSummary();
+  paintDriveSelect();
+}
+// a send that waits, taken back: its row is as it was before it was marked
+const withdrawSend = row => Object.assign(row, { sendWait: null, state: "", detail: "", picked: false });
 // the rows asked to be marked, once they are there, if they can be sent
 function applyPicks() {
   let first = null;
@@ -2021,10 +2044,11 @@ function applyPicks() {
 }
 
 // The library: read as the section opens, with Read again, and when the .p5z from elsewhere change. One read at a
-// time; one asked meanwhile reads once that one ends, and the ones asked after it share it.
+// time; one asked meanwhile reads once that one ends (whether it read or broke), and the ones asked after it share it.
 let libraryChain = Promise.resolve(), libraryQueued = null;
 function loadLibrary() {
-  if (!libraryQueued) libraryQueued = libraryChain = libraryChain.then(() => { libraryQueued = null; return readLibrary(); });
+  const read = () => { libraryQueued = null; return readLibrary(); };
+  if (!libraryQueued) libraryQueued = libraryChain = libraryChain.then(read, read);
   return libraryQueued;
 }
 async function readLibrary() {
@@ -2306,10 +2330,11 @@ function paintConsoleRow(row) {
   const name = (row.game && row.game.Name) || baseName(row.path);
   const sendable = !!row.game && canSend(item, games) && !queuedRow(row);
   if (!sendable) row.picked = false;
-  const pick = tr.querySelector(".pick");
+  // one that waits to be sent stays ticked, and unticking it takes it back
+  const pick = tr.querySelector(".pick"), waits = !!row.sendWait;
   pick.hidden = false;
-  pick.disabled = !sendable;
-  pick.checked = !!row.picked;
+  pick.disabled = !sendable && !waits;
+  pick.checked = waits || !!row.picked;
   pick.setAttribute("aria-label", t("pickToSend")(name));
   pick.title = t("pickToSend")(name);
   // what it is on the console, once the console said what it has; one that needs repair, always
@@ -3087,6 +3112,11 @@ function onKey(event) {
 function cancelQueue() {
   if (!running() || state.cancelling) return;
   state.cancelling = true;
+  // Cancel of a send takes back the sends that wait behind it too: none starts once it ends
+  if (state.job.section === "console") {
+    for (const row of state.lists.console) if (row.sendWait) withdrawSend(row);
+    render();
+  }
   paintStart();
   paintSummary();
   go.call("Cancel").catch(error => toast(message(error)));

@@ -681,4 +681,5 @@ texts.ru = {
   consolePicked: (n, bytes) => "Отмечено .p5z: " + n + " · " + size(bytes),
   consolePickNone: "Отметьте .p5z для отправки.",
   sendQueuedWait: "Они уйдут на консоль, когда закончится текущая работа.",
+  dropConsoleOnlyP5z: "На консоль уходят только файлы .p5z; остальное пропущено.",
 };

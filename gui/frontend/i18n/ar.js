@@ -681,4 +681,5 @@ texts.ar = {
   consolePicked: (n, bytes) => arCount(n, "ملف ‎.p5z‎ واحد محدد", "ملفا ‎.p5z‎ محددان", "ملفات ‎.p5z‎ محددة", "ملفًا ‎.p5z‎ محددًا") + " · " + size(bytes),
   consolePickNone: "حدّد ملفات ‎.p5z‎ المراد إرسالها.",
   sendQueuedWait: "تُرسل إلى جهاز اللعب حين ينتهي ما يجري الآن.",
+  dropConsoleOnlyP5z: "لا يُرسَل إلى جهاز اللعب إلا ملفات ‎.p5z‎، وتُرك الباقي.",
 };

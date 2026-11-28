@@ -68,7 +68,8 @@ console.log(vm.runInContext(` + "`" + `(() => {
   if (madeP5z(job).join() !== "D:/a.p5z" || madeP5z(Object.assign({}, job, { mode: "folder" })).length) say("the .p5z made: " + madeP5z(job));
   // a send left on the console: its drive from where it is there, and its name without .maxpack-recv
   if (leftDrive("/data/homebrew/g.p5z.maxpack-recv") !== "internal" || leftDrive("/mnt/usb1/homebrew/g.p5z.maxpack-recv") !== "usb1") say("leftDrive");
-  if (leftDrive("/mnt/ext0/homebrew/g.p5z") !== load("sendDrive", "")) say("leftDrive elsewhere: " + leftDrive("/mnt/ext0/homebrew/g.p5z"));
+  if (leftDrive("/mnt/ext0/homebrew/g.p5z") !== "ext0" || leftDrive("/mnt/ext1") !== "ext1") say("leftDrive of extended storage: " + leftDrive("/mnt/ext0/homebrew/g.p5z"));
+  if (leftDrive("/mnt/sandbox/g.p5z") !== load("sendDrive", "") || leftDrive("/mnt/usbx/g.p5z") !== load("sendDrive", "")) say("leftDrive elsewhere: " + leftDrive("/mnt/sandbox/g.p5z"));
   if (leftName({ path: "/data/homebrew/G.p5z.maxpack-recv", name: "G.p5z.maxpack-recv" }) !== "G.p5z" || leftName({ path: "/mnt/usb0/homebrew/H.p5z", name: "" }) !== "H.p5z") say("leftName");
   // the console's drives in the page's words, by their id and by the label the console gives them
   if (driveName("internal") !== t("driveInternal") || driveName("usb0") !== t("driveUsb")(1)) say("driveName");
@@ -219,6 +220,102 @@ func TestConsolePageSendWhileSending(t *testing.T) {
   for (let n = 0; n < 50; n++) await null;
   const start = calls.find(call => call.startsWith("Start "));
   if (!start || !start.startsWith('Start ["console",') || !start.includes("Ember Reach") || start.includes("Iron Bay")) say("after the first send: " + start);
+`)
+}
+
+// TestConsolePageWithdraw: a send that waits can be taken back: unticking its row withdraws it, and Cancel of a send
+// at work withdraws the ones waiting behind it (not Cancel of a compression); what was withdrawn is unmarked and does
+// not start when the queue ends.
+func TestConsolePageWithdraw(t *testing.T) {
+	runPage(t, consoleFixture+`
+  await setSection("console");
+  const plan = name => ({ Item: { Name: name }, Block: "", Warnings: [], Replace: null });
+  window.answers.Space = [];
+  window.answers.Start = null;
+  // marked while a compression runs: both wait, and the box of one that waits can be unticked
+  state.busy = true;
+  state.job = { section: "compress", mode: "p5z", rows: [], running: true };
+  rowOf("D:/lib/B.p5z").picked = true;
+  rowOf("E:/x/E.p5z").picked = true;
+  sendMarked();
+  const waiting = rowOf("E:/x/E.p5z"), boxes = {};
+  waiting.tr.querySelector = selector => boxes[selector] || (boxes[selector] = document.createElement("x"));
+  paintConsoleRow(waiting);
+  if (boxes[".pick"].disabled || !boxes[".pick"].checked) say("the box of a send that waits: disabled " + boxes[".pick"].disabled + ", checked " + boxes[".pick"].checked);
+  pickRow(waiting, false);
+  if (waiting.sendWait || waiting.state || waiting.picked) say("unticked, it still waits: " + waiting.state + " " + JSON.stringify(waiting.sendWait));
+  if (rowOf("D:/lib/B.p5z").state !== "waiting") say("unticking one takes back the other");
+  paintConsoleRow(waiting);
+  if (boxes[".pick"].disabled || boxes[".pick"].checked) say("the box of a send taken back: disabled " + boxes[".pick"].disabled + ", checked " + boxes[".pick"].checked);
+  // Cancel of the compression: the send that waits for it still goes
+  cancelQueue();
+  if (rowOf("D:/lib/B.p5z").state !== "waiting" || !rowOf("D:/lib/B.p5z").sendWait) say("Cancel of a compression took back a send: " + rowOf("D:/lib/B.p5z").state);
+  window.answers.Plan = [plan("Iron Bay")];
+  calls.length = 0;
+  onDone({ Done: 0, Failed: 0, Cancelled: 1 });
+  for (let n = 0; n < 50; n++) await null;
+  const start = calls.find(call => call.startsWith("Start "));
+  if (!start || !start.includes("Iron Bay") || start.includes("Ember Reach")) say("after unticking: " + start);
+  if (!running() || state.job.section !== "console") say("the send did not start");
+  // marked while that send runs: it waits; Cancel of the send takes it back, and nothing starts once it ends
+  pickRow(waiting, true);
+  if (!waiting.picked) say("it cannot be marked again");
+  window.answers.Plan = [plan("Ember Reach")];
+  await sendMarked();
+  if (waiting.state !== "waiting" || !waiting.sendWait) say("marked during the send, it does not wait: " + waiting.state);
+  calls.length = 0;
+  cancelQueue();
+  if (!calls.includes("Cancel")) say("the send is not cancelled: " + calls);
+  if (waiting.sendWait || waiting.state || waiting.picked) say("Cancel of the send did not take back the one waiting: " + waiting.state + " " + JSON.stringify(waiting.sendWait));
+  onDone({ Done: 0, Failed: 0, Cancelled: 1 });
+  for (let n = 0; n < 50; n++) await null;
+  if (calls.some(call => /^(Plan|Start) /.test(call))) say("a send taken back started: " + calls);
+`)
+}
+
+// TestConsolePageDrop: what is dropped on the Console section stays there: a .p5z goes under Other files, marked, as
+// Send to the console does; anything else is said and goes nowhere (neither to Compress nor to Decompress).
+func TestConsolePageDrop(t *testing.T) {
+	runPage(t, consoleFixture+`
+  await setSection("console");
+  if (typeof t("dropConsoleOnlyP5z") !== "string" || !t("dropConsoleOnlyP5z")) say("no text dropConsoleOnlyP5z");
+  calls.length = 0;
+  await dropped(["E:/x/E.P5Z", "E:/x/notes.txt"]);
+  if (calls.some(call => /^(Expand|Describe|Details) /.test(call))) say("a drop on the Console section went to another section: " + calls);
+  if (state.others.join() !== "E:/x/E.P5Z") say("the files from elsewhere: " + state.others);
+  if (!calls.includes('Library [["E:/x/E.P5Z"]]')) say("the library is not read with the .p5z dropped: " + calls);
+  if (!state.lists.console.some(row => row.path === "E:/x/E.p5z" && row.picked)) say("the .p5z dropped is not marked");
+  if (toasts.join() !== t("dropConsoleOnlyP5z")) say("what was left out is not said: " + toasts);
+  if (state.section !== "console") say("the section changed: " + state.section);
+  // nothing but other files: said, and the window is not asked
+  calls.length = 0;
+  toasts.length = 0;
+  await dropped(["E:/x/Game Folder", "E:/x/a.exfat"]);
+  if (calls.length) say("a drop of no .p5z asked the window: " + calls);
+  if (toasts.join() !== t("dropConsoleOnlyP5z")) say("a drop of no .p5z is not said: " + toasts);
+  if (state.lists.compress.length || state.lists.decompress.length || state.section !== "console") say("a drop on the Console section went elsewhere");
+  // .p5z only: nothing to say
+  toasts.length = 0;
+  await dropped(["D:/lib/B.p5z"]);
+  if (toasts.length || !rowOf("D:/lib/B.p5z").picked) say("a .p5z dropped: " + toasts + " " + rowOf("D:/lib/B.p5z").picked);
+`)
+}
+
+// TestConsolePageLibraryReads: the reads of the library go one after another, and one that broke does not stop the
+// ones after it.
+func TestConsolePageLibraryReads(t *testing.T) {
+	runPage(t, consoleFixture+`
+  await setSection("console");
+  // a read that breaks on what the window gave
+  window.answers.Library = { folder: "D:/lib", error: "", items: [null] };
+  let broke = false;
+  await loadLibrary().catch(() => { broke = true; });
+  if (!broke) say("the read did not break: the check proves nothing");
+  window.answers.Library = library;
+  calls.length = 0;
+  await loadLibrary();
+  if (!calls.some(call => call.startsWith("Library ["))) say("a read after one that broke does not ask the window: " + calls);
+  if (state.lists.console.length !== 5) say("the rows after a read that broke: " + state.lists.console.length);
 `)
 }
 

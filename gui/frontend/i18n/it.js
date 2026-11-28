@@ -678,4 +678,5 @@ texts.it = {
   consolePicked: (n, bytes) => (n === 1 ? "1 .p5z selezionato" : n + " .p5z selezionati") + " · " + size(bytes),
   consolePickNone: "Seleziona i .p5z da inviare.",
   sendQueuedWait: "Vanno alla console appena finisce ciò che è in corso.",
+  dropConsoleOnlyP5z: "Alla console vanno solo i file .p5z; il resto è stato lasciato fuori.",
 };

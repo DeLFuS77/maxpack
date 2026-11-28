@@ -678,4 +678,5 @@ texts.zh = {
   consolePicked: (n, bytes) => "已勾选 " + n + " 个 .p5z · " + size(bytes),
   consolePickNone: "勾选要发送的 .p5z。",
   sendQueuedWait: "等正在进行的工作结束后发送到主机。",
+  dropConsoleOnlyP5z: "只有 .p5z 文件会发送到主机，其余的已略过。",
 };

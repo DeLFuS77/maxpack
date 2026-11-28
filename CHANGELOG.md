@@ -6,6 +6,10 @@ All notable changes to MaxPack are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `info --json --read-only` and `icon --read-only` read a `.p5z` without undoing an interrupted change; `info --json` says `interrupted_append` for it (and `--capabilities` says `read_only_info`).
+
 ## [1.1.0] - 2026-11-27
 
 ### Added

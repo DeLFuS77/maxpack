@@ -256,6 +256,15 @@ int p5z_restore_locked(mp_wfile *f, const char *p5z, int *what, mp_err *e) {
     return 0;
 }
 
+int mp_p5z_journal_pending(const char *p5z) {
+    if (mp_path_kind(p5z) != 1) return 0;
+    char *fin = journal_path(p5z, 0), *tmp = journal_path(p5z, 1);
+    int has = (fin && mp_path_kind(fin) == 1) || (tmp && mp_path_kind(tmp) == 1);
+    free(fin);
+    free(tmp);
+    return has;
+}
+
 int mp_p5z_recover(const char *p5z, int *what, mp_err *e) {
     *what = MP_RECOVER_NONE;
     char *fin = journal_path(p5z, 0), *tmp = journal_path(p5z, 1);

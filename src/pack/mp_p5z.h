@@ -58,6 +58,9 @@ enum { MP_RECOVER_NONE = 0, MP_RECOVER_RESTORED, MP_RECOVER_BUSY, MP_RECOVER_STA
     "%s is held by another program (another MaxPack changing it, the Explorer making its cover, or an antivirus): " \
     "try again in a moment"
 int mp_p5z_recover(const char *p5z, int *what, mp_err *e);
+// 1 when a journal (its final or its temporary name) is next to a .p5z that is a regular file, else 0: what
+// a reader that must not write (info --json --read-only) asks instead of mp_p5z_recover. It never writes.
+int mp_p5z_journal_pending(const char *p5z);
 const mp_pack_manifest *mp_p5z_manifest(const mp_p5z *p);
 int mp_p5z_info(const mp_p5z *p, FILE *out);
 int mp_p5z_zpk(mp_p5z *p, mp_zpk **out, mp_err *e);

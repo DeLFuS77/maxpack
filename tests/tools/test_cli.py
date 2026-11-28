@@ -1475,6 +1475,48 @@ rc, so, err = run("info", "--json", img)
 check("recover_only_p5z", rc == 0 and os.path.exists(img + ".maxpack-append"), err[-300:])
 if os.path.exists(img + ".maxpack-append"):
     os.remove(img + ".maxpack-append")
+# --read-only: info --json and icon read a .p5z with a journal next to it without undoing anything
+ro = fresh(os.path.join(TMP, "ro.p5z"))
+shutil.copyfile(cp, ro)
+rc, so, err = run("info", "--json", ro)
+plain = json.loads(so or "{}") if rc == 0 else {}
+rc, so, err = run("info", "--json", "--read-only", ro)
+clean = json.loads(so or "{}") if rc == 0 else {}
+check("read_only_clean", rc == 0 and clean.get("interrupted_append") is False
+      and set(clean) == set(plain) and plain.get("interrupted_append") is False, so[-300:] + err[-300:])
+rosize = os.path.getsize(ro)
+with open(ro, "rb") as f:
+    f.seek(rosize - 32)
+    rofoot = f.read(32)
+rohead = b"P5ZJRNL1" + struct.pack("<IIQ", 1, 64, rosize) + rofoot + struct.pack("<I", 0)
+with open(ro + ".maxpack-append", "wb") as f:
+    f.write(rohead + struct.pack("<I", zlib.crc32(rohead) & 0xFFFFFFFF))
+with open(ro, "ab") as f:
+    f.write(b"half of an append" * 1000)
+
+
+def ro_state():
+    return [(hashlib.sha256(open(x, "rb").read()).hexdigest(), os.path.getsize(x)) for x in (ro, ro + ".maxpack-append")]
+
+
+ro_before = ro_state()
+rc, so, err = run("info", "--read-only", "--json", ro)
+d = json.loads(so or "{}") if rc == 0 else {}
+check("read_only_journal", rc == 0 and d.get("interrupted_append") is True and d.get("recovered") is False
+      and ro_state() == ro_before, so[-300:] + err[-300:])
+rc, so, err = run("info", "--json", ro, "--read-only")
+check("read_only_journal_order", rc == 0 and json.loads(so or "{}").get("interrupted_append") is True
+      and ro_state() == ro_before, so[-300:] + err[-300:])
+ro_png = fresh(os.path.join(TMP, "ro_icon.png"))
+rc, so, err = run("icon", "--read-only", ro, "-o", ro_png)
+check("read_only_icon", rc in (0, 1) and "was undone" not in err and ro_state() == ro_before
+      and (rc != 0 or os.path.getsize(ro_png) > 0), err[-300:])
+os.remove(ro + ".maxpack-append")
+os.remove(ro)
+rc, so, _ = run("--capabilities")
+check("read_only_cap", json.loads(so or "{}").get("read_only_info") is True, so)
+rc, so, _ = run("--help")
+check("help_read_only", "--read-only" in so, so[:3000])
 rc, so, _ = run("--capabilities")
 check("capabilities_grow", json.loads(so or "{}").get("grow") is True, so)
 rc, so, _ = run("--help")

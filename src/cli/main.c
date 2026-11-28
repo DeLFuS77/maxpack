@@ -46,10 +46,11 @@ static void usage(FILE *out) {
             "  maxpack compact <in.p5z> -o <out.p5z> [--threads N]   a copy without the room they leave\n"
             "  maxpack info <game.p5z>\n"
             "  maxpack info --json <folder|image|package|game.p5z>\n"
+            "  maxpack info --json --read-only <game.p5z>   never undoes an interrupted change: says interrupted_append\n"
             "  maxpack info --play <game.p5z>   what the console needs to play it without installing (JSON)\n"
             "  maxpack info --sums <game.p5z>   what its index records of its packs: level, archive_id and each\n"
             "                                   volume's size and SHA-256, in the lines the console's pack prints\n"
-            "  maxpack icon <folder|image|package|game.p5z> -o <icon.png>\n"
+            "  maxpack icon <folder|image|package|game.p5z> -o <icon.png>   (--read-only: as info's)\n"
             "  maxpack verify <game.p5z | folder> [--against <source>] [--threads N]\n"
             "  maxpack verify --quick <game.p5z> [--json]   only that its bytes are those it was written\n"
             "                     with (each volume's and stored file's SHA-256), at the speed of the disk\n"
@@ -1421,8 +1422,15 @@ static void print_json_string(const char *s) {
     putchar('"');
 }
 
-static int cmd_info_json(const char *path) {
-    int recovered = recover_note(path);
+static int is_p5z_name(const char *path) {
+    size_t n = strlen(path);
+    return n >= 4 && path[n - 4] == '.' && (path[n - 3] | 32) == 'p' && path[n - 2] == '5' && (path[n - 1] | 32) == 'z';
+}
+
+// read_only: nothing is undone or deleted; an append that stopped is said as interrupted_append instead.
+static int cmd_info_json(const char *path, int read_only) {
+    int recovered = read_only ? 0 : recover_note(path);
+    int pending = read_only && is_p5z_name(path) && mp_p5z_journal_pending(path);
     mp_err e = {{0}};
     mp_describe d;
     mp_complete c;
@@ -1447,6 +1455,7 @@ static int cmd_info_json(const char *path) {
     if (!strcmp(d.kind, "p5z")) {
         printf(",\"loose_bytes\":%llu,\"grown\":%u,\"unused_bytes\":%llu,\"recovered\":%s", (unsigned long long)d.loose_bytes,
                d.grown, (unsigned long long)d.unused_bytes, recovered ? "true" : "false");
+        printf(",\"interrupted_append\":%s", pending ? "true" : "false");
         // what its index records of its packs (info --sums): left out when the index cannot give them
         mp_p5z *p = NULL;
         mp_p5z_sums s;
@@ -1465,6 +1474,7 @@ static int cmd_info_json(const char *path) {
         }
         mp_p5z_close(p);
     }
+    if (strcmp(d.kind, "p5z")) printf(",\"interrupted_append\":false");
     printf(",\"packed_files\":%llu,\"volumes\":%llu", (unsigned long long)d.packed_files,
            (unsigned long long)d.volumes);
     printf(",\"has_runtime\":%s,\"has_zstd_runtime\":%s,\"packed\":%s", d.has_runtime ? "true" : "false",
@@ -1556,12 +1566,20 @@ static int cmd_info_play(const char *path) {
 static int cmd_info(int argc, char **argv) {
     if (argc == 2 && !strcmp(argv[0], "--play")) return cmd_info_play(argv[1]);
     if (argc == 2 && !strcmp(argv[1], "--play")) return cmd_info_play(argv[0]);
-    if (argc == 2 && !strcmp(argv[0], "--json")) return cmd_info_json(argv[1]);
-    if (argc == 2 && !strcmp(argv[1], "--json")) return cmd_info_json(argv[0]);
+    if (argc == 2 && !strcmp(argv[0], "--json")) return cmd_info_json(argv[1], 0);
+    if (argc == 2 && !strcmp(argv[1], "--json")) return cmd_info_json(argv[0], 0);
+    if (argc == 3) {   // --read-only with --json, in any order, and the path
+        int ro = -1, js = -1;
+        for (int i = 0; i < 3; i++) {
+            if (!strcmp(argv[i], "--read-only") && ro < 0) ro = i;
+            else if (!strcmp(argv[i], "--json") && js < 0) js = i;
+        }
+        if (ro >= 0 && js >= 0) return cmd_info_json(argv[3 - ro - js], 1);
+    }
     if (argc == 2 && !strcmp(argv[0], "--sums")) return cmd_info_sums(argv[1]);
     if (argc == 2 && !strcmp(argv[1], "--sums")) return cmd_info_sums(argv[0]);
     if (argc != 1 || !strcmp(argv[0], "--json"))
-        return bad_usage("info needs a .p5z file (or --json, --play or --sums and a path)", NULL);
+        return bad_usage("info needs a .p5z file (or --json, --play or --sums and a path; --read-only with --json)", NULL);
     recover_note(argv[0]);
     mp_err e = {{0}};
     mp_p5z *p = NULL;
@@ -1577,8 +1595,11 @@ static int cmd_info(int argc, char **argv) {
 // icon <path> -o <png>: 0 with the PNG written, 1 if the game has no icon (or it could not be written).
 static int cmd_icon(int argc, char **argv) {
     const char *src = NULL, *out = NULL;
+    int read_only = 0;
     for (int i = 0; i < argc; i++) {
-        if (!strcmp(argv[i], "-o")) {
+        if (!strcmp(argv[i], "--read-only")) {
+            read_only = 1;
+        } else if (!strcmp(argv[i], "-o")) {
             if (i + 1 >= argc || out) return bad_usage("-o needs a value", NULL);
             out = argv[++i];
         } else if (argv[i][0] == '-' && argv[i][1]) {
@@ -1590,7 +1611,7 @@ static int cmd_icon(int argc, char **argv) {
         }
     }
     if (!src || !out) return bad_usage("icon needs a source and -o <icon.png>", NULL);
-    recover_note(src);
+    if (!read_only) recover_note(src);
     mp_err e = {{0}};
     uint8_t *png = NULL;
     size_t len = 0;
@@ -2479,7 +2500,7 @@ int main(int argc, char **argv) {
     }
     if (argc >= 2 && strcmp(argv[1], "--capabilities") == 0) {
         // what the window needs from this version of the engine
-        printf("{\"progress_json\":true,\"control_stdin\":true,\"max_file_size\":true,\"info_json\":true,"
+        printf("{\"progress_json\":true,\"control_stdin\":true,\"max_file_size\":true,\"info_json\":true,\"read_only_info\":true,"
                "\"icon\":true,\"packs\":true,\"content_id\":true,\"levels\":true,\"measure\":true,"
                "\"images\":true,\"fpkg\":true,\"passcode\":true,\"completeness\":true,\"dlc\":true,\"grow\":true,"
                "\"verify_quick\":true,\"send\":true,\"pause\":true,\"import\":true}\n");

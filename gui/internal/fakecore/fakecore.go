@@ -38,7 +38,9 @@ import (
 //   - "bad-verify": as "writes", but verify finds a damaged file.
 //   - "writes-info": as "writes", and info --json as "info" (by the name of the file, its tmp name too).
 //   - "info": info --json says of a game what the JSON file InfoEnv has under the name of its file
-//     or folder, and fails for any other; icon finds none.
+//     or folder, and fails for any other; icon finds none. info --json takes --read-only before the
+//     path, and icon takes it before the path too. When CallsEnv names a file, each call of info or
+//     icon adds a line to it: its arguments, separated by tabs.
 //   - "levels": analyze --levels tells two levels (3 and 19) as it goes and in its result, with the
 //     threads it was given (8 without --threads).
 //   - "measure": measure tries 2, 4, 6 and 8 threads of 8, recommends 6 (8 is the fastest) at the
@@ -64,6 +66,9 @@ const Env = "MP_FAKE_CORE"
 
 // LinesEnv is the file where "pauses" keeps each line of its input.
 const LinesEnv = "MP_FAKE_LINES"
+
+// CallsEnv is the file where "info" keeps each call of info and icon, one line of tab-separated arguments.
+const CallsEnv = "MP_FAKE_CALLS"
 
 // InfoEnv is the file of what "info" says of each game: {"<name>": {<info --json>}, ...}.
 const InfoEnv = "MP_FAKE_INFO"
@@ -100,18 +105,28 @@ func run(mode string, args []string) int {
 		fmt.Printf("{\"event\":\"result\",\"ok\":true,\"files_bad\":0,\"priority\":%q}\n", priority())
 		return 0
 	case "info", "writes-info":
-		if mode == "writes-info" && !(len(args) == 3 && args[0] == "info") {
+		if mode == "writes-info" && !(len(args) >= 3 && args[0] == "info") {
 			return run("writes", args)
 		}
-		if len(args) == 3 && args[0] == "info" && args[1] == "--json" {
+		if path := os.Getenv(CallsEnv); path != "" && len(args) > 0 && (args[0] == "info" || args[0] == "icon") {
+			if f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644); err == nil {
+				fmt.Fprintln(f, strings.Join(args, "	"))
+				f.Close()
+			}
+		}
+		if len(args) >= 3 && args[0] == "info" && args[1] == "--json" {
+			target := args[2]
+			if target == "--read-only" && len(args) >= 4 {
+				target = args[3]
+			}
 			var infos map[string]json.RawMessage
 			data, _ := os.ReadFile(os.Getenv(InfoEnv))
 			json.Unmarshal(data, &infos)
-			if info, ok := infos[filepath.Base(args[2])]; ok {
+			if info, ok := infos[filepath.Base(target)]; ok {
 				fmt.Println(string(info))
 				return 0
 			}
-			fmt.Fprintln(os.Stderr, "error: not a game:", args[2])
+			fmt.Fprintln(os.Stderr, "error: not a game:", target)
 			return 1
 		}
 		fmt.Fprintln(os.Stderr, "error: no icon")

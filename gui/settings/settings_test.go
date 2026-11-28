@@ -292,3 +292,28 @@ func TestSettingsEndAndUpdates(t *testing.T) {
 		t.Fatalf("%+v, %v; expected %+v", got, err, want)
 	}
 }
+
+// The library folder of the Console tab is trimmed and must be an absolute path: any other is none.
+func TestLibraryFolderNormalized(t *testing.T) {
+	abs, err := filepath.Abs(filepath.Join(string(filepath.Separator), "games"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := Defaults()
+	s.LibraryFolder = "  " + abs + "  "
+	if got := s.Normalize(); got.LibraryFolder != abs {
+		t.Errorf("padded: %q, expected %q", got.LibraryFolder, abs)
+	}
+	s.LibraryFolder = "games"
+	if got := s.Normalize(); got.LibraryFolder != "" {
+		t.Errorf("relative: %q", got.LibraryFolder)
+	}
+	s.LibraryFolder = abs
+	useFolder(t)
+	if err := Save(s); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := Load(); err != nil || got.LibraryFolder != abs {
+		t.Errorf("kept: %q, %v", got.LibraryFolder, err)
+	}
+}

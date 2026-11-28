@@ -310,10 +310,38 @@ func Info(core, path string) (map[string]any, error) {
 	return info, nil
 }
 
+// InfoReadOnly is Info of a .p5z that never undoes an interrupted change of it (`--read-only`): the
+// file is not written, and its "interrupted_append" says whether a change was left half done.
+func InfoReadOnly(core, path string) (map[string]any, error) {
+	var stderr bytes.Buffer
+	command := hide(exec.Command(core, append([]string{"info", "--json", "--read-only", path}, PasscodeArgs()...)...))
+	command.Stderr = &stderr
+	out, err := command.Output()
+	if err != nil {
+		return nil, fmt.Errorf("info of %s: %w: %s", path, err, strings.TrimSpace(stderr.String()))
+	}
+	var info map[string]any
+	if err := json.Unmarshal(out, &info); err != nil {
+		return nil, fmt.Errorf("info of %s: invalid response: %w", path, err)
+	}
+	return info, nil
+}
+
 // Icon writes the icon of the game to out, as a PNG; an error when it has none.
 func Icon(core, path, out string) error {
 	var stderr bytes.Buffer
 	command := hide(exec.Command(core, append([]string{"icon", path, "-o", out}, PasscodeArgs()...)...))
+	command.Stderr = &stderr
+	if err := command.Run(); err != nil {
+		return fmt.Errorf("icon of %s: %w: %s", path, err, strings.TrimSpace(stderr.String()))
+	}
+	return nil
+}
+
+// IconReadOnly is Icon of a .p5z that never undoes an interrupted change of it (`--read-only`).
+func IconReadOnly(core, path, out string) error {
+	var stderr bytes.Buffer
+	command := hide(exec.Command(core, append([]string{"icon", "--read-only", path, "-o", out}, PasscodeArgs()...)...))
 	command.Stderr = &stderr
 	if err := command.Run(); err != nil {
 		return fmt.Errorf("icon of %s: %w: %s", path, err, strings.TrimSpace(stderr.String()))

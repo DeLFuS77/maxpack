@@ -65,6 +65,10 @@ type App struct {
 	// the dialog that chooses folders, when not the one of the system
 	chooseFolders func() ([]string, error)
 
+	// what the Console tab read of each .p5z of its list (see library.go), by pathKey
+	libraryMutex sync.Mutex
+	libraryCache map[string]libraryEntry
+
 	notices      sync.Once
 	noticesReady bool
 	// whether the window is in front, as the page tells it (TellFront), and the stand-in of the tests

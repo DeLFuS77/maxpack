@@ -95,6 +95,9 @@ type Settings struct {
 	WatchOn     bool
 	WatchFolder string
 	WatchSend   bool
+	// LibraryFolder is the folder whose .p5z the Console tab lists, first level only; "" for none.
+	// Normalized: trimmed, and "" unless it is an absolute path
+	LibraryFolder string
 	// QuietEnd tells the end of a queue with neither a sound nor a notice of the system; off by default,
 	// so both come when a queue ends while the window is not in front
 	QuietEnd bool
@@ -169,6 +172,9 @@ func (s Settings) Normalize() Settings {
 	}
 	if s.WatchFolder = strings.TrimSpace(s.WatchFolder); s.WatchFolder == "" {
 		s.WatchOn = false
+	}
+	if s.LibraryFolder = strings.TrimSpace(s.LibraryFolder); !filepath.IsAbs(s.LibraryFolder) {
+		s.LibraryFolder = ""
 	}
 	return s
 }
@@ -265,6 +271,7 @@ func Load() (Settings, error) {
 	read("WatchOn", &s.WatchOn)
 	read("WatchFolder", &s.WatchFolder)
 	read("WatchSend", &s.WatchSend)
+	read("LibraryFolder", &s.LibraryFolder)
 	read("QuietEnd", &s.QuietEnd)
 	read("UpdateCheck", &s.UpdateCheck)
 	return s.Normalize(), nil

@@ -20,7 +20,7 @@ import (
 
 // ConnectView is what SaveConsole tells the page about the check of the console.
 type ConnectView struct {
-	Error   string `json:"error"`   // "" when the console took the code; "bad_ip", "bad_code", or ConsoleDrives' code
+	Error   string `json:"error"`   // "" when the console took the code; "bad_ip", "bad_code", "save_failed" (Settings could not be written; Message says why), or ConsoleDrives' code
 	Message string `json:"message"` // the engine's words, if any
 }
 

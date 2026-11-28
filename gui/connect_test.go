@@ -4,11 +4,13 @@ package main
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -66,15 +68,41 @@ func TestProbeConsoles(t *testing.T) {
 		w.Write([]byte(`{"ok":true}`))
 	}))
 	defer other.Close()
-	hosts := []string{strings.TrimPrefix(maxpack.URL, "http://"), strings.TrimPrefix(other.URL, "http://"), "127.0.0.1:1"}
+	// a host that accepts the connection and never replies
+	silent, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var held []net.Conn
+	var heldMu sync.Mutex
+	go func() {
+		for {
+			c, err := silent.Accept()
+			if err != nil {
+				return
+			}
+			heldMu.Lock()
+			held = append(held, c)
+			heldMu.Unlock()
+		}
+	}()
+	defer func() {
+		silent.Close()
+		heldMu.Lock()
+		for _, c := range held {
+			c.Close()
+		}
+		heldMu.Unlock()
+	}()
+	hosts := []string{strings.TrimPrefix(maxpack.URL, "http://"), strings.TrimPrefix(other.URL, "http://"), silent.Addr().String()}
 	perHost := 300 * time.Millisecond
 	start := time.Now()
 	got := probeConsoles(context.Background(), hosts, 8095, perHost, 8)
 	if len(got) != 1 || got[0] != hosts[0] {
 		t.Errorf("found %v, want %v", got, hosts[:1])
 	}
-	if d := time.Since(start); d > perHost+time.Second {
-		t.Errorf("took %v", d)
+	if d := time.Since(start); d < perHost-50*time.Millisecond || d > perHost+time.Second {
+		t.Errorf("took %v, want about %v", d, perHost)
 	}
 }
 

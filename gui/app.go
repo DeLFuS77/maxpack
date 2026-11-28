@@ -69,6 +69,11 @@ type App struct {
 	libraryMutex sync.Mutex
 	libraryCache map[string]libraryEntry
 
+	// what the Console tab asked of the console (see consolestate.go): the back-off after a failure, and its icons
+	consoleMutex   sync.Mutex
+	consoleBackoff consoleBackoffState
+	consoleIcons   map[consoleIconKey]string
+
 	notices      sync.Once
 	noticesReady bool
 	// whether the window is in front, as the page tells it (TellFront), and the stand-in of the tests

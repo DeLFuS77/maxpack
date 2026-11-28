@@ -403,9 +403,12 @@ its Settings > **Receive games from the PC** (which must be on), or **Find on th
 it; **Save** checks the code. On the left, the `.p5z` of one folder of yours (it proposes the
 destination of Compress), each marked **On the console**, **Another version on the console** (it can
 be sent, with a warning), **Not on the console** or **Needs repair** (open it in Details); on the right,
-what the console has, view only. Tick the `.p5z` and **Send to the console**, to the drive you choose
-(one where they do not fit says so); a send waits for a running job. **Send to the console** on a card
-in Details, and on the end card of Compress, open this section with those files marked. The bar says
+what the console has, view only. Tick the `.p5z` and press **Send**, to the drive you choose (one where
+they do not fit says so); a send waits for a running job (untick it to take it back). **Send to the
+console** on a card in Details, and on the end card of Compress, open this section with those files
+marked, and a `.p5z` dropped on the section is marked there too. What the watched folder sends waits
+there without opening it. Nothing changes on the PC or the console but what you send, what **Delete
+what arrived on the console** deletes and a `.p5z` you open in Details (which repairs it). The bar says
 the speed and the time left, then the console's verify, and the end card how it went. If the connection
 breaks it goes on from what the console has. **Cancel**, or closing the window, stops it and the console
 keeps what arrived: the next send goes on from there. **Delete what arrived on the console** deletes it

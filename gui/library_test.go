@@ -92,6 +92,8 @@ type fileState struct {
 	mtime time.Time
 }
 
+// folderState is the size and time of everything under folder, each asked of the file itself: on NTFS the
+// listing of a folder can give a subfolder's time from before it was last opened, which the walk itself does.
 func folderState(t *testing.T, folder string) map[string]fileState {
 	t.Helper()
 	state := map[string]fileState{}
@@ -99,7 +101,7 @@ func folderState(t *testing.T, folder string) map[string]fileState {
 		if err != nil {
 			t.Fatal(err)
 		}
-		info, err := d.Info()
+		info, err := os.Lstat(path)
 		if err != nil {
 			t.Fatal(err)
 		}

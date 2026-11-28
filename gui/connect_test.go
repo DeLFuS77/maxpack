@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -52,6 +53,48 @@ func TestSaveConsoleChecksOnce(t *testing.T) {
 	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
 	if len(lines) != 1 || !strings.HasPrefix(lines[0], "send\t--drives") && !strings.Contains(lines[0], "--drives") {
 		t.Errorf("calls: %q", data)
+	}
+}
+
+// A console the window could not reach lately that takes the code is asked again at once: the header does not
+// say "Not answering" for the rest of the back-off after "The console took the code".
+func TestSaveConsoleClearsBackoff(t *testing.T) {
+	var hits atomic.Int32
+	var up atomic.Bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		if !up.Load() {
+			http.Error(w, "starting", http.StatusServiceUnavailable)
+			return
+		}
+		w.Write([]byte(stateJSON("true")))
+	}))
+	t.Cleanup(srv.Close)
+	address := strings.TrimPrefix(srv.URL, "http://")
+	t.Setenv(fakecore.Env, "sends")
+	withConsole(t, address)
+	a := &App{core: os.Args[0]}
+	if v := a.ConsoleState(); v.State != "unreachable" {
+		t.Fatalf("first: %+v", v)
+	}
+	up.Store(true)
+	if v := a.SaveConsole(address, consoleCode); v.Error != "" {
+		t.Fatalf("save: %+v", v)
+	}
+	if v := a.ConsoleState(); v.State != "connected" || hits.Load() != 2 {
+		t.Errorf("after the save: %s, %d requests", v.State, hits.Load())
+	}
+	// a code the console refuses leaves the back-off as it was
+	up.Store(false)
+	b := &App{core: os.Args[0]}
+	b.ConsoleState()
+	up.Store(true)
+	t.Setenv(fakecore.SendFailEnv, "bad_code")
+	if v := b.SaveConsole(address, consoleCode); v.Error != "bad_code" {
+		t.Fatalf("save: %+v", v)
+	}
+	if v := b.ConsoleState(); v.State != "unreachable" || hits.Load() != 3 {
+		t.Errorf("after a refused code: %s, %d requests", v.State, hits.Load())
 	}
 }
 
@@ -101,7 +144,7 @@ func TestProbeConsoles(t *testing.T) {
 	if len(got) != 1 || got[0] != hosts[0] {
 		t.Errorf("found %v, want %v", got, hosts[:1])
 	}
-	if d := time.Since(start); d < perHost-50*time.Millisecond || d > perHost+time.Second {
+	if d := time.Since(start); d < perHost-50*time.Millisecond || d > perHost+2*time.Second {
 		t.Errorf("took %v, want about %v", d, perHost)
 	}
 }

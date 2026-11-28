@@ -40,6 +40,14 @@ func (a *App) SaveConsole(ip, code string) ConnectView {
 		return ConnectView{Error: "save_failed", Message: err.Error()}
 	}
 	view := a.ConsoleDrives()
+	if view.Error == "" {
+		// the console answered just now: what it has is asked at once, not after the back-off of an earlier failure
+		a.consoleMutex.Lock()
+		if a.consoleBackoff.address == ip {
+			a.consoleBackoff = consoleBackoffState{}
+		}
+		a.consoleMutex.Unlock()
+	}
 	return ConnectView{Error: view.Error, Message: view.Message}
 }
 
@@ -74,7 +82,9 @@ func probeConsoles(ctx context.Context, hosts []string, port int, perHost time.D
 	if parallel < 1 {
 		parallel = 1
 	}
-	client := &http.Client{Timeout: perHost}
+	// its own connections, closed once the search ends
+	client := consoleHTTPClient(perHost)
+	defer client.CloseIdleConnections()
 	var (
 		mu    sync.Mutex
 		found = []string{}

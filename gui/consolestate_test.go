@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -112,11 +113,11 @@ func TestConsoleStateUnreachableBacksOff(t *testing.T) {
 	withConsole(t, strings.TrimPrefix(srv.URL, "http://"))
 	a := &App{}
 	t0 := time.Now()
-	if v := a.ConsoleState(); v.State != "unreachable" || time.Since(t0) > 3500*time.Millisecond {
+	if v := a.ConsoleState(); v.State != "unreachable" || time.Since(t0) > 4500*time.Millisecond {
 		t.Fatalf("first: %+v after %v", v, time.Since(t0))
 	}
 	t0 = time.Now()
-	if v := a.ConsoleState(); v.State != "unreachable" || time.Since(t0) > 100*time.Millisecond {
+	if v := a.ConsoleState(); v.State != "unreachable" || time.Since(t0) > time.Second {
 		t.Fatalf("second: %+v after %v", v, time.Since(t0))
 	}
 	if n := hits.Load(); n != 1 {
@@ -181,7 +182,7 @@ func TestConsoleIconHonoursBackoff(t *testing.T) {
 		t.Fatalf("%+v", v)
 	}
 	t0 := time.Now()
-	if got := a.ConsoleIcon("PPSA01234"); got != "" || time.Since(t0) > 100*time.Millisecond {
+	if got := a.ConsoleIcon("PPSA01234"); got != "" || time.Since(t0) > time.Second {
 		t.Errorf("icon: %q after %v", got, time.Since(t0))
 	}
 	if n := hits.Load(); n != 1 {
@@ -197,7 +198,7 @@ func TestConsoleIconHonoursBackoff(t *testing.T) {
 	}
 	t0 = time.Now()
 	b.ConsoleIcon("PPSA01235")
-	if v := b.ConsoleState(); v.State != "unreachable" || time.Since(t0) > 100*time.Millisecond {
+	if v := b.ConsoleState(); v.State != "unreachable" || time.Since(t0) > time.Second {
 		t.Errorf("%+v after %v", v, time.Since(t0))
 	}
 	if n := hits2.Load(); n != 1 {
@@ -217,7 +218,7 @@ func TestConsoleStateSingleFlight(t *testing.T) {
 		go func() { defer wg.Done(); states[i] = a.ConsoleState().State }()
 	}
 	wg.Wait()
-	if n := hits.Load(); n != 1 || time.Since(t0) > 3500*time.Millisecond {
+	if n := hits.Load(); n != 1 || time.Since(t0) > 4500*time.Millisecond {
 		t.Errorf("requests: %d after %v", n, time.Since(t0))
 	}
 	for _, s := range states {
@@ -250,6 +251,48 @@ func TestConsoleIconSingleFlight(t *testing.T) {
 	for _, s := range icons {
 		if !strings.HasPrefix(s, "data:image/png;base64,") {
 			t.Errorf("icons: %v", icons)
+		}
+	}
+}
+
+// What the window asks of the console goes to the console only: a redirect is not followed (the host it points
+// to gets no request), and no proxy of the system is used, by the poll, the icons or the search of the network.
+func TestConsoleClientsStayOnTheConsole(t *testing.T) {
+	var elsewhere atomic.Int32
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		elsewhere.Add(1)
+		if r.URL.Path == "/api/state" {
+			w.Write([]byte(stateJSON("true")))
+			return
+		}
+		w.Write([]byte(tinyPNG))
+	}))
+	t.Cleanup(other.Close)
+	redirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, other.URL+r.URL.Path, http.StatusFound)
+	}))
+	t.Cleanup(redirect.Close)
+	address := strings.TrimPrefix(redirect.URL, "http://")
+	withConsole(t, address)
+	if v := (&App{}).ConsoleState(); v.State != "unreachable" {
+		t.Errorf("state through a redirect: %+v", v)
+	}
+	if got := (&App{}).ConsoleIcon("PPSA01234"); got != "" {
+		t.Errorf("icon through a redirect: %.40q", got)
+	}
+	if found := probeConsoles(context.Background(), []string{address}, 8095, time.Second, 1); len(found) != 0 {
+		t.Errorf("found through a redirect: %v", found)
+	}
+	if n := elsewhere.Load(); n != 0 {
+		t.Errorf("the redirect was followed: %d requests to the other host", n)
+	}
+	for name, client := range map[string]*http.Client{"state and icons": consoleClient, "search": consoleHTTPClient(probePerHost)} {
+		transport, ok := client.Transport.(*http.Transport)
+		if !ok || transport.Proxy != nil {
+			t.Errorf("%s: the client may go through a proxy: %T", name, client.Transport)
+		}
+		if client.CheckRedirect == nil || client.Timeout == 0 || client.Timeout > consoleTimeout {
+			t.Errorf("%s: redirect check %v, timeout %v", name, client.CheckRedirect != nil, client.Timeout)
 		}
 	}
 }

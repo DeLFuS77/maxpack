@@ -68,7 +68,19 @@ const (
 	consoleMaxBody = 8 << 20
 )
 
-var consoleClient = &http.Client{Timeout: consoleTimeout}
+var consoleClient = consoleHTTPClient(consoleTimeout)
+
+// consoleHTTPClient is a client that asks the address given and nothing else: it does not follow a redirect
+// (the answer is the redirect, which is not one the window takes) nor go through a proxy of the system.
+func consoleHTTPClient(timeout time.Duration) *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Proxy = nil
+	return &http.Client{
+		Timeout:       timeout,
+		Transport:     transport,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+}
 
 var titleIDPattern = regexp.MustCompile(`^[A-Z]{4}[0-9]{5}$`)
 

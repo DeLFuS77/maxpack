@@ -73,6 +73,7 @@ type App struct {
 	consoleMutex   sync.Mutex
 	consoleBackoff consoleBackoffState
 	consoleIcons   map[consoleIconKey]string
+	consoleCalls   map[string]*consoleCall
 
 	notices      sync.Once
 	noticesReady bool

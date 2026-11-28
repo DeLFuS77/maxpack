@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -155,5 +156,100 @@ func TestConsoleIconValidatesAndCaches(t *testing.T) {
 	}
 	if hits.Load() != n {
 		t.Errorf("extra requests: %d", hits.Load()-n)
+	}
+}
+
+// a console that hangs: every request waits (or until the client gives up)
+func hangingConsole(t *testing.T, hits *atomic.Int32) string {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		select {
+		case <-time.After(5 * time.Second):
+		case <-r.Context().Done():
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return strings.TrimPrefix(srv.URL, "http://")
+}
+
+func TestConsoleIconHonoursBackoff(t *testing.T) {
+	var hits atomic.Int32
+	withConsole(t, hangingConsole(t, &hits))
+	a := &App{}
+	if v := a.ConsoleState(); v.State != "unreachable" {
+		t.Fatalf("%+v", v)
+	}
+	t0 := time.Now()
+	if got := a.ConsoleIcon("PPSA01234"); got != "" || time.Since(t0) > 100*time.Millisecond {
+		t.Errorf("icon: %q after %v", got, time.Since(t0))
+	}
+	if n := hits.Load(); n != 1 {
+		t.Errorf("requests: %d", n)
+	}
+
+	// an icon request that fails sets the back-off too: state and other icons then make no request
+	var hits2 atomic.Int32
+	withConsole(t, hangingConsole(t, &hits2))
+	b := &App{}
+	if got := b.ConsoleIcon("PPSA01234"); got != "" {
+		t.Errorf("icon: %q", got)
+	}
+	t0 = time.Now()
+	b.ConsoleIcon("PPSA01235")
+	if v := b.ConsoleState(); v.State != "unreachable" || time.Since(t0) > 100*time.Millisecond {
+		t.Errorf("%+v after %v", v, time.Since(t0))
+	}
+	if n := hits2.Load(); n != 1 {
+		t.Errorf("requests: %d", n)
+	}
+}
+
+func TestConsoleStateSingleFlight(t *testing.T) {
+	var hits atomic.Int32
+	withConsole(t, hangingConsole(t, &hits))
+	a := &App{}
+	t0 := time.Now()
+	var wg sync.WaitGroup
+	states := make([]string, 5)
+	for i := range states {
+		wg.Add(1)
+		go func() { defer wg.Done(); states[i] = a.ConsoleState().State }()
+	}
+	wg.Wait()
+	if n := hits.Load(); n != 1 || time.Since(t0) > 3500*time.Millisecond {
+		t.Errorf("requests: %d after %v", n, time.Since(t0))
+	}
+	for _, s := range states {
+		if s != "unreachable" {
+			t.Errorf("states: %v", states)
+		}
+	}
+}
+
+func TestConsoleIconSingleFlight(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		time.Sleep(200 * time.Millisecond)
+		w.Write([]byte(tinyPNG))
+	}))
+	t.Cleanup(srv.Close)
+	withConsole(t, strings.TrimPrefix(srv.URL, "http://"))
+	a := &App{}
+	var wg sync.WaitGroup
+	icons := make([]string, 5)
+	for i := range icons {
+		wg.Add(1)
+		go func() { defer wg.Done(); icons[i] = a.ConsoleIcon("PPSA01234") }()
+	}
+	wg.Wait()
+	if n := hits.Load(); n != 1 {
+		t.Errorf("requests: %d", n)
+	}
+	for _, s := range icons {
+		if !strings.HasPrefix(s, "data:image/png;base64,") {
+			t.Errorf("icons: %v", icons)
+		}
 	}
 }

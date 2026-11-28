@@ -87,6 +87,12 @@ type consoleBackoffState struct {
 	view    ConsoleView
 }
 
+// one call of the console in flight, which the callers that arrive meanwhile wait for
+type consoleCall struct {
+	done   chan struct{}
+	result any
+}
+
 type consoleIconKey struct{ address, titleID string }
 
 // the console's /api/state, only the fields the window uses
@@ -145,15 +151,19 @@ func (a *App) ConsoleState() ConsoleView {
 	if b.address == address && time.Now().Before(b.until) {
 		return b.view
 	}
-	view, ok := fetchConsoleState(address)
-	a.consoleMutex.Lock()
-	if ok {
-		a.consoleBackoff = consoleBackoffState{}
-	} else {
-		a.consoleBackoff = consoleBackoffState{address: address, until: time.Now().Add(consoleBackoff), view: view}
-	}
-	a.consoleMutex.Unlock()
-	return view
+	// callers that arrive while one asks share its answer
+	r := a.consoleFlight("state|"+address, func() any {
+		view, ok := fetchConsoleState(address)
+		a.consoleMutex.Lock()
+		if ok {
+			a.consoleBackoff = consoleBackoffState{}
+		} else {
+			a.consoleBackoff = consoleBackoffState{address: address, until: time.Now().Add(consoleBackoff), view: view}
+		}
+		a.consoleMutex.Unlock()
+		return view
+	})
+	return r.(ConsoleView)
 }
 
 func fetchConsoleState(address string) (ConsoleView, bool) {
@@ -206,38 +216,73 @@ func (a *App) ConsoleIcon(titleID string) string {
 	key := consoleIconKey{address, titleID}
 	a.consoleMutex.Lock()
 	icon, known := a.consoleIcons[key]
+	down := a.consoleBackoff.address == address && time.Now().Before(a.consoleBackoff.until)
 	a.consoleMutex.Unlock()
 	if known {
 		return icon
 	}
-	icon, final := fetchConsoleIcon(address, titleID)
-	if final {
-		a.consoleMutex.Lock()
-		if a.consoleIcons == nil {
-			a.consoleIcons = map[consoleIconKey]string{}
-		}
-		a.consoleIcons[key] = icon
-		a.consoleMutex.Unlock()
+	if down { // the console did not answer lately: do not wait for it once per game
+		return ""
 	}
-	return icon
+	r := a.consoleFlight("icon|"+address+"|"+titleID, func() any {
+		icon, final, reached := fetchConsoleIcon(address, titleID)
+		a.consoleMutex.Lock()
+		defer a.consoleMutex.Unlock()
+		if final {
+			if a.consoleIcons == nil {
+				a.consoleIcons = map[consoleIconKey]string{}
+			}
+			a.consoleIcons[key] = icon
+		}
+		if !reached {
+			a.consoleBackoff = consoleBackoffState{address: address, until: time.Now().Add(consoleBackoff),
+				view: emptyConsoleView("unreachable", address)}
+		}
+		return icon
+	})
+	return r.(string)
 }
 
-// fetchConsoleIcon asks for one icon; final is false when the console did not answer, so a later call asks again.
-func fetchConsoleIcon(address, titleID string) (icon string, final bool) {
+// consoleFlight runs fn once for key however many callers ask at the same time; all get its result.
+// The mutex is not held while fn runs.
+func (a *App) consoleFlight(key string, fn func() any) any {
+	a.consoleMutex.Lock()
+	if c, ok := a.consoleCalls[key]; ok {
+		a.consoleMutex.Unlock()
+		<-c.done
+		return c.result
+	}
+	c := &consoleCall{done: make(chan struct{})}
+	if a.consoleCalls == nil {
+		a.consoleCalls = map[string]*consoleCall{}
+	}
+	a.consoleCalls[key] = c
+	a.consoleMutex.Unlock()
+	c.result = fn()
+	a.consoleMutex.Lock()
+	delete(a.consoleCalls, key)
+	a.consoleMutex.Unlock()
+	close(c.done)
+	return c.result
+}
+
+// fetchConsoleIcon asks for one icon; final is false when the answer is not to be kept (a later call asks again); reached is false when the
+// console did not answer at all.
+func fetchConsoleIcon(address, titleID string) (icon string, final, reached bool) {
 	resp, err := consoleClient.Get(consoleURL(address, "/icon/"+titleID))
 	if err != nil {
-		return "", false
+		return "", false, false
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotFound {
-		return "", true
+		return "", true, true
 	}
 	if resp.StatusCode != http.StatusOK {
-		return "", false
+		return "", false, true
 	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, consoleMaxBody))
 	if err != nil || len(data) == 0 {
-		return "", false
+		return "", false, true
 	}
-	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(data), true
+	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(data), true, true
 }

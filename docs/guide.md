@@ -395,17 +395,21 @@ comes with MaxPack, next to `maxpack-core`.
 - **On the command line:** the `maxpack` command line does not make or use repair data; `maxpack-par2`
   does, see [Repair data with par2](#repair-data-with-par2).
 
-### Send to the console ([details](pc-window.md#send-to-the-console))
+### Console ([details](pc-window.md#console))
 
-A `.p5z` goes to MaxPack for the console from the window: **Send to the console** on its card in
-Details, or on the end card of Compress for the `.p5z` it made (they go to Details and are sent from
-there, one after another). Give the console's IP address and its pairing code once, in Settings >
-MaxPack for the console; the console must have Settings > **Receive games from the PC** on. A card
-shows the console's drives with their free space (one where they do not fit says so); the bar says the
-speed and the time left, then the console's verify, and the end card how it went. If the connection
+**Console** in the menu shows your `.p5z` on the PC beside what the console has, and sends it what it
+lacks. Connect once: **Change** takes the console's IP address and the 6-digit pairing code it shows in
+its Settings > **Receive games from the PC** (which must be on), or **Find on the network** looks for
+it; **Save** checks the code. On the left, the `.p5z` of one folder of yours (it proposes the
+destination of Compress), each marked **On the console**, **Another version on the console** (it can
+be sent, with a warning), **Not on the console** or **Needs repair** (open it in Details); on the right,
+what the console has, view only. Tick the `.p5z` and **Send to the console**, to the drive you choose
+(one where they do not fit says so); a send waits for a running job. **Send to the console** on a card
+in Details, and on the end card of Compress, open this section with those files marked. The bar says
+the speed and the time left, then the console's verify, and the end card how it went. If the connection
 breaks it goes on from what the console has. **Cancel**, or closing the window, stops it and the console
-keeps what arrived: the next send goes on from there. **Delete what arrived on the console**, on the row,
-deletes it there, once you say so; it shows too when a drive of the console has no room for it while part of
+keeps what arrived: the next send goes on from there. **Delete what arrived on the console** deletes it
+there, once you say so; it shows too when a drive of the console has no room for it while part of
 it is there already from before (that part takes room: delete it, or choose another drive), and says so when
 nothing of it was there. While the console lets go of that receive it waits (up to 75 s) and its row says so
 for the whole wait: a stop on the PC tells the console at once that the PC left, and one it could not tell is

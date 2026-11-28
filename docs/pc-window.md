@@ -457,7 +457,7 @@ least in both themes, and nothing moves when the system asks for less motion.
   never which.
 - **MaxPack for the console:** the console's IP address (as its page shows it; `a.b.c.d:port` when it
   is not on port 8095) and the 6-digit pairing code it shows in its Settings > Receive games from the
-  PC, for [Send to the console](#send-to-the-console). The code is kept in the settings file and goes
+  PC, for [Console](#console). The code is kept in the settings file and goes
   only to `maxpack-core`, in its environment, never on a command line, into a log or into **Copy
   report** (which says only whether an address and a code were given).
 - **Watched folder:** one folder, off by default; see [Watched folder](#watched-folder).
@@ -546,22 +546,51 @@ sizes and the volumes filled in and a `?` for what only the console knows. **Rep
 a game** open the forms of [maxpack-ps5](https://github.com/DeLFuS77/maxpack-ps5/issues) in your
 browser.
 
-### Send to the console
+### Console
 
-**Send to the console** is on the card of a `.p5z` in Details, and on the end card of Compress when it
-made `.p5z` files (they are added to Details, read, and sent from there).
+**Console** in the menu shows your `.p5z` on the PC beside what the console has, and sends it what it
+lacks. It reads, never writes: nothing is changed on the PC or on the console but what you send.
 
-- **Before:** the console's IP address and pairing code must be in Settings (without them the button
-  says so and opens Settings), and MaxPack for the console must have Settings > Receive games from the
-  PC on.
-- **The card** lists the `.p5z` that go and the console's drives, as it says them: internal storage and
-  each USB drive with its free space of its size; one where they do not fit with the console's margin
-  (256 MiB) says so. The drive chosen is the one of the next time.
+- **Connecting.** The header says the console's state: **Connected**, **Receive games from the PC is
+  off on the console** (turn it on in the Settings of MaxPack for the console), **Not answering** (is
+  MaxPack for the console open, on the same network as this PC? it is asked again every few seconds) or
+  **No console yet**. **Change** opens the box: the console's IP address (as its page shows it) and the
+  6-digit pairing code it shows in its Settings > Receive games from the PC. **Save** checks the code
+  with the console once, and keeps both in Settings, where they can be changed too. **Find on the
+  network** looks for MaxPack for the console on this PC's local network (its /24) and offers what
+  answers. Without a console, the section says to connect to see what it has.
+- **The header** also lists the console's drives as it says them (internal storage and each USB drive,
+  with its free space of its size), and **Sends left halfway** with **Delete what arrived on the
+  console** (see below) when a send stopped before the end.
+- **On the PC** (left) lists the `.p5z` of one folder of yours, the library: the first level only, not
+  its subfolders. The first time it proposes the destination folder of Compress (**Use this folder**) or
+  you choose another; **Read again** lists it again. Each `.p5z` is read with the engine's read-only
+  mode (`info --json --read-only`, and `icon --read-only` for the cover), so nothing is ever written to
+  it, not even to undo an interrupted change. **Other files** holds the `.p5z` sent from elsewhere: the
+  **Send to the console** button on a card in Details, the end card of Compress and the
+  [watched folder](#watched-folder) open this section with those files marked.
+- **The marks** compare each `.p5z` with what the console has, by title ID and version:
+  - **On the console**: the same game in the same version is there already.
+  - **Another version on the console**: it can be sent, with a warning: the console would have both
+    copies, play one and list the other as a duplicate; delete the old one on the console.
+  - **Not on the console**: it is not there.
+  - **Needs repair**: something being added to it (a DLC, say) stopped halfway. It is not sent like
+    this: **Open in Details** repairs it.
+- **On the console** (right) lists its games, view only: cover, name, version, size, drive, kind (the
+  `.p5z`, folder or image it is), the date it was verified (or failed to be), **duplicate** when two
+  copies of a game are there and **Also on the PC** when you have its `.p5z`. Images are listed apart.
+- **Sending.** Tick the `.p5z` and press **Send to the console**, with the destination drive chosen
+  (the one of the next time). There is one queue: a send started while Compress, Decompress or another
+  job is working says **Waiting** and goes once that ends. Several `.p5z` go one after another.
+- **Drives.** A drive where the `.p5z` does not fit with the console's margin (256 MiB) says so. A
+  drive that is FAT32 takes no file of 4 GiB or more.
 - **While it sends,** each row has its bar in two parts, the bytes and then the console's verify, with
-  the speed and the time left at the foot; several `.p5z` go one after another. If the connection
-  breaks, `maxpack-core` waits a moment and goes on from what the console has; a receive the console
-  pauses (idle, a write error) is started again, one stopped on the console is not. **Cancel**, or closing
-  the window, stops it: the console keeps what arrived, and the next send goes on from there.
+  the speed and the time left at the foot. The console verifies it once it has it whole (the SHA-256
+  of every volume and loose file) and only then gives it its name, so its library never sees half a
+  game. If the connection breaks, `maxpack-core` waits a moment and goes on from what the console has; a
+  receive the console pauses (idle, a write error) is started again, one stopped on the console is not.
+  **Cancel**, or closing the window, stops it: the console keeps what arrived, and the next send goes on
+  from there.
 - **Delete what arrived on the console** shows on a row whose send stopped, was stopped on the console,
   stalled (or this PC slept), could not be written, got no answer or arrived damaged, and on one that found
   no room on the drive while part of it is there from before (that part takes room): it asks first, then the
@@ -570,14 +599,14 @@ made `.p5z` files (they are added to Details, read, and sent from there).
   console lets go of that receive it waits, up to 75 s, and its row says so (with the seconds) for the whole
   wait; a stop here (Cancel, closing the window) tells the console at once that the PC left. An engine that had to be killed after a cancel says the console
   may keep some. A console without that request says to update it; one that could not delete says why.
-- **Asking for the drives** opens the card at once with "Asking the console for its drives…": **Cancel**
-  stops the question, and it gives up after 30 s (a console never reached says "no answer" in about 11 s).
 - **The end card** says how many went and how fast. A row that ended well says that the console
   verified it; the others say why in words of their own: no answer, receiving off, wrong code (or too
   many), already there, the console busy, no room, a FAT32 drive, a name it does not take, a drive it
   no longer has, cancelled on the console, or arrived damaged with what did not match (the console keeps
   it aside as `<name>.maxpack-recv`; send it again). A send this PC slept through says the PC slept, not that
   nothing moved on the console.
+- **The code** goes only to `maxpack-core`, in its environment, never on a command line, into a log or
+  into **Copy report**.
 
 ### Watched folder
 

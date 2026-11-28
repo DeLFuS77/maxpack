@@ -8,6 +8,12 @@ All notable changes to MaxPack are listed here. The format follows
 
 ### Added
 
+- **Console** in the PC window: your `.p5z` of one library folder beside what the console has, each marked
+  (on the console, another version on it, not there, needs repair), and what the console lists (games with
+  cover, version, size, drive, verified date, duplicates), view only. Connect once with its IP address and
+  code, or find it on the local network; tick the `.p5z` and send them to a drive, in one queue with the
+  other jobs, and delete what a stopped send left. The send dialog of Details is gone: its **Send to the
+  console** button opens this section with the file marked.
 - `info --json --read-only` and `icon --read-only` read a `.p5z` without undoing an interrupted change; `info --json` says `interrupted_append` for it (and `--capabilities` says `read_only_info`).
 
 ## [1.1.0] - 2026-11-27
